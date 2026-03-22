@@ -607,14 +607,15 @@ function Convert-ToKindle {
             $toolsDir  = (Join-Path $script:ModuleRoot 'tools') -replace '\\', '\\'
             $cacheThreshold = if ($cfg.visual_qa.pass_threshold) { $cfg.visual_qa.pass_threshold } else { 70 }
             $safeFileName = $fileName -replace "'", "''"
+            $safeInputPath = ($InputFile -replace '\\', '\\\\') -replace "'", "''"
 
             # Two-phase cache check: first ANY record (min_score=0), then qualifying
             $cacheScript = @"
 import sys, json
 sys.path.insert(0, r'$toolsDir')
 from pattern_db import get_cached_result
-any_result = get_cached_result(filename='$safeFileName', min_score=0)
-good_result = get_cached_result(filename='$safeFileName', min_score=$cacheThreshold)
+any_result = get_cached_result(filename='$safeFileName', source_file_path=r'$safeInputPath', min_score=0)
+good_result = get_cached_result(filename='$safeFileName', source_file_path=r'$safeInputPath', min_score=$cacheThreshold)
 output = {}
 if good_result:
     output['hit'] = True

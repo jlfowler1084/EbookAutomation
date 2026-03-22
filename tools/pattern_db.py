@@ -319,6 +319,20 @@ def get_or_create_book(filename, db_path=None, **kwargs):
     if existing:
         return existing["id"]
 
+    # Try source_file_path match before creating a duplicate
+    src_path = kwargs.get('source_file_path')
+    if not existing and src_path:
+        conn = get_db(db_path)
+        try:
+            row = conn.execute(
+                "SELECT id FROM books WHERE source_file_path = ? LIMIT 1",
+                (src_path,)
+            ).fetchone()
+            if row:
+                return row["id"]
+        finally:
+            conn.close()
+
     # Try title_hash fallback before creating
     title = kwargs.get('title')
     author = kwargs.get('author')
@@ -675,11 +689,12 @@ def update_source_profile(publisher, decade, format, db_path=None):
 
 
 def get_cached_result(filename=None, isbn=None, title=None, author=None,
-                      min_score=80, db_path=None):
+                      source_file_path=None, min_score=80, db_path=None):
     """Check if a book has already been successfully converted.
 
     Lookup order:
-    1. Exact filename match
+    1. Exact filename match (books.filename)
+    1b. Source file path match (books.source_file_path)
     2. ISBN match (if provided)
     3. Title+author fuzzy match (if provided)
 
@@ -706,6 +721,23 @@ def get_cached_result(filename=None, isbn=None, title=None, author=None,
                     ).fetchone()
                     if row:
                         break
+            if row:
+                book_id = row["id"]
+
+        # 1b. Source file path match (input filename stored during write-back)
+        if not book_id and (source_file_path or filename):
+            search_path = source_file_path or filename
+            row = conn.execute(
+                "SELECT id FROM books WHERE source_file_path = ? ORDER BY id DESC LIMIT 1",
+                (search_path,)
+            ).fetchone()
+            if not row:
+                # Try matching just the basename against source_file_path
+                basename = os.path.basename(search_path)
+                row = conn.execute(
+                    "SELECT id FROM books WHERE source_file_path LIKE ? ORDER BY id DESC LIMIT 1",
+                    (f"%{basename}%",)
+                ).fetchone()
             if row:
                 book_id = row["id"]
 
@@ -753,7 +785,7 @@ def get_cached_result(filename=None, isbn=None, title=None, author=None,
 
 
 def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
-                           min_score=80, db_path=None):
+                           source_file_path=None, min_score=80, db_path=None):
     """Convenience wrapper -- returns just the output file path if a cached
     conversion exists, or None.
 
@@ -762,7 +794,7 @@ def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
     """
     result = get_cached_result(
         filename=filename, isbn=isbn, title=title, author=author,
-        min_score=min_score, db_path=db_path
+        source_file_path=source_file_path, min_score=min_score, db_path=db_path
     )
     if not result:
         return None
