@@ -324,13 +324,16 @@ def get_or_create_book(filename, db_path=None, **kwargs):
     if not existing and src_path:
         conn = get_db(db_path)
         try:
-            normalized_path = re.sub(r'\\+', r'\\', src_path)
-            row = conn.execute(
-                "SELECT id FROM books WHERE REPLACE(REPLACE(REPLACE(source_file_path, '\\\\', '\\'), '\\\\', '\\'), '\\\\', '\\') = ? ORDER BY id DESC LIMIT 1",
-                (normalized_path,)
-            ).fetchone()
-            if row:
-                return row["id"]
+            basename = os.path.basename(src_path.replace('\\\\', '\\').replace('\\\\', '\\'))
+            if not basename:
+                basename = src_path.rsplit('\\', 1)[-1].rsplit('/', 1)[-1]
+            if basename:
+                row = conn.execute(
+                    "SELECT id FROM books WHERE source_file_path LIKE ? ORDER BY id DESC LIMIT 1",
+                    (f"%{basename}%",)
+                ).fetchone()
+                if row:
+                    return row["id"]
         finally:
             conn.close()
 
@@ -727,21 +730,18 @@ def get_cached_result(filename=None, isbn=None, title=None, author=None,
 
         # 1b. Source file path match (input filename stored during write-back)
         if not book_id and (source_file_path or filename):
-            search_path = source_file_path or filename
-            normalized_path = re.sub(r'\\+', r'\\', search_path)
-            row = conn.execute(
-                "SELECT id FROM books WHERE REPLACE(REPLACE(REPLACE(source_file_path, '\\\\', '\\'), '\\\\', '\\'), '\\\\', '\\') = ? ORDER BY id DESC LIMIT 1",
-                (normalized_path,)
-            ).fetchone()
-            if not row:
-                # Try matching just the basename against source_file_path
-                basename = os.path.basename(search_path)
+            search_val = source_file_path or filename
+            # Extract just the filename (no directory path) to avoid backslash escaping mismatches
+            basename = os.path.basename(search_val.replace('\\\\', '\\').replace('\\\\', '\\'))
+            if not basename:
+                basename = search_val.rsplit('\\', 1)[-1].rsplit('/', 1)[-1]
+            if basename:
                 row = conn.execute(
                     "SELECT id FROM books WHERE source_file_path LIKE ? ORDER BY id DESC LIMIT 1",
                     (f"%{basename}%",)
                 ).fetchone()
-            if row:
-                book_id = row["id"]
+                if row:
+                    book_id = row["id"]
 
         # 2. ISBN match
         if not book_id and isbn:
