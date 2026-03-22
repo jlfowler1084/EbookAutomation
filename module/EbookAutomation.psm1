@@ -604,10 +604,10 @@ function Convert-ToKindle {
     } else {
         try {
             $python    = $cfg.paths.python
-            $toolsDir  = (Join-Path $script:ModuleRoot 'tools') -replace '\\', '\\'
+            $toolsDir  = Join-Path $script:ModuleRoot 'tools'
             $cacheThreshold = if ($cfg.visual_qa.pass_threshold) { $cfg.visual_qa.pass_threshold } else { 70 }
             $safeFileName = $fileName -replace "'", "''"
-            $safeInputPath = ($InputFile -replace '\\', '\\\\') -replace "'", "''"
+            $safeInputPath = $InputFile -replace "'", "''"
 
             # Two-phase cache check: first ANY record (min_score=0), then qualifying
             $cacheScript = @"
@@ -1367,12 +1367,12 @@ else:
             $dbOutExt = [System.IO.Path]::GetExtension($outFile).TrimStart('.').ToLower()
             $dbDuration = [math]::Round($overallSw.Elapsed.TotalSeconds, 1)
 
-            # Escape paths for Python (backslash doubling)
-            $dbInputPathEsc = $InputFile -replace '\\', '\\\\'
-            $dbOutPathEsc = $outFile -replace '\\', '\\\\'
-            $dbVqaPathEsc = $dbVqaReportPath -replace '\\', '\\\\'
-            $dbCoverPathEsc = $dbCoverPath -replace '\\', '\\\\'
-            $dbToolsPath = (Join-Path $script:ModuleRoot "tools") -replace '\\', '\\\\'
+            # Paths passed via r'...' raw strings — no escaping needed
+            $dbInputPathEsc = $InputFile
+            $dbOutPathEsc = $outFile
+            $dbVqaPathEsc = $dbVqaReportPath
+            $dbCoverPathEsc = $dbCoverPath
+            $dbToolsPath = Join-Path $script:ModuleRoot "tools"
 
             $dbScript = @"
 import sys, json, os
