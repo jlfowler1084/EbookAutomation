@@ -45,6 +45,7 @@ tools/data/foh_session.json
 
 # Pattern database (local run data)
 data/ebook_patterns.db
+data/covers/
 
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json

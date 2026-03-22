@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS books (
     page_count INTEGER,
     source_type TEXT,  -- digital_native, scan, ocr, unknown
     title_hash TEXT,  -- normalized hash for fuzzy matching
+    isbn TEXT,  -- ISBN-10 or ISBN-13
+    source_file_path TEXT,  -- original input file path (PDF/EPUB in inbox or library)
+    source_file_hash TEXT,  -- SHA-256 hash of the input file (identifies exact file version)
+    cover_image_path TEXT,  -- path to extracted cover JPG
+    language TEXT DEFAULT 'en',  -- ISO 639-1 language code
+    word_count INTEGER,  -- approximate word count from extracted text
+    chapter_count INTEGER,  -- number of chapters/headings detected
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -71,6 +78,10 @@ CREATE TABLE IF NOT EXISTS conversions (
     api_output_tokens INTEGER DEFAULT 0,
     cost_usd REAL DEFAULT 0,
     duration_seconds REAL,
+    output_file_path TEXT,  -- full path to the KFX/AZW3 output file
+    output_file_size INTEGER,  -- output file size in bytes
+    conversion_flags TEXT,  -- JSON of active flags: {"UseHtmlExtraction": true, ...}
+    category_scores TEXT,  -- JSON of per-category VQA scores: {"text_integrity": 83, ...}
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -178,6 +189,10 @@ CREATE INDEX IF NOT EXISTS idx_book_overrides_title_hash
     ON book_overrides(title_hash);
 CREATE INDEX IF NOT EXISTS idx_book_overrides_book_id
     ON book_overrides(book_id);
+CREATE INDEX IF NOT EXISTS idx_books_isbn
+    ON books(isbn);
+CREATE INDEX IF NOT EXISTS idx_books_source_hash
+    ON books(source_file_hash);
 """
 
 # ---------------------------------------------------------------------------
@@ -208,13 +223,34 @@ def get_db(db_path=None):
 
 def _migrate(conn):
     """Apply schema migrations for columns added after initial release."""
-    # Check if books.title_hash exists
-    columns = {
+    # Check if books.title_hash exists (Phase 3B migration)
+    book_columns = {
         row[1] for row in conn.execute("PRAGMA table_info(books)").fetchall()
     }
-    if 'title_hash' not in columns:
+    if 'title_hash' not in book_columns:
         conn.execute("ALTER TABLE books ADD COLUMN title_hash TEXT")
         conn.commit()
+
+    # Phase 3C migrations — new columns on books and conversions
+    _new_columns = [
+        ("books", "isbn", "TEXT"),
+        ("books", "source_file_path", "TEXT"),
+        ("books", "source_file_hash", "TEXT"),
+        ("books", "cover_image_path", "TEXT"),
+        ("books", "language", "TEXT DEFAULT 'en'"),
+        ("books", "word_count", "INTEGER"),
+        ("books", "chapter_count", "INTEGER"),
+        ("conversions", "output_file_path", "TEXT"),
+        ("conversions", "output_file_size", "INTEGER"),
+        ("conversions", "conversion_flags", "TEXT"),
+        ("conversions", "category_scores", "TEXT"),
+    ]
+    for table, col, col_type in _new_columns:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    conn.commit()
 
 
 def init_db(db_path=None):
@@ -236,7 +272,9 @@ def init_db(db_path=None):
 
 def add_book(filename, title=None, author=None, publisher=None, year=None,
              format='pdf', file_size_bytes=None, page_count=None,
-             source_type='unknown', db_path=None):
+             source_type='unknown', isbn=None, source_file_path=None,
+             source_file_hash=None, cover_image_path=None, language='en',
+             word_count=None, chapter_count=None, db_path=None):
     """Add a book record. Returns the book ID."""
     title_hash = _normalize_title_hash(title, author)
     conn = get_db(db_path)
@@ -244,10 +282,14 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
         cursor = conn.execute(
             """INSERT INTO books
                (filename, title, author, publisher, year, format,
-                file_size_bytes, page_count, source_type, title_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                file_size_bytes, page_count, source_type, title_hash,
+                isbn, source_file_path, source_file_hash,
+                cover_image_path, language, word_count, chapter_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (filename, title, author, publisher, year, format,
-             file_size_bytes, page_count, source_type, title_hash)
+             file_size_bytes, page_count, source_type, title_hash,
+             isbn, source_file_path, source_file_hash,
+             cover_image_path, language, word_count, chapter_count)
         )
         conn.commit()
         return cursor.lastrowid
@@ -308,8 +350,14 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                    text_quality_score=None, fixes_applied=0,
                    fixes_failed=0, api_input_tokens=0,
                    api_output_tokens=0, cost_usd=0,
-                   duration_seconds=None, db_path=None):
+                   duration_seconds=None, output_file_path=None,
+                   output_file_size=None, conversion_flags=None,
+                   category_scores=None, db_path=None):
     """Record a conversion attempt. Returns conversion ID."""
+    if isinstance(conversion_flags, dict):
+        conversion_flags = json.dumps(conversion_flags)
+    if isinstance(category_scores, dict):
+        category_scores = json.dumps(category_scores)
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
@@ -317,12 +365,14 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                (book_id, iteration, extraction_path, vqa_score,
                 vqa_report_path, text_quality_score, fixes_applied,
                 fixes_failed, api_input_tokens, api_output_tokens,
-                cost_usd, duration_seconds)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                cost_usd, duration_seconds, output_file_path,
+                output_file_size, conversion_flags, category_scores)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, iteration, extraction_path, vqa_score,
              vqa_report_path, text_quality_score, fixes_applied,
              fixes_failed, api_input_tokens, api_output_tokens,
-             cost_usd, duration_seconds)
+             cost_usd, duration_seconds, output_file_path,
+             output_file_size, conversion_flags, category_scores)
         )
         conn.commit()
         return cursor.lastrowid
@@ -688,7 +738,7 @@ def get_cached_result(filename=None, isbn=None, title=None, author=None,
         cursor = conn.execute(
             """SELECT c.id as conversion_id, b.id as book_id, b.filename,
                       c.vqa_score, c.extraction_path, c.vqa_report_path,
-                      c.cost_usd, c.created_at
+                      c.output_file_path, c.cost_usd, c.created_at
                FROM conversions c
                JOIN books b ON b.id = c.book_id
                WHERE c.book_id = ? AND c.vqa_score >= ?
@@ -1124,12 +1174,24 @@ def _cmd_history(args):
     if b.get("author"):
         print(f"  Author: {b['author']}")
     print(f"  Format: {b['format']}, Pages: {b.get('page_count', '?')}")
+    if b.get("isbn"):
+        print(f"  ISBN: {b['isbn']}")
+    if b.get("source_file_hash"):
+        print(f"  Source hash: {b['source_file_hash'][:16]}...")
+    if b.get("cover_image_path"):
+        print(f"  Cover: {b['cover_image_path']}")
     print()
 
     for c in history["conversions"]:
         print(f"  Conversion #{c['iteration']} ({c['extraction_path']})")
         print(f"    VQA Score: {c.get('vqa_score', '?')}")
         print(f"    Cost: ${c.get('cost_usd', 0):.4f}")
+        if c.get('output_file_path'):
+            print(f"    Output: {c['output_file_path']}")
+        if c.get('conversion_flags'):
+            print(f"    Flags: {c['conversion_flags']}")
+        if c.get('category_scores'):
+            print(f"    Scores: {c['category_scores']}")
         print(f"    Date: {c['created_at']}")
 
         conv_issues = [
@@ -1240,6 +1302,10 @@ def _cmd_cache(args):
     print(f"  Extraction path: {result['extraction_path']}")
     print(f"  Cost:            ${result.get('cost_usd', 0):.4f}")
     print(f"  Date:            {result['created_at']}")
+    if result.get('output_file_path'):
+        exists = Path(result['output_file_path']).exists()
+        status = "" if exists else " (FILE MISSING)"
+        print(f"  Output (DB):     {result['output_file_path']}{status}")
 
     output_path = get_cached_output_path(
         filename=result['filename'], min_score=min_score,

@@ -552,6 +552,17 @@ function Convert-ToKindle {
     $calibre = Resolve-ProjectPath $cfg.paths.calibre
     $ext     = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
 
+    # Determine extraction path for database recording
+    $extractionPath = if ($ext -ne 'pdf') {
+        'direct'   # EPUB, MOBI, AZW go straight to Calibre
+    } elseif ($UseHtmlExtraction) {
+        'html_extraction'
+    } elseif ($ForceColumns) {
+        'column_aware'
+    } else {
+        'legacy'
+    }
+
     if (-not $cfg.kindle.enabled) { return $true }   # silently skip if disabled
 
     if ($ext -notin $cfg.kindle.input_formats) {
@@ -569,7 +580,9 @@ function Convert-ToKindle {
     $fileName = [System.IO.Path]::GetFileName($InputFile)
 
     # Cache check — skip conversion if book was already processed successfully
-    if (-not $NoCache) {
+    if ($NoCache) {
+        Write-EbookLog "Kindle: cache BYPASSED (-NoCache flag)"
+    } else {
         try {
             $python    = $cfg.paths.python
             $toolsDir  = Join-Path $script:ModuleRoot 'tools'
@@ -579,11 +592,12 @@ function Convert-ToKindle {
             if ($cacheCheck) {
                 $cached = $cacheCheck | ConvertFrom-Json
                 if ($cached.vqa_score -and $cached.vqa_score -ge $cacheThreshold) {
-                    Write-EbookLog "Kindle: cache hit -- '$fileName' was previously converted (score: $($cached.vqa_score)/100)" -Level SUCCESS
+                    Write-EbookLog "Kindle: cache HIT -- '$fileName' was previously converted (score: $($cached.vqa_score)/100)" -Level SUCCESS
                     Write-EbookLog "Kindle: use -NoCache to force re-conversion"
                     return $true
                 }
             }
+            Write-EbookLog "Kindle: cache miss -- no qualifying prior conversion found for '$fileName'"
         } catch {
             # Cache check failed — continue with normal conversion (non-blocking)
             Write-EbookLog "Kindle: cache check failed (continuing with conversion) -- $_" -Level WARN
@@ -1238,6 +1252,139 @@ else:
             if ($vqaResult -and -not $vqaResult.overall_pass) {
                 Write-EbookLog "Kindle: visual QA flagged issues (score $($vqaResult.overall_score)/100)" -Level WARN
             }
+        }
+
+        # ── Record conversion to pattern database ──────────────────────────
+        try {
+            $dbPython = $cfg.paths.python
+            if (-not $dbPython) { $dbPython = "python" }
+
+            # Collect conversion flags
+            $flagsJson = @{
+                UseHtmlExtraction = [bool]$UseHtmlExtraction
+                ForceColumns      = [bool]$ForceColumns
+                UseClaudeChapters = [bool]$UseClaudeChapters
+                ValidateQuality   = [bool]$ValidateQuality
+                ValidateVisual    = [bool]$ValidateVisual
+                NoCache           = [bool]$NoCache
+            } | ConvertTo-Json -Compress
+
+            # Find VQA report if it exists
+            $dbVqaReportPath = ""
+            if ($ValidateVisual -and $outFile) {
+                $dbReportFile = Join-Path (Split-Path $outFile) (
+                    [System.IO.Path]::GetFileNameWithoutExtension($outFile) + '_visual_qa_report.json'
+                )
+                if (Test-Path $dbReportFile) {
+                    $dbVqaReportPath = $dbReportFile
+                }
+            }
+
+            # Get output file size
+            $dbOutputSize = 0
+            if ($outFile -and (Test-Path $outFile)) {
+                $dbOutputSize = (Get-Item $outFile).Length
+            }
+
+            # Get source file hash (SHA-256)
+            $dbSourceHash = ""
+            try {
+                $dbSourceHash = (Get-FileHash -Path $InputFile -Algorithm SHA256 -ErrorAction Stop).Hash
+            } catch { }
+
+            # Copy cover to persistent location before temp cleanup
+            $dbCoverPath = ""
+            if ($coverImage -and (Test-Path $coverImage)) {
+                $coversDir = Join-Path $script:ModuleRoot "data" "covers"
+                if (-not (Test-Path $coversDir)) { New-Item -ItemType Directory -Path $coversDir -Force | Out-Null }
+                $coverDest = Join-Path $coversDir ([System.IO.Path]::GetFileNameWithoutExtension($outFile) + '.jpg')
+                Copy-Item $coverImage $coverDest -Force -ErrorAction SilentlyContinue
+                if (Test-Path $coverDest) { $dbCoverPath = $coverDest }
+            }
+
+            # Escape single quotes for Python string literals
+            $dbOutLeaf = ($outFile | Split-Path -Leaf) -replace "'", "''"
+            $dbTitle = if ($meta.Title) { $meta.Title -replace "'", "''" } else { "" }
+            $dbAuthor = if ($meta.Authors) { $meta.Authors -replace "'", "''" } else { "" }
+            $dbPublisher = if ($meta.Publisher) { $meta.Publisher -replace "'", "''" } else { "" }
+            $dbYear = if ($meta.Year) { $meta.Year } else { "None" }
+            $dbISBN = if ($meta.ISBN) { $meta.ISBN -replace "'", "''" } else { "" }
+            $dbPages = if ($vqaResult -and $vqaResult.pages_total) { $vqaResult.pages_total } else { "None" }
+            $dbOutExt = [System.IO.Path]::GetExtension($outFile).TrimStart('.').ToLower()
+            $dbDuration = [math]::Round($overallSw.Elapsed.TotalSeconds, 1)
+
+            # Escape paths for Python (backslash doubling)
+            $dbInputPathEsc = $InputFile -replace '\\', '\\\\'
+            $dbOutPathEsc = $outFile -replace '\\', '\\\\'
+            $dbVqaPathEsc = $dbVqaReportPath -replace '\\', '\\\\'
+            $dbCoverPathEsc = $dbCoverPath -replace '\\', '\\\\'
+            $dbToolsPath = (Join-Path $script:ModuleRoot "tools") -replace '\\', '\\\\'
+
+            $dbScript = @"
+import sys, json, os
+sys.path.insert(0, r'$dbToolsPath')
+from pattern_db import get_or_create_book, add_conversion, add_issues_from_vqa_report
+
+book_id = get_or_create_book(
+    filename='$dbOutLeaf',
+    title='$dbTitle' or None,
+    author='$dbAuthor' or None,
+    publisher='$dbPublisher' or None,
+    year=$dbYear,
+    format='$dbOutExt',
+    page_count=$dbPages,
+    isbn='$dbISBN' or None,
+    source_file_path=r'$dbInputPathEsc',
+    source_file_hash='$dbSourceHash' or None,
+    cover_image_path=r'$dbCoverPathEsc' or None,
+)
+
+conv_kwargs = dict(
+    book_id=book_id,
+    extraction_path='$extractionPath',
+    duration_seconds=$dbDuration,
+    output_file_path=r'$dbOutPathEsc',
+    output_file_size=$dbOutputSize,
+    conversion_flags='$($flagsJson -replace "'", "''")',
+)
+
+vqa_report_path = r'$dbVqaPathEsc'
+if vqa_report_path and os.path.isfile(vqa_report_path):
+    with open(vqa_report_path, 'r', encoding='utf-8') as f:
+        report = json.load(f)
+    tu = report.get('token_usage', {})
+    conv_kwargs['vqa_score'] = report.get('overall_score')
+    conv_kwargs['vqa_report_path'] = vqa_report_path
+    conv_kwargs['api_input_tokens'] = tu.get('input_tokens', 0)
+    conv_kwargs['api_output_tokens'] = tu.get('output_tokens', 0)
+    conv_kwargs['cost_usd'] = tu.get('estimated_cost_usd', 0)
+    cs = report.get('category_scores')
+    if cs:
+        conv_kwargs['category_scores'] = cs
+
+conv_id = add_conversion(**conv_kwargs)
+
+issue_count = 0
+if vqa_report_path and os.path.isfile(vqa_report_path):
+    issue_count = add_issues_from_vqa_report(conv_id, book_id, report)
+
+result = {'book_id': book_id, 'conversion_id': conv_id, 'issues': issue_count}
+if conv_kwargs.get('vqa_score') is not None:
+    result['vqa_score'] = conv_kwargs['vqa_score']
+print(json.dumps(result))
+"@
+
+            $dbResult = & $dbPython -c $dbScript 2>$null
+            if ($dbResult) {
+                $dbParsed = $dbResult | ConvertFrom-Json
+                $dbMsg = "Kindle: recorded in pattern database (book=$($dbParsed.book_id), conv=$($dbParsed.conversion_id)"
+                if ($dbParsed.vqa_score) { $dbMsg += ", score=$($dbParsed.vqa_score)" }
+                if ($dbParsed.issues -gt 0) { $dbMsg += ", issues=$($dbParsed.issues)" }
+                $dbMsg += ")"
+                Write-EbookLog $dbMsg
+            }
+        } catch {
+            Write-EbookLog "Kindle: pattern database write-back failed (non-blocking) -- $_" -Level WARN
         }
 
         return $true
