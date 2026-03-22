@@ -78,7 +78,11 @@ F:\Projects\EbookAutomation\
     ├── pdf_to_balabolka.py        ← PDF text extractor (GUI + CLI)
     ├── foh_scraper.py             ← FOH forum scraper
     ├── foh_parser.py              ← FOH data parser
+    ├── visual_qa.py               ← Visual QA pipeline (KFX→PDF→PNG→Claude Vision)
+    ├── visual_qa_rubric.md        ← QA evaluation rubric prompt template
+    ├── poppler\                   ← PDF rendering engine (pdftoppm for cover + VQA)
     └── data\                      ← scraped JSON, credentials, session files
+├── prompts\                       ← Claude Code implementation prompts (mobile/Termux workflow)
 ```
 
 ---
@@ -138,6 +142,13 @@ F:\Projects\EbookAutomation\
     "ffmpeg": "ffmpeg",
     "python": "python",
     "calibre": "C:\\Program Files\\Calibre2\\ebook-convert.exe"
+  },
+  "visual_qa": {
+    "enabled": false,
+    "dpi": 150,
+    "max_pages": 20,
+    "pass_threshold": 70,
+    "rubric_path": "tools\\visual_qa_rubric.md"
   }
 }
 ```
@@ -157,6 +168,11 @@ F:\Projects\EbookAutomation\
 | `Write-EbookLog` | Timestamped logging to file + console |
 | `Get-EbookConfig` | Load and cache settings.json |
 | `Get-EbookMetadataFromFilename` | Parse title/author from ebook filenames |
+| `Invoke-Balabolka` | TXT → WAV → MP3 pipeline via balcon.exe + ffmpeg |
+| `Send-ToClaudeAPI` | General-purpose Anthropic Messages API wrapper |
+| `Get-ChapterStructure` | Claude-assisted chapter/part detection from book text |
+| `Test-EbookPipeline` | Run pdfminer HTML extraction regression test suite |
+| `Test-ConversionQuality` | Visual QA on converted ebooks via Claude Vision API |
 
 ### pdf_to_balabolka.py — Modes
 
@@ -202,6 +218,8 @@ Changes to early phases cascade — always test downstream effects.
 | pypdf | pip package | PDF text extraction (MOBI/AZW/DJVU use Calibre intermediate) |
 | ebooklib + BeautifulSoup | pip packages | Native EPUB text extraction |
 | pymupdf | pip package | Two-column PDF layout detection and column-aware text extraction |
+| Poppler (`pdftoppm`) | `tools\poppler\` | PDF page rendering (cover extraction + Visual QA) |
+| pdf2image | pip package | Python wrapper for poppler page rendering |
 
 ---
 
@@ -285,6 +303,86 @@ A full list of all external dependencies (Python packages, standalone tools, API
 
 ---
 
+## Visual QA System
+
+Automated visual quality assurance for ebook conversions. Converts output files to paginated PDF via Calibre, renders sampled pages to PNG via pdf2image/poppler, sends them to the Claude Vision API for structured evaluation against a rubric.
+
+### Pipeline Flow
+
+KFX/AZW3 → Calibre → PDF → pdf2image/poppler → PNG pages → Claude Vision API → JSON report
+
+### Components
+
+| Component | Description |
+|---|---|
+| `tools/visual_qa.py` | Python script: Calibre PDF conversion → page sampling → PNG rendering → Claude Vision API → JSON report |
+| `tools/visual_qa_rubric.md` | Rubric prompt template with 6 weighted evaluation categories |
+| `Test-ConversionQuality` | PowerShell orchestrator (calls visual_qa.py, logs results) |
+| `-ValidateVisual` switch | Available on `Convert-ToKindle` and `Invoke-EbookPipeline` |
+
+### Rubric Categories
+
+| Category | Weight | What's Checked |
+|---|---|---|
+| Text Integrity | 25% | Garbled characters, OCR debris, encoding artifacts |
+| Heading Formatting | 20% | Visual distinction, consistent sizing, proper hierarchy |
+| Paragraph Flow | 20% | Spacing, line breaks, indentation |
+| TOC & Navigation | 15% | TOC present, entries match content, hierarchy correct |
+| Cover & Images | 10% | Cover renders, images not distorted |
+| Page Layout | 10% | Margins, text edges, blank space |
+
+### Usage
+
+```powershell
+# Standalone
+Test-ConversionQuality -InputFile "output\kindle\book.kfx"
+
+# During conversion
+Convert-ToKindle -InputFile "inbox\book.pdf" -ValidateVisual
+
+# Full pipeline
+Invoke-EbookPipeline -ValidateVisual
+```
+
+### Design Notes
+
+- Images sent in batches of 5 to avoid API timeouts (300s timeout per batch)
+- Smart page sampling: cover, TOC, chapter starts, random body pages, back matter (max 20 pages)
+- Reports written as `_visual_qa_report.json` alongside the output file
+- Warn-only — never blocks the pipeline, only logs results
+- Cost: ~$0.20-0.35 per book depending on page count and image complexity
+
+---
+
+## Claude API Integration
+
+The project uses the Anthropic Messages API for several AI-assisted features. The API key is stored as a permanent user environment variable (`ANTHROPIC_API_KEY`).
+
+| Feature | Function/Script | Model | Purpose |
+|---|---|---|---|
+| Chapter detection | `Get-ChapterStructure` | claude-sonnet-4-6 | Detect chapter/part headings from extracted text |
+| Text quality pass | `pdf_to_balabolka.py --api-key` | claude-sonnet-4-6 | Score extracted text and fix artifacts |
+| Visual QA | `Test-ConversionQuality` / `visual_qa.py` | claude-sonnet-4-6 | Evaluate rendered page images against rubric |
+
+### PowerShell API wrapper
+
+```powershell
+$response = Send-ToClaudeAPI -SystemPrompt "..." -UserMessage "..."
+```
+
+### Python API pattern
+
+```python
+response = requests.post(
+    "https://api.anthropic.com/v1/messages",
+    headers={"x-api-key": key, "content-type": "application/json", "anthropic-version": "2023-06-01"},
+    json={"model": "claude-sonnet-4-6", "max_tokens": N, "system": "...", "messages": [...]},
+    timeout=300,
+)
+```
+
+---
+
 ## FOH Daily Brief Generation
 
 When generating FOH daily briefs from JSON data:
@@ -302,6 +400,7 @@ When generating FOH daily briefs from JSON data:
 - **Don't add Python dependencies** without calling them out — no `requirements.txt` yet, manual installs
 - **Don't recommend rewriting** working components in a different language/framework without clear reason
 - **Don't hardcode absolute paths** — everything goes through `settings.json`
+- **Don't overwrite MCP config files** (e.g., `.mcp.json`) — always merge new entries into the existing object, never replace the entire file
 
 ---
 
@@ -342,10 +441,10 @@ When generating FOH daily briefs from JSON data:
 
 ## Current Priorities
 
-See `EbookAutomation_ProjectTracker.md` for the full backlog. Key items:
-1. ~~Expand `pdf_to_balabolka.py` to handle EPUB/MOBI/AZW natively~~ ✅ Done
-2. Improve Kindle TOC detection (Claude API integration planned)
-3. Add full comment-based help to all PowerShell functions
-4. Complete the inbox-to-MP3 pipeline (TXT → balcon → WAV → MP3)
-5. Test and configure the scheduled task
-6. Git workflow active — commit and push all changes to `origin/master`
+See `EbookAutomation_ProjectTracker.md` for the full backlog. Active items:
+1. Visual QA Phase 3 — Rubric tuning from pattern data, auto-fix loop for known fixable issues
+2. Heading duplication bug — Styled headings duplicated as garbled OCR text in body paragraphs (found by VQA on scanned PDFs)
+3. Wire `-UseClaudeChapters` into Kindle path (Task 10)
+4. Improve `clean_and_join()` heading preservation (Task 9)
+5. Add full comment-based help to all PowerShell functions (Task 3a)
+6. Complete the inbox-to-MP3 pipeline (Task 4a)
