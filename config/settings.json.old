@@ -1,0 +1,34 @@
+{
+  "paths": {
+    "inbox":       "inbox",
+    "processing":  "processing",
+    "archive":     "archive",
+    "logs":        "logs",
+    "audiobooks":  "output\\audiobooks",
+    "kindle":      "output\\kindle",
+    "python":      "python",
+    "calibre":     "C:\\Program Files\\Calibre2\\ebook-convert.exe"
+  },
+  "tts": {
+    "enabled":         true,
+    "input_formats":   ["pdf", "epub", "txt", "docx"],
+    "output_suffix":   "_balabolka.txt"
+  },
+  "kindle": {
+    "enabled":         true,
+    "input_formats":   ["epub", "pdf", "txt", "docx", "mobi", "azw"],
+    "output_format":   "azw3",
+    "calibre_options": "--output-profile kindle_pw3 --embed-all-fonts"
+  },
+  "scheduler": {
+    "interval_minutes": 15,
+    "task_name":        "EbookAutomation",
+    "run_on_login":     true
+  },
+  "notifications": {
+    "enabled":          true,
+    "show_toast":       true
+  },
+  "archive_originals":  true,
+  "log_level":          "INFO"
+}

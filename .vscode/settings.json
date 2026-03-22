@@ -1,0 +1,57 @@
+{
+    // ── Terminal ─────────────────────────────────────────────────
+    // Use PowerShell 7 as the default terminal
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+    // Auto-load the EbookAutomation module when a PowerShell terminal opens
+    "terminal.integrated.profiles.windows": {
+        "PowerShell": {
+            "source": "PowerShell",
+            "args": [
+                "-NoExit",
+                "-ExecutionPolicy", "Bypass",
+                "-Command",
+                "Import-Module '.\\module\\EbookAutomation.psm1' -Force; Write-Host '  EbookAutomation module loaded.' -ForegroundColor Green"
+            ]
+        }
+    },
+
+    // ── Files ────────────────────────────────────────────────────
+    "files.encoding": "utf8",
+    "files.eol": "\r\n",
+    "files.associations": {
+        "*.psd1": "powershell",
+        "*.psm1": "powershell",
+        "*.dic": "plaintext"
+    },
+    // Hide noisy folders from the explorer
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/processing": true
+    },
+
+    // ── Editor ───────────────────────────────────────────────────
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.rulers": [100],
+    "editor.renderWhitespace": "trailing",
+
+    // ── PowerShell ───────────────────────────────────────────────
+    "powershell.codeFormatting.preset": "Stroustrup",
+    "powershell.scriptAnalysis.enable": true,
+
+    // ── Python ───────────────────────────────────────────────────
+    "python.analysis.typeCheckingMode": "basic",
+    "[python]": {
+        "editor.tabSize": 4,
+        "editor.formatOnSave": false
+    },
+
+    // ── Search ───────────────────────────────────────────────────
+    "search.exclude": {
+        "**/tools/balcon/**": true,
+        "**/tools/data/**": true,
+        "**/output/**": true,
+        "**/archive/**": true
+    }
+}

@@ -1,0 +1,354 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Balabolka Master Pronunciation Dictionary
+#  Project: EbookAutomation
+#  Version: 1.0 | Created: March 2026
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  USAGE:
+#    GUI:  Edit → Pronunciation Correction → Import this file
+#    CLI:  balcon -d master_pronunciation.dic -d book_specific.dic
+#
+#  FORMAT:
+#    Each line is:  original_text<TAB>spoken_replacement
+#    Lines starting with # are comments
+#    Matching is case-sensitive
+#
+#  MAINTENANCE:
+#    After converting a new book, review its per-book .dic file.
+#    Move confirmed-good entries here and delete them from the
+#    per-book file.  Keep this file sorted by category.
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ─── ANCIENT EGYPT ────────────────────────────────────────────────────
+
+Akhnaton	Awk-NAH-ton
+Amen-Hotep	AH-men HO-tep
+Amenhotep	AH-men-HO-tep
+Amon-Ra	AH-mon RAH
+Amun-Ra	AH-moon RAH
+Anubis	Ah-NOO-bis
+Hatshepsut	Hat-SHEP-soot
+Horus	HOR-us
+Imhotep	Im-HO-tep
+Isis	EYE-sis
+Khut-en-Aton	KOOT en AH-ton
+Maat	MAH-aht
+Nefertiti	Neh-fur-TEE-tee
+Osiris	Oh-SY-ris
+Pharaoh	FAIR-oh
+Ptolemy	TOL-uh-mee
+Ptolemys	TOL-uh-meez
+Ptolemaic	Tol-uh-MAY-ik
+Ramesses	RAM-uh-seez
+Sais	SAY-iss
+Thebes	THEEBZ
+Tutankhamun	Toot-ank-AH-moon
+Tutankhamen	Toot-ank-AH-men
+
+
+# ─── ANCIENT GREECE & ROME ───────────────────────────────────────────
+
+Aeschylus	ESS-kih-lus
+Agamemnon	Ag-uh-MEM-non
+Aratus	AIR-uh-tus
+Archimedes	Ar-kih-MEE-deez
+Aristotle	AIR-iss-tot-ul
+Athena	Ah-THEE-nah
+Cicero	SIS-er-oh
+Critias	KRIH-tee-us
+Demosthenes	Deh-MOSS-theh-neez
+Diogenes	Die-OJ-en-eez
+Dionysus	Die-oh-NY-sus
+Euclid	YOO-klid
+Euripides	Your-IP-ih-deez
+Galienus	Gal-ee-AY-nus
+Heraclitus	Hair-uh-KLY-tus
+Herodotus	Heh-ROD-uh-tus
+Hesiod	HEE-see-od
+Hesperides	Hes-PAIR-ih-deez
+Hesperic	Hes-PAIR-ik
+Livy	LIV-ee
+Odysseus	Oh-DIS-ee-us
+Pericles	PAIR-ih-kleez
+Plato	PLAY-toh
+Platonopolis	Plat-on-OP-oh-lis
+Plotinus	Ploh-TIE-nus
+Plutarch	PLOO-tark
+Pythagoras	Pih-THAG-or-us
+Pythagorean	Pih-thag-or-EE-un
+Seneca	SEN-eh-kah
+Socrates	SOK-ruh-teez
+Socratic	Soh-KRAT-ik
+Solon	SO-lon
+Sophocles	SOF-oh-kleez
+Tacitus	TASS-ih-tus
+Thucydides	Thoo-SID-ih-deez
+Xenophon	ZEN-oh-fon
+
+
+# ─── PERSIAN / IRANIAN ───────────────────────────────────────────────
+
+Ahmadinejad	Ah-mah-dee-neh-ZHAHD
+Ayatollah	Eye-ah-TOE-lah
+Basij	Bah-SEEJ
+Bushehr	Boo-SHARE
+Cyrus	SY-rus
+Darius	Dah-RY-us
+Esfahan	Es-fah-HAHN
+Hormuz	Hor-MOOZ
+IRGC	I R G C
+Isfahan	Is-fah-HAHN
+Khamenei	Hah-men-AY
+Khatami	Hah-tah-MEE
+Kharg	KARG
+Khomeini	Ho-MAY-nee
+Majlis	MAJ-lis
+Mossadegh	Moss-ah-DEK
+Mossadeq	Moss-ah-DEK
+Pahlavi	Pah-LAH-vee
+Persepolis	Per-SEP-oh-lis
+Qasem	KAH-sem
+Qom	KOHM
+Rafsanjani	Raf-san-JAH-nee
+Raisi	Rah-EE-see
+SAVAK	Sah-VAHK
+Shahnameh	Shah-NAH-meh
+Soleimani	So-lay-MAH-nee
+Zagros	ZAG-ross
+Zarif	Zah-REEF
+Zoroaster	Zor-oh-ASS-ter
+Zoroastrian	Zor-oh-ASS-tree-un
+
+
+# ─── ARABIC / MIDDLE EAST ───────────────────────────────────────────
+
+Abbasid	Ah-BAH-sid
+Abu Dhabi	AH-boo DAH-bee
+al-Assad	Al-AH-sahd
+al-Qaeda	Al-KY-dah
+Baathist	BAH-thist
+Bahrain	Bah-RAIN
+Basra	BAZ-rah
+Bedouin	BED-oo-in
+Caliphate	KAL-ih-fate
+Druze	DROOZ
+Erdogan	AIR-doh-wahn
+Euphrates	You-FRAY-teez
+Fatwa	FAT-wah
+Hajj	HAHJ
+Hamas	Hah-MAHS
+Hezbollah	Hez-boh-LAH
+Houthi	HOO-thee
+Imam	Ih-MAHM
+Intifada	In-tih-FAH-dah
+Jeddah	JED-ah
+Koran	Kor-AHN
+Madrasah	MAH-drah-sah
+Medina	Meh-DEE-nah
+Mecca	MEK-ah
+Muezzin	Moo-EZ-in
+Mujahideen	Moo-jah-heh-DEEN
+Nasrallah	Naz-RAL-ah
+Netanyahu	Net-an-YAH-hoo
+Petrodollar	PET-roh-dollar
+Quds	KOODS
+Riyadh	Ree-YAHD
+Salafi	Sal-AH-fee
+Shia	SHEE-ah
+Shiite	SHEE-ite
+Sunni	SOO-nee
+Wahhabism	Wah-HAH-biz-um
+Wahhabi	Wah-HAH-bee
+Yanbu	YAN-boo
+
+
+# ─── RUSSIAN ─────────────────────────────────────────────────────────
+
+Bolshevik	BOWL-sheh-vik
+Brezhnev	BREZH-nev
+Chechnya	CHECH-nyah
+Crimea	Cry-MEE-ah
+Donbas	Don-BAHS
+Donbass	Don-BAHS
+Duma	DOO-mah
+Gazprom	GAHZ-prom
+Gorbachev	Gor-bah-CHOV
+Groznyi	GROHZ-nee
+Gulag	GOO-lahg
+GRU	G R U
+KGB	K G B
+Kremlin	KREM-lin
+Lavrov	Lah-VROFF
+Lubyanka	Loo-BYAHN-kah
+Medvedev	Med-VEH-dev
+Oligarch	OL-ih-gark
+Pravda	PRAHV-dah
+Putin	POO-tin
+Shoigu	Shoy-GOO
+Siloviki	Sil-oh-VIK-ee
+Slavophile	SLAV-oh-file
+Soviet	SO-vee-et
+Surkov	SOOR-kov
+Tsar	ZAHR
+Tsarism	ZAHR-iz-um
+Zelensky	Zeh-LEN-skee
+Zelenskyy	Zeh-LEN-skee
+
+
+# ─── CHINESE ─────────────────────────────────────────────────────────
+
+Confucius	Kon-FEW-shus
+Deng Xiaoping	DUNG Shee-ow-PING
+Lao Tzu	LAO DZUH
+Lao-tze	LAO DZUH
+Mao Zedong	MOW Zeh-DONG
+Qing	CHING
+Renminbi	Ren-min-BEE
+Sun Tzu	SOON DZUH
+Taoism	DOW-iz-um
+Taoist	DOW-ist
+Tao	DOW
+Xi Jinping	SHEE Jin-PING
+Yuan	Yoo-AHN
+Zhongguo	JOHNG-gwoh
+
+
+# ─── EUROPEAN HISTORICAL ─────────────────────────────────────────────
+
+Aquinas	Ah-KWY-nas
+Charlemagne	SHAR-leh-main
+Comte de St. Germain	COHNT duh San Jer-MAIN
+Comte	KOHNT
+Descartes	Day-KART
+Fichte	FIK-teh
+Goethe	GUR-teh
+Hegel	HAY-gul
+Kalergi	Kah-LAIR-gee
+Leibniz	LIBE-nits
+Machiavelli	Mak-ee-ah-VEL-ee
+Montesquieu	Mon-teh-SKYOO
+Nietzsche	NEE-cheh
+Nostradamus	Nos-truh-DAH-mus
+Richelieu	RISH-uh-loo
+Robespierre	ROHBZ-pee-air
+Rothschild	ROTHS-child
+Rousseau	Roo-SOH
+Tocqueville	TOKE-vil
+Voltaire	Vol-TAIR
+Westphalia	West-FAIL-ee-ah
+
+
+# ─── ESOTERIC / MYSTICAL / PHILOSOPHICAL ────────────────────────────
+
+Bensalem	Ben-SAH-lem
+Cabala	Kah-BAH-lah
+Cabalist	KAB-ah-list
+Cibola	SEE-boh-lah
+Freemasonry	FREE-may-son-ree
+Gematria	Geh-MAY-tree-ah
+Hermeticism	Her-MET-ih-siz-um
+Instauratio Magna	In-stow-RAH-tee-oh MAG-nah
+Kabbalah	Kah-BAH-lah
+Kabbalistic	Kab-ah-LIST-ik
+Novum Organum	NO-vum Or-GAN-um
+Qabalah	Kah-BAH-lah
+Rosicrucian	Roh-zih-KROO-shun
+Sabbatai	Sah-bah-TIE
+Sefirot	Seh-feer-OHT
+Sylva Sylvarum	SIL-vah Sil-VAR-um
+Talmud	TAL-mood
+Talmudic	Tal-MOOD-ik
+Tanakh	Tah-NAHK
+Theosophy	Thee-OS-oh-fee
+Theosophical	Thee-oh-SOF-ih-kul
+Torah	TOR-ah
+Zohar	ZOH-har
+
+
+# ─── INTELLIGENCE / ESPIONAGE ────────────────────────────────────────
+
+Aman	AH-mahn
+ASIS	AY-sis
+AU10TIX	Aw-TEN-tix
+CENTCOM	SENT-com
+DGSE	D G S E
+FSB	F S B
+Kidon	Kih-DOHN
+Mossad	Moh-SAHD
+MI5	M I 5
+MI6	M I 6
+Ostrovsky	Oss-TROF-skee
+Palantir	PAL-an-teer
+SIGINT	SIG-int
+Shin Bet	SHIN BET
+Stasi	STAH-zee
+Stuxnet	STUCKS-net
+SVR	S V R
+
+
+# ─── JUDAIC / HEBREW ─────────────────────────────────────────────────
+
+Ashkenazi	Ash-ken-AH-zee
+Diaspora	Die-ASS-por-ah
+Eretz	AIR-etz
+Goyim	GOY-im
+Halakha	Hah-LAH-kah
+Hasidic	Hah-SID-ik
+Khazar	Kah-ZAHR
+Koestler	KEST-ler
+Likud	Lih-KOOD
+Magen	Mah-GEN
+Messiah	Meh-SY-ah
+Messianic	Mess-ee-AN-ik
+Midrash	MID-rahsh
+Mishnah	MISH-nah
+Pogrom	Poh-GROM
+Sabbatean	Sab-ah-TEE-an
+Sanhedrin	San-HED-rin
+Sephardic	Seh-FAR-dik
+Shoah	SHO-ah
+Yeshiva	Yeh-SHEE-vah
+Zevi	ZEH-vee
+Zionism	ZY-on-iz-um
+Zionist	ZY-on-ist
+
+
+# ─── LATIN / LEGAL / ACADEMIC ────────────────────────────────────────
+
+Ad hoc	Ad HOK
+Ad hominem	Ad HOM-in-em
+Alma mater	AL-mah MAH-ter
+Bona fide	BOH-nah FY-dee
+Casus belli	KAH-sus BEL-eye
+Cui bono	KWEE BOH-no
+De facto	Day FAK-toh
+De jure	Day JUR-ee
+E pluribus unum	Ee PLUR-ih-bus OON-um
+Et cetera	Et SET-er-ah
+Ex nihilo	Ex NIH-ih-loh
+Habeas corpus	HAY-bee-us KOR-pus
+In absentia	In ab-SEN-she-ah
+Modus operandi	MOH-dus op-er-AN-dee
+Novus ordo seclorum	NO-vus OR-doh Seh-KLOR-um
+Per se	Per SAY
+Pro tempore	Pro TEM-por-ee
+Quid pro quo	KWID pro KWOH
+Sine qua non	SIN-ay kwah NON
+Status quo	STAT-us KWOH
+
+
+# ─── BREASTED & ORIENTALIST SCHOLARS ────────────────────────────────
+# (Names of scholars frequently cited in esoteric/historical works)
+
+Breasted	BRES-ted
+Blavatsky	Blah-VAT-skee
+Budge	BUJ
+Champollion	Sham-pole-YON
+Compania	Kom-PAN-ee-ah
+Frazer	FRAY-zer
+Hesperic	Hes-PAIR-ik
+Massey	MASS-ee
+Müller	MOOL-er
+Schliemann	SHLEE-mahn
