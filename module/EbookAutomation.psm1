@@ -534,7 +534,10 @@ function Convert-ToKindle {
 
         # ── Shared across all paths ──
         [switch]$ForceColumns,
-        [switch]$ValidateVisual
+        [switch]$ValidateVisual,
+
+        [Parameter(HelpMessage = 'Skip cache lookup and force a fresh conversion even if this book has been successfully converted before.')]
+        [switch]$NoCache
     )
 
     $cfg        = Get-EbookConfig
@@ -564,6 +567,28 @@ function Convert-ToKindle {
     $outFmt   = $cfg.kindle.output_format          # 'kfx' or 'azw3'
     $stem     = [System.IO.Path]::GetFileNameWithoutExtension($InputFile)
     $fileName = [System.IO.Path]::GetFileName($InputFile)
+
+    # Cache check — skip conversion if book was already processed successfully
+    if (-not $NoCache) {
+        try {
+            $python    = $cfg.paths.python
+            $toolsDir  = Join-Path $script:ModuleRoot 'tools'
+            $cacheThreshold = if ($cfg.visual_qa.pass_threshold) { $cfg.visual_qa.pass_threshold } else { 70 }
+            $cacheCheck = & $python -c "import sys; sys.path.insert(0, r'$toolsDir'); from pattern_db import get_cached_result; import json; result = get_cached_result(filename='$fileName', min_score=$cacheThreshold); print(json.dumps(result) if result else '')" 2>$null
+
+            if ($cacheCheck) {
+                $cached = $cacheCheck | ConvertFrom-Json
+                if ($cached.vqa_score -and $cached.vqa_score -ge $cacheThreshold) {
+                    Write-EbookLog "Kindle: cache hit -- '$fileName' was previously converted (score: $($cached.vqa_score)/100)" -Level SUCCESS
+                    Write-EbookLog "Kindle: use -NoCache to force re-conversion"
+                    return $true
+                }
+            }
+        } catch {
+            # Cache check failed — continue with normal conversion (non-blocking)
+            Write-EbookLog "Kindle: cache check failed (continuing with conversion) -- $_" -Level WARN
+        }
+    }
 
     # Parse metadata from filename for a clean output name and Calibre flags
     $meta = Get-EbookMetadataFromFilename $fileName
@@ -1305,7 +1330,8 @@ function Invoke-EbookPipeline {
         [switch]$UseClaudeChapters,
         [switch]$UseOCR,
         [switch]$ForceColumns,
-        [switch]$ValidateVisual
+        [switch]$ValidateVisual,
+        [switch]$NoCache
     )
 
     $pipelineStart  = Get-Date
@@ -1330,6 +1356,7 @@ function Invoke-EbookPipeline {
     if ($UseOCR) { Write-EbookLog "  Tesseract OCR: FORCED" }
     if ($ValidateVisual) { Write-EbookLog "  Visual QA: ENABLED" }
     if ($ForceColumns) { Write-EbookLog "  Column-aware extraction: FORCED (-ForceColumns)" }
+    if ($NoCache) { Write-EbookLog "  Cache bypass: ENABLED (-NoCache)" }
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
@@ -1490,7 +1517,7 @@ function Invoke-EbookPipeline {
                 Write-EbookLog "  Kindle: starting conversion..."
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {

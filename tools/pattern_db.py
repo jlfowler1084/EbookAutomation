@@ -12,11 +12,16 @@ Usage:
     python tools/pattern_db.py fixes         # List fix patterns with success rates
     python tools/pattern_db.py trend         # Show recent score trend
     python tools/pattern_db.py cost          # Show cost summary
+    python tools/pattern_db.py cache <filename>          # Check cache for a book
+    python tools/pattern_db.py override add <filename>   # Add a book override
+    python tools/pattern_db.py override show <filename>  # Show overrides for a book
+    python tools/pattern_db.py override list             # List all book overrides
 """
 
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime
@@ -47,6 +52,7 @@ CREATE TABLE IF NOT EXISTS books (
     file_size_bytes INTEGER,
     page_count INTEGER,
     source_type TEXT,  -- digital_native, scan, ocr, unknown
+    title_hash TEXT,  -- normalized hash for fuzzy matching
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -133,6 +139,26 @@ CREATE TABLE IF NOT EXISTS source_profiles (
     common_issues TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- User-submitted book configurations and overrides
+CREATE TABLE IF NOT EXISTS book_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER REFERENCES books(id),
+    isbn TEXT,
+    title_hash TEXT,  -- normalized hash of title+author for fuzzy matching
+    chapter_structure TEXT,  -- JSON array of chapter definitions
+    extraction_path TEXT,  -- recommended extraction path override
+    extraction_notes TEXT,  -- free-text notes ("use OCR mode", "skip first 3 pages")
+    calibre_options TEXT,  -- override calibre_options for this specific book
+    skip_front_pages INTEGER,  -- number of front-matter pages to skip
+    skip_back_pages INTEGER,  -- number of back-matter pages to skip
+    source TEXT DEFAULT 'local',  -- 'local' = user-entered, 'community' = shared
+    submitted_by TEXT,
+    review_status TEXT DEFAULT 'approved',  -- local entries auto-approved
+    upvotes INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 _INDEXES_SQL = """
@@ -144,6 +170,14 @@ CREATE INDEX IF NOT EXISTS idx_conversions_book
     ON conversions(book_id, iteration);
 CREATE INDEX IF NOT EXISTS idx_books_filename
     ON books(filename);
+CREATE INDEX IF NOT EXISTS idx_books_title_hash
+    ON books(title_hash);
+CREATE INDEX IF NOT EXISTS idx_book_overrides_isbn
+    ON book_overrides(isbn);
+CREATE INDEX IF NOT EXISTS idx_book_overrides_title_hash
+    ON book_overrides(title_hash);
+CREATE INDEX IF NOT EXISTS idx_book_overrides_book_id
+    ON book_overrides(book_id);
 """
 
 # ---------------------------------------------------------------------------
@@ -167,8 +201,20 @@ def get_db(db_path=None):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA_SQL)
+    _migrate(conn)
     conn.executescript(_INDEXES_SQL)
     return conn
+
+
+def _migrate(conn):
+    """Apply schema migrations for columns added after initial release."""
+    # Check if books.title_hash exists
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(books)").fetchall()
+    }
+    if 'title_hash' not in columns:
+        conn.execute("ALTER TABLE books ADD COLUMN title_hash TEXT")
+        conn.commit()
 
 
 def init_db(db_path=None):
@@ -192,15 +238,16 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
              format='pdf', file_size_bytes=None, page_count=None,
              source_type='unknown', db_path=None):
     """Add a book record. Returns the book ID."""
+    title_hash = _normalize_title_hash(title, author)
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
             """INSERT INTO books
                (filename, title, author, publisher, year, format,
-                file_size_bytes, page_count, source_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                file_size_bytes, page_count, source_type, title_hash)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (filename, title, author, publisher, year, format,
-             file_size_bytes, page_count, source_type)
+             file_size_bytes, page_count, source_type, title_hash)
         )
         conn.commit()
         return cursor.lastrowid
@@ -222,10 +269,32 @@ def get_book_by_filename(filename, db_path=None):
 
 
 def get_or_create_book(filename, db_path=None, **kwargs):
-    """Get existing book ID or create new. Returns book ID."""
+    """Get existing book ID or create new. Returns book ID.
+
+    Lookup order: exact filename match, then title_hash fallback.
+    """
     existing = get_book_by_filename(filename, db_path)
     if existing:
         return existing["id"]
+
+    # Try title_hash fallback before creating
+    title = kwargs.get('title')
+    author = kwargs.get('author')
+    if title:
+        title_hash = _normalize_title_hash(title, author)
+        if title_hash:
+            conn = get_db(db_path)
+            try:
+                cursor = conn.execute(
+                    "SELECT id FROM books WHERE title_hash = ? LIMIT 1",
+                    (title_hash,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    return row["id"]
+            finally:
+                conn.close()
+
     return add_book(filename, db_path=db_path, **kwargs)
 
 
@@ -551,6 +620,278 @@ def update_source_profile(publisher, decade, format, db_path=None):
 
 
 # ---------------------------------------------------------------------------
+# Cache Lookup
+# ---------------------------------------------------------------------------
+
+
+def get_cached_result(filename=None, isbn=None, title=None, author=None,
+                      min_score=80, db_path=None):
+    """Check if a book has already been successfully converted.
+
+    Lookup order:
+    1. Exact filename match
+    2. ISBN match (if provided)
+    3. Title+author fuzzy match (if provided)
+
+    Returns the best conversion record as a dict, or None if no cache hit.
+    The dict includes: book_id, filename, vqa_score, extraction_path,
+    vqa_report_path, cost_usd, created_at.
+    """
+    conn = get_db(db_path)
+    try:
+        book_id = None
+
+        # 1. Exact filename match
+        if filename:
+            row = conn.execute(
+                "SELECT id FROM books WHERE filename = ?", (filename,)
+            ).fetchone()
+            if not row and not filename.endswith(('.kfx', '.azw3')):
+                # Try with common output extensions
+                for ext in ('.kfx', '.azw3'):
+                    stem = Path(filename).stem
+                    row = conn.execute(
+                        "SELECT id FROM books WHERE filename = ?",
+                        (stem + ext,)
+                    ).fetchone()
+                    if row:
+                        break
+            if row:
+                book_id = row["id"]
+
+        # 2. ISBN match
+        if not book_id and isbn:
+            row = conn.execute(
+                """SELECT bo.book_id FROM book_overrides bo
+                   WHERE bo.isbn = ? AND bo.book_id IS NOT NULL
+                   LIMIT 1""",
+                (isbn,)
+            ).fetchone()
+            if row:
+                book_id = row["book_id"]
+
+        # 3. Title+author fuzzy match
+        if not book_id and title:
+            title_hash = _normalize_title_hash(title, author)
+            if title_hash:
+                row = conn.execute(
+                    "SELECT id FROM books WHERE title_hash = ? LIMIT 1",
+                    (title_hash,)
+                ).fetchone()
+                if row:
+                    book_id = row["id"]
+
+        if not book_id:
+            return None
+
+        # Find the best conversion for this book
+        cursor = conn.execute(
+            """SELECT c.id as conversion_id, b.id as book_id, b.filename,
+                      c.vqa_score, c.extraction_path, c.vqa_report_path,
+                      c.cost_usd, c.created_at
+               FROM conversions c
+               JOIN books b ON b.id = c.book_id
+               WHERE c.book_id = ? AND c.vqa_score >= ?
+               ORDER BY c.vqa_score DESC, c.created_at DESC
+               LIMIT 1""",
+            (book_id, min_score)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
+                           min_score=80, db_path=None):
+    """Convenience wrapper -- returns just the output file path if a cached
+    conversion exists, or None.
+
+    Checks that the output file still exists on disk before returning.
+    If the file has been deleted, returns None (cache miss).
+    """
+    result = get_cached_result(
+        filename=filename, isbn=isbn, title=title, author=author,
+        min_score=min_score, db_path=db_path
+    )
+    if not result:
+        return None
+
+    # Derive the output path from the VQA report path or filename
+    report_path = result.get("vqa_report_path")
+    if report_path:
+        # The output file is alongside the report, same stem minus _visual_qa_report*
+        report = Path(report_path)
+        stem = report.stem
+        for suffix in ('_visual_qa_report', '_visual_qa_report_LEGACY',
+                       '_visual_qa_report_HTML'):
+            if stem.endswith(suffix):
+                stem = stem[:-len(suffix)]
+                break
+        # Try common output extensions
+        for ext in ('.kfx', '.azw3', '.epub'):
+            candidate = report.parent / (stem + ext)
+            if candidate.exists():
+                return str(candidate)
+
+    # Fallback: check the default kindle output directory
+    kindle_dir = _PROJECT_ROOT / "output" / "kindle"
+    book_filename = result.get("filename", "")
+    candidate = kindle_dir / book_filename
+    if candidate.exists():
+        return str(candidate)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Book Overrides
+# ---------------------------------------------------------------------------
+
+
+def add_book_override(book_id=None, isbn=None, title=None, author=None,
+                      chapter_structure=None, extraction_path=None,
+                      extraction_notes=None, calibre_options=None,
+                      skip_front_pages=None, skip_back_pages=None,
+                      db_path=None):
+    """Add a manual override for a specific book.
+
+    At least one of book_id, isbn, or title must be provided.
+    chapter_structure should be a JSON-serializable list of dicts:
+    [{"level": 1, "title": "Part One"}, {"level": 2, "title": "Chapter 1: ..."}]
+
+    Returns the override ID.
+    """
+    if not any([book_id, isbn, title]):
+        raise ValueError("At least one of book_id, isbn, or title is required")
+
+    title_hash = _normalize_title_hash(title, author) if title else None
+
+    # Serialize chapter_structure to JSON string
+    chapters_json = None
+    if chapter_structure is not None:
+        if isinstance(chapter_structure, str):
+            chapters_json = chapter_structure
+        else:
+            chapters_json = json.dumps(chapter_structure)
+
+    conn = get_db(db_path)
+    try:
+        cursor = conn.execute(
+            """INSERT INTO book_overrides
+               (book_id, isbn, title_hash, chapter_structure,
+                extraction_path, extraction_notes, calibre_options,
+                skip_front_pages, skip_back_pages)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (book_id, isbn, title_hash, chapters_json,
+             extraction_path, extraction_notes, calibre_options,
+             skip_front_pages, skip_back_pages)
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def get_book_override(filename=None, isbn=None, book_id=None, title=None,
+                      author=None, db_path=None):
+    """Look up overrides for a book.
+
+    Lookup order: book_id > isbn > filename (via books table) > title_hash.
+    Returns dict with all override fields, or None if no override exists.
+    chapter_structure is returned as a parsed Python list (not raw JSON string).
+    """
+    conn = get_db(db_path)
+    try:
+        override = None
+
+        # 1. Direct book_id lookup
+        if book_id:
+            override = conn.execute(
+                "SELECT * FROM book_overrides WHERE book_id = ? LIMIT 1",
+                (book_id,)
+            ).fetchone()
+
+        # 2. ISBN lookup
+        if not override and isbn:
+            override = conn.execute(
+                "SELECT * FROM book_overrides WHERE isbn = ? LIMIT 1",
+                (isbn,)
+            ).fetchone()
+
+        # 3. Filename -> book_id -> override
+        if not override and filename:
+            book = conn.execute(
+                "SELECT id FROM books WHERE filename = ?", (filename,)
+            ).fetchone()
+            if book:
+                override = conn.execute(
+                    "SELECT * FROM book_overrides WHERE book_id = ? LIMIT 1",
+                    (book["id"],)
+                ).fetchone()
+
+        # 4. Title hash lookup
+        if not override and title:
+            title_hash = _normalize_title_hash(title, author)
+            if title_hash:
+                override = conn.execute(
+                    "SELECT * FROM book_overrides WHERE title_hash = ? LIMIT 1",
+                    (title_hash,)
+                ).fetchone()
+
+        if not override:
+            return None
+
+        result = dict(override)
+        # Parse chapter_structure from JSON string
+        if result.get("chapter_structure"):
+            try:
+                result["chapter_structure"] = json.loads(
+                    result["chapter_structure"]
+                )
+            except (json.JSONDecodeError, TypeError):
+                pass  # Leave as string if not valid JSON
+        return result
+    finally:
+        conn.close()
+
+
+def update_book_override(override_id, db_path=None, **kwargs):
+    """Update fields on an existing override. Only provided kwargs are updated."""
+    allowed = {
+        'book_id', 'isbn', 'title_hash', 'chapter_structure',
+        'extraction_path', 'extraction_notes', 'calibre_options',
+        'skip_front_pages', 'skip_back_pages', 'source',
+        'submitted_by', 'review_status', 'upvotes'
+    }
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return
+
+    # Serialize chapter_structure if present
+    if 'chapter_structure' in updates:
+        cs = updates['chapter_structure']
+        if cs is not None and not isinstance(cs, str):
+            updates['chapter_structure'] = json.dumps(cs)
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values())
+    values.append(override_id)
+
+    conn = get_db(db_path)
+    try:
+        conn.execute(
+            f"""UPDATE book_overrides
+                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?""",
+            values
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
 
@@ -863,9 +1204,251 @@ def _cmd_cost(args):
     print(f"Avg VQA score:      {summary.get('avg_vqa_score', 0) or 0:.1f}")
 
 
+def _cmd_cache(args):
+    filename = args.filename
+    min_score = args.min_score
+
+    # Try exact match first, then partial
+    result = get_cached_result(filename=filename, min_score=min_score,
+                               db_path=args.db_path)
+    if not result:
+        # Try partial filename match to find the book, then look up cache
+        conn = get_db(args.db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT filename FROM books WHERE filename LIKE ?",
+                (f"%{filename}%",)
+            )
+            matches = cursor.fetchall()
+        finally:
+            conn.close()
+
+        for m in matches:
+            result = get_cached_result(
+                filename=m["filename"], min_score=min_score,
+                db_path=args.db_path
+            )
+            if result:
+                break
+
+    if not result:
+        print(f"No cache hit for: {filename} (min score: {min_score})")
+        return
+
+    print(f"Cache HIT: {result['filename']}")
+    print(f"  VQA Score:       {result['vqa_score']}")
+    print(f"  Extraction path: {result['extraction_path']}")
+    print(f"  Cost:            ${result.get('cost_usd', 0):.4f}")
+    print(f"  Date:            {result['created_at']}")
+
+    output_path = get_cached_output_path(
+        filename=result['filename'], min_score=min_score,
+        db_path=args.db_path
+    )
+    if output_path:
+        print(f"  Output file:     {output_path}")
+    else:
+        print(f"  Output file:     NOT FOUND ON DISK (cache stale)")
+
+
+def _cmd_override_add(args):
+    filename = args.filename
+
+    # Look up existing book
+    book = get_book_by_filename(filename, db_path=args.db_path)
+    if not book:
+        conn = get_db(args.db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM books WHERE filename LIKE ?",
+                (f"%{filename}%",)
+            )
+            matches = cursor.fetchall()
+        finally:
+            conn.close()
+
+        if len(matches) == 1:
+            book = dict(matches[0])
+        elif len(matches) > 1:
+            print(f"Multiple books match '{filename}':")
+            for m in matches:
+                print(f"  [{m['id']}] {m['filename']}")
+            print("Use an exact filename.")
+            return
+
+    book_id = book["id"] if book else None
+    title = book["title"] if book else None
+    author = book["author"] if book else None
+
+    # Load chapter structure from file if provided
+    chapter_structure = None
+    if args.chapters:
+        with open(args.chapters, 'r', encoding='utf-8') as f:
+            chapter_structure = json.load(f)
+
+    override_id = add_book_override(
+        book_id=book_id,
+        title=title,
+        author=author,
+        extraction_path=args.extraction_path,
+        extraction_notes=args.notes,
+        chapter_structure=chapter_structure,
+        skip_front_pages=args.skip_front,
+        skip_back_pages=args.skip_back,
+        db_path=args.db_path,
+    )
+
+    print(f"Override added (ID: {override_id})")
+    if book:
+        print(f"  Book: [{book_id}] {book['filename']}")
+    else:
+        print(f"  Book not in DB yet (override will match by title hash)")
+    if args.extraction_path:
+        print(f"  Extraction path: {args.extraction_path}")
+    if args.notes:
+        print(f"  Notes: {args.notes}")
+    if chapter_structure:
+        print(f"  Chapter structure: {len(chapter_structure)} entries loaded")
+    if args.skip_front:
+        print(f"  Skip front pages: {args.skip_front}")
+    if args.skip_back:
+        print(f"  Skip back pages: {args.skip_back}")
+
+
+def _cmd_override_show(args):
+    filename = args.filename
+    override = get_book_override(filename=filename, db_path=args.db_path)
+    if not override:
+        # Try partial match
+        conn = get_db(args.db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT filename FROM books WHERE filename LIKE ?",
+                (f"%{filename}%",)
+            )
+            matches = cursor.fetchall()
+        finally:
+            conn.close()
+
+        for m in matches:
+            override = get_book_override(
+                filename=m["filename"], db_path=args.db_path
+            )
+            if override:
+                break
+
+    if not override:
+        print(f"No overrides found for: {filename}")
+        return
+
+    print(f"Override ID: {override['id']}")
+    if override.get('book_id'):
+        print(f"  Book ID:         {override['book_id']}")
+    if override.get('isbn'):
+        print(f"  ISBN:            {override['isbn']}")
+    if override.get('extraction_path'):
+        print(f"  Extraction path: {override['extraction_path']}")
+    if override.get('extraction_notes'):
+        print(f"  Notes:           {override['extraction_notes']}")
+    if override.get('calibre_options'):
+        print(f"  Calibre options: {override['calibre_options']}")
+    if override.get('skip_front_pages'):
+        print(f"  Skip front:      {override['skip_front_pages']} pages")
+    if override.get('skip_back_pages'):
+        print(f"  Skip back:       {override['skip_back_pages']} pages")
+    if override.get('chapter_structure'):
+        chapters = override['chapter_structure']
+        if isinstance(chapters, list):
+            print(f"  Chapters:        {len(chapters)} entries")
+            for ch in chapters[:5]:
+                lvl = ch.get('level', '?')
+                ttl = ch.get('title', '?')
+                print(f"    L{lvl}: {ttl}")
+            if len(chapters) > 5:
+                print(f"    ... and {len(chapters) - 5} more")
+        else:
+            print(f"  Chapters:        {chapters}")
+    print(f"  Source:          {override.get('source', 'local')}")
+    print(f"  Created:         {override.get('created_at')}")
+
+
+def _cmd_override_list(args):
+    conn = get_db(args.db_path)
+    try:
+        cursor = conn.execute(
+            """SELECT bo.*, b.filename, b.title
+               FROM book_overrides bo
+               LEFT JOIN books b ON b.id = bo.book_id
+               ORDER BY bo.created_at DESC"""
+        )
+        overrides = cursor.fetchall()
+    finally:
+        conn.close()
+
+    if not overrides:
+        print("No book overrides recorded yet.")
+        return
+
+    print(f"{'ID':>4} {'Book':<40} {'Path':<18} {'Notes'}")
+    print("-" * 80)
+    for o in overrides:
+        name = o["title"] or o["filename"] or f"(hash: {o['title_hash']})"
+        if name and len(name) > 38:
+            name = name[:35] + "..."
+        path = o["extraction_path"] or "-"
+        notes = (o["extraction_notes"] or "")[:25]
+        print(f"{o['id']:>4} {name:<40} {path:<18} {notes}")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _normalize_title_hash(title, author=None):
+    """Create a normalized hash for fuzzy title+author matching.
+
+    Strips punctuation, lowercases, removes common words like 'the', 'a', 'an',
+    removes subtitle after colon/dash, and combines with author last name.
+    Returns a string suitable for exact comparison.
+
+    Examples:
+        _normalize_title_hash("The Book of Ezekiel, Chapters 25-48", "Daniel I. Block")
+        -> "book ezekiel chapters 25 48 block"
+
+        _normalize_title_hash("Jesus and the Land", "Gary M. Burge")
+        -> "jesus land burge"
+    """
+    if not title:
+        return None
+
+    # Remove subtitle after colon or em-dash
+    text = re.split(r'[:\u2014]', title)[0]
+
+    # Lowercase, strip punctuation
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', ' ', text)
+
+    # Remove common stop words
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at',
+                  'to', 'for', 'by', 'with', 'from', 'is', 'was', 'are'}
+    words = [w for w in text.split() if w not in stop_words]
+
+    # Add author last name if available
+    if author:
+        # Extract last name: take last word, ignoring initials and suffixes
+        author_clean = re.sub(r'[^\w\s]', ' ', author).strip()
+        author_parts = [p for p in author_clean.split() if len(p) > 1]
+        if author_parts:
+            # Last name is typically the first significant word for
+            # "LastName, FirstName" format, or last word otherwise
+            if ',' in author:
+                last_name = author_parts[0].lower()
+            else:
+                last_name = author_parts[-1].lower()
+            words.append(last_name)
+
+    return ' '.join(words) if words else None
 
 
 def _parse_metadata_from_filename(filename):
@@ -937,11 +1520,66 @@ def main():
 
     subparsers.add_parser('cost', help='Show cost summary')
 
+    cache_parser = subparsers.add_parser(
+        'cache', help='Check if a book has a cached result'
+    )
+    cache_parser.add_argument(
+        'filename', help='Book filename (exact or partial match)'
+    )
+    cache_parser.add_argument(
+        '--min-score', type=int, default=80,
+        help='Minimum VQA score to consider a cache hit (default: 80)'
+    )
+
+    override_sub = subparsers.add_parser(
+        'override', help='Manage book overrides'
+    )
+    override_cmds = override_sub.add_subparsers(
+        dest='override_command', help='Override subcommand'
+    )
+
+    ov_add = override_cmds.add_parser('add', help='Add a book override')
+    ov_add.add_argument('filename', help='Book filename')
+    ov_add.add_argument(
+        '--extraction-path', help='Extraction path override'
+    )
+    ov_add.add_argument('--notes', help='Extraction notes')
+    ov_add.add_argument(
+        '--chapters', help='Path to chapter structure JSON file'
+    )
+    ov_add.add_argument(
+        '--skip-front', type=int, help='Pages to skip at front'
+    )
+    ov_add.add_argument(
+        '--skip-back', type=int, help='Pages to skip at back'
+    )
+
+    ov_show = override_cmds.add_parser(
+        'show', help='Show overrides for a book'
+    )
+    ov_show.add_argument(
+        'filename', help='Book filename (exact or partial match)'
+    )
+
+    override_cmds.add_parser('list', help='List all book overrides')
+
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help()
         sys.exit(1)
+
+    if args.command == 'override':
+        if not hasattr(args, 'override_command') or not args.override_command:
+            override_sub.print_help()
+            sys.exit(1)
+        override_commands = {
+            'add': _cmd_override_add,
+            'show': _cmd_override_show,
+            'list': _cmd_override_list,
+        }
+        override_commands[args.override_command](args)
+        return
 
     commands = {
         'init': _cmd_init,
@@ -951,6 +1589,7 @@ def main():
         'fixes': _cmd_fixes,
         'trend': _cmd_trend,
         'cost': _cmd_cost,
+        'cache': _cmd_cache,
     }
 
     commands[args.command](args)
