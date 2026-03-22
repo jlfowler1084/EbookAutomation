@@ -908,8 +908,17 @@ def _looks_like_heading(line):
     Rules 1-4 are unconditional strong signals.
     """
     # Rule 1: keyword-prefixed heading
+    # Require either multiple words ("Chapter 1", "Introduction to...")
+    # or a standalone keyword that works alone ("Introduction", "Conclusion").
+    # A bare "Chapter" or "Part" alone is likely a styled text fragment.
     if _HEADING_KEYWORD_RE.match(line):
-        return True
+        words = line.split()
+        if len(words) >= 2:
+            return True
+        # Single-word standalone keywords (not "Chapter" or "Part" which need a number)
+        kw = words[0].lower()
+        if kw not in ('chapter', 'part', 'section'):
+            return True
     # Rule 2: numbered heading like "1. How Should..." or "12) Title"
     if _NUMBERED_HEADING_RE.match(line):
         return True
@@ -4099,11 +4108,25 @@ def clean_and_join(raw_text, log):
     short_threshold = median_len * 0.72
     log(f"  Median line length: {median_len:.0f} chars  |  Short threshold: {short_threshold:.0f}")
 
+    # Words that signal mid-sentence continuation when they end a line
+    _CONTINUATION_WORDS = {
+        'a', 'an', 'the', 'of', 'in', 'to', 'for', 'and', 'or', 'but',
+        'by', 'with', 'at', 'on', 'as', 'that', 'which', 'from', 'into',
+        'is', 'was', 'are', 'were', 'be', 'been', 'being', 'has', 'had',
+        'have', 'not', 'no', 'this', 'these', 'those', 'than', 'who',
+        'whom', 'whose', 'its', 'their', 'his', 'her', 'our', 'your',
+        'about', 'between', 'through', 'during', 'before', 'after',
+        'above', 'below', 'under', 'over', 'against', 'among', 'upon',
+    }
+
     output_lines = []
     heading_count = 0
     for line in lines:
         stripped = line.strip()
+
+        # Blank lines in the source text are explicit paragraph breaks
         if not stripped:
+            output_lines.append("")
             continue
 
         # Preserve page markers for bookmark mapping — always standalone
@@ -4113,8 +4136,10 @@ def clean_and_join(raw_text, log):
             output_lines.append("")    # break after marker
             continue
 
-        # Strip lone page numbers
-        if re.match(r"^\d{1,3}$", stripped):
+        # Strip lone page numbers (2-3 digits only).
+        # Single-digit numbers are too ambiguous (chapter refs, list items)
+        # and get caught by the short-fragment filter later anyway.
+        if re.match(r"^\d{2,3}$", stripped):
             continue
 
         # Preserve structural headings as standalone paragraphs
@@ -4124,16 +4149,36 @@ def clean_and_join(raw_text, log):
             heading_count += 1
             continue
 
-        ends_sentence = bool(re.search(r"[.!?][\"'\u201d\u2019]?\s*$", stripped))
+        ends_sentence = bool(re.search(r"[.!?][\"'\u201d\u2019)}\]]*\s*$", stripped))
         is_short = len(stripped) < short_threshold
 
-        # A line is a paragraph boundary if:
-        #   - it's short (author's line ended early), regardless of punctuation
-        #   - it ends a sentence AND is noticeably shorter than full width
-        # A full-width line ending with a period is just word wrap -- not a break
-        if is_short:
+        # Check for continuation signals — line clearly continues on next line
+        last_word = stripped.split()[-1].lower().rstrip('.,;:') if stripped.split() else ''
+        ends_with_continuation = (
+            last_word in _CONTINUATION_WORDS
+            or stripped.endswith(',')
+            or stripped.endswith(';')
+            or stripped.endswith(':')
+            or stripped.endswith('(')
+            or stripped.endswith('\u2014')  # em-dash
+            or stripped.endswith('\u2013')  # en-dash
+        )
+
+        # Paragraph break logic:
+        # 1. Lines ending with continuation words/punctuation are NEVER breaks
+        # 2. Short lines are breaks ONLY if they end with terminal punctuation
+        #    (short lines without terminal punct are style fragments from pypdf)
+        # 3. Medium lines (< 92% of median) that end a sentence are breaks
+        # 4. Everything else is a continuation (join to next line)
+        if ends_with_continuation:
+            output_lines.append(stripped + " ")
+        elif is_short and ends_sentence:
             output_lines.append(stripped)
             output_lines.append("")          # paragraph break
+        elif is_short and not ends_sentence:
+            # Short line without terminal punctuation — likely a style fragment
+            # or the last short word before a font change. Join it.
+            output_lines.append(stripped + " ")
         elif ends_sentence and len(stripped) < median_len * 0.92:
             output_lines.append(stripped)
             output_lines.append("")          # paragraph break
@@ -4183,23 +4228,45 @@ def clean_and_join(raw_text, log):
     paragraphs = filtered
 
     # Post-processing: merge false paragraph breaks
-    # If a paragraph starts with a lowercase letter, it's almost certainly
-    # a continuation of the previous paragraph (not a real break).
+    # If a paragraph starts with a lowercase letter or closing punctuation,
+    # it's almost certainly a continuation of the previous paragraph.
     # But NEVER merge into or across <<PAGE:N>> markers or title fragments after them.
     merged = []
     for p in paragraphs:
-        if merged and p and p[0].islower() and not re.match(r'^<<PAGE:\d+>>$', merged[-1].strip()):
-            # Don't merge if a page marker is nearby (within 8 entries back).
-            # This protects title fragments, subtitles, and author names
-            # on chapter title pages from being merged with body text.
+        # Continuation signals: starts with lowercase, closing paren/bracket,
+        # or a comma/semicolon (styled text fragments)
+        is_continuation = (
+            merged and p and (
+                p[0].islower()
+                or p[0] in ')]\u201d\u2019'  # closing parens, brackets, quotes
+                or (p[0] == ',' or p[0] == ';')  # comma/semicolon fragments
+            )
+        )
+        if not is_continuation:
+            merged.append(p)
+            continue
+
+        # Find the actual previous content paragraph (skip past page markers)
+        prev_idx = len(merged) - 1
+        while prev_idx >= 0 and re.match(r'^<<PAGE:\d+>>$', merged[prev_idx].strip()):
+            prev_idx -= 1
+
+        if prev_idx < 0:
+            merged.append(p)
+            continue
+
+        # Don't merge short fragments near page markers — these are likely
+        # title/subtitle elements on chapter title pages.
+        # But longer paragraphs (40+ chars) starting lowercase are body text
+        # continuations that should ALWAYS be merged, even near page markers.
+        if len(p) < 40:
             near_marker = any(re.match(r'^<<PAGE:\d+>>$', merged[j].strip())
                               for j in range(max(0, len(merged) - 8), len(merged)))
             if near_marker:
                 merged.append(p)
                 continue
-            merged[-1] = merged[-1].rstrip() + " " + p
-        else:
-            merged.append(p)
+
+        merged[prev_idx] = merged[prev_idx].rstrip() + " " + p
 
     before = len(paragraphs)
     paragraphs = merged
