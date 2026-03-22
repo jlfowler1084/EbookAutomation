@@ -554,6 +554,7 @@ function Convert-ToKindle {
         # ── Shared across all paths ──
         [switch]$ForceColumns,
         [switch]$ValidateVisual,
+        [switch]$FullVQA,
 
         [Parameter(HelpMessage = 'Skip cache lookup and force a fresh conversion even if this book has been successfully converted before.')]
         [switch]$NoCache
@@ -1302,7 +1303,7 @@ else:
         # Visual QA (warn-only, never blocks the pipeline)
         if ($ValidateVisual -and $outFile -and (Test-Path $outFile)) {
             Write-EbookLog "Kindle: running visual QA on $outFile..."
-            $vqaResult = Test-ConversionQuality -InputFile $outFile
+            $vqaResult = Test-ConversionQuality -InputFile $outFile -FullVQA:$FullVQA
             if ($vqaResult -and -not $vqaResult.overall_pass) {
                 Write-EbookLog "Kindle: visual QA flagged issues (score $($vqaResult.overall_score)/100)" -Level WARN
             }
@@ -2622,13 +2623,15 @@ function Test-ConversionQuality {
     .PARAMETER OutputDir
         Directory for the report JSON. Defaults to same directory as InputFile.
     .PARAMETER DPI
-        PNG rendering resolution. Default: 150. Higher = more detail, bigger images.
+        PNG rendering resolution. Default: 100 (quick mode). Use -FullVQA for 150.
     .PARAMETER MaxPages
-        Maximum pages to sample. Default: 20.
+        Maximum pages to sample. Default: 8 (quick mode). Use -FullVQA for 20.
     .PARAMETER RubricPath
         Path to the rubric prompt template. Default: tools\visual_qa_rubric.md.
     .PARAMETER Model
         Claude model to use for evaluation. Default: claude-sonnet-4-6.
+    .PARAMETER FullVQA
+        Use full evaluation mode (20 pages at 150 DPI). Default is quick mode (8 pages at 100 DPI).
     .PARAMETER PassThreshold
         Minimum score to consider a pass. Default: 70.
     .EXAMPLE
@@ -2645,11 +2648,12 @@ function Test-ConversionQuality {
         [string]$InputFile,
 
         [string]$OutputDir,
-        [int]$DPI = 150,
-        [int]$MaxPages = 20,
+        [int]$DPI = 100,
+        [int]$MaxPages = 8,
         [string]$RubricPath,
         [string]$Model = 'claude-sonnet-4-6',
-        [int]$PassThreshold = 70
+        [int]$PassThreshold = 70,
+        [switch]$FullVQA
     )
 
     $config = Get-EbookConfig
@@ -2673,11 +2677,14 @@ function Test-ConversionQuality {
     if ($OutputDir) {
         $pyArgs += @("--output-dir", "`"$OutputDir`"")
     }
-    if ($DPI -ne 150) {
+    if ($DPI -ne 100) {
         $pyArgs += @("--dpi", $DPI)
     }
-    if ($MaxPages -ne 20) {
+    if ($MaxPages -ne 8) {
         $pyArgs += @("--max-pages", $MaxPages)
+    }
+    if ($FullVQA) {
+        $pyArgs += "--full"
     }
     if ($Model -ne 'claude-sonnet-4-6') {
         $pyArgs += @("--model", $Model)
@@ -2958,8 +2965,16 @@ function Invoke-ConvergeLoop {
         }
 
         # --- Evaluate via VQA ---
-        Write-EbookLog "  Running VQA evaluation..." -Level INFO
-        $vqaResult = Test-ConversionQuality -InputFile $outFile -PassThreshold $TargetScore
+        # Use full VQA on the last iteration, quick on all others
+        $useFullVQA = ($iter -eq $effectiveMax)
+
+        Write-EbookLog "  Running VQA evaluation ($(if ($useFullVQA) {'full'} else {'quick'}))..." -Level INFO
+        $vqaParams = @{
+            InputFile     = $outFile
+            PassThreshold = $TargetScore
+        }
+        if ($useFullVQA) { $vqaParams['FullVQA'] = $true }
+        $vqaResult = Test-ConversionQuality @vqaParams
 
         $iterScore = 0
         $iterCost  = 0

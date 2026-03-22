@@ -46,8 +46,8 @@
   },
   "visual_qa": {
     "enabled":        false,
-    "dpi":            150,
-    "max_pages":      20,
+    "dpi":            100,
+    "max_pages":      8,
     "pass_threshold": 70,
     "rubric_path":    "tools\\visual_qa_rubric.md"
   },

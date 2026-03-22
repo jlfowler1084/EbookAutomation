@@ -197,83 +197,90 @@ def get_pdf_bookmarks(pdf_path):
         return []
 
 
-def select_sample_pages(total_pages, max_samples=20, bookmark_pages=None):
-    """Select the most diagnostic pages from a book.
+def select_sample_pages(total_pages, max_samples=8, bookmark_pages=None):
+    """Select a representative sample of pages for evaluation.
 
-    Always includes:
-    - Page 1              (cover / title page)
-    - Pages 2-4           (front matter / TOC)
-    - First page of each chapter (from PDF bookmarks)
-    - 1 random body page per ~50 pages (interior text flow check)
-    - Last 2 pages        (back matter, no truncation)
+    Sampling strategy for small sample sizes (≤ 10):
+    - Pages 1-2: cover + front matter (always)
+    - 1-2 bookmark/chapter-start pages
+    - 1-2 early-to-mid body pages (evenly spaced)
+    - 2-3 late body + back matter pages (notes, index, bibliography
+      tend to have the most issues)
 
-    Returns a sorted, deduplicated list of 1-indexed page numbers.
+    For larger sample sizes (> 10), adds more bookmark pages and evenly
+    spaced body pages throughout the book.
     """
     if total_pages == 0:
         return []
+    if total_pages <= max_samples:
+        return list(range(1, total_pages + 1))
 
     selected = set()
 
-    # Cover + front matter
-    selected.add(1)
-    for p in range(2, min(5, total_pages + 1)):
+    # Always include first pages (cover, front matter)
+    for p in range(1, min(3, total_pages) + 1):
         selected.add(p)
 
-    # Chapter first pages from bookmarks
+    # Include some bookmark pages (chapter starts) — but not too many
     if bookmark_pages:
-        for p in bookmark_pages:
-            if 1 <= p <= total_pages:
-                selected.add(p)
-
-    # Last 2 pages
-    selected.add(total_pages)
-    if total_pages > 1:
-        selected.add(total_pages - 1)
-
-    # Random body pages (1 per ~50 pages)
-    import random
-    random.seed(42)  # Reproducible sampling
-    body_start = 5
-    body_end = total_pages - 2
-    if body_end > body_start:
-        interval = 50
-        for start in range(body_start, body_end, interval):
-            end = min(start + interval, body_end)
-            candidate = random.randint(start, end)
-            selected.add(candidate)
-
-    selected = sorted(p for p in selected if 1 <= p <= total_pages)
-
-    # Trim to max_samples: prioritize cover > TOC > chapter firsts > last > body
-    if len(selected) > max_samples:
-        priority_pages = set()
-
-        # Highest priority: cover + first 4 pages
-        for p in range(1, min(5, total_pages + 1)):
-            priority_pages.add(p)
-
-        # High priority: chapter starts
-        if bookmark_pages:
-            for p in bookmark_pages:
+        bm_pages = sorted(set(bookmark_pages))
+        if max_samples <= 10:
+            # Take up to 2 bookmark pages, preferring ones spread through the book
+            if len(bm_pages) <= 2:
+                selected.update(bm_pages)
+            else:
+                # Pick one from first third, one from last third
+                third = len(bm_pages) // 3
+                selected.add(bm_pages[third])
+                selected.add(bm_pages[-third] if third > 0 else bm_pages[-1])
+        else:
+            # Larger sample: include all bookmark pages (will be trimmed later)
+            for p in bm_pages:
                 if 1 <= p <= total_pages:
-                    priority_pages.add(p)
+                    selected.add(p)
 
-        # High priority: last 2
-        priority_pages.add(total_pages)
-        if total_pages > 1:
-            priority_pages.add(total_pages - 1)
+    # Fill remaining slots with evenly spaced pages, biased toward the back
+    remaining = max_samples - len(selected)
+    if remaining > 0:
+        # Divide the book into zones
+        back_start = int(total_pages * 0.75)
+        mid_start = int(total_pages * 0.15)
 
-        # Keep priority pages, fill remaining from body pages
-        body_pages = [p for p in selected if p not in priority_pages]
-        result = sorted(priority_pages)
+        # Allocate: ~40% of remaining to back matter, ~60% to body
+        back_slots = max(1, remaining * 2 // 5)
+        body_slots = remaining - back_slots
 
-        remaining_slots = max_samples - len(result)
-        if remaining_slots > 0 and body_pages:
-            result.extend(body_pages[:remaining_slots])
+        # Body pages (evenly spaced from 15% to 75%)
+        if body_slots > 0 and back_start > mid_start:
+            step = (back_start - mid_start) / (body_slots + 1)
+            for i in range(1, body_slots + 1):
+                p = int(mid_start + step * i)
+                if 1 <= p <= total_pages:
+                    selected.add(p)
 
-        selected = sorted(set(result))[:max_samples]
+        # Back matter pages (evenly spaced from 75% to end)
+        if back_slots > 0 and total_pages > back_start:
+            step = (total_pages - back_start) / (back_slots + 1)
+            for i in range(1, back_slots + 1):
+                p = int(back_start + step * i)
+                if 1 <= p <= total_pages:
+                    selected.add(p)
 
-    return selected
+    # If we still need more pages, fill the largest gaps
+    while len(selected) < max_samples and len(selected) < total_pages:
+        sorted_pages = sorted(selected)
+        max_gap = 0
+        gap_start = 0
+        for i in range(len(sorted_pages) - 1):
+            gap = sorted_pages[i+1] - sorted_pages[i]
+            if gap > max_gap:
+                max_gap = gap
+                gap_start = sorted_pages[i]
+        if max_gap <= 1:
+            break
+        selected.add(gap_start + max_gap // 2)
+
+    return sorted(selected)[:max_samples]
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +517,9 @@ def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
+    mode_label = "full" if (max_pages > 10 and dpi >= 150) else "quick"
+    logger.info("VQA mode: %s (%d pages, %d DPI)", mode_label, max_pages, dpi)
+
     # --- Load rubric ---
     rubric_path = Path(rubric_path)
     if not rubric_path.exists():
@@ -549,7 +559,7 @@ def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
     logger.info("Rendered %d pages at %d DPI", len(page_images), dpi)
 
     # --- Send to Claude (batched) ---
-    BATCH_SIZE = 5
+    BATCH_SIZE = 8
     all_pages_results = []
     total_input_tokens = 0
     total_output_tokens = 0
@@ -713,8 +723,8 @@ def main():
             default_poppler = ""
 
     vqa_settings = settings.get("visual_qa", {})
-    default_dpi = vqa_settings.get("dpi", 150)
-    default_max_pages = vqa_settings.get("max_pages", 20)
+    default_dpi = vqa_settings.get("dpi", 100)
+    default_max_pages = vqa_settings.get("max_pages", 8)
     default_threshold = vqa_settings.get("pass_threshold", 70)
     default_rubric = vqa_settings.get("rubric_path", "")
     if not default_rubric:
@@ -754,6 +764,10 @@ def main():
         help=f"Maximum pages to sample (default: {default_max_pages})"
     )
     parser.add_argument(
+        "--full", action="store_true",
+        help="Full evaluation mode: 20 pages at 150 DPI (overrides --dpi and --max-pages defaults)"
+    )
+    parser.add_argument(
         "--model", default="claude-sonnet-4-6",
         help="Claude model for evaluation (default: claude-sonnet-4-6)"
     )
@@ -771,6 +785,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # --full overrides to comprehensive evaluation
+    if args.full:
+        if not any(a.startswith('--dpi') for a in sys.argv):
+            args.dpi = 150
+        if not any(a.startswith('--max-pages') for a in sys.argv):
+            args.max_pages = 20
 
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
