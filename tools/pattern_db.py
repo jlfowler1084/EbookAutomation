@@ -769,16 +769,19 @@ def get_cached_result(filename=None, isbn=None, title=None, author=None,
             return None
 
         # Find the best conversion for this book
+        # When min_score <= 0, return ANY conversion (even with NULL vqa_score).
+        # When min_score > 0, require a non-NULL score meeting the threshold.
         cursor = conn.execute(
             """SELECT c.id as conversion_id, b.id as book_id, b.filename,
                       c.vqa_score, c.extraction_path, c.vqa_report_path,
                       c.output_file_path, c.cost_usd, c.created_at
                FROM conversions c
                JOIN books b ON b.id = c.book_id
-               WHERE c.book_id = ? AND c.vqa_score >= ?
+               WHERE c.book_id = ?
+                 AND (? <= 0 OR c.vqa_score >= ?)
                ORDER BY c.vqa_score DESC, c.created_at DESC
                LIMIT 1""",
-            (book_id, min_score)
+            (book_id, min_score, min_score)
         )
         row = cursor.fetchone()
         return dict(row) if row else None
