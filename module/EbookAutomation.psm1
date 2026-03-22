@@ -2766,6 +2766,350 @@ function Test-ConversionQuality {
 
 #endregion
 
+#region -- Converge Loop -----------------------------------------------------
+
+function Invoke-ConvergeLoop {
+    <#
+    .SYNOPSIS
+        Convert an ebook with autonomous quality improvement.
+    .DESCRIPTION
+        Runs the converge loop: convert -> evaluate via VQA -> check exit conditions ->
+        optionally shift extraction strategy -> repeat. Delivers the highest-scoring
+        version of the book plus a diagnostic report.
+
+        Exit conditions:
+        - Score >= target: PASS — book meets quality standards
+        - Score improved < stall_threshold from previous: CEILING — quality plateau reached
+        - Max iterations reached: BUDGET — fix budget exhausted
+        - No alternate strategy available: CEILING — all paths tried
+
+        Each iteration is recorded in the pattern database. The final report includes
+        score progression, costs, timing, and recommendations.
+    .PARAMETER InputFile
+        Path to the source ebook (PDF, EPUB, MOBI, AZW).
+    .PARAMETER MaxIterations
+        Maximum conversion+evaluation cycles. Default: 4.
+    .PARAMETER TargetScore
+        Minimum VQA score to accept as passing. Default: 85.
+    .PARAMETER StallThreshold
+        Minimum score improvement required between iterations. If the score improves
+        by less than this, the loop stops (quality ceiling reached). Default: 3.
+    .PARAMETER OutputDir
+        Directory for the final KFX output. Defaults to kindle output path from settings.json.
+    .PARAMETER CostLimit
+        Maximum total API cost (USD) before stopping. Default: 2.00.
+    .EXAMPLE
+        Invoke-ConvergeLoop -InputFile "inbox\book.pdf"
+    .EXAMPLE
+        Invoke-ConvergeLoop -InputFile "inbox\book.pdf" -TargetScore 90 -MaxIterations 3
+    .EXAMPLE
+        Get-ChildItem inbox\*.pdf | ForEach-Object {
+            Invoke-ConvergeLoop -InputFile $_.FullName
+        }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromPipelineByPropertyName)]
+        [Alias('FullName')]
+        [string]$InputFile,
+
+        [int]$MaxIterations = 4,
+        [int]$TargetScore = 85,
+        [int]$StallThreshold = 3,
+        [string]$OutputDir,
+        [double]$CostLimit = 2.00
+    )
+
+    # ── Step 1: Setup ────────────────────────────────────────────────────────
+    $cfg = Get-EbookConfig
+
+    # Load converge_loop settings from config (with fallbacks)
+    $clCfg = $cfg.converge_loop
+    if ($clCfg) {
+        if (-not $PSBoundParameters.ContainsKey('MaxIterations') -and $clCfg.max_iterations) {
+            $MaxIterations = $clCfg.max_iterations
+        }
+        if (-not $PSBoundParameters.ContainsKey('TargetScore') -and $clCfg.target_score) {
+            $TargetScore = $clCfg.target_score
+        }
+        if (-not $PSBoundParameters.ContainsKey('StallThreshold') -and $clCfg.stall_threshold) {
+            $StallThreshold = $clCfg.stall_threshold
+        }
+        if (-not $PSBoundParameters.ContainsKey('CostLimit') -and $clCfg.cost_limit_per_book_usd) {
+            $CostLimit = $clCfg.cost_limit_per_book_usd
+        }
+    }
+
+    if (-not (Test-Path $InputFile)) {
+        Write-EbookLog "ConvergeLoop: input file not found: $InputFile" -Level ERROR
+        return $null
+    }
+
+    $fileName = Split-Path $InputFile -Leaf
+    $ext      = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
+
+    Write-EbookLog "==================================================================" -Level INFO
+    Write-EbookLog "CONVERGE LOOP: $fileName" -Level INFO
+    Write-EbookLog "  Target: $TargetScore/100 | Max iterations: $MaxIterations | Stall: +$StallThreshold | Cost cap: `$$CostLimit" -Level INFO
+    Write-EbookLog "==================================================================" -Level INFO
+
+    $loopStart     = Get-Date
+    $iterations    = @()   # Array of iteration result hashtables
+    $totalCost     = 0.0
+    $bestScore     = 0
+    $bestIteration = 0
+    $bestOutputPath = ""
+    $exitReason    = "unknown"
+
+    # ── Step 2: Define strategy sequence ─────────────────────────────────────
+    $strategies = @()
+
+    if ($ext -eq 'pdf') {
+        # PDFs have multiple extraction paths to try
+        $strategies += @{
+            Name        = "HTML extraction (pdfminer)"
+            Flags       = @{ UseHtmlExtraction = $true }
+            Description = "Font-metadata semantic HTML extraction"
+        }
+        $strategies += @{
+            Name        = "Legacy extraction (pypdf)"
+            Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
+            Description = "Standard pypdf text extraction with Markdown headings"
+        }
+        $strategies += @{
+            Name        = "Column-aware extraction"
+            Flags       = @{ ForceColumns = $true }
+            Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
+        }
+    } else {
+        # EPUB/MOBI/AZW — only one path (direct to Calibre)
+        $strategies += @{
+            Name        = "Direct conversion"
+            Flags       = @{}
+            Description = "Native format straight to Calibre"
+        }
+    }
+
+    # For non-PDFs, max iterations is effectively 1 (no alternate strategies)
+    $effectiveMax = [Math]::Min($MaxIterations, $strategies.Count)
+
+    # ── Step 3: The Loop ─────────────────────────────────────────────────────
+    for ($iter = 1; $iter -le $effectiveMax; $iter++) {
+        $strategy  = $strategies[$iter - 1]
+        $iterStart = Get-Date
+
+        Write-EbookLog "------------------------------------------------------------------" -Level INFO
+        Write-EbookLog "ITERATION $iter/$effectiveMax - $($strategy.Name)" -Level INFO
+        Write-EbookLog "  Strategy: $($strategy.Description)" -Level INFO
+        Write-EbookLog "------------------------------------------------------------------" -Level INFO
+
+        # --- Convert ---
+        $convertParams = @{
+            InputFile = $InputFile
+            NoCache   = $true   # Always fresh conversion in converge loop
+        }
+        if ($OutputDir) { $convertParams['OutputDir'] = $OutputDir }
+
+        # Apply strategy-specific flags
+        foreach ($flag in $strategy.Flags.GetEnumerator()) {
+            $convertParams[$flag.Key] = $flag.Value
+        }
+
+        $convertOk = Convert-ToKindle @convertParams
+        if (-not $convertOk) {
+            Write-EbookLog "  Iteration $iter`: conversion FAILED - skipping to next strategy" -Level WARN
+            $iterations += @{
+                Iteration = $iter
+                Strategy  = $strategy.Name
+                Score     = 0
+                Pass      = $false
+                Cost      = 0
+                Duration  = [math]::Round(((Get-Date) - $iterStart).TotalSeconds, 1)
+                Error     = "Conversion failed"
+            }
+            continue
+        }
+
+        # --- Find the output file ---
+        $kindleDir = if ($OutputDir) { $OutputDir } else {
+            Resolve-ProjectPath ($cfg.paths.kindle)
+        }
+        $outFile = $null
+        # Find the most recently modified KFX in the output dir written after iteration started
+        $recentKfx = Get-ChildItem -Path $kindleDir -Filter '*.kfx' -File -ErrorAction SilentlyContinue |
+                     Sort-Object LastWriteTime -Descending |
+                     Select-Object -First 1
+        if ($recentKfx -and $recentKfx.LastWriteTime -gt $iterStart.AddSeconds(-5)) {
+            $outFile = $recentKfx.FullName
+        }
+
+        if (-not $outFile -or -not (Test-Path $outFile)) {
+            Write-EbookLog "  Iteration $iter`: output file not found after conversion" -Level WARN
+            $iterations += @{
+                Iteration = $iter
+                Strategy  = $strategy.Name
+                Score     = 0
+                Pass      = $false
+                Cost      = 0
+                Duration  = [math]::Round(((Get-Date) - $iterStart).TotalSeconds, 1)
+                Error     = "Output file not found"
+            }
+            continue
+        }
+
+        # --- Evaluate via VQA ---
+        Write-EbookLog "  Running VQA evaluation..." -Level INFO
+        $vqaResult = Test-ConversionQuality -InputFile $outFile -PassThreshold $TargetScore
+
+        $iterScore = 0
+        $iterCost  = 0
+        $iterPass  = $false
+
+        if ($vqaResult) {
+            $iterScore = [int]$vqaResult.overall_score
+            $iterPass  = [bool]$vqaResult.overall_pass
+            $iterCost  = if ($vqaResult.estimated_cost_usd) { [double]$vqaResult.estimated_cost_usd } else { 0 }
+        } else {
+            Write-EbookLog "  Iteration $iter`: VQA returned no result" -Level WARN
+        }
+
+        $totalCost   += $iterCost
+        $iterDuration = [math]::Round(((Get-Date) - $iterStart).TotalSeconds, 1)
+
+        # Track best result
+        if ($iterScore -gt $bestScore) {
+            $bestScore      = $iterScore
+            $bestIteration  = $iter
+            $bestOutputPath = $outFile
+        }
+
+        $iterations += @{
+            Iteration      = $iter
+            Strategy       = $strategy.Name
+            Score          = $iterScore
+            Pass           = $iterPass
+            Cost           = $iterCost
+            Duration       = $iterDuration
+            OutputPath     = $outFile
+            CategoryScores = if ($vqaResult -and $vqaResult.category_scores) {
+                $vqaResult.category_scores
+            } else { $null }
+        }
+
+        $resultLevel = if ($iterPass) { 'SUCCESS' } else { 'INFO' }
+        Write-EbookLog "  Result: $iterScore/100 $(if ($iterPass) {'(PASS)'} else {'(FAIL)'}) | Cost: `$$([math]::Round($iterCost, 2)) | Time: ${iterDuration}s" -Level $resultLevel
+
+        # --- Check exit conditions ---
+
+        # EXIT: Score meets target
+        if ($iterPass) {
+            $exitReason = "PASS"
+            Write-EbookLog "  EXIT: Score $iterScore >= target $TargetScore - PASS" -Level SUCCESS
+            break
+        }
+
+        # EXIT: Score stalled (not enough improvement from previous iteration)
+        if ($iter -gt 1) {
+            $prevScore   = $iterations[$iter - 2].Score
+            $improvement = $iterScore - $prevScore
+            if ($improvement -lt $StallThreshold -and $improvement -ge 0) {
+                $exitReason = "CEILING"
+                Write-EbookLog "  EXIT: Score improved only +$improvement (threshold: +$StallThreshold) - quality ceiling reached" -Level WARN
+                break
+            }
+        }
+
+        # EXIT: Cost limit reached
+        if ($totalCost -ge $CostLimit) {
+            $exitReason = "COST"
+            Write-EbookLog "  EXIT: Total cost `$$([math]::Round($totalCost, 2)) >= limit `$$CostLimit - budget exhausted" -Level WARN
+            break
+        }
+
+        # EXIT: Last iteration
+        if ($iter -eq $effectiveMax) {
+            $exitReason = if ($effectiveMax -lt $MaxIterations) { "NO_ALTERNATE_STRATEGY" } else { "MAX_ITERATIONS" }
+            Write-EbookLog "  EXIT: $(if ($exitReason -eq 'NO_ALTERNATE_STRATEGY') {'No more extraction strategies to try'} else {'Max iterations reached'})" -Level WARN
+            break
+        }
+
+        Write-EbookLog "  Score $iterScore < target $TargetScore - trying next strategy..." -Level INFO
+    }
+
+    # ── Step 4: Final Report ─────────────────────────────────────────────────
+    $totalDuration = [math]::Round(((Get-Date) - $loopStart).TotalSeconds, 1)
+
+    # Build score progression
+    $scoreProgression = $iterations | ForEach-Object { $_.Score }
+
+    # Generate recommendation text
+    $recommendation = switch ($exitReason) {
+        "PASS"                  { "Book meets quality target ($bestScore/$TargetScore). Ready for reading." }
+        "CEILING"               { "Score $bestScore/100 represents the quality ceiling for this source. For higher quality, try a different edition or re-scanned source." }
+        "COST"                  { "Cost limit reached at `$$([math]::Round($totalCost, 2)). Best score achieved: $bestScore/100." }
+        "MAX_ITERATIONS"        { "All $MaxIterations iterations used. Best score: $bestScore/100. Consider manual review or a different source file." }
+        "NO_ALTERNATE_STRATEGY" { "All available extraction strategies tried. Best score: $bestScore/100 from iteration $bestIteration." }
+        default                 { "Loop completed. Best score: $bestScore/100." }
+    }
+
+    # Build the report object
+    $report = @{
+        book                   = $fileName
+        exit_reason            = $exitReason
+        best_score             = $bestScore
+        best_iteration         = $bestIteration
+        best_output_path       = $bestOutputPath
+        target_score           = $TargetScore
+        iterations_run         = $iterations.Count
+        score_progression      = $scoreProgression
+        total_cost_usd         = [math]::Round($totalCost, 4)
+        total_duration_seconds = $totalDuration
+        recommendation         = $recommendation
+        iterations             = $iterations | ForEach-Object {
+            @{
+                iteration        = $_.Iteration
+                strategy         = $_.Strategy
+                score            = $_.Score
+                pass             = $_.Pass
+                cost_usd         = [math]::Round($_.Cost, 4)
+                duration_seconds = $_.Duration
+                output_path      = $_.OutputPath
+                error            = $_.Error
+            }
+        }
+        timestamp = (Get-Date -Format 'o')
+    }
+
+    # Write report JSON
+    $reportDir  = if ($OutputDir) { $OutputDir } else { Resolve-ProjectPath ($cfg.paths.kindle) }
+    $reportStem = [System.IO.Path]::GetFileNameWithoutExtension($bestOutputPath)
+    if (-not $reportStem) { $reportStem = [System.IO.Path]::GetFileNameWithoutExtension($fileName) }
+    $reportPath = Join-Path $reportDir "${reportStem}_converge_report.json"
+
+    try {
+        $report | ConvertTo-Json -Depth 5 | Set-Content $reportPath -Encoding UTF8
+        Write-EbookLog "  Report: $reportPath" -Level INFO
+    } catch {
+        Write-EbookLog "  Failed to write converge report: $_" -Level WARN
+    }
+
+    # Print summary
+    $summaryLevel = if ($exitReason -eq 'PASS') { 'SUCCESS' } else { 'WARN' }
+    Write-EbookLog "==================================================================" -Level INFO
+    Write-EbookLog "CONVERGE LOOP COMPLETE: $fileName" -Level $summaryLevel
+    Write-EbookLog "  Exit: $exitReason | Best: $bestScore/100 (iteration $bestIteration)" -Level INFO
+    Write-EbookLog "  Score progression: $($scoreProgression -join ' -> ')" -Level INFO
+    Write-EbookLog "  Total: `$$([math]::Round($totalCost, 2)) | ${totalDuration}s | $($iterations.Count) iteration(s)" -Level INFO
+    Write-EbookLog "  Output: $bestOutputPath" -Level INFO
+    Write-EbookLog "  $recommendation" -Level INFO
+    Write-EbookLog "==================================================================" -Level INFO
+
+    # Return the report object for pipeline use
+    return $report
+}
+
+#endregion
+
 #region -- Module exports ----------------------------------------------------
 
 Export-ModuleMember -Function @(
@@ -2782,6 +3126,7 @@ Export-ModuleMember -Function @(
     'Get-ChapterStructure'
     'Test-EbookPipeline'
     'Test-ConversionQuality'
+    'Invoke-ConvergeLoop'
     'Write-EbookLog'
     'Get-EbookConfig'
 )

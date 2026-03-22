@@ -358,8 +358,9 @@ def build_vision_request(page_images, rubric_text, model):
 
 
 def call_claude_vision(payload, api_key):
-    """Send the vision request to Claude API and return the parsed response."""
+    """Send the vision request to Claude API with retry for overload errors."""
     import requests
+    import time
 
     headers = {
         "Content-Type": "application/json",
@@ -367,22 +368,39 @@ def call_claude_vision(payload, api_key):
         "anthropic-version": "2023-06-01",
     }
 
-    logger.info("Sending %d images to Claude Vision API...",
-                sum(1 for b in payload["messages"][0]["content"] if isinstance(b, dict) and b.get("type") == "image"))
+    image_count = sum(1 for b in payload["messages"][0]["content"]
+                      if isinstance(b, dict) and b.get("type") == "image")
+    logger.info("Sending %d images to Claude Vision API...", image_count)
 
-    response = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers=headers,
-        json=payload,
-        timeout=300,
-    )
+    max_retries = 3
+    backoff_seconds = [10, 30, 60]
 
-    if response.status_code != 200:
+    for attempt in range(max_retries + 1):
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload,
+            timeout=300,
+        )
+
+        if response.status_code == 200:
+            break  # Success
+
+        # Retry on overload (529) and rate limit (429)
+        if response.status_code in (429, 529) and attempt < max_retries:
+            wait = backoff_seconds[attempt]
+            logger.warning("  API returned %d (attempt %d/%d) — retrying in %ds...",
+                           response.status_code, attempt + 1, max_retries, wait)
+            time.sleep(wait)
+            continue
+
+        # Non-retryable error or retries exhausted
         error_body = response.text[:500]
         raise RuntimeError(
             f"Claude API returned {response.status_code}: {error_body}"
         )
 
+    # Parse successful response
     result = response.json()
 
     # Extract usage stats

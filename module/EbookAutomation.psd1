@@ -20,6 +20,7 @@
         'Get-ChapterStructure'
         'Test-EbookPipeline'
         'Test-ConversionQuality'
+        'Invoke-ConvergeLoop'
         'Write-EbookLog'
         'Get-EbookConfig'
     )
