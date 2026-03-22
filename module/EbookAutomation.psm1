@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  EbookAutomation.psm1  v1.1.0
 #  Automated PDF/EPUB -> TTS text + Kindle conversion pipeline
 #
@@ -2428,7 +2428,7 @@ function Test-ConversionQuality {
     $pythonPath = $config.paths.python
     if (-not $pythonPath) { $pythonPath = "python" }
 
-    $qaScript = Join-Path $script:ModuleRoot "tools" "visual_qa.py"
+    $qaScript = Join-Path (Join-Path $script:ModuleRoot "tools") "visual_qa.py"
     if (-not (Test-Path $qaScript)) {
         Write-EbookLog "Visual QA script not found: $qaScript" -Level ERROR
         return $null
