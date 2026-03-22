@@ -127,6 +127,25 @@ function Get-EbookMetadataFromFilename {
         if ($pub.Length -gt 2) { $publisher = $pub }
     }
 
+    # --- Title cleanup ---
+    if ($title) {
+        # Replace underscore-as-colon: "Title_ Subtitle" -> "Title: Subtitle"
+        # Only when _ is preceded by a word char and followed by a space + capital letter
+        $title = $title -replace '(\w)_\s+([A-Z])', '$1: $2'
+        # Replace double underscores used as separator
+        $title = $title -replace '__+', ': '
+        # Clean up multiple spaces
+        $title = ($title -replace '\s{2,}', ' ').Trim()
+    }
+
+    # --- Author cleanup ---
+    if ($authors) {
+        # Strip "by " prefix if present
+        $authors = $authors -replace '^by\s+', ''
+        # Clean up multiple spaces
+        $authors = ($authors -replace '\s{2,}', ' ').Trim()
+    }
+
     return @{
         Title      = $title.Trim()
         Authors    = $authors.Trim()
@@ -585,19 +604,53 @@ function Convert-ToKindle {
     } else {
         try {
             $python    = $cfg.paths.python
-            $toolsDir  = Join-Path $script:ModuleRoot 'tools'
+            $toolsDir  = (Join-Path $script:ModuleRoot 'tools') -replace '\\', '\\'
             $cacheThreshold = if ($cfg.visual_qa.pass_threshold) { $cfg.visual_qa.pass_threshold } else { 70 }
-            $cacheCheck = & $python -c "import sys; sys.path.insert(0, r'$toolsDir'); from pattern_db import get_cached_result; import json; result = get_cached_result(filename='$fileName', min_score=$cacheThreshold); print(json.dumps(result) if result else '')" 2>$null
+            $safeFileName = $fileName -replace "'", "''"
+
+            # Two-phase cache check: first ANY record (min_score=0), then qualifying
+            $cacheScript = @"
+import sys, json
+sys.path.insert(0, r'$toolsDir')
+from pattern_db import get_cached_result
+any_result = get_cached_result(filename='$safeFileName', min_score=0)
+good_result = get_cached_result(filename='$safeFileName', min_score=$cacheThreshold)
+output = {}
+if good_result:
+    output['hit'] = True
+    output['score'] = good_result.get('vqa_score')
+    output['output_path'] = good_result.get('output_file_path', '')
+elif any_result:
+    output['hit'] = False
+    output['exists'] = True
+    output['best_score'] = any_result.get('vqa_score')
+else:
+    output['hit'] = False
+    output['exists'] = False
+print(json.dumps(output))
+"@
+            $cacheCheck = & $python -c $cacheScript 2>$null
 
             if ($cacheCheck) {
                 $cached = $cacheCheck | ConvertFrom-Json
-                if ($cached.vqa_score -and $cached.vqa_score -ge $cacheThreshold) {
-                    Write-EbookLog "Kindle: cache HIT -- '$fileName' was previously converted (score: $($cached.vqa_score)/100)" -Level SUCCESS
+
+                if ($cached.hit) {
+                    Write-EbookLog "Kindle: cache HIT -- '$fileName' was previously converted (score: $($cached.score)/100)" -Level SUCCESS
+                    Write-EbookLog "Kindle: cached output at: $($cached.output_path)"
                     Write-EbookLog "Kindle: use -NoCache to force re-conversion"
                     return $true
+                } elseif ($cached.exists) {
+                    if ($null -ne $cached.best_score -and $cached.best_score -gt 0) {
+                        Write-EbookLog "Kindle: cache miss -- best prior score $($cached.best_score)/100 is below threshold $cacheThreshold for '$fileName'"
+                    } else {
+                        Write-EbookLog "Kindle: cache miss -- prior conversion exists but has no VQA score for '$fileName'"
+                    }
+                } else {
+                    Write-EbookLog "Kindle: cache miss -- no prior conversion found for '$fileName'"
                 }
+            } else {
+                Write-EbookLog "Kindle: cache miss -- no qualifying prior conversion found for '$fileName'"
             }
-            Write-EbookLog "Kindle: cache miss -- no qualifying prior conversion found for '$fileName'"
         } catch {
             # Cache check failed — continue with normal conversion (non-blocking)
             Write-EbookLog "Kindle: cache check failed (continuing with conversion) -- $_" -Level WARN
@@ -2640,21 +2693,26 @@ function Test-ConversionQuality {
     Write-EbookLog "Running visual QA on: $(Split-Path $InputFile -Leaf)"
 
     try {
+        # Unique temp paths to prevent collision with concurrent VQA runs
+        $vqaGuid   = [System.Guid]::NewGuid().ToString('N').Substring(0, 8)
+        $vqaStdout = Join-Path $env:TEMP "vqa_stdout_$vqaGuid.txt"
+        $vqaStderr = Join-Path $env:TEMP "vqa_stderr_$vqaGuid.txt"
+
         $argString = $pyArgs -join ' '
         $proc = Start-Process -FilePath $pythonPath -ArgumentList $argString `
                               -NoNewWindow -Wait -PassThru `
-                              -RedirectStandardOutput "$env:TEMP\vqa_stdout.txt" `
-                              -RedirectStandardError "$env:TEMP\vqa_stderr.txt"
+                              -RedirectStandardOutput $vqaStdout `
+                              -RedirectStandardError $vqaStderr
 
         $stdout = ""
         $stderr = ""
-        if (Test-Path "$env:TEMP\vqa_stdout.txt") {
-            $stdout = Get-Content "$env:TEMP\vqa_stdout.txt" -Raw -ErrorAction SilentlyContinue
-            Remove-Item "$env:TEMP\vqa_stdout.txt" -ErrorAction SilentlyContinue
+        if (Test-Path $vqaStdout) {
+            $stdout = Get-Content $vqaStdout -Raw -ErrorAction SilentlyContinue
+            Remove-Item $vqaStdout -ErrorAction SilentlyContinue
         }
-        if (Test-Path "$env:TEMP\vqa_stderr.txt") {
-            $stderr = Get-Content "$env:TEMP\vqa_stderr.txt" -Raw -ErrorAction SilentlyContinue
-            Remove-Item "$env:TEMP\vqa_stderr.txt" -ErrorAction SilentlyContinue
+        if (Test-Path $vqaStderr) {
+            $stderr = Get-Content $vqaStderr -Raw -ErrorAction SilentlyContinue
+            Remove-Item $vqaStderr -ErrorAction SilentlyContinue
         }
 
         # Log stderr (verbose progress)
