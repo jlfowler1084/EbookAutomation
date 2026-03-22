@@ -560,6 +560,45 @@ def record_fix_outcome(pattern_id, succeeded, score_improvement=0,
         conn.close()
 
 
+def record_fix_results(book_id, conversion_id, fixes_by_category, db_path=None):
+    """Record fix engine results in the pattern database.
+
+    For each fix category with > 0 fixes applied, update or create
+    a fix_pattern record and increment times_applied/times_succeeded.
+    """
+    conn = get_db(db_path)
+    try:
+        for category, count in fixes_by_category.items():
+            if count <= 0:
+                continue
+            existing = conn.execute(
+                "SELECT id, times_applied, times_succeeded FROM fix_patterns WHERE fix_type = ?",
+                (category,)
+            ).fetchone()
+
+            if existing:
+                conn.execute(
+                    """UPDATE fix_patterns
+                       SET times_applied = times_applied + 1,
+                           times_succeeded = times_succeeded + 1,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (existing["id"],)
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO fix_patterns
+                       (fix_type, fix_action, trigger_category, times_applied,
+                        times_succeeded, first_seen_book_id, iteration_discovered,
+                        promoted_to_iteration)
+                       VALUES (?, ?, ?, 1, 1, ?, 1, 1)""",
+                    (category, f"rule_based_{category}", category, book_id)
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def promote_fixes(min_successes=3, min_success_rate=0.7, db_path=None):
     """Promote high-success fixes to iteration 1. Returns count promoted."""
     conn = get_db(db_path)

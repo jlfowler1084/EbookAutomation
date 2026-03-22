@@ -557,7 +557,10 @@ function Convert-ToKindle {
         [switch]$FullVQA,
 
         [Parameter(HelpMessage = 'Skip cache lookup and force a fresh conversion even if this book has been successfully converted before.')]
-        [switch]$NoCache
+        [switch]$NoCache,
+
+        [Parameter(HelpMessage = 'Path to VQA report from a previous iteration, used by the fix engine for targeted corrections.')]
+        [string]$VqaReportPath
     )
 
     $cfg        = Get-EbookConfig
@@ -925,6 +928,62 @@ else:
         } catch {
             Write-EbookLog "Kindle: cover extraction failed -- $_" -Level WARN
             $coverImage = $null
+        }
+    }
+
+    # ── Apply rule-based fixes to intermediate text ──────────────────────────
+    if ($convertInput -and ($convertInput -ne $InputFile) -and (Test-Path $convertInput)) {
+        try {
+            $fixEngPath = Join-Path $script:ModuleRoot 'tools' 'fix_engine.py'
+            if (Test-Path $fixEngPath) {
+                $fixGuid     = [guid]::NewGuid().ToString('N')
+                $fixStdout   = Join-Path $env:TEMP "fix_stdout_$fixGuid.txt"
+                $fixStderr   = Join-Path $env:TEMP "fix_stderr_$fixGuid.txt"
+
+                $fixArgs = "`"$fixEngPath`" --input `"$convertInput`""
+
+                if ($VqaReportPath -and (Test-Path $VqaReportPath)) {
+                    $fixArgs += " --vqa-report `"$VqaReportPath`""
+                }
+
+                $fixArgs += " --verbose"
+
+                $fixProc = Start-Process -FilePath $python -ArgumentList $fixArgs `
+                                         -NoNewWindow -Wait -PassThru `
+                                         -RedirectStandardOutput $fixStdout `
+                                         -RedirectStandardError $fixStderr
+
+                # Log fix engine stderr output
+                if (Test-Path $fixStderr) {
+                    $fixStderrContent = Get-Content $fixStderr -Raw -ErrorAction SilentlyContinue
+                    foreach ($line in ($fixStderrContent -split "`n")) {
+                        $trimmed = $line.Trim()
+                        if ($trimmed) { Write-EbookLog "  $trimmed" }
+                    }
+                    Remove-Item $fixStderr -ErrorAction SilentlyContinue
+                }
+
+                # Parse JSON summary from stdout
+                if (Test-Path $fixStdout) {
+                    $fixStdoutContent = Get-Content $fixStdout -Raw -ErrorAction SilentlyContinue
+                    Remove-Item $fixStdout -ErrorAction SilentlyContinue
+
+                    if ($fixStdoutContent) {
+                        try {
+                            $fixResult = $fixStdoutContent | ConvertFrom-Json
+                            if ($fixResult.total_fixes -gt 0) {
+                                Write-EbookLog "Kindle: applied $($fixResult.total_fixes) rule-based fixes" -Level SUCCESS
+                                $stepTimings['RuleBasedFixes'] = 'applied'
+                            } else {
+                                Write-EbookLog "Kindle: no rule-based fixes needed"
+                            }
+                        } catch { }
+                    }
+                }
+            }
+        } catch {
+            # Fix engine failure is non-blocking
+            Write-EbookLog "Kindle: fix engine failed (non-blocking) -- $_" -Level WARN
         }
     }
 
@@ -2867,6 +2926,7 @@ function Invoke-ConvergeLoop {
     $bestIteration = 0
     $bestOutputPath = ""
     $exitReason    = "unknown"
+    $lastVqaReportPath = ""   # VQA report from previous iteration for fix engine
 
     # ── Step 2: Define strategy sequence ─────────────────────────────────────
     $strategies = @()
@@ -2916,6 +2976,11 @@ function Invoke-ConvergeLoop {
             NoCache   = $true   # Always fresh conversion in converge loop
         }
         if ($OutputDir) { $convertParams['OutputDir'] = $OutputDir }
+
+        # Pass VQA report from previous iteration for targeted fix engine corrections
+        if ($lastVqaReportPath -and (Test-Path $lastVqaReportPath)) {
+            $convertParams['VqaReportPath'] = $lastVqaReportPath
+        }
 
         # Apply strategy-specific flags
         foreach ($flag in $strategy.Flags.GetEnumerator()) {
@@ -2975,6 +3040,14 @@ function Invoke-ConvergeLoop {
         }
         if ($useFullVQA) { $vqaParams['FullVQA'] = $true }
         $vqaResult = Test-ConversionQuality @vqaParams
+
+        # Save VQA report path for next iteration's fix engine
+        $vqaReportFile = Join-Path (Split-Path $outFile) (
+            [System.IO.Path]::GetFileNameWithoutExtension($outFile) + '_visual_qa_report.json'
+        )
+        if (Test-Path $vqaReportFile) {
+            $lastVqaReportPath = $vqaReportFile
+        }
 
         $iterScore = 0
         $iterCost  = 0
