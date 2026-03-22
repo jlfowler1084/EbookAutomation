@@ -305,6 +305,41 @@ When generating FOH daily briefs from JSON data:
 
 ---
 
+## Git Workflow
+
+**Repo:** `jlfowler1084/EbookAutomation` (private)
+**Branch:** `master` (default working branch)
+**Remote:** `origin` → GitHub
+
+### Standard workflow for all code changes:
+
+1. **Pull before starting work:** `git pull origin master` to ensure you're on the latest
+2. **Make changes** — edit files as needed
+3. **Stage and commit** with a descriptive message:
+   ```
+   git add -A
+   git commit -m "feat: description of what changed"
+   ```
+4. **Push to remote:** `git push origin master`
+
+### Commit message conventions:
+
+- `feat:` — new feature or capability
+- `fix:` — bug fix
+- `refactor:` — code restructuring, no behavior change
+- `docs:` — documentation updates (CLAUDE.md, user manual, comments)
+- `chore:` — maintenance (dependencies, config, cleanup)
+- `test:` — adding or updating tests
+
+### Rules:
+
+- **Every task that modifies project files should end with a commit and push.** Don't leave uncommitted changes.
+- **Never commit** files matching `.gitignore` patterns: `archive/`, `inbox/`, `output/`, `processing/`, `logs/`, `debug/`, `tools/balcon/`, `tools/poppler/`, ebook/audio file formats, credentials, or `.claude/settings.local.json`
+- If a task involves multiple logical changes, use **separate commits** for each (e.g., one for the code change, one for the doc update)
+- Before starting any work session, run `git status` to check for uncommitted changes from previous sessions
+
+---
+
 ## Current Priorities
 
 See `EbookAutomation_ProjectTracker.md` for the full backlog. Key items:
@@ -313,3 +348,4 @@ See `EbookAutomation_ProjectTracker.md` for the full backlog. Key items:
 3. Add full comment-based help to all PowerShell functions
 4. Complete the inbox-to-MP3 pipeline (TXT → balcon → WAV → MP3)
 5. Test and configure the scheduled task
+6. Git workflow active — commit and push all changes to `origin/master`
