@@ -1329,16 +1329,35 @@ else:
         $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
         $hasH1 = $htmlContent -match '<h1[^>]*>'
         $hasH2 = $htmlContent -match '<h2[^>]*>'
-        $tocArgs = ""
-        if ($hasH1) { $tocArgs += " --level1-toc `"//h:h1`"" }
-        if ($hasH2) { $tocArgs += " --level2-toc `"//h:h2`"" }
         # h3 tags provide visual structure but are excluded from the Kindle TOC
         # to avoid E24011 nesting errors in Kindle Previewer's KFX conversion.
+
+        # Smart TOC flag logic: Calibre's --level2-toc only works when level-2
+        # entries have a parent level-1 entry ABOVE them in the document. For books
+        # with no Parts (h1 is only back-matter like Notes/Bibliography), h2 chapters
+        # are orphaned and dropped from the TOC. Fix: detect whether h1 tags appear
+        # before h2 (real Part→Chapter hierarchy) or only after (back-matter).
+        $tocArgs = ""
+        if ($hasH1 -and $hasH2) {
+            $firstH1Pos = $htmlContent.IndexOf('<h1')
+            $firstH2Pos = $htmlContent.IndexOf('<h2')
+            if ($firstH1Pos -ge 0 -and $firstH1Pos -lt $firstH2Pos) {
+                # h1 before h2 = genuine Part/Chapter hierarchy
+                $tocArgs = " --level1-toc `"//h:h1`" --level2-toc `"//h:h2`""
+                Write-EbookLog "Kindle: using HTML input with h1 (Parts) + h2 (Chapters) TOC"
+            } else {
+                # h1 only after h2 (back matter) — combine as flat level1
+                $tocArgs = " --level1-toc `"//h:h1|//h:h2`""
+                Write-EbookLog "Kindle: using HTML input with h1+h2 flat TOC (h1 is back-matter only)"
+            }
+        } elseif ($hasH1) {
+            $tocArgs = " --level1-toc `"//h:h1`""
+            Write-EbookLog "Kindle: using HTML input with h1 TOC"
+        } elseif ($hasH2) {
+            $tocArgs = " --level1-toc `"//h:h2`""
+            Write-EbookLog "Kindle: using HTML input with h2 TOC (no h1 found)"
+        }
         $argString += $tocArgs
-        $levels = @()
-        if ($hasH1) { $levels += "h1" }
-        if ($hasH2) { $levels += "h2" }
-        Write-EbookLog "Kindle: using HTML input with $($levels -join ' + ') TOC"
 
         # Start reading at first non-front-matter h2
         if ($hasH2) {
