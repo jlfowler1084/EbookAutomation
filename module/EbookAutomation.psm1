@@ -837,10 +837,14 @@ print(json.dumps(output))
             $pyOutContent = if (Test-Path $pyOutFile) { Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue } else { '' }
             if ($pyOutContent -match 'Placed (\d+) bookmarks as chapter headings') {
                 $bookmarksUsed = $true
-                Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) chapter headings -- skipping Claude detection"
+                if ($UseClaudeChapters) {
+                    Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) headings -- -UseClaudeChapters overrides, running font+Claude detection anyway"
+                } else {
+                    Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) chapter headings -- skipping Claude detection"
+                }
             }
 
-            if (-not $bookmarksUsed) {
+            if (-not $bookmarksUsed -or $UseClaudeChapters) {
                 # Determine chapter hints: use provided file, or call Claude to detect
                 $hintsJson = $null
 
