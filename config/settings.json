@@ -66,8 +66,8 @@
     "cost_limit_per_book_usd": 2.00
   },
   "kindle_delivery": {
-    "enabled": false,
-    "calibre_library": "",
+    "enabled": true,
+    "calibre_library": "C:\\Users\\Joe\\Calibre Library",
     "auto_send": false,
     "delete_from_library_after_send": true
   },

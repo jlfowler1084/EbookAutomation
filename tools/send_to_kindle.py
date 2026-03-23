@@ -4,8 +4,9 @@
 Usage (called via calibre-debug, NOT standard Python):
     calibre-debug -e send_to_kindle.py -- --library-path "C:\\Users\\Joe\\Calibre Library" --book-id 42 [--delete-after]
 
-This script uses Calibre's internal device APIs to replicate the GUI's
-"Send to device" behavior, including cover/thumbnail generation.
+This script uses Calibre's MTP device driver to send books to MTP-connected
+Kindle devices (Kindle Scribe, newer Kindles). Falls back to USBMS for
+older Kindles that present as USB Mass Storage.
 
 IMPORTANT: Runs inside Calibre's embedded Python (via calibre-debug -e).
 Do NOT import anything outside Calibre or the Python standard library.
@@ -17,6 +18,82 @@ import argparse
 import time
 import json
 import traceback
+
+
+def find_kindle_mtp(timeout=60):
+    """Detect a Kindle via the MTP driver (Kindle Scribe and newer).
+
+    MTP devices require: startup() -> scan -> detect_managed_devices(scanner.devices).
+    This is different from the USBMS path used by older Kindles.
+    """
+    from calibre.devices.mtp.driver import MTP_DEVICE
+    from calibre.devices.scanner import DeviceScanner
+
+    drv = MTP_DEVICE(None)
+    drv.startup()
+
+    start_time = time.time()
+    detected = None
+
+    while time.time() - start_time < timeout:
+        scanner = DeviceScanner()
+        scanner.scan()
+
+        detected = drv.detect_managed_devices(scanner.devices)
+        if detected:
+            break
+        elapsed = int(time.time() - start_time)
+        print('[SendToKindle] Waiting for Kindle (MTP)... ({}s)'.format(elapsed))
+        time.sleep(3)
+
+    if not detected:
+        drv.shutdown()
+        return None
+
+    drv.reset(log_packets=False,
+              report_progress=lambda x, y: None,
+              detected_device=detected)
+    drv.open(detected, 'calibre-send-to-kindle')
+    return drv
+
+
+def find_kindle_usbms(timeout=60):
+    """Detect a Kindle via USBMS driver (older Kindles with drive letters)."""
+    from calibre.devices.scanner import DeviceScanner
+    from calibre.customize.ui import device_plugins
+
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        scanner = DeviceScanner()
+        scanner.scan()
+
+        for plugin in device_plugins():
+            name = getattr(plugin, 'name', '').lower()
+            if 'kindle' not in name:
+                continue
+            try:
+                connected = scanner.is_device_connected(plugin)
+                if isinstance(connected, tuple):
+                    is_conn = connected[0]
+                    if not is_conn:
+                        continue
+                elif not connected:
+                    continue
+
+                plugin.reset(log_packets=False,
+                             report_progress=lambda x, y: None,
+                             detected_device=connected)
+                plugin.open(connected, library_uuid=None)
+                return plugin
+            except Exception:
+                continue
+
+        elapsed = int(time.time() - start_time)
+        print('[SendToKindle] Waiting for Kindle (USBMS)... ({}s)'.format(elapsed))
+        time.sleep(3)
+
+    return None
 
 
 def main():
@@ -40,7 +117,7 @@ def main():
             from calibre.library import db
             LibraryDatabase = db
         except ImportError:
-            print('[SendToKindle] ERROR: Cannot import calibre.library — is this running via calibre-debug -e?', file=sys.stderr)
+            print('[SendToKindle] ERROR: Cannot import calibre.library', file=sys.stderr)
             print(json.dumps({'success': False, 'error': 'import_failed'}))
             sys.exit(1)
 
@@ -69,46 +146,17 @@ def main():
     print('[SendToKindle] Available formats: {}'.format(fmt_str))
 
     # --- Step 2: Detect connected Kindle device ---
-    from calibre.devices.scanner import DeviceScanner
-    from calibre.customize.ui import device_plugins
+    print('[SendToKindle] Scanning for Kindle (timeout: {}s)...'.format(timeout))
 
-    print('[SendToKindle] Scanning for connected devices (timeout: {}s)...'.format(timeout))
-    scanner = DeviceScanner()
-    scanner.scan()
-
-    connected_device = None
+    # Try MTP first (Kindle Scribe, newer models), then USBMS (older models)
     device_plugin = None
-    start_time = time.time()
 
-    while time.time() - start_time < timeout:
-        for plugin in device_plugins():
-            # Look for Kindle-compatible device drivers
-            plugin_name = getattr(plugin, 'name', '').lower()
-            plugin_mfr = getattr(plugin, 'manufacturer', '').lower()
-            is_kindle = ('kindle' in plugin_name or 'amazon' in plugin_mfr
-                         or hasattr(plugin, 'VENDOR_ID'))
-            if not is_kindle:
-                continue
-            try:
-                connected = scanner.is_device_connected(plugin)
-                if connected:
-                    plugin.reset(
-                        log_packets=False,
-                        report_progress=lambda x, y: None,
-                        detected_device=scanner.create_device_info(plugin)
-                    )
-                    plugin.open(connected, library_uuid=None)
-                    connected_device = connected
-                    device_plugin = plugin
-                    break
-            except Exception:
-                continue
-        if device_plugin:
-            break
-        elapsed = int(time.time() - start_time)
-        print('[SendToKindle] Waiting for Kindle... ({}s)'.format(elapsed))
-        time.sleep(3)
-        scanner.scan()
+    print('[SendToKindle] Trying MTP detection...')
+    device_plugin = find_kindle_mtp(timeout=timeout)
+
+    if not device_plugin:
+        print('[SendToKindle] MTP not found, trying USBMS...')
+        device_plugin = find_kindle_usbms(timeout=max(10, timeout - 30))
 
     if not device_plugin:
         print('[SendToKindle] ERROR: No Kindle device detected within {}s'.format(timeout), file=sys.stderr)
@@ -116,11 +164,10 @@ def main():
         print(json.dumps({'success': False, 'error': 'no_device'}))
         sys.exit(2)
 
-    device_name = getattr(device_plugin, 'get_gui_name', lambda: 'Unknown Device')()
+    device_name = device_plugin.get_gui_name()
     print('[SendToKindle] Found device: {}'.format(device_name))
 
     # --- Step 3: Send book to device ---
-    # Prefer KFX > AZW3 > MOBI > EPUB > PDF
     format_priority = ['KFX', 'AZW3', 'MOBI', 'EPUB', 'PDF']
     available_upper = [f.upper() for f in formats] if formats else []
     send_format = None
@@ -137,52 +184,39 @@ def main():
     print('[SendToKindle] Sending \'{}\' as {}...'.format(title, send_format))
 
     try:
-        # Get the file path from the library
         file_path = db_api.format_abspath(book_id, send_format)
         if not file_path or not os.path.exists(file_path):
             print('[SendToKindle] ERROR: Format file not found at expected path', file=sys.stderr)
             print(json.dumps({'success': False, 'error': 'file_not_found'}))
             sys.exit(4)
 
-        # Get book metadata
         mi = db_api.get_metadata(book_id, get_cover=True)
 
         from calibre.utils.filenames import ascii_filename
-
-        # Build the on-device filename
         device_filename = ascii_filename(
             '{} - {}.{}'.format(title, author_str, send_format.lower())
         )
 
-        # Use the device plugin's upload method
-        # USBMS-based Kindle driver expects:
-        #   upload_to_device(files_in, names_on_device, metadata, on_card)
-        on_card = None  # Main memory, not SD card
+        on_card = None  # Main memory
 
-        result = device_plugin.upload_to_device(
-            files_in=[(file_path, book_id)],
-            names_on_device=[device_filename],
-            metadata=[mi],
-            on_card=on_card
-        )
+        # MTP driver uses upload_books(); USBMS uses upload_to_device()
+        if hasattr(device_plugin, 'upload_books'):
+            device_plugin.upload_books(
+                files=[file_path],
+                names=[device_filename],
+                on_card=on_card,
+                end_session=True,
+                metadata=[mi]
+            )
+        else:
+            device_plugin.upload_to_device(
+                files_in=[(file_path, book_id)],
+                names_on_device=[device_filename],
+                metadata=[mi],
+                on_card=on_card
+            )
 
         print('[SendToKindle] SUCCESS: \'{}\' sent to {}'.format(title, device_name))
-
-        # Send cover/thumbnail if the device supports it
-        try:
-            if hasattr(device_plugin, 'upload_cover'):
-                cover_data = db_api.cover(book_id)
-                if cover_data:
-                    device_plugin.upload_cover(
-                        os.path.dirname(file_path),
-                        os.path.basename(file_path),
-                        mi, cover_data
-                    )
-                    print('[SendToKindle] Cover image uploaded to device')
-                else:
-                    print('[SendToKindle] No cover image available -- skipping thumbnail')
-        except Exception as e:
-            print('[SendToKindle] WARN: Cover upload failed: {}'.format(e))
 
     except Exception as e:
         print('[SendToKindle] ERROR during send: {}'.format(e), file=sys.stderr)
@@ -190,11 +224,15 @@ def main():
         print(json.dumps({'success': False, 'error': str(e)}))
         sys.exit(5)
     finally:
-        # Always eject/close the device cleanly
         try:
             device_plugin.eject()
         except Exception:
             pass
+        if hasattr(device_plugin, 'shutdown'):
+            try:
+                device_plugin.shutdown()
+            except Exception:
+                pass
 
     # --- Step 4: Optionally remove from library ---
     if args.delete_after:
@@ -202,7 +240,6 @@ def main():
         db_api.remove_books((book_id,))
         print('[SendToKindle] Removed from library')
 
-    # Output JSON result for PowerShell to parse
     print(json.dumps({
         'success': True,
         'title': title,
