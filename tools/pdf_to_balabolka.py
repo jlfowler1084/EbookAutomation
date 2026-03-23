@@ -3046,29 +3046,59 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
                 is_bold   = bold_chars   > total_chars * 0.5
                 is_italic = italic_chars > total_chars * 0.5
 
-                # Step 2: build text with <sup> tags for footnote reference numbers
-                # A span is a true superscript when BOTH conditions hold:
-                #   (a) superscript bit set (flags & 1)
-                #   (b) noticeably smaller than dominant size (< dominant_size * 0.75)
+                # Step 2: build text with <sup>, <em>, <strong> tags
+                # Superscript: flags & 1 set AND noticeably smaller than dominant size
+                # Bold/italic: per-span flags that DIFFER from block's dominant style
                 parts  = []
                 in_sup = False
+                in_em = False
+                in_strong = False
                 for line in block["lines"]:
                     line_parts = []
                     for span in line["spans"]:
                         text = span["text"]
                         if not text:
                             continue
-                        is_sup = (span["flags"] & 1) and (span["size"] < dominant_size * 0.75)
+                        flags = span["flags"]
+                        is_sup = (flags & 1) and (span["size"] < dominant_size * 0.75)
+                        span_bold = bool(flags & 16)
+                        span_italic = bool(flags & 2)
+                        want_strong = span_bold and not is_bold
+                        want_em = span_italic and not is_italic
+
+                        # Close tags no longer needed (reverse order)
+                        if in_sup and not is_sup:
+                            line_parts.append('</sup>')
+                            in_sup = False
+                        if in_em and not want_em:
+                            line_parts.append('</em>')
+                            in_em = False
+                        if in_strong and not want_strong:
+                            line_parts.append('</strong>')
+                            in_strong = False
+
+                        # Open tags now needed
+                        if want_strong and not in_strong:
+                            line_parts.append('<strong>')
+                            in_strong = True
+                        if want_em and not in_em:
+                            line_parts.append('<em>')
+                            in_em = True
                         if is_sup and not in_sup:
                             line_parts.append('<sup>')
                             in_sup = True
-                        elif not is_sup and in_sup:
-                            line_parts.append('</sup>')
-                            in_sup = False
+
                         line_parts.append(text)
+                    # Close any open tags at end of line
                     if in_sup:
                         line_parts.append('</sup>')
                         in_sup = False
+                    if in_em:
+                        line_parts.append('</em>')
+                        in_em = False
+                    if in_strong:
+                        line_parts.append('</strong>')
+                        in_strong = False
                     line_text = ''.join(line_parts).strip()
                     if not line_text:
                         continue
@@ -3197,16 +3227,16 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 font_counts = Counter()
                 size_counts = Counter()
                 char_total = 0
-                char_data = []  # (char_text, font_size, is_LTChar)
+                char_data = []  # (char_text, font_size, font_name_or_None)
                 for char in line:
                     if isinstance(char, LTChar):
                         sz = round(char.size * 2) / 2
                         font_counts[char.fontname] += 1
                         size_counts[sz] += 1
                         char_total += 1
-                        char_data.append((char.get_text(), sz))
+                        char_data.append((char.get_text(), sz, char.fontname))
                     elif isinstance(char, LTAnno):
-                        char_data.append((char.get_text(), 0))
+                        char_data.append((char.get_text(), 0, None))
 
                 if char_total == 0:
                     continue
@@ -3214,23 +3244,67 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 dominant_font = font_counts.most_common(1)[0][0]
                 dominant_size = size_counts.most_common(1)[0][0]
 
-                # Build text with <sup> tags for superscript digits
+                # Detect dominant style from font name
+                dom_bold = 'Bold' in dominant_font or 'bold' in dominant_font
+                dom_italic = ('Italic' in dominant_font or 'italic' in dominant_font
+                              or 'Oblique' in dominant_font or 'oblique' in dominant_font)
+
+                # Build text with <sup>, <em>, <strong> tags for inline style changes
                 # A digit is superscript when its font size < 80% of line's dominant size
+                # Bold/italic tags wrap spans that DIFFER from the line's dominant style
                 sup_threshold = dominant_size * 0.8
                 text_parts = []
                 in_sup = False
-                for ch, sz in char_data:
+                in_em = False
+                in_strong = False
+                for ch, sz, fname in char_data:
                     is_sup = (sz > 0 and sz < sup_threshold and ch.isdigit()
                               and dominant_size >= 9)  # only on body-sized lines
+
+                    # Detect per-char bold/italic from font name
+                    if fname:
+                        ch_bold = 'Bold' in fname or 'bold' in fname
+                        ch_italic = ('Italic' in fname or 'italic' in fname
+                                     or 'Oblique' in fname or 'oblique' in fname)
+                    else:
+                        # LTAnno (space chars) — inherit dominant style
+                        ch_bold = dom_bold
+                        ch_italic = dom_italic
+
+                    # Only tag spans that differ from the dominant style
+                    want_em = ch_italic and not dom_italic
+                    want_strong = ch_bold and not dom_bold
+
+                    # Close tags that are no longer needed (reverse order of opening)
+                    if in_sup and not is_sup:
+                        text_parts.append('</sup>')
+                        in_sup = False
+                    if in_em and not want_em:
+                        text_parts.append('</em>')
+                        in_em = False
+                    if in_strong and not want_strong:
+                        text_parts.append('</strong>')
+                        in_strong = False
+
+                    # Open tags that are now needed
+                    if want_strong and not in_strong:
+                        text_parts.append('<strong>')
+                        in_strong = True
+                    if want_em and not in_em:
+                        text_parts.append('<em>')
+                        in_em = True
                     if is_sup and not in_sup:
                         text_parts.append('<sup>')
                         in_sup = True
-                    elif not is_sup and in_sup:
-                        text_parts.append('</sup>')
-                        in_sup = False
+
                     text_parts.append(ch)
+                # Close any remaining open tags
                 if in_sup:
                     text_parts.append('</sup>')
+                if in_em:
+                    text_parts.append('</em>')
+                if in_strong:
+                    text_parts.append('</strong>')
                 text = ''.join(text_parts)
                 # Normalize Unicode whitespace to regular spaces
                 text = re.sub(r'[\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\t]+', ' ', text)
@@ -4088,6 +4162,10 @@ blockquote p {{ text-indent: 0; }}
 
         # FIX 3: Wrap italic text in <em> tags
         escaped_text = _html_escape(text)
+        # Strip inline <em>/<strong> from heading text — headings are styled separately
+        if tag in ('h1', 'h2', 'h3'):
+            escaped_text = (escaped_text.replace('<em>', '').replace('</em>', '')
+                            .replace('<strong>', '').replace('</strong>', ''))
         display_text = f'<em>{escaped_text}</em>' if (italic or display_override_em) else escaped_text
 
         # Wrap bold non-heading body paragraphs in <strong>
