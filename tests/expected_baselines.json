@@ -57,10 +57,10 @@
   "Genesis": {
     "headings": {
       "h1": 3,
-      "h2": 18,
+      "h2": 15,
       "h3": 39
     },
-    "toc_entries": 60,
+    "toc_entries": 57,
     "toc_max_depth": 3,
     "footnote_linked_pairs": 0,
     "footnote_unlinked": 0,
@@ -69,8 +69,6 @@
       "Contents",
       "Contributors",
       "Introduction",
-      "INTRODUCTION",
-      "INTRODUCTION",
       "1. How Should One Read the Early Chapters of Genesis?",
       "2. Genesis before Darwin. Why Scripture Needed Liberating from Science",
       "3. The Six Days of Creation According to the Greek Fathers",
@@ -81,22 +79,20 @@
       "8. Reading Genesis 1-3 in the Light of Modern Science",
       "Reading Modern Science in the Light of Genesis 1-3",
       "11. “Male and Female He Created Them” (Genesis 1:27). Interpreting Gender after Darwin",
-      "13. The Plausibility of Creationism. A Sociological Comment",
-      "238 INDEX OF MODERN AUTHORS"
+      "13. The Plausibility of Creationism. A Sociological Comment"
     ],
     "blockquotes": 10,
-    "em_tags": 276,
+    "em_tags": 1381,
     "attributions": 0,
     "ligature_splits": 0,
-    "double_spaces": 0,
-    "standalone_page_numbers": 1,
+    "double_spaces": 24,
+    "standalone_page_numbers": 0,
     "has_front_matter_h1": true,
     "chapter_openings": {
       "Acknowledgments": "I wish to thank the directors of the Institute of Advanced S",
       "Contents": "Stephen C. Barton is Reader in New Testament, Department of ",
       "Contributors": "Stephen C. Barton is Reader in New Testament, Department of ",
       "Introduction": "Stephen C. Barton and David Wilkinson",
-      "INTRODUCTION": "i. R. Dawkins, The God Delusion (London: Bantam, 2006). 2. S",
       "1. How Should One Read the Early Chapters of Genesis?": "Walter Moberly",
       "2. Genesis before Darwin. Why Scripture Needed Liberating from Science": "Why Scripture Needed Liberating from Science",
       "3. The Six Days of Creation According to the Greek Fathers": "Andrew Louth",
@@ -106,12 +102,11 @@
       "8. Reading Genesis 1-3 in the Light of Modern Science": "David Wilkinson",
       "Reading Modern Science in the Light of Genesis 1-3": "The first option is that of six-day creationism, which uses ",
       "11. “Male and Female He Created Them” (Genesis 1:27). Interpreting Gender after Darwin": "Them” (Genesis 1:27)",
-      "13. The Plausibility of Creationism. A Sociological Comment": "A Sociological Comment",
-      "238 INDEX OF MODERN AUTHORS": "Davis, Ellen Fms Brown, David, 121П4,123П43 Dawkins, Richard"
+      "13. The Plausibility of Creationism. A Sociological Comment": "A Sociological Comment"
     },
     "kfx_size_kb": 1369,
     "pdf_pattern": "*Genesis*",
-    "captured_at": "2026-03-22T12:05:13.402389+00:00"
+    "captured_at": "2026-03-23T21:42:52.614009+00:00"
   },
   "Mexico": {
     "headings": {

@@ -4001,10 +4001,14 @@ blockquote p {{ text-indent: 0; }}
         text_stripped = re.sub(r'^[\dOoIl]+\s+', '', text_lower).strip()
         text_stripped = re.sub(r'\s+[\dOoIl]+$', '', text_stripped).strip()
         rh_key = None
+        # Also strip leading chapter number: "5. The Turning Point" → "the turning point"
+        text_no_chapnum = re.sub(r'^\d+[\.\):]?\s*', '', text_lower).strip()
         if text_lower in running_headers:
             rh_key = text_lower
         elif text_stripped in running_headers and text_stripped != text_lower:
             rh_key = text_stripped
+        elif text_no_chapnum in running_headers and text_no_chapnum != text_lower:
+            rh_key = text_no_chapnum
         if rh_key is not None:
             if rh_key in running_header_seen:
                 running_header_skipped += 1
@@ -4341,6 +4345,42 @@ blockquote p {{ text-indent: 0; }}
         if rescued:
             log(f"  FIX 6: Rescued {rescued} h3(s) (unmatched bookmarks)")
 
+    # ── FIX 9: Chapter heading promotion for bookmark-less PDFs ─────────
+    # When a book has no bookmarks (or < 5), the pipeline can't distinguish
+    # chapter headings from sub-section headings — everything is h3.
+    # Promote "CHAPTER X" / "APPENDIX X" h3 tags to h2, and also promote the
+    # ALL-CAPS short title that immediately follows as a chapter heading group.
+    if len(bookmarks) < 5:
+        _chapter_pattern = re.compile(
+            r'(?i)^(CHAPTER|APPENDIX)\s+([IVXLCDM\d]+)\s*$')
+        # Find all h3 tags and their positions
+        _h3_matches = list(re.finditer(r'<h3>(.*?)</h3>', html))
+        _promote_positions = set()  # positions of h3 tags to promote to h2
+        for idx, m in enumerate(_h3_matches):
+            h3_text = re.sub(r'<[^>]+>', '', m.group(1)).strip()
+            if _chapter_pattern.match(h3_text):
+                _promote_positions.add(m.start())
+                # Check if the next h3 is an ALL-CAPS short title (chapter title)
+                if idx + 1 < len(_h3_matches):
+                    next_m = _h3_matches[idx + 1]
+                    next_text = re.sub(r'<[^>]+>', '', next_m.group(1)).strip()
+                    # Must be short, ALL-CAPS (or mostly), and immediately follow
+                    # (no body <p> paragraphs between them)
+                    between = html[m.end():next_m.start()]
+                    has_body_between = bool(re.search(r'<p>[^<]{20,}</p>', between))
+                    if (len(next_text) < 80
+                            and next_text == next_text.upper()
+                            and not has_body_between):
+                        _promote_positions.add(next_m.start())
+
+        if _promote_positions:
+            def _promote_chapter_h3(m):
+                if m.start() in _promote_positions:
+                    return f'<h2>{m.group(1)}</h2>'
+                return m.group(0)
+            html = re.sub(r'<h3>(.*?)</h3>', _promote_chapter_h3, html)
+            log(f"  FIX 9: Promoted {len(_promote_positions)} chapter-level h3(s) to h2")
+
     # ── FIX 7: Post-reconciliation heading deduplication ────────────────
     # After all whitelist/rescue passes, scan h1/h2 tags for duplicates.
     # Same normalized text within 50 pages → running header duplicate → demote to <p>.
@@ -4400,6 +4440,16 @@ blockquote p {{ text-indent: 0; }}
             return m.group(0)
         html = re.sub(r'<(h[12])>(.*?)</\1>', _dedup_heading, html)
         log(f"  FIX 7: Deduplicated {len(_dedup_remove)} heading(s) (same text within 50 pages)")
+
+    # ── FIX 8: Strip standalone page numbers ────────────────────────
+    # Remove <p> elements that contain only a bare number (1-4 digits),
+    # optionally with whitespace. These are extracted printed page numbers.
+    # Don't touch numbers inside headings, footnotes, or longer paragraphs.
+    _page_num_pattern = re.compile(r'<p>\s*\d{1,4}\s*</p>\n?')
+    _page_num_count = len(_page_num_pattern.findall(html))
+    if _page_num_count > 0:
+        html = _page_num_pattern.sub('', html)
+        log(f"  FIX 8: Stripped {_page_num_count} standalone page number paragraph(s)")
 
     # FIX 5: Insert synthetic Front Matter h1 for pre-Part h2s.
     has_part_h1 = bool(re.search(
