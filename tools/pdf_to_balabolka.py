@@ -8120,6 +8120,20 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     html = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title)
 
+    # ── Fix double spaces from inline tag boundaries ──────────────
+    # pdfminer wraps individual italic/bold words in separate <em>/<strong>
+    # tags: <em>The </em> <em>New </em> <em>York</em>.  When tags are stripped,
+    # trailing space + inter-tag space = double space.  Merge consecutive
+    # same-type tags and collapse any remaining text-content double spaces.
+    html = re.sub(r'\s*</em>\s*<em>\s*', ' ', html)
+    html = re.sub(r'\s*</strong>\s*<strong>\s*', ' ', html)
+    # Normalize trailing whitespace inside closing inline tags to prevent
+    # double spaces at tag boundaries: "word </em> next" → "word</em> next"
+    html = re.sub(r'\s+(</em>)\s*', r'\1 ', html)
+    html = re.sub(r'\s+(</strong>)\s*', r'\1 ', html)
+    # Belt-and-suspenders: collapse double spaces in text content between tags
+    html = re.sub(r'(?<=>)([^<]*)', lambda m: re.sub(r'  +', ' ', m.group(0)), html)
+
     if not skip_footnotes:
         log("\n-- STEP 2b: Linking footnote references to endnotes ---")
         html = _link_endnotes(html, log)
