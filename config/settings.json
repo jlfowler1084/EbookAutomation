@@ -72,10 +72,10 @@
     "auto_send": false,
     "delete_from_library_after_send": true,
     "email": {
-      "kindle_address": "",
+      "kindle_address": "jlfowler1084_OaYN2h@kindle.com",
       "smtp_server": "smtp.gmail.com",
       "smtp_port": 587,
-      "smtp_user": "",
+      "smtp_user": "jlfowler1084@gmail.com",
       "smtp_app_password_env": "EBOOK_SMTP_PASSWORD",
       "convert_subject": true,
       "max_email_size_mb": 50
