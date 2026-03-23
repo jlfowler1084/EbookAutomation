@@ -202,8 +202,18 @@ def zip_file(input_path: str, output_path: str) -> int:
 # PDF splitting
 # =================================================================================
 
+def _split_page_ranges(total_pages: int, pages_per_part: int):
+    """Yield (start, end) page ranges for splitting."""
+    for start in range(0, total_pages, pages_per_part):
+        yield start, min(start + pages_per_part, total_pages)
+
+
 def split_pdf(input_path: str, max_size_mb: float, output_dir: str):
     """Split a PDF into parts that each fit within max_size_mb.
+
+    Uses a 0.75x safety factor on the average-page-size estimate to account
+    for uneven page sizes in scanned PDFs.  After splitting, any oversized
+    part is re-split with fewer pages.
 
     Returns (list_of_part_paths, None) on success,
     or (None, error_message) if splitting is not feasible.
@@ -227,7 +237,8 @@ def split_pdf(input_path: str, max_size_mb: float, output_dir: str):
     avg_page_size = file_size_bytes / total_pages
     max_size_bytes = max_size_mb * 1024 * 1024
 
-    pages_per_part = max(10, int(max_size_bytes / avg_page_size))
+    # 0.75x safety factor — scanned PDFs have wildly uneven page sizes
+    pages_per_part = max(10, int(max_size_bytes * 0.75 / avg_page_size))
     num_parts = math.ceil(total_pages / pages_per_part)
 
     if num_parts > 5:
@@ -238,7 +249,7 @@ def split_pdf(input_path: str, max_size_mb: float, output_dir: str):
         )
 
     log.info(
-        'Splitting %d pages into %d parts (~%d pages each)',
+        'Splitting %d pages into %d parts (~%d pages each, 0.75x safety factor)',
         total_pages,
         num_parts,
         pages_per_part,
@@ -246,30 +257,77 @@ def split_pdf(input_path: str, max_size_mb: float, output_dir: str):
 
     stem = Path(input_path).stem
     part_paths = []
+    part_counter = 0
 
-    for part_idx in range(num_parts):
-        start_page = part_idx * pages_per_part
-        end_page = min(start_page + pages_per_part, total_pages)  # exclusive
+    # Build initial page ranges
+    ranges = list(_split_page_ranges(total_pages, pages_per_part))
 
-        part_doc = fitz.open()  # new empty doc
-        part_doc.insert_pdf(doc, from_page=start_page, to_page=end_page - 1)
-
-        part_filename = f'{stem}_part{part_idx + 1}.pdf'
+    for start_page, end_page in ranges:
+        part_counter += 1
+        part_filename = f'{stem}_part{part_counter}.pdf'
         part_path = os.path.join(output_dir, part_filename)
+
+        part_doc = fitz.open()
+        part_doc.insert_pdf(doc, from_page=start_page, to_page=end_page - 1)
         part_doc.save(part_path)
         part_doc.close()
 
         part_size_mb = os.path.getsize(part_path) / (1024 * 1024)
-        log.info(
-            'Part %d/%d: pages %d-%d -> %.1f MB -> %s',
-            part_idx + 1,
-            num_parts,
-            start_page + 1,
-            end_page,
-            part_size_mb,
-            part_filename,
-        )
-        part_paths.append(part_path)
+
+        if part_size_mb > max_size_mb and (end_page - start_page) > 10:
+            # Post-split verification failed — re-split this part with half the pages
+            log.info(
+                'Part %d oversized (%.1f MB > %.0f MB) — re-splitting',
+                part_counter, part_size_mb, max_size_mb,
+            )
+            os.remove(part_path)
+            part_counter -= 1  # rewind counter
+
+            half = max(10, (end_page - start_page) // 2)
+            sub_ranges = list(_split_page_ranges(end_page - start_page, half))
+            for sub_start, sub_end in sub_ranges:
+                part_counter += 1
+                if part_counter > 5:
+                    doc.close()
+                    # Clean up already-written parts
+                    for p in part_paths:
+                        if os.path.exists(p):
+                            os.remove(p)
+                    return None, (
+                        f'File too large for email (re-split would need >5 parts). '
+                        'Use USB delivery.'
+                    )
+                sub_filename = f'{stem}_part{part_counter}.pdf'
+                sub_path = os.path.join(output_dir, sub_filename)
+
+                sub_doc = fitz.open()
+                sub_doc.insert_pdf(doc,
+                                   from_page=start_page + sub_start,
+                                   to_page=start_page + sub_end - 1)
+                sub_doc.save(sub_path)
+                sub_doc.close()
+
+                sub_size_mb = os.path.getsize(sub_path) / (1024 * 1024)
+                log.info(
+                    'Part %d (re-split): pages %d-%d -> %.1f MB -> %s',
+                    part_counter,
+                    start_page + sub_start + 1,
+                    start_page + sub_end,
+                    sub_size_mb,
+                    sub_filename,
+                )
+                part_paths.append(sub_path)
+        else:
+            log.info(
+                'Part %d/%d: pages %d-%d -> %.1f MB -> %s',
+                part_counter,
+                num_parts,
+                start_page + 1,
+                end_page,
+                part_size_mb,
+                part_filename,
+            )
+            part_paths.append(part_path)
 
     doc.close()
     return part_paths, None

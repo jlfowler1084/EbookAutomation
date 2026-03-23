@@ -2620,9 +2620,15 @@ function Invoke-EbookPipeline {
                 $kindleMsg = "skipped (.$ext)"
             } else {
                 Write-EbookLog "  Kindle: starting conversion..."
+                # Auto-enable HTML extraction for EPUB generation when -EmailToKindle is active
+                $useHtml = $false
+                if ($emailActive -and $ext -eq 'pdf') {
+                    $useHtml = $true
+                    Write-EbookLog "  Kindle: HTML extraction auto-enabled for EPUB generation (-EmailToKindle)"
+                }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
