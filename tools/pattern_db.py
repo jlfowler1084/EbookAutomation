@@ -1879,6 +1879,57 @@ def _cmd_override_list(args):
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Known software/tool names that appear as author/publisher in PDF metadata
+_GARBAGE_CREATOR_NAMES = {
+    'microsoft word', 'adobe indesign', 'adobe acrobat', 'latex',
+    'pdflatex', 'xelatex', 'lualatex', 'tex', 'pdftex', 'xetex',
+    'quarkxpress', 'libreoffice', 'openoffice', 'google docs',
+    'calibre', 'prince', 'wkhtmltopdf', 'phantomjs', 'chrome',
+    'firefox', 'acrobat distiller', 'acrobat pdfmaker',
+    'microsoft office word', 'pages',
+}
+
+_GARBAGE_TITLES = {'untitled', 'document', 'microsoft word', 'unnamed'}
+
+
+def _clean_meta_field(value, field_type='generic'):
+    """Filter garbage values from PDF/EPUB metadata fields.
+
+    Returns cleaned string or None if the value is empty or garbage.
+    """
+    if not value or not value.strip():
+        return None
+
+    cleaned = value.strip()
+
+    if field_type == 'author':
+        if cleaned.lower() in ('unknown', 'unknown author', ''):
+            return None
+        if cleaned.lower() in _GARBAGE_CREATOR_NAMES:
+            return None
+
+    elif field_type == 'title':
+        if cleaned.lower() in _GARBAGE_TITLES:
+            return None
+
+    elif field_type == 'publisher':
+        if cleaned.lower() in _GARBAGE_CREATOR_NAMES:
+            return None
+
+    return cleaned
+
+
+def _extract_year(date_string):
+    """Extract a 4-digit year from a PDF date string or plain string.
+
+    PDF dates look like: D:20190415120000+00'00'
+    Returns year as string (e.g., '2019') or None.
+    """
+    if not date_string:
+        return None
+    match = re.search(r'(1[89]\d{2}|20\d{2})', str(date_string))
+    return match.group(1) if match else None
+
 
 def _normalize_title_hash(title, author=None):
     """Create a normalized hash for fuzzy title+author matching.
