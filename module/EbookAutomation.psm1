@@ -2671,8 +2671,15 @@ function Invoke-EbookPipeline {
         $emailedToKindle = $false
         if ($kindleOk -and $emailActive) {
             $stem = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
+            # Try stem match first; fall back to most-recent EPUB created during this book's conversion
             $epubFile = Get-ChildItem -Path $kindleDir -Filter "$stem*.epub" -File -ErrorAction SilentlyContinue |
                         Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if (-not $epubFile) {
+                # Output filename may differ from input (Title - Author vs Author - Title)
+                $epubFile = Get-ChildItem -Path $kindleDir -Filter "*.epub" -File -ErrorAction SilentlyContinue |
+                            Where-Object { $_.LastWriteTime -ge $bookStart } |
+                            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            }
             if ($epubFile) {
                 try {
                     Write-EbookLog "  Emailing to Kindle..."
