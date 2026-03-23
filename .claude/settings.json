@@ -36,6 +36,17 @@
             "statusMessage": "Checking Python syntax..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File tools/hooks/post-edit-test.ps1",
+            "timeout": 120,
+            "statusMessage": "Running quick regression tests..."
+          }
+        ]
       }
     ]
   }

@@ -85,6 +85,47 @@ After ANY code change to the pipeline:
 5. Verify PAGE markers survive all processing phases
 6. Report results BEFORE telling the user "fix confirmed"
 
+### Post-Edit Auto-Test Hook
+
+A Claude Code PostToolUse hook automatically runs `test_pipeline.py --quick` after edits to core pipeline files:
+- `tools/pdf_to_balabolka.py`
+- `tools/pattern_db.py`
+- `tools/visual_qa.py`
+- `tools/test_pipeline.py`
+- `module/EbookAutomation.psm1`
+
+This runs in `--quick` mode (HTML only, no KFX) for fast feedback (~30-60s). Full KFX testing should still be run manually before commits: `python tools/test_pipeline.py`
+
+The hook script lives at `tools/hooks/post-edit-test.ps1`. To temporarily disable, rename or delete the PostToolUse entry in `.claude/settings.json`.
+
+### Test Corpus (Hot Folder)
+
+The `test-corpus/` folder at the project root holds books used for regression testing. Drop any supported ebook file (PDF, EPUB, MOBI, AZW) into this folder.
+
+- **First run:** pipeline processes the file and captures a baseline as `<name>.baseline.json`
+- **Subsequent runs:** pipeline compares against the saved baseline and reports regressions
+- **Override assertions:** create `<name>.expect.json` with manual thresholds (same schema as hardcoded test expectations)
+- **Re-capture:** `python tools/test_pipeline.py --corpus --recapture "<name>"`
+
+Corpus CLI:
+- `python tools/test_pipeline.py --corpus` — run only corpus tests
+- `python tools/test_pipeline.py --corpus "Burge"` — run single corpus book by filename match
+- `python tools/test_pipeline.py --corpus --recapture "Burge"` — re-capture baseline
+- `python tools/test_pipeline.py --list` — lists corpus books and their baseline status
+
+Core regression set (books covering distinct failure modes):
+
+| Book | Primary Failure Mode | Extraction Path |
+|------|---------------------|-----------------|
+| Oil Kings | h1/h2/h3 hierarchy, blockquotes, italics, front matter, KFX TOC | pdfminer |
+| Mexico Illicit | Heavy footnotes (230+), page number stripping | pdfminer |
+| Ezekiel II | Multi-column layout, PyMuPDF path | PyMuPDF column |
+| Burge | Paragraph flow, mid-sentence breaks, front/back matter | pdfminer |
+| Genesis | Ligature splits, encoding artifacts | pdfminer |
+| Fruchtenbaum | Single-column OCR/scanned PDF | pdfminer+OCR |
+
+The harness runs all books found in `test-corpus/` — you can add more at any time.
+
 ---
 
 ## Directory Structure
@@ -92,6 +133,7 @@ After ANY code change to the pipeline:
 ```
 F:\Projects\EbookAutomation\
 ├── config\settings.json           ← central config, all paths defined here
+├── test-corpus\                   ← drop test ebooks here for regression testing
 ├── dictionaries\                  ← pronunciation .dic files for Balabolka
 ├── inbox\                         ← drop ebooks here for pipeline processing
 ├── logs\                          ← daily logs + processed.txt manifest
