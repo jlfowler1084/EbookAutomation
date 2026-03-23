@@ -2004,6 +2004,38 @@ def _parse_metadata_from_filename(filename):
     return title, author
 
 
+def extract_pdf_metadata(file_path):
+    """Extract metadata from a PDF file via PyMuPDF.
+
+    Returns dict with keys: title, authors, publisher, year, language,
+    subject, description, isbn, extra_json. All values are strings or None.
+    Only non-None values are included in the returned dict.
+    """
+    import fitz
+    doc = fitz.open(file_path)
+    meta = doc.metadata or {}
+    doc.close()
+
+    result = {
+        'title': _clean_meta_field(meta.get('title'), field_type='title'),
+        'authors': _clean_meta_field(meta.get('author'), field_type='author'),
+        'subject': meta.get('subject') or None,
+        'publisher': _clean_meta_field(meta.get('creator'), field_type='publisher'),
+        'year': _extract_year(meta.get('creationDate')),
+    }
+
+    # Store raw metadata in extra_json for debugging/traceability
+    extra = {}
+    for key in ('keywords', 'producer', 'creator'):
+        val = meta.get(key)
+        if val:
+            extra[key] = val
+    if extra:
+        result['extra_json'] = json.dumps(extra)
+
+    return {k: v for k, v in result.items() if v}
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
