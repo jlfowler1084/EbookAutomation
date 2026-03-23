@@ -28,6 +28,36 @@ Use `python -m pip install` for package installs — bare `pip install` targets 
 
 Temp files may be cleaned up quickly by Windows — save diagnostic outputs to persistent locations (e.g., the project's `debug/` or `output/` directory), not system temp folders. When debugging, always verify you are looking at current output, not stale files from a previous run.
 
+### Regression Prevention
+
+The #1 time sink across sessions is fix-then-regression cycles: a targeted fix to headings, footnotes, or OCR cleanup breaks other books, requiring 2-4 extra debugging rounds.
+
+**Before implementing any fix:**
+1. Analyze which other books and pipeline stages could be affected
+2. List the specific functions that will change and the regression risks
+3. Run the full test suite to establish a clean baseline BEFORE editing code
+
+**After implementing any fix:**
+1. Run `python tools/test_pipeline.py` (full suite, all books)
+2. If any book regresses, STOP — diagnose before attempting another fix
+3. Never stack multiple fixes without testing between each one
+4. Report test results with pass/fail counts before declaring "fix confirmed"
+
+### MCP Fallback Strategy
+
+The Atlassian MCP server for Jira may disconnect mid-session. Follow this escalation:
+1. Try MCP tools first (1 attempt)
+2. If MCP fails, immediately fall back to direct Jira REST API via PowerShell:
+   ```powershell
+   $headers = @{
+       Authorization = "Basic $([Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$env:JIRA_EMAIL`:$env:JIRA_API_TOKEN")))"
+       "Content-Type" = "application/json"
+   }
+   Invoke-RestMethod -Uri "https://jlfowler1084.atlassian.net/rest/api/3/issue/SCRUM-XX" -Headers $headers -Method Get
+   ```
+3. Do NOT retry MCP more than once — it wastes entire sessions
+4. Jira project: SCRUM on jlfowler1084.atlassian.net, transition ID 41 = Done
+
 ---
 
 ## Testing
@@ -278,9 +308,15 @@ Connects to Atlassian Cloud (Jira, Confluence) via the official hosted MCP endpo
 ## Common Mistakes to Avoid
 
 - Don't use bash syntax in PowerShell
+- Don't use `&` (bash AND operator) in PowerShell — use `;` or separate commands
+- Don't use Unix-style pipes or redirections that don't exist in PowerShell
+- Don't assume temp files still exist after a pipeline step — Windows may clean them up between steps
 - Changes to regex phases affect downstream phases — test the full pipeline
 - Ligature fixes can break endnote linking (paragraph text changes shift cluster detection)
 - Heading classification changes can break Calibre (invalid TOC nesting)
+- Don't stack multiple code fixes without running the test suite between each one
+- Don't report "no regression" without actually running `test_pipeline.py`
+- Don't retry failed MCP connections more than once — fall back to REST API immediately
 
 ---
 
