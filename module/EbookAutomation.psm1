@@ -2194,7 +2194,7 @@ function Send-ToKindle {
             $output = if (Test-Path $outFile) { Get-Content $outFile -Raw } else { '' }
             $errOut = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { '' }
 
-            if ($proc.ExitCode -eq 0) {
+            if ($proc.ExitCode -eq 0 -or $null -eq $proc.ExitCode) {
                 $lastJson = ($output -split "`n" | Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
                 if ($lastJson) {
                     try {
