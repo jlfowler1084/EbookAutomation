@@ -1,0 +1,60 @@
+{
+  "captured_at": "2026-03-23T21:09:34.418797+00:00",
+  "source_file": "Genesis.pdf",
+  "source_format": "pdf",
+  "extraction_path": "pdfminer",
+  "file_size_bytes": 10178317,
+  "file_hash_sha256": "3cc342abbe2bd5bf780e132406ae9a5167a26a1d98e7795a31dba825e247a00a",
+  "baseline": {
+    "h1_count": 3,
+    "h2_count": 15,
+    "h3_count": 39,
+    "h1_headings": [
+      "Front Matter",
+      "Index of Modern Authors",
+      "Subject Index"
+    ],
+    "h2_headings": [
+      "Acknowledgments",
+      "Contents",
+      "Contributors",
+      "Introduction",
+      "1. How Should One Read the Early Chapters of Genesis?",
+      "2. Genesis before Darwin. Why Scripture Needed Liberating from Science",
+      "3. The Six Days of Creation According to the Greek Fathers",
+      "4. The Hermeneutics of Reading Genesis after Darwin",
+      "6. Genesis and the Scientists. Dissonance among the Harmonizers",
+      "Acknowledgments",
+      "7. Science and Religion in 19th- and 20th Century Landscape Art",
+      "8. Reading Genesis 1-3 in the Light of Modern Science",
+      "Reading Modern Science in the Light of Genesis 1-3",
+      "11. “Male and Female He Created Them” (Genesis 1:27). Interpreting Gender after Darwin",
+      "13. The Plausibility of Creationism. A Sociological Comment"
+    ],
+    "linked_footnotes": 0,
+    "unlinked_footnotes": 0,
+    "blockquotes": 10,
+    "em_tags": 1381,
+    "attributions": 0,
+    "ligature_splits_remaining": 0,
+    "double_spaces": 24,
+    "standalone_page_numbers": 1,
+    "has_front_matter_h1": true,
+    "chapter_openings": {
+      "Acknowledgments": "I wish to thank the directors of the Institute of Advanced S",
+      "Contents": "Stephen C. Barton is Reader in New Testament, Department of ",
+      "Contributors": "Stephen C. Barton is Reader in New Testament, Department of ",
+      "Introduction": "Stephen C. Barton and David Wilkinson",
+      "1. How Should One Read the Early Chapters of Genesis?": "Walter Moberly",
+      "2. Genesis before Darwin. Why Scripture Needed Liberating from Science": "Why Scripture Needed Liberating from Science",
+      "3. The Six Days of Creation According to the Greek Fathers": "Andrew Louth",
+      "4. The Hermeneutics of Reading Genesis after Darwin": "Genesis after Darwin",
+      "6. Genesis and the Scientists. Dissonance among the Harmonizers": "John Hedley Brooke",
+      "7. Science and Religion in 19th- and 20th Century Landscape Art": "David Brown",
+      "8. Reading Genesis 1-3 in the Light of Modern Science": "David Wilkinson",
+      "Reading Modern Science in the Light of Genesis 1-3": "The first option is that of six-day creationism, which uses ",
+      "11. “Male and Female He Created Them” (Genesis 1:27). Interpreting Gender after Darwin": "Them” (Genesis 1:27)",
+      "13. The Plausibility of Creationism. A Sociological Comment": "A Sociological Comment"
+    }
+  }
+}

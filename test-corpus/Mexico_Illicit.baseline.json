@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-03-23T21:21:59.680066+00:00",
+  "source_file": "Mexico_Illicit.pdf",
+  "source_format": "pdf",
+  "extraction_path": "pdfminer",
+  "file_size_bytes": 2238085,
+  "file_hash_sha256": "e5c6615c064ee036699da46959b2229a684fa17b792d2eb5151e5d5b5af70dbf",
+  "baseline": {
+    "h1_count": 4,
+    "h2_count": 8,
+    "h3_count": 68,
+    "h1_headings": [
+      "Abbreviations",
+      "Appendix: Comparison of Territorial versus Transactional Drug-Trafficking Networks",
+      "Bibliography",
+      "Index"
+    ],
+    "h2_headings": [
+      "Contents",
+      "Acknowledgments",
+      "Introduction",
+      "1 The State Reaction and Illicit-Network Resilience",
+      "2 The Arellano Félix Organization’s Resilience",
+      "3 The State Reaction",
+      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios",
+      "Conclusion"
+    ],
+    "linked_footnotes": 377,
+    "unlinked_footnotes": 337,
+    "blockquotes": 1,
+    "em_tags": 1437,
+    "attributions": 0,
+    "ligature_splits_remaining": 20,
+    "double_spaces": 437,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {
+      "Contents": "1.1 A Three-Part Illicit-Network Typology 20 1.2 Hierarchy a",
+      "Acknowledgments": "along the way a young scholar writing his dissertation and c",
+      "Introduction": "i  will  be  discussing profit-seeking illicit networks (PSI",
+      "1 The State Reaction and Illicit-Network Resilience": "illicit networks include insurgent networks such as Al Qaeda",
+      "2 The Arellano Félix Organization’s Resilience": "the arellano félix organization (AFO) was considered one of ",
+      "3 The State Reaction": "the successful destruction of the territorial drug network l",
+      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios": "this chapter will apply the state-reaction theoretical frame",
+      "Conclusion": "the state-reaction argument provides us with important insig"
+    }
+  }
+}

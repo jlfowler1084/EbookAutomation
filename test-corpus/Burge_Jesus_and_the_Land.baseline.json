@@ -1,0 +1,50 @@
+{
+  "captured_at": "2026-03-23T21:05:04.037183+00:00",
+  "source_file": "Burge_Jesus_and_the_Land.pdf",
+  "source_format": "pdf",
+  "extraction_path": "pdfminer",
+  "file_size_bytes": 986489,
+  "file_hash_sha256": "7e86e152fd4e25274e83bb6efa219d318d49dd0cb96c4938df808194763c77fb",
+  "baseline": {
+    "h1_count": 2,
+    "h2_count": 10,
+    "h3_count": 67,
+    "h1_headings": [
+      "Notes",
+      "Further reading"
+    ],
+    "h2_headings": [
+      "The Holy Land in the first century",
+      "Introduction: land, place, and religion",
+      "1 The biblical heritage",
+      "2 Diaspora Judaism and the land",
+      "3 Jesus and the land",
+      "4 The Fourth Gospel and the land",
+      "5 The book of Acts and the land",
+      "6 Paul and the promises to Abraham",
+      "7 Developments beyond Paul",
+      "8 Land, theology, and the Church"
+    ],
+    "linked_footnotes": 106,
+    "unlinked_footnotes": 17,
+    "blockquotes": 1,
+    "em_tags": 631,
+    "attributions": 0,
+    "ligature_splits_remaining": 0,
+    "double_spaces": 0,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {
+      "The Holy Land in the first century": "Land is potent not simply because it represents geography we",
+      "Introduction: land, place, and religion": "Land is potent not simply because it represents geography we",
+      "1 The biblical heritage": "Walter Brueggemann is correct when he suggests that land mig",
+      "2 Diaspora Judaism and the land": "Both Christian and Jewish identification with the land were ",
+      "3 Jesus and the land": "In the mid-40s of the first century, territorial nationalism",
+      "4 The Fourth Gospel and the land": "The topic of land and holy space in John’s Gospel is an exce",
+      "5 The book of Acts and the land": "A cursory reading of early Christian history immediately rec",
+      "6 Paul and the promises to Abraham": "Reconstructing Paul’s understanding of the land labors under",
+      "7 Developments beyond Paul": "Any casual reconstruction of early Christianity’s view of th",
+      "8 Land, theology, and the Church": "To think Christianly about land – in particular, the Land of"
+    }
+  }
+}

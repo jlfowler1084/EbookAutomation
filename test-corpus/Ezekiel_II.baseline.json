@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-03-23T21:14:52.995684+00:00",
+  "source_file": "Ezekiel_II.pdf",
+  "source_format": "pdf",
+  "extraction_path": "pymupdf",
+  "file_size_bytes": 55841126,
+  "file_hash_sha256": "bc5a260982719bcad03186a4ed3042cf21b42e52ea67d8e479dfc19f0afe1f26",
+  "baseline": {
+    "h1_count": 1,
+    "h2_count": 0,
+    "h3_count": 41,
+    "h1_headings": [
+      "• • .--."
+    ],
+    "h2_headings": [],
+    "linked_footnotes": 0,
+    "unlinked_footnotes": 21,
+    "blockquotes": 3,
+    "em_tags": 5891,
+    "attributions": 0,
+    "ligature_splits_remaining": 1,
+    "double_spaces": 1234,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {}
+  }
+}
