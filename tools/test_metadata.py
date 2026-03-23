@@ -470,5 +470,62 @@ class TestMetadataCLI(unittest.TestCase):
         self.assertEqual(result['title'], 'Stored Book')
 
 
+class TestEmailToKindleMetadata(unittest.TestCase):
+    """Tests for metadata injection in email_to_kindle.py."""
+
+    def setUp(self):
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest('PyMuPDF not installed')
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_inject_metadata_adds_to_empty_pdf(self):
+        """inject_metadata_if_needed should add metadata to a PDF with empty metadata."""
+        import fitz
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import email_to_kindle
+
+        src_dir = os.path.join(self.tmp_dir, 'src')
+        os.makedirs(src_dir)
+        pdf_path = os.path.join(src_dir, 'empty_meta.pdf')
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(pdf_path)
+        doc.close()
+
+        metadata = {'title': 'Injected Title', 'authors': 'Injected Author', 'subject': 'Test'}
+        result_path = email_to_kindle.inject_metadata_if_needed(pdf_path, metadata, self.tmp_dir)
+
+        self.assertNotEqual(result_path, pdf_path)
+        self.assertIn('_metadata', result_path)
+        doc2 = fitz.open(result_path)
+        self.assertEqual(doc2.metadata.get('title'), 'Injected Title')
+        self.assertEqual(doc2.metadata.get('author'), 'Injected Author')
+        doc2.close()
+
+    def test_inject_metadata_skips_good_pdf(self):
+        """inject_metadata_if_needed should not modify a PDF with existing good metadata."""
+        import fitz
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import email_to_kindle
+
+        pdf_path = os.path.join(self.tmp_dir, 'good_meta.pdf')
+        doc = fitz.open()
+        doc.new_page()
+        doc.set_metadata({'title': 'Existing Title', 'author': 'Existing Author'})
+        doc.save(pdf_path)
+        doc.close()
+
+        metadata = {'title': 'Should Not Override', 'authors': 'Should Not Override'}
+        result_path = email_to_kindle.inject_metadata_if_needed(pdf_path, metadata, self.tmp_dir)
+
+        self.assertEqual(result_path, pdf_path)
+
+
 if __name__ == '__main__':
     unittest.main()
