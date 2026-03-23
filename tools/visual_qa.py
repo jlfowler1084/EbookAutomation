@@ -127,7 +127,6 @@ def convert_to_pdf(input_path, calibre_path, output_dir=None):
         calibre_path,
         str(input_path),
         str(pdf_path),
-        "--pdf-page-numbers",
     ]
 
     result = subprocess.run(
