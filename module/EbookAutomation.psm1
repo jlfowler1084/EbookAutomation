@@ -703,8 +703,74 @@ print(json.dumps(output))
         }
     }
 
-    # Parse metadata from filename for a clean output name and Calibre flags
-    $meta = Get-EbookMetadataFromFilename $fileName
+    # ── Early metadata capture ────────────────────────────────────
+    $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_$(Get-Random).json"
+    $titleHash = $null
+
+    try {
+        $python    = $cfg.paths.python
+        $toolsDir  = Join-Path $script:ModuleRoot 'tools'
+
+        # Step 1: Extract internal metadata from source file and store in database
+        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        $extractProc = Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait
+
+        $dbMeta = $null
+        if (Test-Path $metaTempFile) {
+            $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+            $titleHash = $dbMeta.title_hash
+        }
+
+        # Step 2: Merge filename-derived metadata (fills gaps the internal metadata missed)
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        if ($fileMeta.Title -or $fileMeta.Authors) {
+            $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata"
+            if ($titleHash) {
+                $updateArgs += " --title-hash `"$titleHash`""
+            } else {
+                $hashTitle = if ($fileMeta.Title) { $fileMeta.Title } else { $stem }
+                $updateArgs += " --title-hash `"$hashTitle`""
+            }
+            if ($fileMeta.Title) { $updateArgs += " --title `"$($fileMeta.Title -replace '"', "'")`"" }
+            if ($fileMeta.Authors) { $updateArgs += " --authors `"$($fileMeta.Authors -replace '"', "'")`"" }
+            if ($fileMeta.Publisher) { $updateArgs += " --publisher `"$($fileMeta.Publisher -replace '"', "'")`"" }
+            if ($fileMeta.Year) { $updateArgs += " --year `"$($fileMeta.Year)`"" }
+            if ($fileMeta.ISBN) { $updateArgs += " --isbn `"$($fileMeta.ISBN)`"" }
+            $updateArgs += " --source-type filename_parser --output-file `"$metaTempFile`""
+            Start-Process -FilePath $python -ArgumentList $updateArgs -NoNewWindow -Wait
+
+            # Re-read the merged result
+            if (Test-Path $metaTempFile) {
+                $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+                $titleHash = $dbMeta.title_hash
+            }
+        }
+
+        # Step 3: Build $meta from merged database metadata, filling gaps from filename
+        if (-not $fileMeta) { $fileMeta = Get-EbookMetadataFromFilename $fileName }
+        $meta = @{
+            Title     = if ($dbMeta -and $dbMeta.title) { $dbMeta.title } else { $fileMeta.Title }
+            Authors   = if ($dbMeta -and $dbMeta.authors) { $dbMeta.authors } else { $fileMeta.Authors }
+            Publisher = if ($dbMeta -and $dbMeta.publisher) { $dbMeta.publisher } else { $fileMeta.Publisher }
+            Year      = if ($dbMeta -and $dbMeta.year) { $dbMeta.year } else { $fileMeta.Year }
+            ISBN      = if ($dbMeta -and $dbMeta.isbn) { $dbMeta.isbn } else { $fileMeta.ISBN }
+        }
+
+        Write-EbookLog "Kindle: metadata source -> $( if ($dbMeta.source_type) { $dbMeta.source_type } else { 'filename_parser' } )"
+    }
+    catch {
+        Write-EbookLog "Kindle: metadata capture failed (non-blocking) -- $_" -Level WARN
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        $meta = @{
+            Title = $fileMeta.Title; Authors = $fileMeta.Authors
+            Publisher = $fileMeta.Publisher; Year = $fileMeta.Year; ISBN = $fileMeta.ISBN
+        }
+    }
+    finally {
+        if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+            Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
     $cleanStem = if ($meta.Title) {
         # Sanitize title for filesystem: remove illegal chars, brackets, colons
         ($meta.Title -replace '[\\/:*?"<>|]', '' -replace '[\(\)\[\]\{\}]', '' -replace '\s+', ' ').Trim()
