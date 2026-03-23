@@ -1993,7 +1993,16 @@ function Send-ToKindle {
 
         [string]$CoverImage,
         [switch]$DeleteFromLibrary,
-        [int]$DeviceTimeout = 60
+        [int]$DeviceTimeout = 60,
+
+        [switch]$Email,
+
+        [ValidateSet('EPUB','PDF')]
+        [string]$EmailFormat = 'EPUB',
+
+        [switch]$Compress,
+
+        [int]$SplitMaxMB
     )
 
     begin {
@@ -2009,6 +2018,35 @@ function Send-ToKindle {
         if (-not $cfg.kindle_delivery.enabled) {
             Write-EbookLog "SendToKindle: disabled in settings.json (kindle_delivery.enabled = false)" -Level WARN
             return
+        }
+
+        # ── Email path validation ──
+        if ($Email) {
+            $emailCfg = $cfg.kindle_delivery.email
+            if (-not $emailCfg -or -not $emailCfg.kindle_address) {
+                Write-EbookLog "SendToKindle: kindle_delivery.email.kindle_address not configured in settings.json" -Level ERROR
+                return
+            }
+            if (-not $emailCfg.smtp_user) {
+                Write-EbookLog "SendToKindle: kindle_delivery.email.smtp_user not configured" -Level ERROR
+                return
+            }
+            $passwordEnvVar = if ($emailCfg.smtp_app_password_env) { $emailCfg.smtp_app_password_env } else { 'EBOOK_SMTP_PASSWORD' }
+            if (-not [System.Environment]::GetEnvironmentVariable($passwordEnvVar)) {
+                Write-EbookLog "SendToKindle: environment variable '$passwordEnvVar' not set -- required for email delivery" -Level ERROR
+                Write-EbookLog "SendToKindle: set it with: `$env:$passwordEnvVar = 'your-gmail-app-password'" -Level ERROR
+                return
+            }
+            $emailScript = Join-Path $script:ModuleRoot 'tools\email_to_kindle.py'
+            if (-not (Test-Path $emailScript)) {
+                Write-EbookLog "SendToKindle: email_to_kindle.py not found at $emailScript" -Level ERROR
+                return
+            }
+        }
+
+        # Warn if -Compress/-SplitMaxMB used without -Email
+        if (-not $Email -and ($Compress -or $SplitMaxMB)) {
+            Write-EbookLog "SendToKindle: ignoring -Compress/-SplitMaxMB (only applicable with -Email delivery)" -Level WARN
         }
 
         # Resolve Calibre paths -- calibredb and calibre-debug are in the same folder as ebook-convert
@@ -2061,6 +2099,136 @@ function Send-ToKindle {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
         Write-EbookLog "SendToKindle: preparing to send '$fileName'..."
+
+        # ── Email delivery path ──
+        if ($Email) {
+            $fileExt = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToUpper()
+            $supportedEmailFormats = @('EPUB','PDF','DOC','DOCX','TXT','RTF','HTM','HTML','PNG','GIF','JPG','JPEG','BMP')
+
+            # Determine the file to email
+            $emailFile = $InputFile
+            if ($EmailFormat -eq 'EPUB' -and $fileExt -eq 'KFX') {
+                $stem = [System.IO.Path]::GetFileNameWithoutExtension($InputFile)
+                $dir = Split-Path $InputFile -Parent
+                $epubCandidate = Get-ChildItem -Path $dir -Filter "$stem*.epub" -File -ErrorAction SilentlyContinue |
+                                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($epubCandidate) {
+                    $emailFile = $epubCandidate.FullName
+                    Write-EbookLog "SendToKindle: found EPUB for email: $($epubCandidate.Name)"
+                } else {
+                    $intermediatesDir = Join-Path $dir '.intermediates'
+                    $htmlCandidate = Get-ChildItem -Path $intermediatesDir -Filter "${stem}*_kindle.html" -File -ErrorAction SilentlyContinue |
+                                     Select-Object -First 1
+                    if ($htmlCandidate) {
+                        Write-EbookLog "SendToKindle: generating EPUB from intermediate HTML..."
+                        $epubFile = Join-Path $dir "$stem.epub"
+                        $calibreExe = Resolve-ProjectPath $cfg.paths.calibre
+                        $epubArgs = "`"$($htmlCandidate.FullName)`" `"$epubFile`" --input-encoding utf-8"
+                        Start-Process -FilePath $calibreExe -ArgumentList $epubArgs -NoNewWindow -Wait
+                        if (Test-Path $epubFile) {
+                            $emailFile = $epubFile
+                        } else {
+                            Write-EbookLog "SendToKindle: EPUB generation from HTML failed" -Level WARN
+                        }
+                    }
+                    if ($emailFile -eq $InputFile) {
+                        Write-EbookLog "SendToKindle: no EPUB or intermediate HTML available. Attempting KFX->EPUB (quality may vary)" -Level WARN
+                        Write-EbookLog "SendToKindle: for best quality, re-run pipeline with -EmailToKindle" -Level WARN
+                        $calibreExe = Resolve-ProjectPath $cfg.paths.calibre
+                        $epubFile = [System.IO.Path]::ChangeExtension($InputFile, '.epub')
+                        $lossyArgs = "`"$InputFile`" `"$epubFile`""
+                        Start-Process -FilePath $calibreExe -ArgumentList $lossyArgs -NoNewWindow -Wait
+                        if (Test-Path $epubFile) { $emailFile = $epubFile }
+                    }
+                }
+            }
+
+            # Validate the email file format
+            $emailExt = [System.IO.Path]::GetExtension($emailFile).TrimStart('.').ToUpper()
+            if ($emailExt -notin $supportedEmailFormats) {
+                Write-EbookLog "SendToKindle: format .$emailExt is not supported for email delivery. Supported: EPUB, PDF" -Level ERROR
+                return
+            }
+
+            $emailFileName = [System.IO.Path]::GetFileName($emailFile)
+            if (-not $PSCmdlet.ShouldProcess($emailFileName, "Email to Kindle via SMTP")) {
+                return
+            }
+
+            # Build Python args
+            $bookTitle = [System.IO.Path]::GetFileNameWithoutExtension($emailFile)
+            $pyArgs = "`"$emailScript`" --file `"$emailFile`" --kindle-address `"$($emailCfg.kindle_address)`""
+            $pyArgs += " --smtp-server `"$($emailCfg.smtp_server)`" --smtp-port $($emailCfg.smtp_port)"
+            $pyArgs += " --smtp-user `"$($emailCfg.smtp_user)`" --book-title `"$bookTitle`""
+            $pyArgs += " --password-env-var `"$passwordEnvVar`""
+
+            if ($emailCfg.convert_subject -and $emailExt -ne 'PDF') {
+                $pyArgs += " --convert-subject"
+            }
+            if ($Compress) { $pyArgs += " --compress" }
+            $maxMB = if ($SplitMaxMB) { $SplitMaxMB } else { $emailCfg.max_email_size_mb }
+            if ($maxMB) { $pyArgs += " --split-max-mb $maxMB" }
+
+            $gsPath = $cfg.paths.ghostscript
+            if ($gsPath -and (Test-Path $gsPath)) {
+                $pyArgs += " --ghostscript-path `"$gsPath`""
+            }
+
+            # Pass Calibre path for EPUB compression
+            $calibreExe = Resolve-ProjectPath $cfg.paths.calibre
+            if ($calibreExe -and (Test-Path $calibreExe)) {
+                $pyArgs += " --calibre-path `"$calibreExe`""
+            }
+
+            Write-EbookLog "SendToKindle: emailing '$emailFileName' to $($emailCfg.kindle_address)..."
+            $python = $cfg.paths.python
+            $outFile = Join-Path ([System.IO.Path]::GetTempPath()) "kindle_email_out_$(Get-Random).txt"
+            $errFile = Join-Path ([System.IO.Path]::GetTempPath()) "kindle_email_err_$(Get-Random).txt"
+
+            $proc = Start-Process -FilePath $python -ArgumentList $pyArgs `
+                                  -PassThru -NoNewWindow `
+                                  -RedirectStandardOutput $outFile `
+                                  -RedirectStandardError $errFile
+            $proc.WaitForExit()
+
+            $output = if (Test-Path $outFile) { Get-Content $outFile -Raw } else { '' }
+            $errOut = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { '' }
+
+            if ($proc.ExitCode -eq 0) {
+                $lastJson = ($output -split "`n" | Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
+                if ($lastJson) {
+                    try {
+                        $result = $lastJson | ConvertFrom-Json
+                        if ($result.success) {
+                            $elapsed = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+                            Write-EbookLog "SendToKindle: EMAIL SUCCESS -- '$emailFileName' sent to $($emailCfg.kindle_address) (${elapsed}s)" -Level SUCCESS
+                            Send-EbookNotification -Title 'Emailed to Kindle' -Message "$emailFileName -> Kindle" -Type Success
+                        }
+                    } catch {
+                        Write-EbookLog "SendToKindle: email completed but could not parse result" -Level WARN
+                    }
+                }
+            } else {
+                Write-EbookLog "SendToKindle: EMAIL FAILED (exit code $($proc.ExitCode))" -Level ERROR
+                if ($errOut) {
+                    $errOut -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 5 | ForEach-Object {
+                        Write-EbookLog "SendToKindle:   $_" -Level ERROR
+                    }
+                }
+                # Throw so the pipeline's try/catch can detect the failure
+                foreach ($f in @($outFile, $errFile)) {
+                    if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+                }
+                throw "Email delivery failed (exit code $($proc.ExitCode))"
+            }
+
+            # Cleanup temp files
+            foreach ($f in @($outFile, $errFile)) {
+                if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+            }
+
+            return  # Email path complete -- don't fall through to USB
+        }
 
         if (-not $PSCmdlet.ShouldProcess($fileName, 'Send to Kindle device')) {
             return
