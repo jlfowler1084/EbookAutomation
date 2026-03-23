@@ -576,6 +576,20 @@ function Convert-ToKindle {
     $overallSw  = [System.Diagnostics.Stopwatch]::StartNew()
     $stepTimings = [ordered]@{}
 
+    # Resolve glob patterns in InputFile (e.g. "Burge*.pdf" -> actual path)
+    if ($InputFile -match '[*?]') {
+        $resolved = Get-ChildItem -Path $InputFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($resolved) {
+            if ((Get-ChildItem -Path $InputFile -ErrorAction SilentlyContinue).Count -gt 1) {
+                Write-EbookLog "Kindle: glob matched multiple files, using: $($resolved.FullName)" -Level WARN
+            }
+            $InputFile = $resolved.FullName
+        } else {
+            Write-EbookLog "Kindle: no files match pattern: $InputFile" -Level ERROR
+            return $false
+        }
+    }
+
     # Default output directory from config if not specified
     if (-not $OutputDir) {
         $OutputDir = Resolve-ProjectPath $cfg.paths.kindle
@@ -3236,8 +3250,12 @@ Rules:
         return $null
     }
 
-    # -- Step 4: Parse JSON response
-    $json = $raw -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
+    # -- Step 4: Parse JSON response (handle prose before/after fenced JSON)
+    if ($raw -match '(?s)```(?:json)?\s*(\[.*?\])\s*```') {
+        $json = $Matches[1]
+    } else {
+        $json = $raw -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
+    }
     $json = $json.Trim()
 
     try {
