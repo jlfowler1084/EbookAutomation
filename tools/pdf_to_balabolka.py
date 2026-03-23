@@ -7919,7 +7919,7 @@ def _fix_ligature_splits(para_dicts, log):
         log(f"  Ligature fixes applied to {total_fixes} paragraphs")
 
 
-def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False):
+def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False, skip_footnotes=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -7952,8 +7952,11 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     html = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title)
 
-    log("\n-- STEP 2b: Linking footnote references to endnotes ---")
-    html = _link_endnotes(html, log)
+    if not skip_footnotes:
+        log("\n-- STEP 2b: Linking footnote references to endnotes ---")
+        html = _link_endnotes(html, log)
+    else:
+        log("\n-- STEP 2b: Skipping endnote linking (--skip-footnotes) ---")
 
     # Write HTML output
     html_path = re.sub(r'\.(txt|html?)$', '.html', output_path)
@@ -8540,6 +8543,8 @@ Examples:
                     help="Force Tesseract OCR extraction (for scanned/image-only PDFs)")
     ap.add_argument("--no-ocr", action="store_true",
                     help="Disable OCR auto-detection, force standard text extraction")
+    ap.add_argument("--skip-footnotes", action="store_true",
+                    help="Skip footnote/endnote linking (used when profile strips footnotes)")
     ap.add_argument("--tesseract-path", default=None,
                     help="Path to tesseract.exe (auto-detected from PATH if not set)")
     ap.add_argument("--poppler-path", default=None,
@@ -8632,7 +8637,8 @@ Examples:
             if not html_output.endswith('.html'):
                 html_output = output_path + '.html'
             process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
-                                force_columns=args.force_columns)
+                                force_columns=args.force_columns,
+                                skip_footnotes=args.skip_footnotes)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,

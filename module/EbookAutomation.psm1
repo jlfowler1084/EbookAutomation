@@ -607,7 +607,18 @@ function Convert-ToKindle {
         [string]$VqaReportPath,
 
         [Parameter(HelpMessage = 'Also produce an EPUB from the intermediate HTML (for email delivery).')]
-        [switch]$ProduceEpub
+        [switch]$ProduceEpub,
+
+        [ValidateSet('full','clean-read','text-only')]
+        [string]$Profile = 'full',
+
+        [switch]$NoFootnotes,
+        [switch]$NoIndex,
+        [switch]$NoHyperlinks,
+        [switch]$NoFrontMatter,
+        [switch]$NoBackMatter,
+        [switch]$NoImages,
+        [switch]$NoBlockQuotes
     )
 
     $cfg        = Get-EbookConfig
@@ -889,11 +900,18 @@ print(json.dumps(output))
                     }
                 }
                 # Add AI Quality Pass API key if requested
-                if ($ValidateQuality -or $env:ANTHROPIC_API_KEY) {
+                # Skip AI quality pass for text-only profile (less content = less risk)
+                if ($Profile -ne 'text-only' -and ($ValidateQuality -or $env:ANTHROPIC_API_KEY)) {
                     $qualityKey = $env:ANTHROPIC_API_KEY
                     if ($qualityKey) {
                         $pyArgs += " --api-key `"$qualityKey`""
                     }
+                }
+
+                # Skip footnote linking if profile/flag will strip them anyway
+                $effectiveNoFootnotes = $NoFootnotes -or $Profile -in @('clean-read', 'text-only')
+                if ($effectiveNoFootnotes) {
+                    $pyArgs += " --skip-footnotes"
                 }
 
                 $pyProc = Start-Process -FilePath $python `
@@ -1167,6 +1185,12 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
 
                 $pyArgs = "$toolPath --input `"$InputFile`" --mode kindle --output-dir `"$tempDir`" --epub-html"
 
+                # Skip footnote linking if profile/flag will strip them anyway
+                $effectiveNoFootnotes = $NoFootnotes -or $Profile -in @('clean-read', 'text-only')
+                if ($effectiveNoFootnotes) {
+                    $pyArgs += " --skip-footnotes"
+                }
+
                 $pyProc = Start-Process -FilePath $python `
                                         -ArgumentList $pyArgs `
                                         -PassThru -NoNewWindow `
@@ -1413,6 +1437,73 @@ else:
         } catch {
             # Fix engine failure is non-blocking
             Write-EbookLog "Kindle: fix engine failed (non-blocking) -- $_" -Level WARN
+        }
+    }
+
+    # ── Apply content profile filter ──────────────────────────────────────────
+    $needsFilter = ($Profile -ne 'full') -or $NoFootnotes -or $NoIndex -or $NoHyperlinks -or $NoFrontMatter -or $NoBackMatter -or $NoImages -or $NoBlockQuotes
+    # Only filter intermediate files (HTML/TXT), not the original source ebook
+    if ($needsFilter -and $convertInput -and ($convertInput -ne $InputFile) -and (Test-Path $convertInput)) {
+        try {
+            $filterScript = Join-Path $script:ModuleRoot 'tools' 'filter_content.py'
+            # Ensure $python is set (it's assigned in PDF/EPUB extraction blocks)
+            if (-not $python) { $python = (Get-EbookConfig).paths.python }
+            if (Test-Path $filterScript) {
+                $filteredPath = [System.IO.Path]::ChangeExtension($convertInput, '.filtered' + [System.IO.Path]::GetExtension($convertInput))
+
+                $filterArgs = "`"$filterScript`" --input `"$convertInput`" --output `"$filteredPath`""
+                if ($Profile -ne 'full') { $filterArgs += " --profile $Profile" }
+                if ($NoFootnotes)   { $filterArgs += " --no-footnotes" }
+                if ($NoIndex)       { $filterArgs += " --no-index" }
+                if ($NoHyperlinks)  { $filterArgs += " --no-hyperlinks" }
+                if ($NoFrontMatter) { $filterArgs += " --no-front-matter" }
+                if ($NoBackMatter)  { $filterArgs += " --no-back-matter" }
+                if ($NoImages)      { $filterArgs += " --no-images" }
+                if ($NoBlockQuotes) { $filterArgs += " --no-block-quotes" }
+
+                Write-EbookLog "Kindle: filtering content (profile=$Profile)..."
+
+                $filterGuid   = [guid]::NewGuid().ToString('N')
+                $filterStdout = Join-Path $env:TEMP "filter_stdout_$filterGuid.txt"
+                $filterStderr = Join-Path $env:TEMP "filter_stderr_$filterGuid.txt"
+
+                $filterProc = Start-Process -FilePath $python -ArgumentList $filterArgs `
+                                            -NoNewWindow -Wait -PassThru `
+                                            -RedirectStandardOutput $filterStdout `
+                                            -RedirectStandardError $filterStderr
+
+                if ($filterProc.ExitCode -eq 0 -and (Test-Path $filteredPath)) {
+                    # Parse JSON report from stdout
+                    if (Test-Path $filterStdout) {
+                        $filterReport = Get-Content $filterStdout -Raw -ErrorAction SilentlyContinue
+                        Remove-Item $filterStdout -ErrorAction SilentlyContinue
+                        if ($filterReport) {
+                            try {
+                                $filterJson = $filterReport | ConvertFrom-Json
+                                $removedItems = ($filterJson.removed.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', '
+                                if ($removedItems) {
+                                    Write-EbookLog "Kindle: content filter removed: $removedItems ($($filterJson.size_reduction_percent)% size reduction)" -Level SUCCESS
+                                }
+                                $stepTimings['ContentFilter'] = "removed $removedItems ($($filterJson.size_reduction_percent)%)"
+                            } catch { }
+                        }
+                    }
+                    $convertInput = $filteredPath
+                } else {
+                    Write-EbookLog "Kindle: content filter failed (non-blocking, using unfiltered)" -Level WARN
+                }
+
+                # Clean up stderr
+                if (Test-Path $filterStderr) {
+                    $stderrContent = Get-Content $filterStderr -Raw -ErrorAction SilentlyContinue
+                    if ($stderrContent -and $stderrContent.Trim()) {
+                        Write-EbookLog "  Filter: $($stderrContent.Trim())" -Level WARN
+                    }
+                    Remove-Item $filterStderr -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Write-EbookLog "Kindle: content filter failed (non-blocking) -- $_" -Level WARN
         }
     }
 
@@ -2567,7 +2658,18 @@ function Invoke-EbookPipeline {
         [switch]$ValidateVisual,
         [switch]$NoCache,
         [switch]$SendToKindle,
-        [switch]$EmailToKindle
+        [switch]$EmailToKindle,
+
+        [ValidateSet('full','clean-read','text-only')]
+        [string]$Profile = 'full',
+
+        [switch]$NoFootnotes,
+        [switch]$NoIndex,
+        [switch]$NoHyperlinks,
+        [switch]$NoFrontMatter,
+        [switch]$NoBackMatter,
+        [switch]$NoImages,
+        [switch]$NoBlockQuotes
     )
 
     $pipelineStart  = Get-Date
@@ -4034,7 +4136,18 @@ function Invoke-ConvergeLoop {
         [int]$TargetScore = 85,
         [int]$StallThreshold = 3,
         [string]$OutputDir,
-        [double]$CostLimit = 2.00
+        [double]$CostLimit = 2.00,
+
+        [ValidateSet('full','clean-read','text-only')]
+        [string]$Profile = 'full',
+
+        [switch]$NoFootnotes,
+        [switch]$NoIndex,
+        [switch]$NoHyperlinks,
+        [switch]$NoFrontMatter,
+        [switch]$NoBackMatter,
+        [switch]$NoImages,
+        [switch]$NoBlockQuotes
     )
 
     # ── Step 1: Setup ────────────────────────────────────────────────────────
@@ -4097,6 +4210,11 @@ function Invoke-ConvergeLoop {
                 Write-EbookLog "  Text density: $($classification.signals.text_density_per_page) chars/page"
                 Write-EbookLog "  File size/page: $($classification.signals.file_size_per_page_kb) KB"
                 Write-EbookLog "  Recommended strategies: $($classification.recommended_strategies -join ' -> ')"
+
+                # Recommend lean profile for scanned PDFs
+                if ($classification.classification -in @('scan_with_text', 'scan_no_text') -and $Profile -eq 'full') {
+                    Write-EbookLog "ConvergeLoop: scanned PDF detected -- consider using -Profile text-only for best Kindle performance" -Level WARN
+                }
 
                 if ($classification.flags.needs_ocr) {
                     Write-EbookLog "  WARNING: Source needs OCR - text layer is empty or unusable" -Level WARN
@@ -4309,6 +4427,16 @@ print(json.dumps(result))
         foreach ($flag in $strategy.Flags.GetEnumerator()) {
             $convertParams[$flag.Key] = $flag.Value
         }
+
+        # Pass through profile flags (user preference, not strategy-dependent)
+        if ($Profile -ne 'full') { $convertParams['Profile'] = $Profile }
+        if ($NoFootnotes)   { $convertParams['NoFootnotes']   = $true }
+        if ($NoIndex)       { $convertParams['NoIndex']       = $true }
+        if ($NoHyperlinks)  { $convertParams['NoHyperlinks']  = $true }
+        if ($NoFrontMatter) { $convertParams['NoFrontMatter'] = $true }
+        if ($NoBackMatter)  { $convertParams['NoBackMatter']  = $true }
+        if ($NoImages)      { $convertParams['NoImages']      = $true }
+        if ($NoBlockQuotes) { $convertParams['NoBlockQuotes'] = $true }
 
         $convertOk = Convert-ToKindle @convertParams
 
