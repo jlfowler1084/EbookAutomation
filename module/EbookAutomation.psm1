@@ -2431,7 +2431,8 @@ function Invoke-EbookPipeline {
         [switch]$ForceColumns,
         [switch]$ValidateVisual,
         [switch]$NoCache,
-        [switch]$SendToKindle
+        [switch]$SendToKindle,
+        [switch]$EmailToKindle
     )
 
     $pipelineStart  = Get-Date
@@ -2452,6 +2453,7 @@ function Invoke-EbookPipeline {
     Write-EbookLog "  Archive:       $archiveDir"
     $mp3Active = $GenerateMP3 -or $cfg.mp3.enabled
     $sendActive = $SendToKindle -or ($cfg.kindle_delivery -and $cfg.kindle_delivery.auto_send)
+    $emailActive = $EmailToKindle -or ($cfg.kindle_delivery.email -and $cfg.kindle_delivery.email.auto_send)
     Write-EbookLog "  TTS enabled:   $($cfg.tts.enabled)   |  Kindle enabled: $($cfg.kindle.enabled)   |  MP3 enabled: $mp3Active$(if ($GenerateMP3) { ' (-GenerateMP3)' })"
     if ($UseClaudeChapters) { Write-EbookLog "  Claude chapter detection: ENABLED" }
     if ($UseOCR) { Write-EbookLog "  Tesseract OCR: FORCED" }
@@ -2459,6 +2461,7 @@ function Invoke-EbookPipeline {
     if ($ForceColumns) { Write-EbookLog "  Column-aware extraction: FORCED (-ForceColumns)" }
     if ($NoCache) { Write-EbookLog "  Cache bypass: ENABLED (-NoCache)" }
     if ($sendActive) { Write-EbookLog "  Send to Kindle: ENABLED" }
+    if ($emailActive) { Write-EbookLog "  Email to Kindle: ENABLED" }
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
@@ -2497,7 +2500,7 @@ function Invoke-EbookPipeline {
             Write-EbookLog "$bookLabel SKIP (already processed): $($file.Name)" -Level WARN
             $skipped++
             $resultLog += [PSCustomObject]@{
-                File = $file.Name; TTS = 'skip'; Kindle = 'skip'; MP3 = 'skip'; Status = 'skipped'; Time = '-'
+                File = $file.Name; TTS = 'skip'; Kindle = 'skip'; MP3 = 'skip'; DeviceSend = 'n/a'; EmailSend = 'n/a'; Status = 'skipped'; Time = '-'
             }
             continue
         }
@@ -2510,7 +2513,7 @@ function Invoke-EbookPipeline {
         if ($DryRun) {
             Write-EbookLog "  DRY RUN: would process this file" -Level WARN
             $resultLog += [PSCustomObject]@{
-                File = $file.Name; TTS = 'dry-run'; Kindle = 'dry-run'; MP3 = 'dry-run'; Status = 'dry-run'; Time = '-'
+                File = $file.Name; TTS = 'dry-run'; Kindle = 'dry-run'; MP3 = 'dry-run'; DeviceSend = 'n/a'; EmailSend = 'n/a'; Status = 'dry-run'; Time = '-'
             }
             continue
         }
@@ -2525,7 +2528,7 @@ function Invoke-EbookPipeline {
             Write-EbookLog "  Failed to copy to processing dir: $_" -Level ERROR
             $errors++
             $resultLog += [PSCustomObject]@{
-                File = $file.Name; TTS = 'n/a'; Kindle = 'n/a'; MP3 = 'n/a'; Status = 'COPY FAILED'; Time = '-'
+                File = $file.Name; TTS = 'n/a'; Kindle = 'n/a'; MP3 = 'n/a'; DeviceSend = 'n/a'; EmailSend = 'n/a'; Status = 'COPY FAILED'; Time = '-'
             }
             continue
         }
@@ -2619,7 +2622,7 @@ function Invoke-EbookPipeline {
                 Write-EbookLog "  Kindle: starting conversion..."
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
@@ -2655,6 +2658,26 @@ function Invoke-EbookPipeline {
                     Write-EbookLog "  Send to Kindle failed: $_" -Level WARN
                     $sentToKindle = $false
                 }
+            }
+        }
+
+        # Email to Kindle
+        $emailedToKindle = $false
+        if ($kindleOk -and $emailActive) {
+            $stem = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
+            $epubFile = Get-ChildItem -Path $kindleDir -Filter "$stem*.epub" -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($epubFile) {
+                try {
+                    Write-EbookLog "  Emailing to Kindle..."
+                    Send-ToKindle -InputFile $epubFile.FullName -Email
+                    $emailedToKindle = $true
+                } catch {
+                    Write-EbookLog "  Email to Kindle failed: $_" -Level WARN
+                    $emailedToKindle = $false
+                }
+            } else {
+                Write-EbookLog "  Email to Kindle: no EPUB found for email delivery" -Level WARN
             }
         }
 
@@ -2694,8 +2717,10 @@ function Invoke-EbookPipeline {
             Write-EbookLog "  Result: ALL STEPS FAILED -- file left in inbox ($bookTime)" -Level ERROR
         }
 
+        $devSendStatus  = if ($sendActive -and $kindleOk) { if ($sentToKindle) { 'OK' } else { 'FAILED' } } elseif ($sendActive) { 'skipped' } else { 'n/a' }
+        $emailSendStatus = if ($emailActive -and $kindleOk) { if ($emailedToKindle) { 'OK' } else { 'FAILED' } } elseif ($emailActive) { 'skipped' } else { 'n/a' }
         $resultLog += [PSCustomObject]@{
-            File = $file.Name; TTS = $ttsMsg; Kindle = $kindleMsg; MP3 = $mp3Msg; Status = $bookStatus; Time = $bookTime
+            File = $file.Name; TTS = $ttsMsg; Kindle = $kindleMsg; MP3 = $mp3Msg; DeviceSend = $devSendStatus; EmailSend = $emailSendStatus; Status = $bookStatus; Time = $bookTime
         }
 
         # Cleanup processing copy
@@ -2730,7 +2755,10 @@ function Invoke-EbookPipeline {
                  else                              { 'INFO' }
 
         $shortName = if ($entry.File.Length -gt 55) { $entry.File.Substring(0, 52) + '...' } else { $entry.File }
-        Write-EbookLog "  $icon $shortName  |  TTS: $($entry.TTS)  |  Kindle: $($entry.Kindle)  |  MP3: $($entry.MP3)" -Level $level
+        $deliveryInfo = ''
+        if ($sendActive)  { $deliveryInfo += "  |  USB: $($entry.DeviceSend)" }
+        if ($emailActive) { $deliveryInfo += "  |  Email: $($entry.EmailSend)" }
+        Write-EbookLog "  $icon $shortName  |  TTS: $($entry.TTS)  |  Kindle: $($entry.Kindle)  |  MP3: $($entry.MP3)$deliveryInfo" -Level $level
     }
 
     Write-EbookLog "--------------------------------------------------------"
