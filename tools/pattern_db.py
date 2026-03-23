@@ -170,6 +170,28 @@ CREATE TABLE IF NOT EXISTS book_overrides (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Book metadata extracted from source files and merged across sources
+CREATE TABLE IF NOT EXISTS book_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id TEXT,
+    isbn TEXT,
+    title_hash TEXT,
+    title TEXT,
+    authors TEXT,
+    publisher TEXT,
+    year TEXT,
+    language TEXT DEFAULT 'en',
+    subject TEXT,
+    series TEXT,
+    description TEXT,
+    cover_path TEXT,
+    extra_json TEXT,
+    source_filename TEXT,
+    source_type TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 _INDEXES_SQL = """
@@ -193,6 +215,10 @@ CREATE INDEX IF NOT EXISTS idx_books_isbn
     ON books(isbn);
 CREATE INDEX IF NOT EXISTS idx_books_source_hash
     ON books(source_file_hash);
+CREATE INDEX IF NOT EXISTS idx_book_metadata_title_hash
+    ON book_metadata(title_hash);
+CREATE INDEX IF NOT EXISTS idx_book_metadata_isbn
+    ON book_metadata(isbn);
 """
 
 # ---------------------------------------------------------------------------
