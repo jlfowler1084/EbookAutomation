@@ -2270,6 +2270,30 @@ function Send-ToKindle {
             $pyArgs += " --smtp-user `"$($emailCfg.smtp_user)`" --book-title `"$bookTitle`""
             $pyArgs += " --password-env-var `"$passwordEnvVar`""
 
+            # Look up enriched metadata from database (may have PDF/EPUB internal metadata)
+            $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_send_$(Get-Random).json"
+            try {
+                $python   = $cfg.paths.python
+                $toolsDir = Join-Path $script:ModuleRoot 'tools'
+                $lookupArgs = "`"$toolsDir\pattern_db.py`" get-metadata"
+                if ($emailMeta.Title) {
+                    $lookupArgs += " --title `"$($emailMeta.Title -replace '"', "'")`""
+                }
+                if ($emailMeta.Authors) {
+                    $lookupArgs += " --author `"$($emailMeta.Authors -replace '"', "'")`""
+                }
+                $lookupArgs += " --output-file `"$metaTempFile`""
+                Start-Process -FilePath $python -ArgumentList $lookupArgs -NoNewWindow -Wait
+
+                if ((Test-Path $metaTempFile) -and (Get-Item $metaTempFile).Length -gt 5) {
+                    $pyArgs += " --metadata-file `"$metaTempFile`""
+                    Write-EbookLog "SendToKindle: passing enriched metadata to email script"
+                }
+            }
+            catch {
+                Write-EbookLog "SendToKindle: metadata lookup failed (non-blocking) -- $_" -Level WARN
+            }
+
             if ($emailCfg.convert_subject -and $emailExt -ne 'PDF') {
                 $pyArgs += " --convert-subject"
             }
@@ -2333,6 +2357,9 @@ function Send-ToKindle {
             # Cleanup temp files
             foreach ($f in @($outFile, $errFile)) {
                 if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+            }
+            if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+                Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
             }
 
             return  # Email path complete -- don't fall through to USB
