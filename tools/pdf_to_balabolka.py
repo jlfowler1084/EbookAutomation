@@ -653,14 +653,84 @@ def extract_text_from_epub(epub_path, log):
     return '\n\n'.join(all_text)
 
 
-def extract_html_from_epub(epub_path, log):
+def _rewrite_epub_links(soup, spine_filenames):
+    """Rewrite cross-file EPUB links to in-document fragment anchors.
+
+    'split_020.html#footnote_87' → '#footnote_87'
+    'chapter3.xhtml#ref_42'      → '#ref_42'
+    'text/split_005.html' (no fragment) → '#'
+    """
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag['href']
+
+        # Skip external links and pure fragment links
+        if href.startswith(('http://', 'https://', 'mailto:', '#')):
+            continue
+
+        # Strip ../ relative path prefixes
+        clean_href = href
+        while clean_href.startswith('../'):
+            clean_href = clean_href[3:]
+
+        # Split into file part and fragment part
+        if '#' in clean_href:
+            file_part, fragment = clean_href.rsplit('#', 1)
+        else:
+            file_part = clean_href
+            fragment = None
+
+        # Check if the file part matches a known spine item
+        file_basename = file_part.rsplit('/', 1)[-1] if '/' in file_part else file_part
+
+        if file_part in spine_filenames or file_basename in spine_filenames:
+            if fragment:
+                a_tag['href'] = f'#{fragment}'
+            else:
+                a_tag['href'] = '#'
+
+
+def _rewrite_image_paths(soup, image_path_map):
+    """Rewrite <img src="..."> to point to extracted image files."""
+    for img_tag in soup.find_all('img', src=True):
+        src = img_tag['src']
+
+        clean_src = src
+        while clean_src.startswith('../'):
+            clean_src = clean_src[3:]
+
+        basename = clean_src.rsplit('/', 1)[-1] if '/' in clean_src else clean_src
+
+        if clean_src in image_path_map:
+            img_tag['src'] = image_path_map[clean_src]
+        elif basename in image_path_map:
+            img_tag['src'] = image_path_map[basename]
+
+    # Also handle SVG <image> references
+    for img_tag in soup.find_all('image'):
+        for attr in ['href', 'xlink:href']:
+            if img_tag.get(attr):
+                src = img_tag[attr]
+                clean_src = src
+                while clean_src.startswith('../'):
+                    clean_src = clean_src[3:]
+                basename = clean_src.rsplit('/', 1)[-1] if '/' in clean_src else clean_src
+                if clean_src in image_path_map:
+                    img_tag[attr] = image_path_map[clean_src]
+                elif basename in image_path_map:
+                    img_tag[attr] = image_path_map[basename]
+
+
+def extract_html_from_epub(epub_path, log, output_dir=None):
     """Extract and merge EPUB chapter HTML into a single document.
 
     Unlike extract_text_from_epub() which flattens to plain text, this
     preserves the EPUB's native HTML structure: headings, bold, italic,
     links, block quotes, lists, etc.
 
-    Returns a single HTML string ready for Calibre conversion.
+    Cross-file links (footnotes, TOC entries) are rewritten to in-document
+    anchors.  Embedded images are extracted to output_dir/images/.
+
+    Returns a dict: {'html': str, 'cover_image': str|None}
     """
     try:
         import ebooklib
@@ -684,10 +754,85 @@ def extract_html_from_epub(epub_path, log):
     spine_items = [items[sid] for sid in spine_ids if sid in items]
     log(f"  EPUB loaded: {len(spine_items)} spine items")
 
+    # Build set of all spine item filenames for cross-file link detection
+    spine_filenames = set()
+    for item in spine_items:
+        name = item.get_name()
+        spine_filenames.add(name)
+        basename = name.rsplit('/', 1)[-1] if '/' in name else name
+        spine_filenames.add(basename)
+
+    # Extract images from the EPUB container
+    image_path_map = {}
+    cover_image_path = None
+
+    if output_dir:
+        image_items = [item for item in book.get_items()
+                       if item.get_type() == ebooklib.ITEM_IMAGE
+                       or (hasattr(item, 'media_type') and
+                           item.media_type and
+                           item.media_type.startswith('image/'))]
+
+        if image_items:
+            images_dir = os.path.join(output_dir, 'images')
+            os.makedirs(images_dir, exist_ok=True)
+            images_extracted = 0
+
+            for img_item in image_items:
+                try:
+                    img_name = img_item.get_name()
+                    img_basename = img_name.rsplit('/', 1)[-1] if '/' in img_name else img_name
+
+                    img_output = os.path.join(images_dir, img_basename)
+                    with open(img_output, 'wb') as f:
+                        f.write(img_item.get_content())
+
+                    new_rel_path = f'images/{img_basename}'
+                    image_path_map[img_name] = new_rel_path
+                    image_path_map[img_basename] = new_rel_path
+                    if '/' in img_name:
+                        image_path_map[img_name.rsplit('/', 1)[-1]] = new_rel_path
+
+                    images_extracted += 1
+                except Exception as e:
+                    log(f"  EPUB image extraction failed for {img_item.get_name()}: {e}")
+
+            if images_extracted:
+                log(f"  EPUB: extracted {images_extracted} images to {images_dir}")
+
+            # Identify cover image
+            for img_item in image_items:
+                if 'cover' in img_item.get_name().lower():
+                    img_basename = img_item.get_name().rsplit('/', 1)[-1] if '/' in img_item.get_name() else img_item.get_name()
+                    cover_image_path = os.path.join(images_dir, img_basename)
+                    break
+
+            # Fallback: check OPF metadata for cover id
+            if not cover_image_path:
+                for meta in book.get_metadata('OPF', 'cover'):
+                    if meta and meta[1]:
+                        cover_id = meta[1].get('content', meta[1].get('name', None))
+                        if cover_id:
+                            cover_item = book.get_item_with_id(cover_id)
+                            if cover_item:
+                                img_basename = cover_item.get_name().rsplit('/', 1)[-1] if '/' in cover_item.get_name() else cover_item.get_name()
+                                cover_image_path = os.path.join(images_dir, img_basename)
+                                break
+
+            if cover_image_path and not os.path.isfile(cover_image_path):
+                cover_image_path = None
+
     # Collect the <body> content from each spine item
     body_parts = []
     for idx, item in enumerate(spine_items):
         soup = BeautifulSoup(item.get_content(), 'html.parser')
+
+        # Rewrite cross-file links to in-document anchors
+        _rewrite_epub_links(soup, spine_filenames)
+
+        # Rewrite image paths to point to extracted files
+        if image_path_map:
+            _rewrite_image_paths(soup, image_path_map)
 
         # Extract the <body> content (or the whole document if no body tag)
         body = soup.find('body')
@@ -703,6 +848,7 @@ def extract_html_from_epub(epub_path, log):
         if (idx + 1) % 10 == 0:
             log(f"  Extracted {idx + 1}/{len(spine_items)} chapters...")
 
+    links_rewritten = sum(1 for part in body_parts if '#' in part) // 2  # rough count
     log(f"  EPUB HTML extraction complete: {len(body_parts) // 2} chapters")
 
     merged_html = (
@@ -711,7 +857,7 @@ def extract_html_from_epub(epub_path, log):
         + '\n</body>\n</html>'
     )
 
-    return merged_html
+    return {'html': merged_html, 'cover_image': cover_image_path}
 
 
 def extract_text_via_calibre(input_path, log, calibre_path=None):
@@ -8386,11 +8532,17 @@ Examples:
         if args.epub_html and ext == 'epub':
             html_output = os.path.join(out_dir, safe_stem + '_kindle.html')
             log_fn(f"[cli] EPUB HTML extraction -> {html_output}")
-            raw_html = extract_html_from_epub(input_path, log_fn)
+            result = extract_html_from_epub(input_path, log_fn, output_dir=out_dir)
+            raw_html = result['html']
             with open(html_output, 'w', encoding='utf-8') as f:
                 f.write(raw_html)
             log_fn(f"Done! Saved EPUB HTML to: {html_output}")
             log_fn(f"  Size: {len(raw_html):,} chars")
+            # Emit JSON result with paths for the PowerShell caller
+            cli_result = {"html_path": html_output, "size": len(raw_html)}
+            if result.get('cover_image') and os.path.isfile(result['cover_image']):
+                cli_result["cover_image"] = result['cover_image']
+            print(json.dumps(cli_result))
         elif args.html_extraction and args.mode == "kindle":
             html_output = re.sub(r'\.(txt|html?)$', '.html', output_path)
             if not html_output.endswith('.html'):

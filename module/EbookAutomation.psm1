@@ -978,6 +978,26 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         $txtSizeKB = [math]::Round($htmlFile.Length / 1KB, 0)
                         Write-EbookLog "Kindle: extracted $txtSizeKB KB of HTML from EPUB in $([math]::Round($pySw.Elapsed.TotalSeconds, 1))s" -Level SUCCESS
                         $stepTimings['EpubExtraction'] = [math]::Round($pySw.Elapsed.TotalSeconds, 1)
+
+                        # Parse JSON output for cover image path
+                        if (Test-Path $pyOutFile) {
+                            $pyOutLines = Get-Content $pyOutFile -ErrorAction SilentlyContinue
+                            foreach ($outLine in $pyOutLines) {
+                                if ($outLine -match '^\s*\{.*"cover_image"') {
+                                    try {
+                                        $epubResult = $outLine | ConvertFrom-Json
+                                        if ($epubResult.cover_image -and (Test-Path $epubResult.cover_image)) {
+                                            $coverImage = $epubResult.cover_image
+                                            $coverSizeKB = [math]::Round((Get-Item $coverImage).Length / 1KB, 0)
+                                            Write-EbookLog "Kindle: EPUB cover image found ($coverSizeKB KB)"
+                                        }
+                                    } catch {
+                                        # JSON parse failed -- not critical
+                                    }
+                                    break
+                                }
+                            }
+                        }
                     } else {
                         Write-EbookLog "Kindle: EPUB HTML extraction produced no output -- falling back to direct conversion" -Level WARN
                     }
@@ -995,8 +1015,8 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
         }
     }
 
-    # Extract cover image from first PDF page
-    $coverImage = $null
+    # Extract cover image from first PDF page (EPUB cover is extracted above)
+    if (-not $coverImage) { $coverImage = $null }
     $coverSw = [System.Diagnostics.Stopwatch]::StartNew()
     if ($ext -eq 'pdf') {
         try {
