@@ -503,48 +503,446 @@ def assign_levels_and_confidence(candidates, body_size, verbose_log=None):
 
 
 # ========================================================================
-#  EPUB stubs  (Tasks 6-7 — not yet implemented)
+#  EPUB heading detection  (Tasks 6-7)
 # ========================================================================
 
 def detect_headings_epub(epub_path, verbose_log=None):
-    """Stub: EPUB heading detection (to be implemented in Tasks 6-7).
+    """Detect headings in an EPUB by combining NCX/nav TOC data with HTML
+    heading-tag analysis.
 
-    Returns an empty result dict matching the JSON schema.
+    Returns a result dict matching the JSON output schema used by the PDF path.
+    The 'page' field for EPUB candidates represents the spine index (0-based
+    reading order position), mapped to 1-based in the final output.
     """
+    try:
+        from ebooklib import epub
+        from bs4 import BeautifulSoup  # noqa: F401 — used in sub-functions
+    except ImportError:
+        return {
+            "error": "ebooklib and/or beautifulsoup4 not installed. "
+                     "Run: python -m pip install ebooklib beautifulsoup4"
+        }
+
+    epub_path = str(epub_path)
+
+    if verbose_log:
+        verbose_log(f"Opening EPUB: {epub_path}")
+
+    try:
+        book = epub.read_epub(epub_path, options={"ignore_ncx": False})
+    except Exception as exc:
+        return {"error": f"Failed to open EPUB: {exc}"}
+
+    # Build spine item list and index map (item_id/href -> spine position)
+    spine_items = []
+    spine_index: dict[str, int] = {}  # href (filename only) -> index
+
+    for idx, item in enumerate(book.spine):
+        item_id = item[0] if isinstance(item, tuple) else item
+        spine_items.append(item_id)
+        # Resolve href from item id
+        doc_item = book.get_item_with_id(item_id)
+        if doc_item is not None:
+            href = doc_item.get_name()
+            # Store both full path and basename for flexible lookup
+            spine_index[href] = idx
+            basename = href.rsplit("/", 1)[-1] if "/" in href else href
+            if basename not in spine_index:
+                spine_index[basename] = idx
+            # Also map by item id
+            spine_index[item_id] = idx
+
+    total_pages = len(spine_items)
+
+    if verbose_log:
+        verbose_log(f"Spine items: {total_pages}")
+
+    # Task 6: Extract NCX/nav candidates
+    ncx_candidates = _extract_ncx_candidates(book, spine_index, verbose_log)
+
+    # Task 7: Extract HTML heading candidates from spine documents
+    html_candidates = _extract_html_heading_candidates(
+        book, spine_items, spine_index, verbose_log
+    )
+
+    # Dedup HTML candidates against NCX entries
+    html_unique = _dedup_against_ncx(html_candidates, ncx_candidates, verbose_log)
+
+    # Merge: NCX candidates first (higher trust), then unique HTML candidates
+    all_candidates = list(ncx_candidates) + list(html_unique)
+
+    # Sort by (page, confidence descending) — so within same page, highest
+    # confidence comes first
+    all_candidates.sort(key=lambda c: (c["page"], -c["confidence"]))
+
+    # Convert page to 1-based for output
+    for c in all_candidates:
+        c["page"] = c["page"] + 1
+
+    if verbose_log:
+        verbose_log(f"Total EPUB heading candidates: {len(all_candidates)}")
+
     return {
-        "file": str(epub_path),
+        "file": epub_path,
         "format": "epub",
-        "body_font_size": 0.0,
-        "body_font_name": "unknown",
-        "total_pages": 0,
-        "pages_scanned": 0,
-        "heading_candidates": [],
+        "body_font_size": None,
+        "body_font_name": None,
+        "total_pages": total_pages,
+        "pages_scanned": total_pages,
+        "heading_candidates": all_candidates,
         "font_histogram": {},
     }
 
 
-def _extract_ncx_candidates(epub_path, verbose_log=None):
-    """Stub: Extract heading candidates from EPUB NCX/nav.
+def _normalize_for_dedup(text: str) -> str:
+    """Normalize text for dedup comparison: strip leading numbering,
+    lowercase, collapse whitespace."""
+    # Strip leading chapter/part numbering like "Chapter 1:", "1.", "IV.", "PART TWO"
+    stripped = re.sub(
+        r"^(chapter|part|section)\s+[\divxlc]+[.:)]*\s*",
+        "",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    stripped = re.sub(r"^\d+[.:)]\s*", "", stripped)
+    stripped = re.sub(r"^[IVXLC]+[.:)]\s*", "", stripped)
+    return re.sub(r"\s+", " ", stripped).strip().lower()
 
-    Returns an empty list.
+
+def _extract_ncx_candidates(book, spine_index, verbose_log=None):
+    """Extract heading candidates from the EPUB's NCX/nav table of contents.
+
+    Walks ``book.toc`` recursively.  ebooklib returns a list where each
+    element is either:
+      - an ``epub.Link`` object  (leaf entry)
+      - a ``(Section, [children])`` tuple  (nested group)
+
+    Returns a list of candidate dicts (0-based page index).
     """
-    return []
+    from ebooklib import epub
+
+    candidates: list[dict] = []
+
+    def _walk_toc(entries, depth=0):
+        for entry in entries:
+            if isinstance(entry, tuple) and len(entry) == 2:
+                # (Section, [children]) — Section has title attribute
+                section, children = entry
+                title = getattr(section, "title", None) or str(section)
+                title = _normalize(title)
+                href = getattr(section, "href", "") or ""
+
+                if title and MIN_BLOCK_CHARS <= len(title) <= MAX_BLOCK_CHARS:
+                    page = _resolve_spine_page(href, spine_index)
+                    level = _depth_to_level(depth)
+                    candidates.append({
+                        "text": title,
+                        "page": page,
+                        "level": level,
+                        "font_size": None,
+                        "font_name": None,
+                        "is_bold": False,
+                        "confidence": 0.95,
+                        "detection_signals": ["ncx_toc"],
+                    })
+
+                # Recurse into children
+                if children:
+                    _walk_toc(children, depth + 1)
+
+            elif isinstance(entry, epub.Link):
+                title = _normalize(entry.title or "")
+                href = entry.href or ""
+
+                if title and MIN_BLOCK_CHARS <= len(title) <= MAX_BLOCK_CHARS:
+                    page = _resolve_spine_page(href, spine_index)
+                    level = _depth_to_level(depth)
+                    candidates.append({
+                        "text": title,
+                        "page": page,
+                        "level": level,
+                        "font_size": None,
+                        "font_name": None,
+                        "is_bold": False,
+                        "confidence": 0.95,
+                        "detection_signals": ["ncx_toc"],
+                    })
+
+    def _resolve_spine_page(href: str, spine_idx: dict) -> int:
+        """Map a TOC href to a spine index.  Returns 0 if not found."""
+        if not href:
+            return 0
+        # Strip fragment (#section-id)
+        base_href = href.split("#")[0]
+        # Try full path, then basename
+        if base_href in spine_idx:
+            return spine_idx[base_href]
+        basename = base_href.rsplit("/", 1)[-1] if "/" in base_href else base_href
+        if basename in spine_idx:
+            return spine_idx[basename]
+        return 0
+
+    def _depth_to_level(depth: int) -> str:
+        if depth == 0:
+            return "h1"
+        elif depth == 1:
+            return "h2"
+        else:
+            return "h3"
+
+    toc = book.toc
+    if not toc:
+        if verbose_log:
+            verbose_log("No TOC found in EPUB")
+        return []
+
+    _walk_toc(toc, depth=0)
+
+    # Flat NCX heuristic: if ALL entries are h1 AND count > 5, they are
+    # chapters (not parts) — downgrade all to h2
+    if candidates:
+        all_h1 = all(c["level"] == "h1" for c in candidates)
+        if all_h1 and len(candidates) > 5:
+            if verbose_log:
+                verbose_log(
+                    f"Flat NCX heuristic: {len(candidates)} h1 entries, "
+                    "downgrading all to h2"
+                )
+            for c in candidates:
+                c["level"] = "h2"
+
+    if verbose_log:
+        verbose_log(f"NCX candidates extracted: {len(candidates)}")
+
+    return candidates
 
 
-def _extract_html_heading_candidates(epub_path, verbose_log=None):
-    """Stub: Extract heading candidates from EPUB HTML <h1>-<h6> tags.
+def _extract_html_heading_candidates(book, spine_items, spine_index, verbose_log=None):
+    """Extract heading candidates from EPUB HTML content documents.
 
-    Returns an empty list.
+    Parses each spine item's HTML and looks for four layers of heading
+    signals, in priority order:
+
+    1. **Semantic headings** — ``<h1>`` through ``<h3>`` tags
+    2. **Class-styled headings** — elements whose CSS class matches
+       chapter/heading/title/part/section keywords
+    3. **Inline-styled headings** — elements with large font-size or
+       bold font-weight in a ``style`` attribute (<=15 words)
+    4. **Structural patterns** — ``<div>``/``<p>`` whose text matches
+       ``_matches_chapter_pattern()``
+
+    Returns a list of candidate dicts (0-based page index).
     """
-    return []
+    from ebooklib import epub
+    from bs4 import BeautifulSoup
+
+    CLASS_HEADING_RE = re.compile(
+        r"chapter|heading|title|part|section", re.IGNORECASE
+    )
+    FONT_SIZE_RE = re.compile(r"font-size\s*:\s*([\d.]+)\s*(px|pt|em|rem)", re.IGNORECASE)
+    FONT_WEIGHT_RE = re.compile(r"font-weight\s*:\s*(bold|[7-9]\d\d)", re.IGNORECASE)
+
+    candidates: list[dict] = []
+
+    for item_id in spine_items:
+        doc_item = book.get_item_with_id(item_id)
+        if doc_item is None:
+            continue
+        # Only process HTML/XHTML documents
+        if not isinstance(doc_item, epub.EpubHtml):
+            continue
+
+        content = doc_item.get_content()
+        if not content:
+            continue
+
+        try:
+            soup = BeautifulSoup(content, "html.parser")
+        except Exception:
+            continue
+
+        # Determine spine index for this item
+        href = doc_item.get_name()
+        page = spine_index.get(href, 0)
+        basename = href.rsplit("/", 1)[-1] if "/" in href else href
+        if href not in spine_index:
+            page = spine_index.get(basename, 0)
+
+        # Track elements already captured to avoid duplicates across layers
+        seen_texts: set[str] = set()  # normalized text keys
+        seen_elements: set[int] = set()  # element id()s
+
+        def _already_seen(elem, text_norm: str) -> bool:
+            return id(elem) in seen_elements or text_norm in seen_texts
+
+        def _mark_seen(elem, text_norm: str):
+            seen_elements.add(id(elem))
+            seen_texts.add(text_norm)
+
+        # ── Layer 1: Semantic headings (h1/h2/h3) ───────────────────
+        for tag_name in ("h1", "h2", "h3"):
+            for elem in soup.find_all(tag_name):
+                text = _normalize(elem.get_text())
+                if not text or not (MIN_BLOCK_CHARS <= len(text) <= MAX_BLOCK_CHARS):
+                    continue
+                text_norm = text.lower()
+                if _already_seen(elem, text_norm):
+                    continue
+                _mark_seen(elem, text_norm)
+                candidates.append({
+                    "text": text,
+                    "page": page,
+                    "level": tag_name,
+                    "font_size": None,
+                    "font_name": None,
+                    "is_bold": False,
+                    "confidence": 0.95,
+                    "detection_signals": [f"semantic_{tag_name}"],
+                })
+
+        # ── Layer 2: Class-styled headings ───────────────────────────
+        for elem in soup.find_all(attrs={"class": True}):
+            classes = " ".join(elem.get("class", []))
+            if not CLASS_HEADING_RE.search(classes):
+                continue
+            text = _normalize(elem.get_text())
+            if not text or not (MIN_BLOCK_CHARS <= len(text) <= MAX_BLOCK_CHARS):
+                continue
+            text_norm = text.lower()
+            if _already_seen(elem, text_norm):
+                continue
+            _mark_seen(elem, text_norm)
+
+            # Infer level from class name
+            classes_lower = classes.lower()
+            if "part" in classes_lower:
+                level = "h1"
+            elif "chapter" in classes_lower or "title" in classes_lower:
+                level = "h1"
+            elif "section" in classes_lower:
+                level = "h2"
+            else:
+                level = "h2"
+
+            candidates.append({
+                "text": text,
+                "page": page,
+                "level": level,
+                "font_size": None,
+                "font_name": None,
+                "is_bold": False,
+                "confidence": 0.85,
+                "detection_signals": ["class_styled"],
+            })
+
+        # ── Layer 3: Inline-styled headings ──────────────────────────
+        for elem in soup.find_all(attrs={"style": True}):
+            style = elem.get("style", "")
+            if not style:
+                continue
+
+            is_large_font = False
+            is_bold_style = False
+
+            size_match = FONT_SIZE_RE.search(style)
+            if size_match:
+                size_val = float(size_match.group(1))
+                unit = size_match.group(2).lower()
+                # Normalize to approximate pt: px*0.75, em*12, rem*12
+                if unit == "px":
+                    size_pt = size_val * 0.75
+                elif unit in ("em", "rem"):
+                    size_pt = size_val * 12
+                else:
+                    size_pt = size_val
+                if size_pt >= 16:
+                    is_large_font = True
+
+            if FONT_WEIGHT_RE.search(style):
+                is_bold_style = True
+
+            if not (is_large_font or is_bold_style):
+                continue
+
+            text = _normalize(elem.get_text())
+            if not text or not (MIN_BLOCK_CHARS <= len(text) <= MAX_BLOCK_CHARS):
+                continue
+            if _word_count(text) > 15:
+                continue
+            text_norm = text.lower()
+            if _already_seen(elem, text_norm):
+                continue
+            _mark_seen(elem, text_norm)
+
+            candidates.append({
+                "text": text,
+                "page": page,
+                "level": "h2",
+                "font_size": None,
+                "font_name": None,
+                "is_bold": is_bold_style,
+                "confidence": 0.75,
+                "detection_signals": ["inline_style"],
+            })
+
+        # ── Layer 4: Structural patterns (div/p matching chapter regex) ─
+        for elem in soup.find_all(["div", "p"]):
+            text = _normalize(elem.get_text())
+            if not text or not (MIN_BLOCK_CHARS <= len(text) <= MAX_BLOCK_CHARS):
+                continue
+            text_norm = text.lower()
+            if _already_seen(elem, text_norm):
+                continue
+
+            pattern_name = _matches_chapter_pattern(text)
+            if not pattern_name:
+                continue
+
+            _mark_seen(elem, text_norm)
+            candidates.append({
+                "text": text,
+                "page": page,
+                "level": "h1",
+                "font_size": None,
+                "font_name": None,
+                "is_bold": False,
+                "confidence": 0.70,
+                "detection_signals": ["structural_pattern", pattern_name],
+            })
+
+    if verbose_log:
+        verbose_log(f"HTML heading candidates extracted: {len(candidates)}")
+
+    return candidates
 
 
 def _dedup_against_ncx(html_candidates, ncx_candidates, verbose_log=None):
-    """Stub: Deduplicate HTML heading candidates against NCX entries.
+    """Remove HTML candidates that duplicate NCX entries.
 
-    Returns an empty list.
+    Builds a normalized set from NCX candidate texts and filters out any
+    HTML candidate whose normalized text matches.  Returns the list of
+    HTML candidates that are NOT already covered by the NCX.
     """
-    return []
+    ncx_normalized = set()
+    for c in ncx_candidates:
+        ncx_normalized.add(_normalize_for_dedup(c["text"]))
+
+    unique = []
+    dup_count = 0
+    for c in html_candidates:
+        norm = _normalize_for_dedup(c["text"])
+        if norm in ncx_normalized:
+            dup_count += 1
+            continue
+        unique.append(c)
+
+    if verbose_log:
+        verbose_log(
+            f"Dedup: {dup_count} HTML candidates matched NCX, "
+            f"{len(unique)} unique HTML candidates remain"
+        )
+
+    return unique
 
 
 # ========================================================================
