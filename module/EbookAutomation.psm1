@@ -1548,6 +1548,264 @@ print(json.dumps(result))
 
 #endregion
 
+#region -- Send to Kindle Device ---------------------------------------------
+
+function Send-ToKindle {
+    <#
+    .SYNOPSIS
+        Send a converted ebook file to a connected Kindle device via Calibre.
+    .DESCRIPTION
+        Uses Calibre's library infrastructure and device drivers to send an ebook
+        to a USB-connected Kindle.  This replicates the behavior of Calibre's GUI
+        "Send to device" button -- including cover images, thumbnails, and metadata.
+
+        The process:
+        1. Adds the book to a Calibre library via calibredb
+        2. Runs send_to_kindle.py through calibre-debug to detect the Kindle
+           and transfer the file with covers/thumbnails
+        3. Optionally removes the book from the Calibre library after sending
+
+        Requires:
+        - Calibre installed (same location as ebook-convert.exe in settings.json)
+        - A Kindle device connected via USB and recognized by Windows
+        - Calibre GUI must NOT be running (exclusive device access)
+
+    .PARAMETER InputFile
+        Full path to the ebook file to send (.kfx, .azw3, .epub, .mobi, .pdf).
+        Accepts pipeline input (e.g. from Convert-ToKindle output path).
+
+    .PARAMETER CoverImage
+        Optional path to a cover image (.jpg/.png) to embed with the book.
+        If not specified, Calibre will try to extract one from the ebook.
+
+    .PARAMETER DeleteFromLibrary
+        Remove the book from the Calibre library after successfully sending
+        to the device.  Default: uses kindle_delivery.delete_from_library_after_send
+        from settings.json.
+
+    .PARAMETER DeviceTimeout
+        Seconds to wait for Kindle device detection. Default: 60.
+
+    .PARAMETER WhatIf
+        Check if a Kindle is connected without sending anything.
+
+    .EXAMPLE
+        Send-ToKindle -InputFile "F:\Projects\EbookAutomation\output\kindle\MyBook.kfx"
+    .EXAMPLE
+        Convert-ToKindle -InputFile ".\inbox\book.pdf" | Send-ToKindle
+    .EXAMPLE
+        Send-ToKindle -InputFile ".\output\kindle\book.kfx" -WhatIf
+    .EXAMPLE
+        Invoke-EbookPipeline -SendToKindle
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        [Alias('Path','FullName')]
+        [string]$InputFile,
+
+        [string]$CoverImage,
+        [switch]$DeleteFromLibrary,
+        [int]$DeviceTimeout = 60
+    )
+
+    begin {
+        $cfg = Get-EbookConfig
+
+        # Validate kindle_delivery config exists
+        if (-not $cfg.kindle_delivery) {
+            Write-EbookLog "SendToKindle: 'kindle_delivery' section missing from settings.json" -Level ERROR
+            Write-EbookLog "SendToKindle: Add kindle_delivery config block -- see CLAUDE.md for schema" -Level ERROR
+            return
+        }
+
+        if (-not $cfg.kindle_delivery.enabled) {
+            Write-EbookLog "SendToKindle: disabled in settings.json (kindle_delivery.enabled = false)" -Level WARN
+            return
+        }
+
+        # Resolve Calibre paths -- calibredb and calibre-debug are in the same folder as ebook-convert
+        $calibreDir = Split-Path (Resolve-ProjectPath $cfg.paths.calibre) -Parent
+        $calibreDb  = Join-Path $calibreDir 'calibredb.exe'
+        $calibreDbg = Join-Path $calibreDir 'calibre-debug.exe'
+
+        if (-not (Test-Path $calibreDb)) {
+            Write-EbookLog "SendToKindle: calibredb.exe not found at $calibreDb" -Level ERROR
+            return
+        }
+        if (-not (Test-Path $calibreDbg)) {
+            Write-EbookLog "SendToKindle: calibre-debug.exe not found at $calibreDbg" -Level ERROR
+            return
+        }
+
+        # Resolve library path
+        $libraryPath = $cfg.kindle_delivery.calibre_library
+        if (-not $libraryPath -or -not (Test-Path $libraryPath)) {
+            Write-EbookLog "SendToKindle: Calibre library path not found: $libraryPath" -Level ERROR
+            Write-EbookLog "SendToKindle: Set kindle_delivery.calibre_library in settings.json to your Calibre library folder" -Level ERROR
+            return
+        }
+
+        # Check if Calibre GUI is running -- device access is exclusive
+        $calibreProc = Get-Process -Name 'calibre' -ErrorAction SilentlyContinue
+        if ($calibreProc) {
+            Write-EbookLog "SendToKindle: Calibre GUI is running -- please close it first (device access is exclusive)" -Level ERROR
+            return
+        }
+
+        $sendScript = Join-Path $script:ModuleRoot 'tools\send_to_kindle.py'
+        if (-not (Test-Path $sendScript)) {
+            Write-EbookLog "SendToKindle: send_to_kindle.py not found at $sendScript" -Level ERROR
+            return
+        }
+
+        $deleteAfter = if ($DeleteFromLibrary) { $true }
+                       elseif ($cfg.kindle_delivery.delete_from_library_after_send) { $true }
+                       else { $false }
+    }
+
+    process {
+        if (-not (Test-Path $InputFile)) {
+            Write-EbookLog "SendToKindle: file not found: $InputFile" -Level ERROR
+            return
+        }
+
+        $fileName = [System.IO.Path]::GetFileName($InputFile)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+        Write-EbookLog "SendToKindle: preparing to send '$fileName'..."
+
+        if (-not $PSCmdlet.ShouldProcess($fileName, 'Send to Kindle device')) {
+            return
+        }
+
+        # --- Step 1: Add book to Calibre library ---
+        Write-EbookLog "SendToKindle: adding to Calibre library..."
+        $addErrFile = Join-Path ([System.IO.Path]::GetTempPath()) 'calibredb_add_err.txt'
+        $addOutFile = Join-Path ([System.IO.Path]::GetTempPath()) 'calibredb_add_out.txt'
+
+        $addArgs = "add `"$InputFile`" --library-path `"$libraryPath`""
+
+        # Add cover if provided
+        if ($CoverImage -and (Test-Path $CoverImage)) {
+            $addArgs += " --cover `"$CoverImage`""
+            Write-EbookLog "SendToKindle: using cover image: $CoverImage"
+        }
+
+        $addProc = Start-Process -FilePath $calibreDb `
+                                 -ArgumentList $addArgs `
+                                 -PassThru -NoNewWindow `
+                                 -RedirectStandardOutput $addOutFile `
+                                 -RedirectStandardError $addErrFile
+        $addProc.WaitForExit()
+
+        $addOutput = if (Test-Path $addOutFile) { Get-Content $addOutFile -Raw } else { '' }
+        $addError  = if (Test-Path $addErrFile) { Get-Content $addErrFile -Raw } else { '' }
+
+        # Parse the book ID from calibredb output -- it prints "Added book ids: 42"
+        $bookId = $null
+        if ($addOutput -match 'Added book ids:\s*(\d+)') {
+            $bookId = [int]$Matches[1]
+            Write-EbookLog "SendToKindle: added to library as ID $bookId"
+        }
+        elseif ($addOutput -match 'book ids:\s*(\d+)') {
+            $bookId = [int]$Matches[1]
+            Write-EbookLog "SendToKindle: added to library as ID $bookId"
+        }
+        else {
+            Write-EbookLog "SendToKindle: failed to parse book ID from calibredb output" -Level ERROR
+            Write-EbookLog "SendToKindle: stdout: $addOutput" -Level ERROR
+            Write-EbookLog "SendToKindle: stderr: $addError" -Level ERROR
+            # Cleanup temp files
+            foreach ($f in @($addErrFile, $addOutFile)) {
+                if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+            }
+            return
+        }
+
+        # --- Step 2: Send to device via calibre-debug ---
+        Write-EbookLog "SendToKindle: sending to Kindle device (timeout: ${DeviceTimeout}s)..."
+
+        $sendErrFile = Join-Path ([System.IO.Path]::GetTempPath()) 'kindle_send_err.txt'
+        $sendOutFile = Join-Path ([System.IO.Path]::GetTempPath()) 'kindle_send_out.txt'
+
+        $sendArgs = "-e `"$sendScript`" -- --library-path `"$libraryPath`" --book-id $bookId --timeout $DeviceTimeout"
+        if ($deleteAfter) {
+            $sendArgs += " --delete-after"
+        }
+
+        $sendProc = Start-Process -FilePath $calibreDbg `
+                                  -ArgumentList $sendArgs `
+                                  -PassThru -NoNewWindow `
+                                  -RedirectStandardOutput $sendOutFile `
+                                  -RedirectStandardError $sendErrFile
+
+        # Monitor progress
+        while (-not $sendProc.HasExited) {
+            Start-Sleep -Seconds 3
+            if (Test-Path $sendOutFile) {
+                $currentOutput = Get-Content $sendOutFile -Tail 1 -ErrorAction SilentlyContinue
+                if ($currentOutput -and $currentOutput -match '\[SendToKindle\]') {
+                    Write-EbookLog "  $($currentOutput.Trim())"
+                }
+            }
+        }
+        $sendProc.WaitForExit()
+
+        $sendOutput = if (Test-Path $sendOutFile) { Get-Content $sendOutFile -Raw } else { '' }
+        $sendError  = if (Test-Path $sendErrFile) { Get-Content $sendErrFile -Raw } else { '' }
+
+        $elapsed = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+
+        # Check result
+        if ($sendProc.ExitCode -eq 0) {
+            # Try to parse JSON result from last line
+            $lastLine = ($sendOutput -split "`n" | Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
+            if ($lastLine) {
+                try {
+                    $result = $lastLine | ConvertFrom-Json
+                    if ($result.success) {
+                        Write-EbookLog "SendToKindle: SUCCESS -- '$($result.title)' sent as $($result.format) to $($result.device) (${elapsed}s)" -Level SUCCESS
+                        Send-EbookNotification -Title 'Sent to Kindle' -Message "$fileName -> $($result.device)" -Type Success
+                    }
+                } catch {
+                    Write-EbookLog "SendToKindle: completed (${elapsed}s) -- could not parse result JSON" -Level WARN
+                }
+            } else {
+                Write-EbookLog "SendToKindle: completed (${elapsed}s)" -Level SUCCESS
+            }
+        }
+        elseif ($sendProc.ExitCode -eq 2) {
+            Write-EbookLog "SendToKindle: No Kindle device detected -- is it plugged in via USB?" -Level ERROR
+            # Clean up the library entry if device wasn't found
+            if (-not $deleteAfter) {
+                Write-EbookLog "SendToKindle: removing book from library (send failed)..."
+                $rmArgs = "remove $bookId --library-path `"$libraryPath`" --permanent"
+                Start-Process -FilePath $calibreDb -ArgumentList $rmArgs -NoNewWindow -Wait
+            }
+        }
+        else {
+            Write-EbookLog "SendToKindle: FAILED (exit code $($sendProc.ExitCode), ${elapsed}s)" -Level ERROR
+            if ($sendError) {
+                $sendError -split "`n" | Where-Object { $_.Trim() } | ForEach-Object {
+                    Write-EbookLog "SendToKindle:   $_" -Level ERROR
+                }
+            }
+            # Clean up library on failure
+            Write-EbookLog "SendToKindle: removing book from library (send failed)..."
+            $rmArgs = "remove $bookId --library-path `"$libraryPath`" --permanent"
+            Start-Process -FilePath $calibreDb -ArgumentList $rmArgs -NoNewWindow -Wait
+        }
+
+        # Cleanup temp files
+        foreach ($f in @($addErrFile, $addOutFile, $sendErrFile, $sendOutFile)) {
+            if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
+#endregion
+
 #region -- File tracking (prevent re-processing) -----------------------------
 
 function Get-ProcessedManifest {
@@ -1617,7 +1875,8 @@ function Invoke-EbookPipeline {
         [switch]$UseOCR,
         [switch]$ForceColumns,
         [switch]$ValidateVisual,
-        [switch]$NoCache
+        [switch]$NoCache,
+        [switch]$SendToKindle
     )
 
     $pipelineStart  = Get-Date
@@ -1637,12 +1896,14 @@ function Invoke-EbookPipeline {
     Write-EbookLog "  MP3 output:    $audiobooksDir"
     Write-EbookLog "  Archive:       $archiveDir"
     $mp3Active = $GenerateMP3 -or $cfg.mp3.enabled
+    $sendActive = $SendToKindle -or ($cfg.kindle_delivery -and $cfg.kindle_delivery.auto_send)
     Write-EbookLog "  TTS enabled:   $($cfg.tts.enabled)   |  Kindle enabled: $($cfg.kindle.enabled)   |  MP3 enabled: $mp3Active$(if ($GenerateMP3) { ' (-GenerateMP3)' })"
     if ($UseClaudeChapters) { Write-EbookLog "  Claude chapter detection: ENABLED" }
     if ($UseOCR) { Write-EbookLog "  Tesseract OCR: FORCED" }
     if ($ValidateVisual) { Write-EbookLog "  Visual QA: ENABLED" }
     if ($ForceColumns) { Write-EbookLog "  Column-aware extraction: FORCED (-ForceColumns)" }
     if ($NoCache) { Write-EbookLog "  Cache bypass: ENABLED (-NoCache)" }
+    if ($sendActive) { Write-EbookLog "  Send to Kindle: ENABLED" }
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
@@ -1819,6 +2080,25 @@ function Invoke-EbookPipeline {
                     Write-EbookLog "  Kindle: EXCEPTION after $([math]::Round($kindleDuration.TotalSeconds, 1))s -- $_" -Level ERROR
                     Write-EbookLog "  Kindle: $($_.ScriptStackTrace)" -Level ERROR
                     $kindleMsg = 'EXCEPTION'
+                }
+            }
+        }
+
+        # Send to Kindle device
+        $sentToKindle = $false
+        if ($kindleOk -and $sendActive) {
+            $stem = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
+            $kindleOutputFile = Get-ChildItem -Path $kindleDir -Filter "$stem*" -File |
+                                Sort-Object LastWriteTime -Descending |
+                                Select-Object -First 1
+            if ($kindleOutputFile) {
+                try {
+                    Write-EbookLog "  Sending to Kindle device..."
+                    Send-ToKindle -InputFile $kindleOutputFile.FullName
+                    $sentToKindle = $true
+                } catch {
+                    Write-EbookLog "  Send to Kindle failed: $_" -Level WARN
+                    $sentToKindle = $false
                 }
             }
         }
@@ -2076,6 +2356,21 @@ function Initialize-EbookAutomation {
     $calibrePath = Resolve-ProjectPath $cfg.paths.calibre
     if (Test-Path $calibrePath) {
         Write-Host "  + Calibre found at $calibrePath" -ForegroundColor Green
+
+        # Check calibredb and calibre-debug (for Send-ToKindle)
+        $calibreDir = Split-Path $calibrePath -Parent
+        $calibreDbPath  = Join-Path $calibreDir 'calibredb.exe'
+        $calibreDbgPath = Join-Path $calibreDir 'calibre-debug.exe'
+        if (Test-Path $calibreDbPath) {
+            Write-Host "  + calibredb.exe: $calibreDbPath" -ForegroundColor Green
+        } else {
+            Write-Host "  [Optional] calibredb.exe not found (needed for Send-ToKindle)" -ForegroundColor Yellow
+        }
+        if (Test-Path $calibreDbgPath) {
+            Write-Host "  + calibre-debug.exe: $calibreDbgPath" -ForegroundColor Green
+        } else {
+            Write-Host "  [Optional] calibre-debug.exe not found (needed for Send-ToKindle)" -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  ! Calibre not found at $calibrePath" -ForegroundColor Yellow
         Write-Host "    Install from calibre-ebook.com or update config/settings.json" -ForegroundColor Yellow
@@ -3399,6 +3694,7 @@ Export-ModuleMember -Function @(
     'Invoke-EbookPipeline'
     'Convert-ToTTS'
     'Convert-ToKindle'
+    'Send-ToKindle'
     'Convert-BriefToYouTube'
     'Install-EbookScheduledTask'
     'Uninstall-EbookScheduledTask'

@@ -65,6 +65,12 @@
     "stall_threshold":         3,
     "cost_limit_per_book_usd": 2.00
   },
+  "kindle_delivery": {
+    "enabled": false,
+    "calibre_library": "",
+    "auto_send": false,
+    "delete_from_library_after_send": true
+  },
   "archive_originals":  true,
   "log_level":          "INFO"
 }
