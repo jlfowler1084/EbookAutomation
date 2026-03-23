@@ -2253,6 +2253,133 @@ def get_book_metadata(title_hash=None, isbn=None, title=None, author=None,
 # ---------------------------------------------------------------------------
 
 
+def _cmd_extract_metadata(args):
+    """Extract internal metadata, merge with DB, store, output JSON."""
+    file_path = os.path.abspath(args.file)
+    if not os.path.isfile(file_path):
+        print(json.dumps({'error': f'File not found: {file_path}'}))
+        sys.exit(1)
+
+    internal_meta = extract_file_metadata(file_path)
+
+    filename = os.path.basename(file_path)
+    title = internal_meta.get('title')
+    authors = internal_meta.get('authors')
+    if not title:
+        parsed_title, parsed_author = _parse_metadata_from_filename(filename)
+        title = parsed_title
+        authors = authors or parsed_author
+
+    title_hash = _normalize_title_hash(title, authors)
+    if not title_hash:
+        title_hash = _normalize_title_hash(Path(file_path).stem)
+
+    existing = get_book_metadata(title_hash=title_hash, db_path=args.db_path)
+
+    ext = os.path.splitext(file_path)[1].lower()
+    source_type = 'pdf_internal' if ext == '.pdf' else 'epub_opf' if ext == '.epub' else 'filename_parser'
+
+    if existing:
+        merged = merge_metadata(existing, internal_meta, source_type)
+    else:
+        merged = dict(internal_meta)
+        merged['source_type'] = source_type
+
+    merged['title_hash'] = title_hash
+    merged['source_filename'] = filename
+    if title and 'title' not in merged:
+        merged['title'] = title
+    if authors and 'authors' not in merged:
+        merged['authors'] = authors
+
+    store_book_metadata(
+        title_hash=title_hash,
+        isbn=merged.get('isbn'),
+        title=merged.get('title'),
+        authors=merged.get('authors'),
+        publisher=merged.get('publisher'),
+        year=merged.get('year'),
+        language=merged.get('language'),
+        subject=merged.get('subject'),
+        series=merged.get('series'),
+        description=merged.get('description'),
+        cover_path=merged.get('cover_path'),
+        extra_json=merged.get('extra_json'),
+        source_filename=filename,
+        source_type=merged.get('source_type'),
+        db_path=args.db_path,
+    )
+
+    output = {k: v for k, v in merged.items()
+              if v is not None and k not in ('id', 'created_at', 'updated_at')}
+    with open(args.output_file, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_get_metadata(args):
+    """Retrieve stored metadata and write to JSON."""
+    result = get_book_metadata(
+        title_hash=args.title_hash,
+        isbn=args.isbn,
+        title=args.title,
+        author=args.author,
+        db_path=args.db_path,
+    )
+    output = {}
+    if result:
+        output = {k: v for k, v in result.items()
+                  if v is not None and k not in ('id', 'created_at', 'updated_at')}
+    with open(args.output_file, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_update_metadata(args):
+    """Update specific fields via merge priority logic."""
+    existing = get_book_metadata(title_hash=args.title_hash, db_path=args.db_path)
+    if not existing:
+        existing = {'title_hash': args.title_hash}
+
+    new_fields = {}
+    for field in ('title', 'authors', 'publisher', 'year', 'isbn', 'cover_path'):
+        val = getattr(args, field.replace('-', '_'), None)
+        if val:
+            new_fields[field] = val
+
+    merged = merge_metadata(existing, new_fields, args.source_type)
+    merged['title_hash'] = args.title_hash
+
+    store_book_metadata(
+        title_hash=args.title_hash,
+        title=merged.get('title'),
+        authors=merged.get('authors'),
+        publisher=merged.get('publisher'),
+        year=merged.get('year'),
+        isbn=merged.get('isbn'),
+        cover_path=merged.get('cover_path'),
+        source_type=merged.get('source_type'),
+        db_path=args.db_path,
+    )
+
+    if args.output_file:
+        output = {k: v for k, v in merged.items()
+                  if v is not None and k not in ('id', 'created_at', 'updated_at')}
+        with open(args.output_file, 'w', encoding='utf-8') as f:
+            json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_store_metadata(args):
+    """Store metadata from a JSON file."""
+    with open(args.metadata_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    store_book_metadata(db_path=args.db_path, **{
+        k: v for k, v in data.items()
+        if k in ('title_hash', 'isbn', 'title', 'authors', 'publisher',
+                 'year', 'language', 'subject', 'series', 'description',
+                 'cover_path', 'extra_json', 'source_filename', 'source_type',
+                 'book_id')
+    })
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="EbookAutomation pattern database CLI"
@@ -2356,6 +2483,45 @@ def main():
 
     override_cmds.add_parser('list', help='List all book overrides')
 
+    # ── Metadata subcommands ──────────────────────────────────────────
+    extract_meta_parser = subparsers.add_parser(
+        'extract-metadata',
+        help='Extract internal metadata from a file, merge with DB, store, output JSON'
+    )
+    extract_meta_parser.add_argument('--file', required=True, help='Path to ebook file')
+    extract_meta_parser.add_argument(
+        '--output-file', required=True, help='Path to write merged metadata JSON'
+    )
+
+    get_meta_parser = subparsers.add_parser(
+        'get-metadata', help='Retrieve stored metadata by title-hash, isbn, or title+author'
+    )
+    get_meta_parser.add_argument('--title-hash', default=None)
+    get_meta_parser.add_argument('--isbn', default=None)
+    get_meta_parser.add_argument('--title', default=None)
+    get_meta_parser.add_argument('--author', default=None)
+    get_meta_parser.add_argument('--output-file', required=True, help='Path to write JSON')
+
+    update_meta_parser = subparsers.add_parser(
+        'update-metadata', help='Update specific metadata fields (merge with priority)'
+    )
+    update_meta_parser.add_argument('--title-hash', required=True)
+    update_meta_parser.add_argument('--title', default=None)
+    update_meta_parser.add_argument('--authors', default=None)
+    update_meta_parser.add_argument('--publisher', default=None)
+    update_meta_parser.add_argument('--year', default=None)
+    update_meta_parser.add_argument('--isbn', default=None)
+    update_meta_parser.add_argument('--cover-path', default=None)
+    update_meta_parser.add_argument('--source-type', default='filename_parser')
+    update_meta_parser.add_argument('--output-file', default=None,
+                                    help='Optional: write merged result as JSON')
+
+    store_meta_parser = subparsers.add_parser(
+        'store-metadata', help='Store metadata from a JSON file'
+    )
+    store_meta_parser.add_argument('--metadata-file', required=True,
+                                   help='Path to JSON file with metadata fields')
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -2385,6 +2551,10 @@ def main():
         'cache': _cmd_cache,
         'classify': _cmd_classify,
         'recommend': _cmd_recommend,
+        'extract-metadata': _cmd_extract_metadata,
+        'get-metadata': _cmd_get_metadata,
+        'update-metadata': _cmd_update_metadata,
+        'store-metadata': _cmd_store_metadata,
     }
 
     commands[args.command](args)

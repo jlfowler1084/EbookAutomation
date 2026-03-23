@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -358,6 +359,115 @@ class TestMergeMetadata(unittest.TestCase):
         new_fields = {'authors': 'Author'}
         result = pattern_db.merge_metadata(existing, new_fields, 'pdf_internal')
         self.assertEqual(result['source_type'], 'merged')
+
+
+class TestMetadataCLI(unittest.TestCase):
+    """Tests for CLI subcommands: extract-metadata, get-metadata, update-metadata, store-metadata."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, 'test.db')
+        self.output_file = os.path.join(self.tmp_dir, 'meta.json')
+        self.script = str(Path(__file__).resolve().parent / 'pattern_db.py')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _run_cli(self, args):
+        """Run pattern_db.py with args, return (returncode, stdout, stderr)."""
+        cmd = [sys.executable, self.script, '--db-path', self.db_path] + args
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return result.returncode, result.stdout, result.stderr
+
+    def test_extract_metadata_pdf(self):
+        """extract-metadata should extract and store PDF metadata."""
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest('PyMuPDF not installed')
+        pdf_path = os.path.join(self.tmp_dir, 'Test Book - Author Name.pdf')
+        doc = fitz.open()
+        doc.new_page()
+        doc.set_metadata({'title': 'Test Book', 'author': 'Author Name'})
+        doc.save(pdf_path)
+        doc.close()
+
+        rc, stdout, stderr = self._run_cli([
+            'extract-metadata', '--file', pdf_path,
+            '--output-file', self.output_file,
+        ])
+        self.assertEqual(rc, 0, f'stderr: {stderr}')
+        self.assertTrue(os.path.exists(self.output_file))
+        with open(self.output_file) as f:
+            data = json.load(f)
+        self.assertEqual(data['title'], 'Test Book')
+
+    def test_get_metadata(self):
+        """get-metadata should retrieve stored metadata."""
+        pattern_db.store_book_metadata(
+            title_hash='cli_test_hash',
+            title='CLI Test Book',
+            authors='CLI Author',
+            source_type='pdf_internal',
+            db_path=self.db_path,
+        )
+        rc, stdout, stderr = self._run_cli([
+            'get-metadata', '--title-hash', 'cli_test_hash',
+            '--output-file', self.output_file,
+        ])
+        self.assertEqual(rc, 0, f'stderr: {stderr}')
+        with open(self.output_file) as f:
+            data = json.load(f)
+        self.assertEqual(data['title'], 'CLI Test Book')
+
+    def test_update_metadata(self):
+        """update-metadata should merge in new fields."""
+        pattern_db.store_book_metadata(
+            title_hash='update_test',
+            title='Original',
+            source_type='pdf_internal',
+            db_path=self.db_path,
+        )
+        rc, stdout, stderr = self._run_cli([
+            'update-metadata', '--title-hash', 'update_test',
+            '--authors', 'New Author', '--source-type', 'filename_parser',
+            '--output-file', self.output_file,
+        ])
+        self.assertEqual(rc, 0, f'stderr: {stderr}')
+        with open(self.output_file) as f:
+            data = json.load(f)
+        self.assertEqual(data['title'], 'Original')  # kept from higher-priority source
+        self.assertEqual(data['authors'], 'New Author')  # filled from filename_parser
+
+    def test_get_metadata_not_found(self):
+        """get-metadata for nonexistent book should exit 0 with empty JSON."""
+        rc, stdout, stderr = self._run_cli([
+            'get-metadata', '--title-hash', 'nonexistent',
+            '--output-file', self.output_file,
+        ])
+        self.assertEqual(rc, 0)
+        with open(self.output_file) as f:
+            data = json.load(f)
+        self.assertEqual(data, {})
+
+    def test_store_metadata_from_json(self):
+        """store-metadata should import metadata from a JSON file."""
+        meta_file = os.path.join(self.tmp_dir, 'import.json')
+        with open(meta_file, 'w') as f:
+            json.dump({
+                'title_hash': 'store_test_hash',
+                'title': 'Stored Book',
+                'authors': 'Stored Author',
+                'source_type': 'epub_opf',
+            }, f)
+        rc, stdout, stderr = self._run_cli([
+            'store-metadata', '--metadata-file', meta_file,
+        ])
+        self.assertEqual(rc, 0, f'stderr: {stderr}')
+        result = pattern_db.get_book_metadata(title_hash='store_test_hash', db_path=self.db_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['title'], 'Stored Book')
 
 
 if __name__ == '__main__':
