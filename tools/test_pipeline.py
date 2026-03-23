@@ -4,9 +4,10 @@ Test harness for the pdfminer HTML extraction pipeline.
 Runs the PDF -> HTML -> KFX pipeline on validated books and checks expected
 properties (heading counts, content presence, formatting quality).
 
-Supports two modes:
+Supports three test sources:
   1. Hardcoded test cases (TEST_CASES dict) — manually curated assertions
   2. Auto-captured baselines (test_cases.json) — snapshot from last good run
+  3. Test corpus hot folder (test-corpus/) — drop books for auto-discovery
 
 Usage:
     python tools/test_pipeline.py                     # run all tests
@@ -15,10 +16,14 @@ Usage:
     python tools/test_pipeline.py --list              # list test case names
     python tools/test_pipeline.py --recapture "Oil Kings"  # re-capture baseline
     python tools/test_pipeline.py --capture-only "Oil Kings"  # capture without testing
+    python tools/test_pipeline.py --corpus            # run ONLY corpus tests
+    python tools/test_pipeline.py --corpus "Burge"    # run single corpus book
+    python tools/test_pipeline.py --corpus --recapture "Burge"  # re-capture corpus baseline
 """
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -37,6 +42,10 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 ARCHIVE_DIR = PROJECT_ROOT / "archive"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "kindle"
 TEST_CASES_JSON = SCRIPT_DIR / "test_cases.json"
+CORPUS_DIR = PROJECT_ROOT / "test-corpus"
+CORPUS_EXTENSIONS = {'.pdf', '.epub', '.mobi', '.azw', '.azw3'}
+# Formats the harness can currently process (others get SKIP)
+SUPPORTED_CORPUS_FORMATS = {'.pdf', '.epub'}
 
 # ── Ligature split patterns (same as _fix_ligature_splits) ──────────────
 LIGATURE_SPLIT_RE = re.compile(
@@ -318,6 +327,184 @@ def validate_against_baseline(html, baseline, kfx_path=None):
             failures.append(f"kfx_size off by {pct:.0f}%: {actual_kb} KB vs baseline {expected_kb} KB")
 
     return passes, failures
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Test corpus (hot folder) discovery
+# ═══════════════════════════════════════════════════════════════════════════
+
+def file_sha256(path):
+    """Compute SHA-256 hash of a file."""
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def discover_corpus_books():
+    """Scan test-corpus/ for supported ebook files. Returns list of Path objects."""
+    if not CORPUS_DIR.is_dir():
+        return []
+    books = []
+    for ext in CORPUS_EXTENSIONS:
+        books.extend(CORPUS_DIR.glob(f"*{ext}"))
+    # Deduplicate and sort by stem
+    books = sorted(set(books), key=lambda p: p.stem.lower())
+    return books
+
+
+def load_corpus_baseline(book_path):
+    """Load the baseline sidecar for a corpus book, or None if missing."""
+    baseline_path = book_path.with_suffix('.baseline.json')
+    if baseline_path.is_file():
+        with open(baseline_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+
+def save_corpus_baseline(book_path, baseline_data):
+    """Save baseline sidecar JSON next to the corpus book."""
+    baseline_path = book_path.with_suffix('.baseline.json')
+    with open(baseline_path, 'w', encoding='utf-8') as f:
+        json.dump(baseline_data, f, indent=2, ensure_ascii=False)
+
+
+def load_corpus_expectations(book_path):
+    """Load manual override expectations from <stem>.expect.json, or None."""
+    expect_path = book_path.with_suffix('.expect.json')
+    if expect_path.is_file():
+        with open(expect_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+
+def detect_extraction_path(stdout, stderr):
+    """Detect which extraction path was used from pipeline output."""
+    combined = (stdout or '') + '\n' + (stderr or '')
+    if 'column' in combined.lower() and 'pymupdf' in combined.lower():
+        return 'pymupdf'
+    if 'pdfminer' in combined.lower() or 'html-extraction' in combined.lower():
+        return 'pdfminer'
+    if 'pypdf' in combined.lower():
+        return 'pypdf'
+    return 'unknown'
+
+
+def run_corpus_extraction(book_path, test_name="corpus"):
+    """Run extraction for a corpus book. Supports PDF and EPUB."""
+    ext = book_path.suffix.lower()
+    if ext == '.pdf':
+        return run_extraction(str(book_path), use_pdfminer=True, test_name=test_name)
+    elif ext == '.epub':
+        return run_extraction(str(book_path), use_pdfminer=True, test_name=test_name)
+    else:
+        return None, "", f"Unsupported format: {ext}"
+
+
+def capture_corpus_baseline(book_path, quick=False):
+    """Run extraction on a corpus book and capture its baseline sidecar."""
+    stem = book_path.stem
+    ext = book_path.suffix.lower()
+
+    print(f"  Extracting: {stem}...", end="", flush=True)
+    html_path, stdout, stderr = run_corpus_extraction(book_path, test_name=stem)
+    if not html_path or not os.path.isfile(html_path):
+        print(f"\r  ERROR: HTML not produced for {stem}")
+        return None
+
+    with open(html_path, 'r', encoding='utf-8') as f:
+        html = f.read()
+
+    kfx_path = None
+    if not quick and ext == '.pdf':
+        ps_stdout, ps_stderr = run_kfx_conversion(str(book_path))
+        kfx_match = re.search(r'done -> (.+\.kfx)', ps_stdout + ps_stderr)
+        if kfx_match:
+            kfx_path = kfx_match.group(1)
+
+    baseline = extract_baseline_from_html(html, kfx_path)
+    extraction_path = detect_extraction_path(stdout, stderr)
+
+    sidecar = {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "source_file": book_path.name,
+        "source_format": ext.lstrip('.'),
+        "extraction_path": extraction_path,
+        "file_size_bytes": book_path.stat().st_size,
+        "file_hash_sha256": file_sha256(book_path),
+        "baseline": baseline,
+    }
+
+    save_corpus_baseline(book_path, sidecar)
+    b = baseline
+    print(f"\r  NEW BASELINE CAPTURED: {stem} "
+          f"(h2={b['h2_count']}, fn={b['linked_footnotes']}, h3={b['h3_count']}, "
+          f"path={extraction_path})")
+    return sidecar
+
+
+def run_corpus_test(book_path, quick=False):
+    """Run a corpus book against its baseline or expectations. Returns (passed, passes, failures, elapsed)."""
+    t0 = time.time()
+    stem = book_path.stem
+    ext = book_path.suffix.lower()
+
+    if ext not in SUPPORTED_CORPUS_FORMATS:
+        msg = f"SKIP: {stem} -- {ext} conversion not yet supported in test harness"
+        return None, [], [msg], time.time() - t0
+
+    # Check for manual expectations
+    expectations = load_corpus_expectations(book_path)
+
+    # Check for existing baseline
+    sidecar = load_corpus_baseline(book_path)
+
+    # Warn if source file changed since baseline was captured
+    if sidecar:
+        current_hash = file_sha256(book_path)
+        if current_hash != sidecar.get('file_hash_sha256'):
+            print(f"  WARNING: {stem} source file has changed since baseline was captured!")
+
+    # Run extraction
+    html_path, stdout, stderr = run_corpus_extraction(book_path, test_name=stem)
+    if not html_path or not os.path.isfile(html_path):
+        return False, [], ["HTML file not produced"], time.time() - t0
+
+    with open(html_path, 'r', encoding='utf-8') as f:
+        html = f.read()
+
+    kfx_path = None
+    if not quick and ext == '.pdf':
+        ps_stdout, ps_stderr = run_kfx_conversion(str(book_path))
+        kfx_match = re.search(r'done -> (.+\.kfx)', ps_stdout + ps_stderr)
+        if kfx_match:
+            kfx_path = kfx_match.group(1)
+
+    all_passes = []
+    all_failures = []
+
+    # If manual expectations exist, validate against them (like hardcoded tests)
+    if expectations:
+        passes, failures = validate_html(html, expectations, stdout)
+        all_passes.extend(passes)
+        all_failures.extend(failures)
+
+    # If baseline exists, also validate against baseline
+    if sidecar and sidecar.get('baseline'):
+        passes, failures = validate_against_baseline(html, sidecar['baseline'], kfx_path)
+        all_passes.extend(passes)
+        all_failures.extend(failures)
+
+    # If neither exists, this is first run — capture baseline
+    if not sidecar and not expectations:
+        capture_corpus_baseline(book_path, quick)
+        elapsed = time.time() - t0
+        return True, ["baseline captured"], [], elapsed
+
+    elapsed = time.time() - t0
+    passed = len(all_failures) == 0
+    return passed, all_passes, all_failures, elapsed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -661,6 +848,8 @@ def main():
                     help="Re-capture baseline for a book (overwrites saved baseline)")
     ap.add_argument("--capture-only", metavar="NAME",
                     help="Capture baseline without running tests")
+    ap.add_argument("--corpus", nargs="?", const=True, default=None, metavar="NAME",
+                    help="Run only test-corpus/ books (optionally filter by name)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="Show all passing checks")
     args = ap.parse_args()
@@ -683,11 +872,41 @@ def main():
                 b = case.get("baseline", {})
                 print(f"  {name:20s}  [{status}]  captured {captured_at}  "
                       f"h2={b.get('h2_count', '?')} fn={b.get('linked_footnotes', '?')}")
+
+        corpus_books = discover_corpus_books()
+        print(f"\nTest corpus (test-corpus/):")
+        if not corpus_books:
+            print("  (empty — drop ebook files into test-corpus/ to add tests)")
+        for book in corpus_books:
+            sidecar = load_corpus_baseline(book)
+            has_expect = book.with_suffix('.expect.json').is_file()
+            if sidecar:
+                captured_at = sidecar.get("captured_at", "unknown")[:10]
+                b = sidecar.get("baseline", {})
+                status = f"baselined {captured_at}"
+                details = f"h2={b.get('h2_count', '?')} fn={b.get('linked_footnotes', '?')} path={sidecar.get('extraction_path', '?')}"
+            else:
+                status = "NEW (no baseline)"
+                details = ""
+            expect_tag = " +expect" if has_expect else ""
+            print(f"  {book.stem:20s}  [{status}]{expect_tag}  {book.suffix}  {details}")
         return
 
     # ── Recapture mode ──
     if args.recapture:
         name = args.recapture
+
+        # Check corpus first if --corpus flag is set
+        if args.corpus is not None:
+            corpus_books = discover_corpus_books()
+            matches = [b for b in corpus_books if name.lower() in b.stem.lower()]
+            if matches:
+                for book in matches:
+                    capture_corpus_baseline(book, args.quick)
+                return
+            print(f"No corpus book matching '{name}'")
+            sys.exit(1)
+
         # Find in hardcoded cases or captured cases
         pattern = None
         if name in TEST_CASES:
@@ -697,6 +916,13 @@ def main():
             if name in captured:
                 pattern = captured[name]["pdf_pattern"]
         if not pattern:
+            # Also check corpus books as fallback
+            corpus_books = discover_corpus_books()
+            matches = [b for b in corpus_books if name.lower() in b.stem.lower()]
+            if matches:
+                for book in matches:
+                    capture_corpus_baseline(book, args.quick)
+                return
             print(f"Unknown test case: '{name}'")
             sys.exit(1)
         do_capture(name, pattern, args.quick)
@@ -718,32 +944,100 @@ def main():
         do_capture(name, pattern, args.quick)
         return
 
+    # ── Corpus-only mode ──
+    if args.corpus is not None:
+        corpus_books = discover_corpus_books()
+        if isinstance(args.corpus, str):
+            corpus_books = [b for b in corpus_books if args.corpus.lower() in b.stem.lower()]
+            if not corpus_books:
+                print(f"No corpus book matching '{args.corpus}'")
+                all_stems = [b.stem for b in discover_corpus_books()]
+                if all_stems:
+                    print(f"Available: {', '.join(all_stems)}")
+                else:
+                    print("test-corpus/ is empty — drop ebook files there to add tests")
+                sys.exit(1)
+
+        mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
+        print(f"\n{'=' * 60}")
+        print(f"  EbookAutomation Corpus Test Suite")
+        print(f"  Mode: {mode}")
+        print(f"  Books: {len(corpus_books)}")
+        print(f"{'=' * 60}\n")
+
+        total_pass = 0
+        total_fail = 0
+        total_skip = 0
+
+        for book in corpus_books:
+            print(f"  Running: {book.stem} [corpus]...", end="", flush=True)
+            passed, passes, failures, elapsed = run_corpus_test(book, args.quick)
+
+            if passed is None:
+                # Skipped (unsupported format)
+                print(f"\r  {failures[0]}")
+                total_skip += 1
+                continue
+
+            status = "PASS" if passed else "FAIL"
+            check_count = len(passes) + len(failures)
+            print(f"\r  {status}: {book.stem} [corpus] "
+                  f"({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
+
+            if failures:
+                for f in failures:
+                    print(f"    FAIL: {f}")
+            elif args.verbose:
+                for p in passes:
+                    print(f"    PASS: {p}")
+
+            if passed:
+                total_pass += 1
+            else:
+                total_fail += 1
+
+        print(f"\n{'=' * 60}")
+        parts = [f"{total_pass} passed", f"{total_fail} failed"]
+        if total_skip:
+            parts.append(f"{total_skip} skipped")
+        print(f"  Results: {', '.join(parts)}, {total_pass + total_fail + total_skip} total")
+        print(f"{'=' * 60}\n")
+        sys.exit(0 if total_fail == 0 else 1)
+
     # ── Normal test mode ──
     # Merge hardcoded and captured cases
     captured_cases = load_captured_cases()
     # Only run captured cases that aren't already in hardcoded TEST_CASES
     extra_captured = {k: v for k, v in captured_cases.items() if k not in TEST_CASES}
 
+    # Discover corpus books
+    corpus_books = discover_corpus_books()
+
     if args.test_name:
         hc_matches = {n: TEST_CASES[n] for n in TEST_CASES
                       if args.test_name.lower() in n.lower()}
         cap_matches = {n: extra_captured[n] for n in extra_captured
                        if args.test_name.lower() in n.lower()}
-        if not hc_matches and not cap_matches:
+        corpus_matches = [b for b in corpus_books
+                          if args.test_name.lower() in b.stem.lower()]
+        if not hc_matches and not cap_matches and not corpus_matches:
             print(f"No test case matching '{args.test_name}'")
-            all_names = list(TEST_CASES.keys()) + list(extra_captured.keys())
+            all_names = list(TEST_CASES.keys()) + list(extra_captured.keys()) + [b.stem for b in corpus_books]
             print(f"Available: {', '.join(all_names)}")
             sys.exit(1)
     else:
         hc_matches = TEST_CASES
         cap_matches = extra_captured
+        corpus_matches = corpus_books
 
-    total_tests = len(hc_matches) + len(cap_matches)
+    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches)
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
     print(f"\n{'=' * 60}")
     print(f"  EbookAutomation Pipeline Test Suite")
     print(f"  Mode: {mode}")
-    print(f"  Tests: {total_tests} ({len(hc_matches)} hardcoded, {len(cap_matches)} captured)")
+    corpus_note = f", {len(corpus_matches)} corpus" if corpus_matches else ""
+    print(f"  Tests: {total_tests} ({len(hc_matches)} hardcoded, "
+          f"{len(cap_matches)} captured{corpus_note})")
     print(f"{'=' * 60}\n")
 
     results = {}
@@ -795,10 +1089,41 @@ def main():
         else:
             total_fail += 1
 
+    # Run corpus tests
+    total_skip = 0
+    if corpus_matches:
+        for book in corpus_matches:
+            print(f"  Running: {book.stem} [corpus]...", end="", flush=True)
+            passed, passes, failures, elapsed = run_corpus_test(book, args.quick)
+
+            if passed is None:
+                print(f"\r  {failures[0]}")
+                total_skip += 1
+                continue
+
+            status = "PASS" if passed else "FAIL"
+            check_count = len(passes) + len(failures)
+            print(f"\r  {status}: {book.stem} [corpus] "
+                  f"({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
+
+            if failures:
+                for f in failures:
+                    print(f"    FAIL: {f}")
+            elif args.verbose:
+                for p in passes:
+                    print(f"    PASS: {p}")
+
+            if passed:
+                total_pass += 1
+            else:
+                total_fail += 1
+
     # Summary
     print(f"\n{'=' * 60}")
-    print(f"  Results: {total_pass} passed, {total_fail} failed, "
-          f"{total_pass + total_fail} total")
+    parts = [f"{total_pass} passed", f"{total_fail} failed"]
+    if total_skip:
+        parts.append(f"{total_skip} skipped")
+    print(f"  Results: {', '.join(parts)}, {total_pass + total_fail + total_skip} total")
     print(f"{'=' * 60}\n")
 
     sys.exit(0 if total_fail == 0 else 1)

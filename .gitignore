@@ -49,3 +49,9 @@ data/covers/
 
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
+
+# Test corpus (books are copyrighted, but baselines/expectations are committed)
+test-corpus/*
+!test-corpus/README.md
+!test-corpus/*.baseline.json
+!test-corpus/*.expect.json
