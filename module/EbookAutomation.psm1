@@ -2954,6 +2954,40 @@ function Initialize-EbookAutomation {
         } else {
             Write-Host "  [Optional] calibre-debug.exe not found (needed for Send-ToKindle)" -ForegroundColor Yellow
         }
+
+        # Check email delivery configuration
+        $emailCfg = $cfg.kindle_delivery.email
+        if ($emailCfg -and $emailCfg.smtp_user) {
+            Write-Host "`n  [Optional] Send-to-Kindle email configured" -ForegroundColor White
+            Write-Host "    + SMTP server: $($emailCfg.smtp_server):$($emailCfg.smtp_port)" -ForegroundColor Green
+            Write-Host "    + Sender: $($emailCfg.smtp_user)" -ForegroundColor Green
+            if ($emailCfg.kindle_address) {
+                Write-Host "    + Kindle: $($emailCfg.kindle_address)" -ForegroundColor Green
+            } else {
+                Write-Host "    ! Kindle address not configured (kindle_delivery.email.kindle_address)" -ForegroundColor Yellow
+            }
+            Write-Host "    ! REMINDER: Your sender address ($($emailCfg.smtp_user)) must be on Amazon's" -ForegroundColor Yellow
+            Write-Host "      Approved Personal Document E-mail List. Configure at:" -ForegroundColor Yellow
+            Write-Host "      amazon.com/manageyourkindle -> Preferences -> Personal Document Settings" -ForegroundColor Yellow
+
+            # Check Ghostscript
+            $gsPath = $cfg.paths.ghostscript
+            $gsFound = $false
+            if ($gsPath -and (Test-Path $gsPath)) {
+                Write-Host "    + Ghostscript: $gsPath" -ForegroundColor Green
+                $gsFound = $true
+            } else {
+                $gsProbe = Get-Command 'gswin64c' -ErrorAction SilentlyContinue
+                if (-not $gsProbe) { $gsProbe = Get-Command 'gs' -ErrorAction SilentlyContinue }
+                if ($gsProbe) {
+                    Write-Host "    + Ghostscript: $($gsProbe.Source) (found on PATH)" -ForegroundColor Green
+                    $gsFound = $true
+                }
+            }
+            if (-not $gsFound) {
+                Write-Host "    [Optional] Ghostscript not found (PDF compression will use PyMuPDF)" -ForegroundColor DarkGray
+            }
+        }
     } else {
         Write-Host "  ! Calibre not found at $calibrePath" -ForegroundColor Yellow
         Write-Host "    Install from calibre-ebook.com or update config/settings.json" -ForegroundColor Yellow
