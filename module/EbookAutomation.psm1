@@ -569,7 +569,10 @@ function Convert-ToKindle {
         [switch]$NoCache,
 
         [Parameter(HelpMessage = 'Path to VQA report from a previous iteration, used by the fix engine for targeted corrections.')]
-        [string]$VqaReportPath
+        [string]$VqaReportPath,
+
+        [Parameter(HelpMessage = 'Also produce an EPUB from the intermediate HTML (for email delivery).')]
+        [switch]$ProduceEpub
     )
 
     $cfg        = Get-EbookConfig
@@ -1849,6 +1852,65 @@ print(json.dumps(result))
             }
         } catch {
             Write-EbookLog "Kindle: pattern database write-back failed (non-blocking) -- $_" -Level WARN
+        }
+
+        # ── EPUB generation (for email delivery) ──────────────────────────
+        if ($ProduceEpub -and $tempDir) {
+            # $convertInput is always set by this point (the HTML/TXT path used for KFX).
+            $htmlSource = if ($convertInput -and (Test-Path $convertInput) -and $convertInput -like '*.html') {
+                              $convertInput
+                          } else { $null }
+
+            if ($htmlSource) {
+                $epubFile = Join-Path $OutputDir "$outName.epub"
+                $epubArgs = "`"$htmlSource`" `"$epubFile`" --input-encoding utf-8"
+                if ($tocArgs) { $epubArgs += $tocArgs }
+                if ($meta.Title) { $epubArgs += " --title `"$($meta.Title -replace '"', "'")`"" }
+                if ($meta.Authors) { $epubArgs += " --authors `"$($meta.Authors -replace '"', "'")`"" }
+                if ($meta.Publisher) { $epubArgs += " --publisher `"$($meta.Publisher -replace '"', "'")`"" }
+                if ($meta.Year) { $epubArgs += " --pubdate `"$($meta.Year)-01-01`"" }
+                if ($meta.ISBN) { $epubArgs += " --isbn `"$($meta.ISBN)`"" }
+                $epubArgs += " --language en"
+                if ($coverImage -and (Test-Path $coverImage)) {
+                    $epubArgs += " --cover `"$coverImage`""
+                }
+
+                Write-EbookLog "Kindle: generating EPUB for email delivery..."
+                try {
+                    $epubOutLog = Join-Path $env:TEMP "epub_out_$(Get-Random).txt"
+                    $epubErrLog = Join-Path $env:TEMP "epub_err_$(Get-Random).txt"
+                    $epubProc = Start-Process -FilePath $calibre -ArgumentList $epubArgs `
+                                              -PassThru -NoNewWindow `
+                                              -RedirectStandardOutput $epubOutLog `
+                                              -RedirectStandardError $epubErrLog
+                    $epubProc.WaitForExit()
+
+                    if (($epubProc.ExitCode -eq 0 -or $null -eq $epubProc.ExitCode) -and (Test-Path $epubFile)) {
+                        $epubMB = [math]::Round((Get-Item $epubFile).Length / 1MB, 1)
+                        Write-EbookLog "Kindle: EPUB generated -> $epubFile ($epubMB MB)" -Level SUCCESS
+                    } else {
+                        Write-EbookLog "Kindle: EPUB generation failed (non-blocking)" -Level WARN
+                    }
+
+                    foreach ($f in @($epubOutLog, $epubErrLog)) {
+                        if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+                    }
+                } catch {
+                    Write-EbookLog "Kindle: EPUB generation exception (non-blocking) -- $_" -Level WARN
+                }
+
+                # Preserve intermediate HTML for future EPUB regeneration
+                $intermediatesDir = Join-Path $OutputDir '.intermediates'
+                if (-not (Test-Path $intermediatesDir)) {
+                    New-Item $intermediatesDir -ItemType Directory -Force | Out-Null
+                    $dirInfo = Get-Item $intermediatesDir -Force
+                    $dirInfo.Attributes = $dirInfo.Attributes -bor [System.IO.FileAttributes]::Hidden
+                }
+                $htmlDest = Join-Path $intermediatesDir "${outName}_kindle.html"
+                Copy-Item $htmlSource $htmlDest -Force -ErrorAction SilentlyContinue
+            } else {
+                Write-EbookLog "Kindle: no intermediate HTML available for EPUB generation" -Level WARN
+            }
         }
 
         return $true
