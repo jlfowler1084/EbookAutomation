@@ -2084,6 +2084,170 @@ def extract_epub_metadata(file_path):
     return {k: v for k, v in result.items() if v}
 
 
+def extract_file_metadata(file_path):
+    """Extract internal metadata from a file based on its format.
+    Returns dict. For unsupported formats, returns empty dict.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == '.pdf':
+        return extract_pdf_metadata(file_path)
+    elif ext == '.epub':
+        return extract_epub_metadata(file_path)
+    else:
+        return {}
+
+
+# Source priority for merge decisions
+_SOURCE_PRIORITY = {
+    'filename_parser': 1,
+    'pdf_internal': 2,
+    'epub_opf': 3,
+    'database': 4,
+    'user_override': 5,
+    'claude_api': 5,
+    'merged': 3,
+}
+
+_METADATA_FIELDS = [
+    'title', 'authors', 'publisher', 'year', 'language', 'subject',
+    'series', 'description', 'isbn', 'cover_path', 'extra_json',
+]
+
+
+def merge_metadata(existing, new_fields, new_source_type):
+    """Merge new metadata fields into existing, respecting source priority.
+    For each field:
+    - If existing is empty/None, use new value
+    - If both have values, higher priority source wins
+    Returns merged dict with source_type set to 'merged' when multiple sources contribute.
+    """
+    result = dict(existing)
+    existing_priority = _SOURCE_PRIORITY.get(existing.get('source_type', ''), 0)
+    new_priority = _SOURCE_PRIORITY.get(new_source_type, 0)
+    sources_used = set()
+
+    if existing.get('source_type'):
+        sources_used.add(existing['source_type'])
+
+    for field in _METADATA_FIELDS:
+        existing_val = result.get(field)
+        new_val = new_fields.get(field)
+        if new_val and (not existing_val or new_priority > existing_priority):
+            result[field] = new_val
+            sources_used.add(new_source_type)
+        elif existing_val:
+            pass
+
+    if len(sources_used) > 1:
+        result['source_type'] = 'merged'
+    elif sources_used:
+        result['source_type'] = sources_used.pop()
+    else:
+        result['source_type'] = new_source_type
+
+    return result
+
+
+def store_book_metadata(title_hash=None, isbn=None, title=None, authors=None,
+                        publisher=None, year=None, language=None, subject=None,
+                        series=None, description=None, cover_path=None,
+                        extra_json=None, source_filename=None,
+                        source_type=None, book_id=None, db_path=None):
+    """Store or update book metadata in the database.
+    Uses COALESCE-based upsert keyed on title_hash.
+    Returns the stored metadata as a dict.
+    """
+    conn = get_db(db_path)
+    try:
+        existing = None
+        if title_hash:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE title_hash = ?",
+                (title_hash,)
+            ).fetchone()
+            if row:
+                existing = dict(row)
+
+        if existing:
+            conn.execute(
+                """UPDATE book_metadata SET
+                    book_id = COALESCE(?, book_id),
+                    isbn = COALESCE(?, isbn),
+                    title = COALESCE(?, title),
+                    authors = COALESCE(?, authors),
+                    publisher = COALESCE(?, publisher),
+                    year = COALESCE(?, year),
+                    language = COALESCE(?, language),
+                    subject = COALESCE(?, subject),
+                    series = COALESCE(?, series),
+                    description = COALESCE(?, description),
+                    cover_path = COALESCE(?, cover_path),
+                    extra_json = COALESCE(?, extra_json),
+                    source_filename = COALESCE(?, source_filename),
+                    source_type = COALESCE(?, source_type),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE title_hash = ?""",
+                (book_id, isbn, title, authors, publisher, year,
+                 language, subject, series, description, cover_path,
+                 extra_json, source_filename, source_type, title_hash)
+            )
+        else:
+            conn.execute(
+                """INSERT INTO book_metadata
+                   (book_id, isbn, title_hash, title, authors, publisher,
+                    year, language, subject, series, description,
+                    cover_path, extra_json, source_filename, source_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (book_id, isbn, title_hash, title, authors, publisher,
+                 year, language, subject, series, description,
+                 cover_path, extra_json, source_filename, source_type)
+            )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM book_metadata WHERE title_hash = ?",
+            (title_hash,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_book_metadata(title_hash=None, isbn=None, title=None, author=None,
+                      db_path=None):
+    """Look up stored metadata for a book.
+    Priority: title_hash > isbn > title+author fuzzy match.
+    Returns dict or None.
+    """
+    conn = get_db(db_path)
+    try:
+        row = None
+
+        if title_hash:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE title_hash = ?",
+                (title_hash,)
+            ).fetchone()
+
+        if not row and isbn:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE isbn = ?",
+                (isbn,)
+            ).fetchone()
+
+        if not row and title:
+            computed_hash = _normalize_title_hash(title, author)
+            if computed_hash:
+                row = conn.execute(
+                    "SELECT * FROM book_metadata WHERE title_hash = ?",
+                    (computed_hash,)
+                ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
