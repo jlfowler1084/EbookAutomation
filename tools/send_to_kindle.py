@@ -20,14 +20,9 @@ import json
 import traceback
 
 
-def find_kindle_mtp(timeout=60):
-    """Detect a Kindle via the MTP driver (Kindle Scribe and newer).
-
-    MTP devices require: startup() -> scan -> detect_managed_devices(scanner.devices).
-    This is different from the USBMS path used by older Kindles.
-    """
+def find_kindle_mtp(scanner_devices, timeout=60):
+    """Detect a Kindle via the MTP driver (Kindle Scribe and newer)."""
     from calibre.devices.mtp.driver import MTP_DEVICE
-    from calibre.devices.scanner import DeviceScanner
 
     drv = MTP_DEVICE(None)
     drv.startup()
@@ -36,6 +31,7 @@ def find_kindle_mtp(timeout=60):
     detected = None
 
     while time.time() - start_time < timeout:
+        from calibre.devices.scanner import DeviceScanner
         scanner = DeviceScanner()
         scanner.scan()
 
@@ -48,13 +44,14 @@ def find_kindle_mtp(timeout=60):
 
     if not detected:
         drv.shutdown()
-        return None
+        return None, None
 
+    # Open the device
     drv.reset(log_packets=False,
               report_progress=lambda x, y: None,
               detected_device=detected)
     drv.open(detected, 'calibre-send-to-kindle')
-    return drv
+    return drv, detected
 
 
 def find_kindle_usbms(timeout=60):
@@ -74,8 +71,9 @@ def find_kindle_usbms(timeout=60):
                 continue
             try:
                 connected = scanner.is_device_connected(plugin)
+                # USBMS returns (True/False, device_info) tuple
                 if isinstance(connected, tuple):
-                    is_conn = connected[0]
+                    is_conn, dev_info = connected
                     if not is_conn:
                         continue
                 elif not connected:
@@ -85,7 +83,7 @@ def find_kindle_usbms(timeout=60):
                              report_progress=lambda x, y: None,
                              detected_device=connected)
                 plugin.open(connected, library_uuid=None)
-                return plugin
+                return plugin, connected
             except Exception:
                 continue
 
@@ -93,7 +91,7 @@ def find_kindle_usbms(timeout=60):
         print('[SendToKindle] Waiting for Kindle (USBMS)... ({}s)'.format(elapsed))
         time.sleep(3)
 
-    return None
+    return None, None
 
 
 def main():
@@ -150,13 +148,14 @@ def main():
 
     # Try MTP first (Kindle Scribe, newer models), then USBMS (older models)
     device_plugin = None
+    detected = None
 
     print('[SendToKindle] Trying MTP detection...')
-    device_plugin = find_kindle_mtp(timeout=timeout)
+    device_plugin, detected = find_kindle_mtp(None, timeout=timeout)
 
     if not device_plugin:
         print('[SendToKindle] MTP not found, trying USBMS...')
-        device_plugin = find_kindle_usbms(timeout=max(10, timeout - 30))
+        device_plugin, detected = find_kindle_usbms(timeout=max(10, timeout - 30))
 
     if not device_plugin:
         print('[SendToKindle] ERROR: No Kindle device detected within {}s'.format(timeout), file=sys.stderr)
@@ -168,6 +167,7 @@ def main():
     print('[SendToKindle] Found device: {}'.format(device_name))
 
     # --- Step 3: Send book to device ---
+    # Prefer KFX > AZW3 > MOBI > EPUB > PDF
     format_priority = ['KFX', 'AZW3', 'MOBI', 'EPUB', 'PDF']
     available_upper = [f.upper() for f in formats] if formats else []
     send_format = None
@@ -201,7 +201,8 @@ def main():
 
         # MTP driver uses upload_books(); USBMS uses upload_to_device()
         if hasattr(device_plugin, 'upload_books'):
-            device_plugin.upload_books(
+            # MTP path: upload_books(files, names, on_card, end_session, metadata)
+            result = device_plugin.upload_books(
                 files=[file_path],
                 names=[device_filename],
                 on_card=on_card,
@@ -209,7 +210,8 @@ def main():
                 metadata=[mi]
             )
         else:
-            device_plugin.upload_to_device(
+            # USBMS path
+            result = device_plugin.upload_to_device(
                 files_in=[(file_path, book_id)],
                 names_on_device=[device_filename],
                 metadata=[mi],
@@ -228,6 +230,7 @@ def main():
             device_plugin.eject()
         except Exception:
             pass
+        # Shutdown MTP driver if applicable
         if hasattr(device_plugin, 'shutdown'):
             try:
                 device_plugin.shutdown()
@@ -240,6 +243,7 @@ def main():
         db_api.remove_books((book_id,))
         print('[SendToKindle] Removed from library')
 
+    # Output JSON result for PowerShell to parse
     print(json.dumps({
         'success': True,
         'title': title,
