@@ -47,7 +47,7 @@ Expand the existing `kindle_delivery` block in `config/settings.json`:
 | `smtp_server` | SMTP server hostname (default: Gmail) |
 | `smtp_port` | SMTP port (587 for STARTTLS, 465 for SSL) |
 | `smtp_user` | Sender's email address. **Must** be on Amazon's Approved Personal Document E-mail List |
-| `smtp_app_password_env` | Name of the environment variable holding the SMTP password. Default: `EBOOK_SMTP_PASSWORD`. Code reads `$env:EBOOK_SMTP_PASSWORD` at runtime. No plaintext fallback in config — the config file is committed to Git. If the env var is not set, the email path fails with a clear error message directing the user to set it |
+| `smtp_app_password_env` | Name of the environment variable holding the SMTP password. Default: `EBOOK_SMTP_PASSWORD`. Code reads `$env:EBOOK_SMTP_PASSWORD` at runtime. No plaintext fallback in config — the config file is committed to Git. If the env var is not set, the email path fails with a clear error message directing the user to set it. **Forward-looking note:** The web service (SCRUM-51) will abstract the credential source (likely Azure Key Vault); the env var approach is for local CLI use only |
 | `convert_subject` | When true, adds "Convert" to the email subject for EPUB/DOCX (tells Amazon to convert to Kindle format for better reading experience). **Behavioral note:** this setting is always suppressed for PDF regardless of its value, since PDFs are better kept as-is on Scribe for annotation |
 | `max_email_size_mb` | Ceiling for the size auto-routing logic. Default: 50. This is Amazon's limit; the Gmail 25MB attachment limit is handled separately by the ZIP step for PDF files |
 
@@ -119,7 +119,7 @@ When `-ProduceEpub` is active and KFX conversion succeeds:
 2. Derive the EPUB filename from the same `$outName` variable used for the KFX output (e.g., if KFX is `Oil Kings - Cooper, Andrew Scott.kfx`, EPUB is `Oil Kings - Cooper, Andrew Scott.epub`). This ensures consistent naming and enables the fallback lookup in `Send-ToKindle`
 3. Run Calibre: `ebook-convert $htmlFile $epubFile` with the same `$tocArgs`, metadata flags, and `--cover` arguments already built in `$argString` for the KFX conversion
 4. Save the EPUB to `output\kindle\Oil Kings - Cooper, Andrew Scott.epub`
-5. Copy the intermediate HTML to `output\kindle\.intermediates\Oil Kings - Cooper, Andrew Scott_kindle.html` (create `.intermediates\` directory if it doesn't exist). This allows future `Send-ToKindle -Email` calls to regenerate the EPUB without re-running the full extraction pipeline
+5. Copy the intermediate HTML to `output\kindle\.intermediates\Oil Kings - Cooper, Andrew Scott_kindle.html` (create `.intermediates\` directory if it doesn't exist, and set the Hidden attribute via `attrib +h` so it stays out of Explorer). This allows future `Send-ToKindle -Email` calls to regenerate the EPUB without re-running the full extraction pipeline
 6. EPUB generation failure is non-blocking — log a warning, but still return `$true` since the KFX succeeded
 
 `Convert-ToKindle` continues to return `$true`/`$false` (boolean, not a path). The pipeline locates output files by searching the output directory.
@@ -182,10 +182,10 @@ Format-aware logic applied after format selection, before sending. All threshold
 > max_email_size_mb  → re-generate EPUB with Calibre image compression:
                        ebook-convert input.epub output.epub --compress-images --jpeg-quality 60
                        retry size check
-still > max_email_size_mb → split by chapter ranges into parts, email each
+still > max_email_size_mb → abort with "EPUB too large for email (X MB). Use USB delivery."
 ```
 
-Note: An EPUB over 50MB from this pipeline is rare since text extraction strips most images. This is a defensive measure.
+Note: An EPUB over 50MB from this pipeline is rare since text extraction strips most images. This is a defensive measure. EPUB splitting (by spine entries) is deferred — PyMuPDF doesn't handle EPUBs, and building custom splitting via ebooklib is not justified until image preservation (SCRUM-20) makes large EPUBs common. PDF splitting via PyMuPDF covers the real use case.
 
 ### PDF path (compressible)
 
@@ -310,3 +310,5 @@ When `kindle_delivery.email.smtp_user` is non-empty, print:
 | Split limits | Min 10 pages/part, max 5 parts | Prevents pathological splitting; effective max 250MB for email delivery; beyond that falls back to USB recommendation |
 | MOBI/PRC/AZW for email | Rejected with error | Amazon discontinued these formats for Send-to-Kindle in 2022. Intentionally conservative |
 | -Compress/-SplitMaxMB without -Email | Warn and ignore | These parameters only make sense for the email path; silently proceeding with USB avoids confusing the user |
+| EPUB splitting | Deferred — abort with USB recommendation | PyMuPDF doesn't handle EPUBs; custom splitting via ebooklib not justified until SCRUM-20 (image preservation) makes large EPUBs common. PDF splitting covers the real use case |
+| Credential abstraction | Env var for CLI, Key Vault for web service (future) | Current design is local-CLI-only; SCRUM-51 web service will need a different credential backend |
