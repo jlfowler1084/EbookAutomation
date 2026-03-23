@@ -283,6 +283,41 @@ function Convert-ToTTS {
 
     Write-EbookLog "TTS: converting '$([System.IO.Path]::GetFileName($InputFile))'"
 
+    # ── Early metadata capture (database population only) ──────────
+    $fileName = [System.IO.Path]::GetFileName($InputFile)
+    $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_tts_$(Get-Random).json"
+    try {
+        $toolsDir = Join-Path $script:ModuleRoot 'tools'
+
+        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait | Out-Null
+
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        if (($fileMeta.Title -or $fileMeta.Authors) -and (Test-Path $metaTempFile)) {
+            $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+            $titleHash = $dbMeta.title_hash
+            if ($titleHash) {
+                $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata --title-hash `"$titleHash`""
+                if ($fileMeta.Title) { $updateArgs += " --title `"$($fileMeta.Title -replace '"', "'")`"" }
+                if ($fileMeta.Authors) { $updateArgs += " --authors `"$($fileMeta.Authors -replace '"', "'")`"" }
+                if ($fileMeta.Publisher) { $updateArgs += " --publisher `"$($fileMeta.Publisher -replace '"', "'")`"" }
+                if ($fileMeta.Year) { $updateArgs += " --year `"$($fileMeta.Year)`"" }
+                if ($fileMeta.ISBN) { $updateArgs += " --isbn `"$($fileMeta.ISBN)`"" }
+                $updateArgs += " --source-type filename_parser"
+                Start-Process -FilePath $python -ArgumentList $updateArgs -NoNewWindow -Wait | Out-Null
+            }
+        }
+        Write-EbookLog "TTS: metadata captured to database"
+    }
+    catch {
+        Write-EbookLog "TTS: metadata capture failed (non-blocking) -- $_" -Level WARN
+    }
+    finally {
+        if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+            Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     # All formats now handled natively by pdf_to_balabolka.py
     # PDF: pypdf extraction, EPUB: ebooklib, MOBI/AZW/DJVU: Calibre (called from Python)
     $workFile = $InputFile
@@ -574,7 +609,6 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Also produce an EPUB from the intermediate HTML (for email delivery).')]
         [switch]$ProduceEpub,
 
-        [Parameter(HelpMessage = 'Conversion profile: full (default), clean-read (chapters+body+TOC only), text-only (bare minimum).')]
         [ValidateSet('full','clean-read','text-only')]
         [string]$Profile = 'full',
 
@@ -715,8 +749,74 @@ print(json.dumps(output))
         }
     }
 
-    # Parse metadata from filename for a clean output name and Calibre flags
-    $meta = Get-EbookMetadataFromFilename $fileName
+    # ── Early metadata capture ────────────────────────────────────
+    $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_$(Get-Random).json"
+    $titleHash = $null
+
+    try {
+        $python    = $cfg.paths.python
+        $toolsDir  = Join-Path $script:ModuleRoot 'tools'
+
+        # Step 1: Extract internal metadata from source file and store in database
+        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        $extractProc = Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait
+
+        $dbMeta = $null
+        if (Test-Path $metaTempFile) {
+            $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+            $titleHash = $dbMeta.title_hash
+        }
+
+        # Step 2: Merge filename-derived metadata (fills gaps the internal metadata missed)
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        if ($fileMeta.Title -or $fileMeta.Authors) {
+            $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata"
+            if ($titleHash) {
+                $updateArgs += " --title-hash `"$titleHash`""
+            } else {
+                $hashTitle = if ($fileMeta.Title) { $fileMeta.Title } else { $stem }
+                $updateArgs += " --title-hash `"$hashTitle`""
+            }
+            if ($fileMeta.Title) { $updateArgs += " --title `"$($fileMeta.Title -replace '"', "'")`"" }
+            if ($fileMeta.Authors) { $updateArgs += " --authors `"$($fileMeta.Authors -replace '"', "'")`"" }
+            if ($fileMeta.Publisher) { $updateArgs += " --publisher `"$($fileMeta.Publisher -replace '"', "'")`"" }
+            if ($fileMeta.Year) { $updateArgs += " --year `"$($fileMeta.Year)`"" }
+            if ($fileMeta.ISBN) { $updateArgs += " --isbn `"$($fileMeta.ISBN)`"" }
+            $updateArgs += " --source-type filename_parser --output-file `"$metaTempFile`""
+            Start-Process -FilePath $python -ArgumentList $updateArgs -NoNewWindow -Wait
+
+            # Re-read the merged result
+            if (Test-Path $metaTempFile) {
+                $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+                $titleHash = $dbMeta.title_hash
+            }
+        }
+
+        # Step 3: Build $meta from merged database metadata, filling gaps from filename
+        if (-not $fileMeta) { $fileMeta = Get-EbookMetadataFromFilename $fileName }
+        $meta = @{
+            Title     = if ($dbMeta -and $dbMeta.title) { $dbMeta.title } else { $fileMeta.Title }
+            Authors   = if ($dbMeta -and $dbMeta.authors) { $dbMeta.authors } else { $fileMeta.Authors }
+            Publisher = if ($dbMeta -and $dbMeta.publisher) { $dbMeta.publisher } else { $fileMeta.Publisher }
+            Year      = if ($dbMeta -and $dbMeta.year) { $dbMeta.year } else { $fileMeta.Year }
+            ISBN      = if ($dbMeta -and $dbMeta.isbn) { $dbMeta.isbn } else { $fileMeta.ISBN }
+        }
+
+        Write-EbookLog "Kindle: metadata source -> $( if ($dbMeta.source_type) { $dbMeta.source_type } else { 'filename_parser' } )"
+    }
+    catch {
+        Write-EbookLog "Kindle: metadata capture failed (non-blocking) -- $_" -Level WARN
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        $meta = @{
+            Title = $fileMeta.Title; Authors = $fileMeta.Authors
+            Publisher = $fileMeta.Publisher; Year = $fileMeta.Year; ISBN = $fileMeta.ISBN
+        }
+    }
+    finally {
+        if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+            Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
     $cleanStem = if ($meta.Title) {
         # Sanitize title for filesystem: remove illegal chars, brackets, colons
         ($meta.Title -replace '[\\/:*?"<>|]', '' -replace '[\(\)\[\]\{\}]', '' -replace '\s+', ' ').Trim()
@@ -2261,6 +2361,30 @@ function Send-ToKindle {
             $pyArgs += " --smtp-user `"$($emailCfg.smtp_user)`" --book-title `"$bookTitle`""
             $pyArgs += " --password-env-var `"$passwordEnvVar`""
 
+            # Look up enriched metadata from database (may have PDF/EPUB internal metadata)
+            $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_send_$(Get-Random).json"
+            try {
+                $python   = $cfg.paths.python
+                $toolsDir = Join-Path $script:ModuleRoot 'tools'
+                $lookupArgs = "`"$toolsDir\pattern_db.py`" get-metadata"
+                if ($emailMeta.Title) {
+                    $lookupArgs += " --title `"$($emailMeta.Title -replace '"', "'")`""
+                }
+                if ($emailMeta.Authors) {
+                    $lookupArgs += " --author `"$($emailMeta.Authors -replace '"', "'")`""
+                }
+                $lookupArgs += " --output-file `"$metaTempFile`""
+                Start-Process -FilePath $python -ArgumentList $lookupArgs -NoNewWindow -Wait
+
+                if ((Test-Path $metaTempFile) -and (Get-Item $metaTempFile).Length -gt 5) {
+                    $pyArgs += " --metadata-file `"$metaTempFile`""
+                    Write-EbookLog "SendToKindle: passing enriched metadata to email script"
+                }
+            }
+            catch {
+                Write-EbookLog "SendToKindle: metadata lookup failed (non-blocking) -- $_" -Level WARN
+            }
+
             if ($emailCfg.convert_subject -and $emailExt -ne 'PDF') {
                 $pyArgs += " --convert-subject"
             }
@@ -2324,6 +2448,9 @@ function Send-ToKindle {
             # Cleanup temp files
             foreach ($f in @($outFile, $errFile)) {
                 if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+            }
+            if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+                Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
             }
 
             return  # Email path complete -- don't fall through to USB
@@ -2531,7 +2658,18 @@ function Invoke-EbookPipeline {
         [switch]$ValidateVisual,
         [switch]$NoCache,
         [switch]$SendToKindle,
-        [switch]$EmailToKindle
+        [switch]$EmailToKindle,
+
+        [ValidateSet('full','clean-read','text-only')]
+        [string]$Profile = 'full',
+
+        [switch]$NoFootnotes,
+        [switch]$NoIndex,
+        [switch]$NoHyperlinks,
+        [switch]$NoFrontMatter,
+        [switch]$NoBackMatter,
+        [switch]$NoImages,
+        [switch]$NoBlockQuotes
     )
 
     $pipelineStart  = Get-Date
@@ -3998,7 +4136,18 @@ function Invoke-ConvergeLoop {
         [int]$TargetScore = 85,
         [int]$StallThreshold = 3,
         [string]$OutputDir,
-        [double]$CostLimit = 2.00
+        [double]$CostLimit = 2.00,
+
+        [ValidateSet('full','clean-read','text-only')]
+        [string]$Profile = 'full',
+
+        [switch]$NoFootnotes,
+        [switch]$NoIndex,
+        [switch]$NoHyperlinks,
+        [switch]$NoFrontMatter,
+        [switch]$NoBackMatter,
+        [switch]$NoImages,
+        [switch]$NoBlockQuotes
     )
 
     # ── Step 1: Setup ────────────────────────────────────────────────────────
@@ -4061,6 +4210,11 @@ function Invoke-ConvergeLoop {
                 Write-EbookLog "  Text density: $($classification.signals.text_density_per_page) chars/page"
                 Write-EbookLog "  File size/page: $($classification.signals.file_size_per_page_kb) KB"
                 Write-EbookLog "  Recommended strategies: $($classification.recommended_strategies -join ' -> ')"
+
+                # Recommend lean profile for scanned PDFs
+                if ($classification.classification -in @('scan_with_text', 'scan_no_text') -and $Profile -eq 'full') {
+                    Write-EbookLog "ConvergeLoop: scanned PDF detected -- consider using -Profile text-only for best Kindle performance" -Level WARN
+                }
 
                 if ($classification.flags.needs_ocr) {
                     Write-EbookLog "  WARNING: Source needs OCR - text layer is empty or unusable" -Level WARN
@@ -4273,6 +4427,16 @@ print(json.dumps(result))
         foreach ($flag in $strategy.Flags.GetEnumerator()) {
             $convertParams[$flag.Key] = $flag.Value
         }
+
+        # Pass through profile flags (user preference, not strategy-dependent)
+        if ($Profile -ne 'full') { $convertParams['Profile'] = $Profile }
+        if ($NoFootnotes)   { $convertParams['NoFootnotes']   = $true }
+        if ($NoIndex)       { $convertParams['NoIndex']       = $true }
+        if ($NoHyperlinks)  { $convertParams['NoHyperlinks']  = $true }
+        if ($NoFrontMatter) { $convertParams['NoFrontMatter'] = $true }
+        if ($NoBackMatter)  { $convertParams['NoBackMatter']  = $true }
+        if ($NoImages)      { $convertParams['NoImages']      = $true }
+        if ($NoBlockQuotes) { $convertParams['NoBlockQuotes'] = $true }
 
         $convertOk = Convert-ToKindle @convertParams
 
