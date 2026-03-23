@@ -171,5 +171,194 @@ class TestPdfMetadataExtraction(unittest.TestCase):
         self.assertNotIn('authors', result)
 
 
+class TestEpubMetadataExtraction(unittest.TestCase):
+    """Tests for extract_epub_metadata — requires ebooklib."""
+
+    def setUp(self):
+        """Create a minimal EPUB with metadata using ebooklib."""
+        try:
+            from ebooklib import epub
+        except ImportError:
+            self.skipTest('ebooklib not installed')
+
+        self.tmp_dir = tempfile.mkdtemp()
+        self.epub_path = os.path.join(self.tmp_dir, 'test_book.epub')
+
+        book = epub.EpubBook()
+        book.set_identifier('isbn:9780802826503')
+        book.set_title('Jesus and the Land')
+        book.set_language('en')
+        book.add_author('Gary M. Burge')
+        book.add_metadata('DC', 'publisher', 'Baker Academic')
+        book.add_metadata('DC', 'description', 'A study of land theology')
+        book.add_metadata('DC', 'subject', 'Theology')
+
+        ch = epub.EpubHtml(title='Chapter 1', file_name='ch1.xhtml', lang='en')
+        ch.content = '<html><body><h1>Chapter 1</h1><p>Content.</p></body></html>'
+        book.add_item(ch)
+        book.spine = ['nav', ch]
+        book.add_item(epub.EpubNcx())
+        book.add_item(epub.EpubNav())
+
+        epub.write_epub(self.epub_path, book, {})
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_extracts_title(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['title'], 'Jesus and the Land')
+
+    def test_extracts_author(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['authors'], 'Gary M. Burge')
+
+    def test_extracts_publisher(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['publisher'], 'Baker Academic')
+
+    def test_extracts_language(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['language'], 'en')
+
+    def test_extracts_isbn(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['isbn'], '9780802826503')
+
+    def test_extracts_description(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['description'], 'A study of land theology')
+
+    def test_extracts_subject(self):
+        result = pattern_db.extract_epub_metadata(self.epub_path)
+        self.assertEqual(result['subject'], 'Theology')
+
+
+class TestExtractFileMetadata(unittest.TestCase):
+    """Tests for the extract_file_metadata router."""
+
+    def test_routes_pdf(self):
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest('PyMuPDF not installed')
+        tmp_dir = tempfile.mkdtemp()
+        pdf_path = os.path.join(tmp_dir, 'test.pdf')
+        doc = fitz.open()
+        doc.new_page()
+        doc.set_metadata({'title': 'Router Test'})
+        doc.save(pdf_path)
+        doc.close()
+        result = pattern_db.extract_file_metadata(pdf_path)
+        self.assertEqual(result.get('title'), 'Router Test')
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_unknown_format_returns_empty(self):
+        result = pattern_db.extract_file_metadata('book.mobi')
+        self.assertEqual(result, {})
+
+
+class TestStoreAndGetBookMetadata(unittest.TestCase):
+    """Tests for store_book_metadata and get_book_metadata."""
+
+    def setUp(self):
+        self.db_fd, self.db_path = tempfile.mkstemp(suffix='.db')
+
+    def tearDown(self):
+        os.close(self.db_fd)
+        os.unlink(self.db_path)
+
+    def test_store_and_retrieve_by_title_hash(self):
+        title_hash = pattern_db._normalize_title_hash('The Book of Ezekiel', 'Daniel Block')
+        pattern_db.store_book_metadata(
+            title_hash=title_hash,
+            title='The Book of Ezekiel',
+            authors='Daniel I. Block',
+            publisher='Eerdmans',
+            year='1997',
+            source_type='pdf_internal',
+            db_path=self.db_path,
+        )
+        result = pattern_db.get_book_metadata(title_hash=title_hash, db_path=self.db_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['title'], 'The Book of Ezekiel')
+        self.assertEqual(result['authors'], 'Daniel I. Block')
+        self.assertEqual(result['publisher'], 'Eerdmans')
+
+    def test_retrieve_by_isbn(self):
+        pattern_db.store_book_metadata(
+            title_hash='test_hash',
+            isbn='9780802826503',
+            title='Jesus and the Land',
+            source_type='epub_opf',
+            db_path=self.db_path,
+        )
+        result = pattern_db.get_book_metadata(isbn='9780802826503', db_path=self.db_path)
+        self.assertIsNotNone(result)
+        self.assertEqual(result['title'], 'Jesus and the Land')
+
+    def test_upsert_updates_existing(self):
+        pattern_db.store_book_metadata(
+            title_hash='upsert_test',
+            title='Original Title',
+            source_type='filename_parser',
+            db_path=self.db_path,
+        )
+        pattern_db.store_book_metadata(
+            title_hash='upsert_test',
+            title='Updated Title',
+            authors='New Author',
+            source_type='pdf_internal',
+            db_path=self.db_path,
+        )
+        result = pattern_db.get_book_metadata(title_hash='upsert_test', db_path=self.db_path)
+        self.assertEqual(result['title'], 'Updated Title')
+        self.assertEqual(result['authors'], 'New Author')
+
+    def test_returns_none_when_not_found(self):
+        result = pattern_db.get_book_metadata(title_hash='nonexistent', db_path=self.db_path)
+        self.assertIsNone(result)
+
+
+class TestMergeMetadata(unittest.TestCase):
+    """Tests for the merge_metadata priority logic."""
+
+    def test_fills_empty_fields(self):
+        existing = {'title': 'Book Title', 'source_type': 'filename_parser'}
+        new_fields = {'authors': 'John Smith', 'year': '2020'}
+        result = pattern_db.merge_metadata(existing, new_fields, 'pdf_internal')
+        self.assertEqual(result['title'], 'Book Title')
+        self.assertEqual(result['authors'], 'John Smith')
+        self.assertEqual(result['year'], '2020')
+
+    def test_higher_priority_wins(self):
+        existing = {'title': 'Filename Title', 'authors': 'Filename Author', 'source_type': 'filename_parser'}
+        new_fields = {'title': 'PDF Title', 'authors': 'PDF Author'}
+        result = pattern_db.merge_metadata(existing, new_fields, 'pdf_internal')
+        self.assertEqual(result['title'], 'PDF Title')
+        self.assertEqual(result['authors'], 'PDF Author')
+
+    def test_lower_priority_does_not_overwrite(self):
+        existing = {'title': 'EPUB Title', 'source_type': 'epub_opf'}
+        new_fields = {'title': 'Filename Title'}
+        result = pattern_db.merge_metadata(existing, new_fields, 'filename_parser')
+        self.assertEqual(result['title'], 'EPUB Title')
+
+    def test_lower_priority_fills_gaps(self):
+        existing = {'title': 'EPUB Title', 'source_type': 'epub_opf'}
+        new_fields = {'authors': 'Filename Author'}
+        result = pattern_db.merge_metadata(existing, new_fields, 'filename_parser')
+        self.assertEqual(result['title'], 'EPUB Title')
+        self.assertEqual(result['authors'], 'Filename Author')
+
+    def test_merged_source_type(self):
+        existing = {'title': 'Book', 'source_type': 'filename_parser'}
+        new_fields = {'authors': 'Author'}
+        result = pattern_db.merge_metadata(existing, new_fields, 'pdf_internal')
+        self.assertEqual(result['source_type'], 'merged')
+
+
 if __name__ == '__main__':
     unittest.main()

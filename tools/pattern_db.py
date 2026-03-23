@@ -2036,6 +2036,54 @@ def extract_pdf_metadata(file_path):
     return {k: v for k, v in result.items() if v}
 
 
+def _get_epub_meta(book, namespace, name):
+    """Get a single metadata value from an ebooklib EpubBook."""
+    try:
+        items = book.get_metadata(namespace, name)
+        if items:
+            val = items[0][0]
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_isbn_from_epub(book):
+    """Extract ISBN from EPUB DC:identifier fields."""
+    try:
+        identifiers = book.get_metadata('DC', 'identifier')
+        for ident_tuple in identifiers:
+            val = str(ident_tuple[0]).strip()
+            for prefix in ('isbn:', 'urn:isbn:', 'ISBN:'):
+                if val.lower().startswith(prefix.lower()):
+                    val = val[len(prefix):]
+                    break
+            cleaned = val.replace('-', '')
+            if re.match(r'^(97[89])?\d{9}[\dXx]$', cleaned):
+                return cleaned
+    except Exception:
+        pass
+    return None
+
+
+def extract_epub_metadata(file_path):
+    """Extract metadata from an EPUB file via ebooklib."""
+    from ebooklib import epub
+    book = epub.read_epub(file_path, options={'ignore_ncx': True})
+
+    result = {
+        'title': _get_epub_meta(book, 'DC', 'title'),
+        'authors': _get_epub_meta(book, 'DC', 'creator'),
+        'publisher': _get_epub_meta(book, 'DC', 'publisher'),
+        'language': _get_epub_meta(book, 'DC', 'language'),
+        'description': _get_epub_meta(book, 'DC', 'description'),
+        'isbn': _extract_isbn_from_epub(book),
+        'subject': _get_epub_meta(book, 'DC', 'subject'),
+    }
+    return {k: v for k, v in result.items() if v}
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
