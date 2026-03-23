@@ -283,6 +283,41 @@ function Convert-ToTTS {
 
     Write-EbookLog "TTS: converting '$([System.IO.Path]::GetFileName($InputFile))'"
 
+    # ── Early metadata capture (database population only) ──────────
+    $fileName = [System.IO.Path]::GetFileName($InputFile)
+    $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_tts_$(Get-Random).json"
+    try {
+        $toolsDir = Join-Path $script:ModuleRoot 'tools'
+
+        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait | Out-Null
+
+        $fileMeta = Get-EbookMetadataFromFilename $fileName
+        if (($fileMeta.Title -or $fileMeta.Authors) -and (Test-Path $metaTempFile)) {
+            $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
+            $titleHash = $dbMeta.title_hash
+            if ($titleHash) {
+                $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata --title-hash `"$titleHash`""
+                if ($fileMeta.Title) { $updateArgs += " --title `"$($fileMeta.Title -replace '"', "'")`"" }
+                if ($fileMeta.Authors) { $updateArgs += " --authors `"$($fileMeta.Authors -replace '"', "'")`"" }
+                if ($fileMeta.Publisher) { $updateArgs += " --publisher `"$($fileMeta.Publisher -replace '"', "'")`"" }
+                if ($fileMeta.Year) { $updateArgs += " --year `"$($fileMeta.Year)`"" }
+                if ($fileMeta.ISBN) { $updateArgs += " --isbn `"$($fileMeta.ISBN)`"" }
+                $updateArgs += " --source-type filename_parser"
+                Start-Process -FilePath $python -ArgumentList $updateArgs -NoNewWindow -Wait | Out-Null
+            }
+        }
+        Write-EbookLog "TTS: metadata captured to database"
+    }
+    catch {
+        Write-EbookLog "TTS: metadata capture failed (non-blocking) -- $_" -Level WARN
+    }
+    finally {
+        if (Test-Path $metaTempFile -ErrorAction SilentlyContinue) {
+            Remove-Item $metaTempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     # All formats now handled natively by pdf_to_balabolka.py
     # PDF: pypdf extraction, EPUB: ebooklib, MOBI/AZW/DJVU: Calibre (called from Python)
     $workFile = $InputFile
