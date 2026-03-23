@@ -521,13 +521,20 @@ function Convert-ToKindle {
                            Defaults to output\kindle from settings.json.
     .PARAMETER UseHtmlExtraction
         Use the pdfminer-based HTML extraction path.  Mutually exclusive with
-        the Legacy switches (UseClaudeChapters, ValidateQuality, ChapterHintsFile).
+        the Legacy switch (ValidateQuality).
     .PARAMETER UseClaudeChapters
-        (Legacy path) Two-pass extraction with Claude AI chapter detection.
+        Two-pass chapter detection: runs extraction normally, then sends the
+        first 30 pages to Claude API to detect the full chapter structure,
+        writes a hints JSON, and re-runs extraction with --chapter-hints for
+        accurate TOC. Works with all extraction paths (HTML, Legacy,
+        Column-aware). Requires ANTHROPIC_API_KEY environment variable.
+        Cost: ~$0.05 per book (single API call).
+    .PARAMETER ChapterHintsFile
+        Path to a pre-built chapter-hints JSON file. When provided, skips
+        the Claude API call and goes straight to pass 2 re-extraction with
+        the supplied hints. Works with all extraction paths.
     .PARAMETER ValidateQuality
         (Legacy path) AI quality-scoring pass after text extraction.
-    .PARAMETER ChapterHintsFile
-        (Legacy path) Path to a pre-built chapter-hints JSON file.
     #>
     [CmdletBinding(DefaultParameterSetName = 'Legacy')]
     param(
@@ -543,15 +550,11 @@ function Convert-ToKindle {
 
         # ── Legacy path ──
         [Parameter(ParameterSetName = 'Legacy')]
-        [switch]$UseClaudeChapters,
-
-        [Parameter(ParameterSetName = 'Legacy')]
         [switch]$ValidateQuality,
 
-        [Parameter(ParameterSetName = 'Legacy')]
-        [string]$ChapterHintsFile,
-
         # ── Shared across all paths ──
+        [switch]$UseClaudeChapters,
+        [string]$ChapterHintsFile,
         [switch]$ForceColumns,
         [switch]$ValidateVisual,
         [switch]$FullVQA,
@@ -692,7 +695,6 @@ print(json.dumps(output))
 
     # For PDFs: extract clean text first, then convert the TXT
     $convertInput = $InputFile
-    $tempTxt      = $null
     $tempDir      = $null
     $hintsJson    = $null
     $rawTextFile  = $null
@@ -754,7 +756,6 @@ print(json.dumps(output))
                         Write-EbookLog "Kindle: extracted $txtSizeKB KB of clean $extType in $([math]::Round($pySw.Elapsed.TotalSeconds, 1))s" -Level SUCCESS
                         $stepTimings['TextExtraction'] = [math]::Round($pySw.Elapsed.TotalSeconds, 1)
                         $convertInput = $tempOutput.FullName
-                        $tempTxt = $tempOutput  # keep for later reference
                     } else {
                         Write-EbookLog "Kindle: extraction produced no output file -- using raw PDF" -Level WARN
                     }
@@ -771,9 +772,9 @@ print(json.dumps(output))
             }
         }
 
-        # Pass 2: Claude-assisted chapter detection (optional, only if bookmarks weren't used)
+        # Pass 2: Claude-assisted chapter detection (works with all extraction paths)
         $claudeSw = [System.Diagnostics.Stopwatch]::StartNew()
-        if ($UseClaudeChapters -and $tempTxt) {
+        if (($UseClaudeChapters -or $ChapterHintsFile) -and $ext -eq 'pdf' -and $convertInput -and (Test-Path $convertInput)) {
             # Check if bookmarks were already used in Pass 1
             $bookmarksUsed = $false
             $pyOutContent = if (Test-Path $pyOutFile) { Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue } else { '' }
@@ -783,7 +784,15 @@ print(json.dumps(output))
             }
 
             if (-not $bookmarksUsed) {
-                if (-not $env:ANTHROPIC_API_KEY) {
+                # Determine chapter hints: use provided file, or call Claude to detect
+                $hintsJson = $null
+
+                if ($ChapterHintsFile -and (Test-Path $ChapterHintsFile)) {
+                    # Pre-built hints file provided — skip Claude API call
+                    $hintsJson = $ChapterHintsFile
+                    Write-EbookLog "Kindle: using pre-built chapter hints: $ChapterHintsFile"
+                }
+                elseif (-not $env:ANTHROPIC_API_KEY) {
                     Write-EbookLog 'Kindle: -UseClaudeChapters requested but $env:ANTHROPIC_API_KEY is not set -- skipping' -Level WARN
                 }
                 else {
@@ -807,17 +816,18 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         $rawTextFile = $null
                         Write-EbookLog "Kindle: extracted raw text from first 30 PDF pages for TOC detection"
 
-                        $cleanedText = Get-Content $tempTxt.FullName -Raw -Encoding UTF8
+                        $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8
                         $combinedText = $rawText + "`n`n--- CLEANED BODY TEXT FOLLOWS ---`n`n" + $cleanedText
                         $chapters = Get-ChapterStructure -TextContent $combinedText
                     } else {
                         Write-EbookLog "Kindle: could not extract raw PDF text -- falling back to cleaned text" -Level WARN
-                        $cleanedText = Get-Content $tempTxt.FullName -Raw -Encoding UTF8
+                        $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8
                         $chapters = Get-ChapterStructure -TextContent $cleanedText
                     }
 
                     if ($chapters -and $chapters.Count -gt 0) {
                         # Check how many of Claude's titles are missing from pass 1 output
+                        if (-not $cleanedText) { $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8 }
                         $cleanedUpper = ($cleanedText -split "`r?`n" | ForEach-Object { $_.Trim().ToUpper() }) -join "`n"
                         $missingCount = 0
                         $missingTitles = @()
@@ -839,30 +849,6 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         if ($missingCount -gt 0) {
                             $hintsJson = Join-Path $env:TEMP ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
                             $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
-
-                            # Re-run Python with --mode kindle --chapter-hints
-                            Write-EbookLog "Kindle: re-extracting with chapter hints..."
-                            $pyProc2 = Start-Process -FilePath $python `
-                                                     -ArgumentList "$toolPath --input `"$InputFile`" --mode kindle --output-dir `"$tempDir`" --quiet --chapter-hints `"$hintsJson`"" `
-                                                     -PassThru -NoNewWindow `
-                                                     -RedirectStandardOutput $pyOutFile `
-                                                     -RedirectStandardError $pyErrFile
-
-                            while (-not $pyProc2.HasExited) {
-                                Start-Sleep -Seconds 3
-                                Write-EbookLog "Kindle: re-extracting with hints... ($([math]::Round($pySw.Elapsed.TotalSeconds, 0))s elapsed)"
-                            }
-                            $pyProc2.WaitForExit()
-
-                            if ($pyProc2.ExitCode -eq 0 -or $null -eq $pyProc2.ExitCode) {
-                                $tempTxt2 = Get-ChildItem -Path $tempDir -Filter '*.txt' -File | Select-Object -First 1
-                                if ($tempTxt2) {
-                                    $convertInput = $tempTxt2.FullName
-                                    Write-EbookLog "Kindle: pass 2 done -- updated input for Calibre" -Level SUCCESS
-                                }
-                            } else {
-                                Write-EbookLog "Kindle: pass 2 failed -- keeping pass 1 output" -Level WARN
-                            }
                         } else {
                             Write-EbookLog "Kindle: all $($chapters.Count) Claude chapters already present -- no re-run needed"
                         }
@@ -870,9 +856,42 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         Write-EbookLog 'Kindle: Claude returned no chapters -- keeping pass 1 output' -Level WARN
                     }
                 }
+
+                # Re-run extraction with chapter hints (if we have any to apply)
+                if ($hintsJson -and (Test-Path $hintsJson)) {
+                    Write-EbookLog "Kindle: re-extracting with chapter hints..."
+
+                    # Build pass 2 args preserving extraction path flags from pass 1
+                    $pass2Args = "$toolPath --input `"$InputFile`" --mode kindle --output-dir `"$tempDir`" --quiet --chapter-hints `"$hintsJson`""
+                    if ($UseHtmlExtraction) { $pass2Args += " --html-extraction" }
+                    if ($ForceColumns)      { $pass2Args += " --force-columns" }
+
+                    $pyProc2 = Start-Process -FilePath $python `
+                                             -ArgumentList $pass2Args `
+                                             -PassThru -NoNewWindow `
+                                             -RedirectStandardOutput $pyOutFile `
+                                             -RedirectStandardError $pyErrFile
+
+                    while (-not $pyProc2.HasExited) {
+                        Start-Sleep -Seconds 3
+                        Write-EbookLog "Kindle: re-extracting with hints... ($([math]::Round($pySw.Elapsed.TotalSeconds, 0))s elapsed)"
+                    }
+                    $pyProc2.WaitForExit()
+
+                    if ($pyProc2.ExitCode -eq 0 -or $null -eq $pyProc2.ExitCode) {
+                        $tempOutput2 = Get-ChildItem -Path $tempDir -Include '*.html','*.txt' -File -Recurse |
+                                       Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($tempOutput2) {
+                            $convertInput = $tempOutput2.FullName
+                            Write-EbookLog "Kindle: pass 2 done -- updated input for Calibre" -Level SUCCESS
+                        }
+                    } else {
+                        Write-EbookLog "Kindle: pass 2 failed -- keeping pass 1 output" -Level WARN
+                    }
+                }
             }
         }
-        if ($UseClaudeChapters) {
+        if ($UseClaudeChapters -or $ChapterHintsFile) {
             $stepTimings['ClaudeChapters'] = [math]::Round($claudeSw.Elapsed.TotalSeconds, 1)
         }
     }
@@ -1570,8 +1589,8 @@ function Invoke-EbookPipeline {
         Overrides the mp3.enabled setting in settings.json.
 
     .PARAMETER UseClaudeChapters
-        Pass -UseClaudeChapters through to Convert-ToTTS for AI-assisted
-        chapter detection.
+        Pass -UseClaudeChapters through to Convert-ToTTS and Convert-ToKindle
+        for AI-assisted chapter detection on all extraction paths.
 
     .PARAMETER UseOCR
         Pass -UseOCR through to Convert-ToTTS to force Tesseract OCR extraction
@@ -2927,6 +2946,7 @@ function Invoke-ConvergeLoop {
     $bestOutputPath = ""
     $exitReason    = "unknown"
     $lastVqaReportPath = ""   # VQA report from previous iteration for fix engine
+    $cachedChapterHints = $null  # Chapter hints JSON cached from iteration 1 for reuse
 
     # ── Step 2: Define strategy sequence ─────────────────────────────────────
     $strategies = @()
@@ -2982,12 +3002,37 @@ function Invoke-ConvergeLoop {
             $convertParams['VqaReportPath'] = $lastVqaReportPath
         }
 
+        # Auto-enable Claude chapter detection for PDFs (~$0.05, dramatically improves TOC)
+        if ($ext -eq 'pdf' -and $env:ANTHROPIC_API_KEY) {
+            if ($cachedChapterHints -and (Test-Path $cachedChapterHints)) {
+                # Reuse cached hints from iteration 1 — skip Claude API call
+                $convertParams['ChapterHintsFile'] = $cachedChapterHints
+                Write-EbookLog "  Using cached chapter hints from iteration 1"
+            } else {
+                # First iteration — let Claude detect chapters
+                $convertParams['UseClaudeChapters'] = $true
+            }
+        }
+
         # Apply strategy-specific flags
         foreach ($flag in $strategy.Flags.GetEnumerator()) {
             $convertParams[$flag.Key] = $flag.Value
         }
 
         $convertOk = Convert-ToKindle @convertParams
+
+        # Capture chapter hints from iteration 1 for reuse in subsequent iterations
+        if (-not $cachedChapterHints -or -not (Test-Path $cachedChapterHints)) {
+            $hintsCandidate = Get-ChildItem $env:TEMP -Filter 'kindle_hints_*.json' -File -ErrorAction SilentlyContinue |
+                              Where-Object { $_.LastWriteTime -gt $iterStart } |
+                              Sort-Object LastWriteTime -Descending |
+                              Select-Object -First 1
+            if ($hintsCandidate) {
+                $cachedChapterHints = Join-Path $env:TEMP "converge_chapters_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).json"
+                Copy-Item $hintsCandidate.FullName $cachedChapterHints -Force
+                Write-EbookLog "  Cached chapter hints for reuse: $cachedChapterHints"
+            }
+        }
         if (-not $convertOk) {
             Write-EbookLog "  Iteration $iter`: conversion FAILED - skipping to next strategy" -Level WARN
             $iterations += @{
@@ -3122,6 +3167,11 @@ function Invoke-ConvergeLoop {
         }
 
         Write-EbookLog "  Score $iterScore < target $TargetScore - trying next strategy..." -Level INFO
+    }
+
+    # Clean up cached chapter hints
+    if ($cachedChapterHints -and (Test-Path $cachedChapterHints)) {
+        Remove-Item $cachedChapterHints -Force -ErrorAction SilentlyContinue
     }
 
     # ── Step 4: Final Report ─────────────────────────────────────────────────
