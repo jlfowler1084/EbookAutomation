@@ -6731,13 +6731,17 @@ Only mark should_join as true when you are confident the paragraphs were split m
     return paragraphs, rejoin_stats
 
 
-def ai_quality_pass(paragraphs, log, api_key=None):
+def ai_quality_pass(paragraphs, log, api_key=None, apply_fixes=False):
     """
-    AI Quality Pass (Phase 1 — detection only).
+    AI Quality Pass — detection and optional fix application.
 
     Samples paragraphs, sends to Claude API for quality analysis.
-    Returns (paragraphs_unchanged, quality_report_dict).
-    Paragraphs are NOT modified — this is a scan, not an auto-fix.
+    Returns (paragraphs, quality_report_dict).
+
+    When apply_fixes=False (default): detection only — scores and reports
+    issues but does NOT modify paragraphs.
+    When apply_fixes=True: applies fixes with guardrails (length check,
+    word-overlap check) to prevent content substitution.
     """
     import os as _os
 
@@ -6935,7 +6939,49 @@ Only flag clear extraction artifacts in body text, not the author's original for
     for rec in recommendations:
         log(f"    [rec] {rec}")
 
+    # --- Detection-only mode: return score and report without modifying text ---
+    if not apply_fixes:
+        log("  AI Quality Pass: detection only (use --apply-ai-fixes to enable fix application)")
+        report['original_score'] = original_score
+        report['quality_score'] = original_score
+        report['final_score'] = original_score
+        report['total_fixes'] = 0
+        report['fixes_applied'] = 0
+        report['fixes_flagged'] = 0
+        return paragraphs, report
+
+    # --- Fix validation guardrails ---
+    def _validate_fix(issue_text, fix_text, paragraph_text, log_prefix=""):
+        """
+        Validate a proposed fix against guardrails to prevent content substitution.
+
+        Returns (is_valid, rejection_reason).
+        Guardrails:
+        - Length difference: fix must be within 20% of original length
+        - Word overlap: at least 60% of fix words must appear in original text
+          or surrounding paragraph context
+        """
+        # Length guardrail: reject if fix length differs by more than 20%
+        orig_len = len(issue_text)
+        fix_len = len(fix_text)
+        if orig_len > 0:
+            length_ratio = abs(fix_len - orig_len) / orig_len
+            if length_ratio > 0.20:
+                return False, f"length change {length_ratio:.0%} exceeds 20% limit ({orig_len} -> {fix_len} chars)"
+
+        # Word-overlap guardrail: at least 60% of fix words must appear
+        # in the original issue text or the surrounding paragraph
+        fix_words = set(fix_text.lower().split())
+        context_words = set(issue_text.lower().split()) | set(paragraph_text.lower().split())
+        if fix_words:
+            overlap = len(fix_words & context_words) / len(fix_words)
+            if overlap < 0.60:
+                return False, f"word overlap {overlap:.0%} below 60% threshold"
+
+        return True, ""
+
     # --- Phase 2: Apply fixes ---
+    log("  Phase 2: applying fixes with guardrails (20% length, 60% word overlap)...")
     fixes_applied = 0
     fixes_flagged = 0
 
@@ -6976,6 +7022,18 @@ Only flag clear extraction artifacts in body text, not the author's original for
             continue
 
         para = paragraphs[para_idx]
+
+        # Guardrail: validate fix before applying (length + word overlap)
+        is_valid, rejection_reason = _validate_fix(issue_text, fix_text, para)
+        if not is_valid:
+            issue['applied'] = False
+            issue['needs_review'] = True
+            issue['rejection_reason'] = rejection_reason
+            fixes_flagged += 1
+            log(f"  [AI reject] para {para_idx}: {rejection_reason} "
+                f"— '{issue_text[:40]}' → '{fix_text[:40]}'")
+            continue
+
         if issue_text not in para:
             # Try case-insensitive match as fallback
             lower_para = para.lower()
@@ -7919,7 +7977,7 @@ def _fix_ligature_splits(para_dicts, log):
         log(f"  Ligature fixes applied to {total_fixes} paragraphs")
 
 
-def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False):
+def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False, apply_ai_fixes=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -7972,7 +8030,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
 
 def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_key=None,
-                   calibre_path=None, force_columns=False):
+                   calibre_path=None, force_columns=False, apply_ai_fixes=False):
     """
     Kindle-optimised extraction: ebook -> clean text with FULL content preserved.
 
@@ -8065,11 +8123,11 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
                 heading_dict['parts'] = sorted(heading_dict['parts'])
                 log(f"  Inserted 'Front Matter' heading at paragraph {first_fm_idx}")
 
-        # AI Quality Pass (scan + fix — runs on final paragraph state)
+        # AI Quality Pass (detection only by default; fixes require apply_ai_fixes=True)
         if api_key:
             log("\n-- STEP 2e: AI Quality Pass --------------------------")
             h_indices = set(heading_dict.get('parts', []) + heading_dict.get('chapters', []))
-            paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key)
+            paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key, apply_fixes=apply_ai_fixes)
             _quality_report.update(_rejoin_stats)
             _quality_report.update(_subheading_stats)
         else:
@@ -8294,11 +8352,11 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
         paragraphs, _subheading_stats = ai_detect_subheadings(
             paragraphs, log, api_key=api_key, has_bookmarks=False)
 
-    # AI Quality Pass (detection only — does not modify paragraphs)
+    # AI Quality Pass (detection only by default; fixes require apply_ai_fixes=True)
     _quality_report = {}
     if api_key:
         log("\n-- STEP 2e: AI Quality Pass --------------------------")
-        paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key)
+        paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key, apply_fixes=apply_ai_fixes)
         _quality_report.update(_rejoin_stats)
         _quality_report.update(_subheading_stats)
     else:
@@ -8528,6 +8586,10 @@ Examples:
     ap.add_argument("--api-key", default=None,
                     help="Anthropic API key for AI Quality Pass. "
                          "Falls back to ANTHROPIC_API_KEY environment variable.")
+    ap.add_argument("--apply-ai-fixes", action="store_true",
+                    help="Enable AI Quality Pass fix application. Without this flag, "
+                         "the quality pass only detects and scores issues without "
+                         "modifying text. Use with caution — AI fixes can alter content.")
     ap.add_argument("--chapter-hints", default=None,
                     help="Path to a JSON file with pre-detected chapter titles and levels "
                          "(from Claude API).  Format: [{\"level\":1,\"title\":\"Part One\"}, "
@@ -8632,11 +8694,13 @@ Examples:
             if not html_output.endswith('.html'):
                 html_output = output_path + '.html'
             process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
-                                force_columns=args.force_columns)
+                                force_columns=args.force_columns,
+                                apply_ai_fixes=args.apply_ai_fixes)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,
-                           force_columns=args.force_columns)
+                           force_columns=args.force_columns,
+                           apply_ai_fixes=args.apply_ai_fixes)
         else:
             # Determine OCR mode from CLI flags
             if args.ocr:

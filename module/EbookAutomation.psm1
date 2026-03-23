@@ -539,6 +539,10 @@ function Convert-ToKindle {
         the supplied hints. Works with all extraction paths.
     .PARAMETER ValidateQuality
         (Legacy path) AI quality-scoring pass after text extraction.
+    .PARAMETER ApplyAIFixes
+        Enable AI Quality Pass fix application. Without this, the quality
+        pass only detects and scores issues without modifying text. Use
+        with caution — AI fixes can alter content.
     #>
     [CmdletBinding(DefaultParameterSetName = 'Legacy')]
     param(
@@ -572,7 +576,10 @@ function Convert-ToKindle {
         [string]$VqaReportPath,
 
         [Parameter(HelpMessage = 'Also produce an EPUB from the intermediate HTML (for email delivery).')]
-        [switch]$ProduceEpub
+        [switch]$ProduceEpub,
+
+        [Parameter(HelpMessage = 'Enable AI Quality Pass fix application. Without this, the quality pass only detects and scores issues without modifying text.')]
+        [switch]$ApplyAIFixes
     )
 
     $cfg        = Get-EbookConfig
@@ -787,12 +794,17 @@ print(json.dumps(output))
                         }
                     }
                 }
-                # Add AI Quality Pass API key if requested
+                # Add AI Quality Pass API key (detection runs by default when key is available)
                 if ($ValidateQuality -or $env:ANTHROPIC_API_KEY) {
                     $qualityKey = $env:ANTHROPIC_API_KEY
                     if ($qualityKey) {
                         $pyArgs += " --api-key `"$qualityKey`""
                     }
+                }
+                # Only apply AI fixes when explicitly requested (fixes can alter content)
+                if ($ApplyAIFixes) {
+                    $pyArgs += " --apply-ai-fixes"
+                    Write-EbookLog "Kindle: AI Quality Pass fix application ENABLED (experimental)" -Level WARN
                 }
 
                 $pyProc = Start-Process -FilePath $python `
@@ -2439,7 +2451,8 @@ function Invoke-EbookPipeline {
         [switch]$ValidateVisual,
         [switch]$NoCache,
         [switch]$SendToKindle,
-        [switch]$EmailToKindle
+        [switch]$EmailToKindle,
+        [switch]$ApplyAIFixes
     )
 
     $pipelineStart  = Get-Date
@@ -2469,6 +2482,7 @@ function Invoke-EbookPipeline {
     if ($NoCache) { Write-EbookLog "  Cache bypass: ENABLED (-NoCache)" }
     if ($sendActive) { Write-EbookLog "  Send to Kindle: ENABLED" }
     if ($emailActive) { Write-EbookLog "  Email to Kindle: ENABLED" }
+    if ($ApplyAIFixes) { Write-EbookLog "  AI Quality Fix application: ENABLED (experimental)" -Level WARN }
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
@@ -2635,7 +2649,7 @@ function Invoke-EbookPipeline {
                 }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
