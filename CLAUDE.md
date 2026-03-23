@@ -383,6 +383,43 @@ response = requests.post(
 
 ---
 
+## Book Metadata System
+
+Centralized metadata capture, storage, and reapplication. Extracts metadata from source files (PDF internal metadata via PyMuPDF, EPUB OPF via ebooklib), merges with filename-derived metadata using a priority hierarchy, and stores in the pattern database.
+
+### Metadata Priority (highest wins)
+
+| Priority | Source | When |
+|----------|--------|------|
+| 5 | User override / Claude API | Explicit correction |
+| 4 | Pattern database (existing entry) | Previously processed |
+| 3 | EPUB OPF metadata | EPUB files |
+| 2 | PDF internal metadata | PDF files |
+| 1 | Filename parser (`Get-EbookMetadataFromFilename`) | Always |
+
+### Database Table
+
+`book_metadata` in `tools/data/ebook_patterns.db` — stores merged metadata per book, keyed on `title_hash`.
+
+### CLI Commands
+
+```bash
+python tools/pattern_db.py extract-metadata --file "book.pdf" --output-file meta.json
+python tools/pattern_db.py get-metadata --title-hash "abc123" --output-file meta.json
+python tools/pattern_db.py update-metadata --title-hash "abc123" --title "Title" --source-type filename_parser
+python tools/pattern_db.py store-metadata --metadata-file meta.json
+```
+
+### Pipeline Integration
+
+- `Convert-ToKindle`: Extracts + merges metadata before text extraction. Merged values feed Calibre `--title`/`--authors`/etc. flags.
+- `Convert-ToTTS`: Extracts + stores metadata (database population only, no reapplication to TXT).
+- `Send-ToKindle` (email): Looks up metadata, passes `--metadata-file` to `email_to_kindle.py` which injects metadata into PDFs with empty internal metadata.
+
+All metadata capture is non-blocking — failures log a warning and fall back to filename-only parsing.
+
+---
+
 ## Kindle Email Delivery
 
 Send converted ebooks to Kindle via Amazon's Send-to-Kindle email service.
