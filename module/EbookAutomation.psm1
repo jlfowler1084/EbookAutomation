@@ -2948,11 +2948,74 @@ function Invoke-ConvergeLoop {
     $lastVqaReportPath = ""   # VQA report from previous iteration for fix engine
     $cachedChapterHints = $null  # Chapter hints JSON cached from iteration 1 for reuse
 
+    # ── Step 1b: Pre-flight source classification ───────────────────────────
+    $classification = $null
+    if ($ext -eq 'pdf') {
+        Write-EbookLog "ConvergeLoop: classifying source PDF..."
+        try {
+            $python = $cfg.paths.python
+            $classifyScript = Join-Path $script:ModuleRoot "tools" "classify_source.py"
+            $classifyResult = & $python $classifyScript --input "$InputFile" 2>$null
+            if ($classifyResult) {
+                $classifyJson = $classifyResult -join "`n"
+                $classification = $classifyJson | ConvertFrom-Json
+                Write-EbookLog "ConvergeLoop: source classified as $($classification.classification) (confidence: $($classification.confidence))"
+                Write-EbookLog "  Text density: $($classification.signals.text_density_per_page) chars/page"
+                Write-EbookLog "  File size/page: $($classification.signals.file_size_per_page_kb) KB"
+                Write-EbookLog "  Recommended strategies: $($classification.recommended_strategies -join ' -> ')"
+
+                if ($classification.flags.needs_ocr) {
+                    Write-EbookLog "  WARNING: Source needs OCR - text layer is empty or unusable" -Level WARN
+                }
+                if ($classification.flags.likely_two_column) {
+                    Write-EbookLog "  Detected: likely two-column layout"
+                }
+            }
+        } catch {
+            Write-EbookLog "ConvergeLoop: source classification failed (non-blocking) -- $_" -Level WARN
+        }
+    }
+
     # ── Step 2: Define strategy sequence ─────────────────────────────────────
     $strategies = @()
 
-    if ($ext -eq 'pdf') {
-        # PDFs have multiple extraction paths to try
+    if ($classification -and $classification.recommended_strategies) {
+        # Build strategy sequence from classification
+        foreach ($strat in $classification.recommended_strategies) {
+            switch ($strat) {
+                'html_extraction' {
+                    $strategies += @{
+                        Name        = "HTML extraction (pdfminer)"
+                        Flags       = @{ UseHtmlExtraction = $true }
+                        Description = "Font-metadata semantic HTML extraction"
+                    }
+                }
+                'legacy' {
+                    $strategies += @{
+                        Name        = "Legacy extraction (pypdf)"
+                        Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
+                        Description = "Standard pypdf text extraction with Markdown headings"
+                    }
+                }
+                'column_aware' {
+                    $strategies += @{
+                        Name        = "Column-aware extraction"
+                        Flags       = @{ ForceColumns = $true }
+                        Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
+                    }
+                }
+                'ocr' {
+                    $strategies += @{
+                        Name        = "OCR extraction (Tesseract)"
+                        Flags       = @{ UseOCR = $true }
+                        Description = "Tesseract OCR for scanned pages with no text layer"
+                    }
+                }
+            }
+        }
+        Write-EbookLog "ConvergeLoop: strategy sequence from classification: $($strategies.Name -join ' -> ')"
+    } elseif ($ext -eq 'pdf') {
+        # Fallback: default strategy order for PDFs
         $strategies += @{
             Name        = "HTML extraction (pdfminer)"
             Flags       = @{ UseHtmlExtraction = $true }
@@ -3100,6 +3163,16 @@ function Invoke-ConvergeLoop {
             $iterCost  = if ($vqaResult.estimated_cost_usd) { [double]$vqaResult.estimated_cost_usd } else { 0 }
         } else {
             Write-EbookLog "  Iteration $iter`: VQA returned no result" -Level WARN
+        }
+
+        # Content density sanity check — don't trust high scores on empty content
+        if ($iterScore -ge 90 -and $classification) {
+            if ($classification.classification -in @('scan_no_text', 'scan_with_text') -and
+                $classification.signals.text_density_per_page -lt 200) {
+                Write-EbookLog "ConvergeLoop: HIGH SCORE ($iterScore) on LOW-DENSITY source - likely empty content, not a real pass" -Level WARN
+                $iterScore = 0
+                $iterPass  = $false
+            }
         }
 
         $totalCost   += $iterCost

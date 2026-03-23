@@ -51,6 +51,13 @@
     "pass_threshold": 70,
     "rubric_path":    "tools\\visual_qa_rubric.md"
   },
+  "classify": {
+    "enabled": true,
+    "sample_pages": 3,
+    "min_text_density_digital": 500,
+    "min_text_density_scan_with_text": 50,
+    "scan_producers": ["Google", "ABBYY", "Xerox", "Kofax", "ScanSnap", "Fujitsu", "Canon", "Epson", "HP Scan"]
+  },
   "converge_loop": {
     "enabled":                 true,
     "max_iterations":          4,

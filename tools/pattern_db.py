@@ -1393,6 +1393,36 @@ def _cmd_cache(args):
         print(f"  Output file:     NOT FOUND ON DISK (cache stale)")
 
 
+def _cmd_classify(args):
+    """Classify a PDF source and print the result."""
+    pdf_path = args.pdf_path
+    if not Path(pdf_path).is_file():
+        print(f"File not found: {pdf_path}")
+        return
+
+    try:
+        from classify_source import classify_pdf
+    except ImportError:
+        # Try relative import from same directory
+        script_dir = Path(__file__).resolve().parent
+        sys.path.insert(0, str(script_dir))
+        from classify_source import classify_pdf
+
+    result = classify_pdf(pdf_path)
+    print(json.dumps(result, indent=2))
+
+    # Show summary
+    cls = result["classification"]
+    conf = result["confidence"]
+    strats = " -> ".join(result["recommended_strategies"])
+    print(f"\nClassification: {cls} (confidence: {conf})")
+    print(f"Strategies: {strats}")
+    if result["flags"]["needs_ocr"]:
+        print("WARNING: Source needs OCR")
+    if result["flags"]["likely_two_column"]:
+        print("Detected: likely two-column layout")
+
+
 def _cmd_override_add(args):
     filename = args.filename
 
@@ -1662,6 +1692,11 @@ def main():
 
     subparsers.add_parser('cost', help='Show cost summary')
 
+    classify_parser = subparsers.add_parser(
+        'classify', help='Classify a PDF source (digital_native, scan, etc.)'
+    )
+    classify_parser.add_argument('pdf_path', help='Path to PDF file')
+
     cache_parser = subparsers.add_parser(
         'cache', help='Check if a book has a cached result'
     )
@@ -1732,6 +1767,7 @@ def main():
         'trend': _cmd_trend,
         'cost': _cmd_cost,
         'cache': _cmd_cache,
+        'classify': _cmd_classify,
     }
 
     commands[args.command](args)
