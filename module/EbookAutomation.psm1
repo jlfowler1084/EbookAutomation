@@ -1456,7 +1456,7 @@ else:
             $dbScript = @"
 import sys, json, os
 sys.path.insert(0, r'$dbToolsPath')
-from pattern_db import get_or_create_book, add_conversion, add_issues_from_vqa_report
+from pattern_db import get_or_create_book, add_conversion, add_issues_from_vqa_report, update_source_profile_from_book
 
 book_id = get_or_create_book(
     filename='$dbOutLeaf',
@@ -1500,6 +1500,12 @@ conv_id = add_conversion(**conv_kwargs)
 issue_count = 0
 if vqa_report_path and os.path.isfile(vqa_report_path):
     issue_count = add_issues_from_vqa_report(conv_id, book_id, report)
+
+# Update publisher/source_type aggregate profiles
+try:
+    update_source_profile_from_book(book_id)
+except Exception:
+    pass  # non-blocking
 
 result = {'book_id': book_id, 'conversion_id': conv_id, 'issues': issue_count}
 if conv_kwargs.get('vqa_score') is not None:
@@ -2949,11 +2955,13 @@ function Invoke-ConvergeLoop {
     $cachedChapterHints = $null  # Chapter hints JSON cached from iteration 1 for reuse
 
     # ── Step 1b: Pre-flight source classification ───────────────────────────
+    $python   = $cfg.paths.python
+    $toolsDir = Join-Path $script:ModuleRoot "tools"
+
     $classification = $null
     if ($ext -eq 'pdf') {
         Write-EbookLog "ConvergeLoop: classifying source PDF..."
         try {
-            $python = $cfg.paths.python
             $classifyScript = Join-Path $script:ModuleRoot "tools" "classify_source.py"
             $classifyResult = & $python $classifyScript --input "$InputFile" 2>$null
             if ($classifyResult) {
@@ -2976,46 +2984,110 @@ function Invoke-ConvergeLoop {
         }
     }
 
-    # ── Step 2: Define strategy sequence ─────────────────────────────────────
-    $strategies = @()
+    # ── Step 1c: Smart strategy selection from historical data ────────────
+    $dbRecommendation = $null
+    $autoClaudeChapters = $false
+    if ($ext -eq 'pdf') {
+        try {
+            $sourceTypeArg = if ($classification) { "'$($classification.classification)'" } else { "None" }
+            $recScript = @"
+import sys, json
+sys.path.insert(0, r'$toolsDir')
+from pattern_db import get_recommended_strategy
+result = get_recommended_strategy(
+    source_file_path=r'$InputFile',
+    source_type=$sourceTypeArg,
+    format='pdf'
+)
+print(json.dumps(result))
+"@
+            $recResult = & $python -c $recScript 2>$null
+            if ($recResult) {
+                $dbRecommendation = ($recResult -join "`n") | ConvertFrom-Json
+                if ($dbRecommendation.source -ne 'default') {
+                    Write-EbookLog "ConvergeLoop: database recommendation ($($dbRecommendation.source)):"
+                    Write-EbookLog "  Strategy: $($dbRecommendation.strategy_order -join ' -> ')"
+                    Write-EbookLog "  Reason: $($dbRecommendation.reason)"
+                    Write-EbookLog "  Confidence: $($dbRecommendation.confidence)"
+                    if ($dbRecommendation.flags.UseClaudeChapters) {
+                        Write-EbookLog "  Auto-enabling: -UseClaudeChapters (no chapters in prior runs)"
+                    }
+                } else {
+                    Write-EbookLog "ConvergeLoop: no historical data for this book - using classification"
+                }
+            }
+        } catch {
+            Write-EbookLog "ConvergeLoop: strategy recommendation failed (non-blocking) -- $_" -Level WARN
+        }
+    }
 
-    if ($classification -and $classification.recommended_strategies) {
-        # Build strategy sequence from classification
-        foreach ($strat in $classification.recommended_strategies) {
-            switch ($strat) {
-                'html_extraction' {
-                    $strategies += @{
-                        Name        = "HTML extraction (pdfminer)"
-                        Flags       = @{ UseHtmlExtraction = $true }
-                        Description = "Font-metadata semantic HTML extraction"
-                    }
+    # ── Step 2: Define strategy sequence (layered priority) ───────────────
+    # Priority 1: Database recommendation (if confidence >= 0.5)
+    # Priority 2: Classification recommendation (from classify_source.py)
+    # Priority 3: Default hardcoded order
+
+    $strategies     = @()
+    $strategySource = 'default (no data)'
+
+    # Helper to build strategy hashtable from a path name
+    # (used by all three priority levels)
+    function _BuildStrategyFromPath {
+        param([string]$PathName)
+        switch ($PathName) {
+            'html_extraction' {
+                return @{
+                    Name        = "HTML extraction (pdfminer)"
+                    Flags       = @{ UseHtmlExtraction = $true }
+                    Description = "Font-metadata semantic HTML extraction"
                 }
-                'legacy' {
-                    $strategies += @{
-                        Name        = "Legacy extraction (pypdf)"
-                        Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
-                        Description = "Standard pypdf text extraction with Markdown headings"
-                    }
+            }
+            'legacy' {
+                return @{
+                    Name        = "Legacy extraction (pypdf)"
+                    Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
+                    Description = "Standard pypdf text extraction with Markdown headings"
                 }
-                'column_aware' {
-                    $strategies += @{
-                        Name        = "Column-aware extraction"
-                        Flags       = @{ ForceColumns = $true }
-                        Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
-                    }
+            }
+            'column_aware' {
+                return @{
+                    Name        = "Column-aware extraction"
+                    Flags       = @{ ForceColumns = $true }
+                    Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
                 }
-                'ocr' {
-                    $strategies += @{
-                        Name        = "OCR extraction (Tesseract)"
-                        Flags       = @{ UseOCR = $true }
-                        Description = "Tesseract OCR for scanned pages with no text layer"
-                    }
+            }
+            'ocr' {
+                return @{
+                    Name        = "OCR extraction (Tesseract)"
+                    Flags       = @{ UseOCR = $true }
+                    Description = "Tesseract OCR for scanned pages with no text layer"
                 }
             }
         }
-        Write-EbookLog "ConvergeLoop: strategy sequence from classification: $($strategies.Name -join ' -> ')"
+    }
+
+    if ($dbRecommendation -and $dbRecommendation.confidence -ge 0.5 -and
+        $dbRecommendation.strategy_order -and $dbRecommendation.strategy_order.Count -gt 0) {
+        # Priority 1: Database recommendation
+        foreach ($strat in $dbRecommendation.strategy_order) {
+            $s = _BuildStrategyFromPath $strat
+            if ($s) { $strategies += $s }
+        }
+        $strategySource = "database ($($dbRecommendation.source))"
+
+        if ($dbRecommendation.flags.UseClaudeChapters) {
+            $autoClaudeChapters = $true
+        }
+
+    } elseif ($classification -and $classification.recommended_strategies) {
+        # Priority 2: Classification recommendation
+        foreach ($strat in $classification.recommended_strategies) {
+            $s = _BuildStrategyFromPath $strat
+            if ($s) { $strategies += $s }
+        }
+        $strategySource = "classification ($($classification.classification))"
+
     } elseif ($ext -eq 'pdf') {
-        # Fallback: default strategy order for PDFs
+        # Priority 3: Default order for PDFs
         $strategies += @{
             Name        = "HTML extraction (pdfminer)"
             Flags       = @{ UseHtmlExtraction = $true }
@@ -3039,6 +3111,9 @@ function Invoke-ConvergeLoop {
             Description = "Native format straight to Calibre"
         }
     }
+
+    Write-EbookLog "ConvergeLoop: strategy source: $strategySource"
+    Write-EbookLog "ConvergeLoop: sequence: $($strategies.Name -join ' -> ')"
 
     # For non-PDFs, max iterations is effectively 1 (no alternate strategies)
     $effectiveMax = [Math]::Min($MaxIterations, $strategies.Count)
@@ -3066,12 +3141,13 @@ function Invoke-ConvergeLoop {
         }
 
         # Auto-enable Claude chapter detection for PDFs (~$0.05, dramatically improves TOC)
-        if ($ext -eq 'pdf' -and $env:ANTHROPIC_API_KEY) {
+        # Enabled by default when API key is available, reinforced by database recommendation
+        if ($ext -eq 'pdf' -and ($env:ANTHROPIC_API_KEY -or $autoClaudeChapters)) {
             if ($cachedChapterHints -and (Test-Path $cachedChapterHints)) {
                 # Reuse cached hints from iteration 1 — skip Claude API call
                 $convertParams['ChapterHintsFile'] = $cachedChapterHints
                 Write-EbookLog "  Using cached chapter hints from iteration 1"
-            } else {
+            } elseif ($env:ANTHROPIC_API_KEY) {
                 # First iteration — let Claude detect chapters
                 $convertParams['UseClaudeChapters'] = $true
             }

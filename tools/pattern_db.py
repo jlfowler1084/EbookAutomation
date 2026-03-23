@@ -871,6 +871,254 @@ def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
 
 
 # ---------------------------------------------------------------------------
+# Smart Strategy Recommendation
+# ---------------------------------------------------------------------------
+
+
+def get_recommended_strategy(filename=None, source_file_path=None, isbn=None,
+                             source_type=None, publisher=None, format='pdf',
+                             db_path=None):
+    """Query historical data to recommend the best extraction strategy.
+
+    Checks three levels (most specific -> least specific):
+      1. This exact book (by filename/source_file_path/ISBN)
+      2. Books from the same publisher + format
+      3. All books with the same source_type + format
+
+    Returns dict with strategy_order, flags, confidence, reason, source.
+    """
+    conn = get_db(db_path)
+    try:
+        result = {
+            "strategy_order": [],
+            "flags": {"UseClaudeChapters": False, "ForceColumns": False},
+            "confidence": 0.0,
+            "reason": "no historical data available",
+            "source": "default",
+            "best_prior_score": None,
+            "prior_conversions": 0,
+        }
+
+        # --- Level 1: This exact book ---
+        book_id = None
+
+        # Exact filename match
+        if filename:
+            row = conn.execute(
+                "SELECT id FROM books WHERE filename = ?", (filename,)
+            ).fetchone()
+            if row:
+                book_id = row["id"]
+
+        # Source file path match (basename LIKE search)
+        if not book_id and (source_file_path or filename):
+            search_val = source_file_path or filename
+            basename = os.path.basename(
+                search_val.replace('\\\\', '\\').replace('\\\\', '\\')
+            )
+            if not basename:
+                basename = search_val.rsplit('\\', 1)[-1].rsplit('/', 1)[-1]
+            if basename:
+                row = conn.execute(
+                    "SELECT id FROM books WHERE source_file_path LIKE ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (f"%{basename}%",)
+                ).fetchone()
+                if row:
+                    book_id = row["id"]
+
+        # ISBN match
+        if not book_id and isbn:
+            row = conn.execute(
+                """SELECT bo.book_id FROM book_overrides bo
+                   WHERE bo.isbn = ? AND bo.book_id IS NOT NULL
+                   LIMIT 1""",
+                (isbn,)
+            ).fetchone()
+            if row:
+                book_id = row["book_id"]
+
+        if book_id:
+            # Get all conversions for this book with VQA scores
+            convs = conn.execute(
+                """SELECT extraction_path, vqa_score, category_scores,
+                          conversion_flags
+                   FROM conversions
+                   WHERE book_id = ? AND vqa_score IS NOT NULL
+                   ORDER BY vqa_score DESC""",
+                (book_id,)
+            ).fetchall()
+
+            if convs:
+                result["prior_conversions"] = len(convs)
+                result["best_prior_score"] = convs[0]["vqa_score"]
+
+                # Rank extraction paths by average score
+                path_scores = {}
+                for c in convs:
+                    path = c["extraction_path"]
+                    if path not in path_scores:
+                        path_scores[path] = []
+                    path_scores[path].append(c["vqa_score"])
+
+                ranked_paths = sorted(
+                    path_scores.items(),
+                    key=lambda x: sum(x[1]) / len(x[1]),
+                    reverse=True,
+                )
+                result["strategy_order"] = [p[0] for p in ranked_paths]
+
+                # Check chapter/TOC status
+                book = conn.execute(
+                    "SELECT chapter_count FROM books WHERE id = ?",
+                    (book_id,)
+                ).fetchone()
+                if book and (book["chapter_count"] is None
+                             or book["chapter_count"] == 0):
+                    result["flags"]["UseClaudeChapters"] = True
+
+                # Check toc_navigation from best conversion's category_scores
+                best_cats = convs[0]["category_scores"]
+                if best_cats:
+                    try:
+                        cats = (json.loads(best_cats)
+                                if isinstance(best_cats, str) else best_cats)
+                        toc_score = cats.get("toc_navigation", 100)
+                        if toc_score < 60:
+                            result["flags"]["UseClaudeChapters"] = True
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # Check if column-aware was the winner
+                if ranked_paths and ranked_paths[0][0] == "column_aware":
+                    result["flags"]["ForceColumns"] = True
+
+                best_path = ranked_paths[0][0]
+                best_avg = sum(ranked_paths[0][1]) / len(ranked_paths[0][1])
+                reason_parts = [f"{best_path} scored avg {best_avg:.0f}"]
+                if len(ranked_paths) > 1:
+                    second_path = ranked_paths[1][0]
+                    second_avg = (sum(ranked_paths[1][1])
+                                  / len(ranked_paths[1][1]))
+                    reason_parts.append(
+                        f"vs {second_path} avg {second_avg:.0f}")
+                if result["flags"]["UseClaudeChapters"]:
+                    reason_parts.append(
+                        "no chapters detected in prior runs")
+
+                result["reason"] = "; ".join(reason_parts)
+                result["confidence"] = min(0.95, 0.5 + len(convs) * 0.15)
+                result["source"] = "book_history"
+                return result
+
+        # --- Level 2: Publisher + format profile ---
+        if publisher:
+            profile = conn.execute(
+                """SELECT best_extraction_path, avg_final_score,
+                          books_processed, common_issues
+                   FROM source_profiles
+                   WHERE publisher = ? AND format = ?
+                   ORDER BY books_processed DESC LIMIT 1""",
+                (publisher, format),
+            ).fetchone()
+
+            if profile and profile["books_processed"] >= 2:
+                best = profile["best_extraction_path"]
+                if best:
+                    all_paths = ["html_extraction", "legacy", "column_aware"]
+                    result["strategy_order"] = (
+                        [best] + [p for p in all_paths if p != best]
+                    )
+                    result["confidence"] = min(
+                        0.7, 0.3 + profile["books_processed"] * 0.1
+                    )
+                    result["source"] = "publisher_profile"
+                    result["reason"] = (
+                        f"{publisher} books avg "
+                        f"{profile['avg_final_score']:.0f} with {best} "
+                        f"({profile['books_processed']} books)"
+                    )
+
+                    # Check common issues for chapter problems
+                    if profile["common_issues"]:
+                        try:
+                            if "toc_navigation" in str(
+                                profile["common_issues"]
+                            ):
+                                result["flags"]["UseClaudeChapters"] = True
+                        except Exception:
+                            pass
+
+                    return result
+
+        # --- Level 3: Source type + format aggregate ---
+        if source_type:
+            path_data = conn.execute(
+                """SELECT c.extraction_path,
+                          AVG(c.vqa_score) as avg_score,
+                          COUNT(*) as count
+                   FROM conversions c
+                   JOIN books b ON b.id = c.book_id
+                   WHERE b.source_type = ? AND b.format = ?
+                         AND c.vqa_score IS NOT NULL
+                   GROUP BY c.extraction_path
+                   HAVING count >= 2
+                   ORDER BY avg_score DESC""",
+                (source_type, format),
+            ).fetchall()
+
+            if path_data:
+                result["strategy_order"] = [
+                    r["extraction_path"] for r in path_data
+                ]
+                result["confidence"] = min(
+                    0.5,
+                    0.2 + sum(r["count"] for r in path_data) * 0.05,
+                )
+                result["source"] = "source_type_profile"
+                best = path_data[0]
+                result["reason"] = (
+                    f"{source_type} PDFs avg {best['avg_score']:.0f} "
+                    f"with {best['extraction_path']} "
+                    f"({best['count']} conversions)"
+                )
+                return result
+
+        # --- Level 4: No data ---
+        return result
+    finally:
+        conn.close()
+
+
+def update_source_profile_from_book(book_id, db_path=None):
+    """Recalculate source profile after a new conversion for this book.
+
+    Looks up the book's publisher and format, then recalculates the
+    aggregate statistics for that publisher+format combination.
+    """
+    conn = get_db(db_path)
+    try:
+        book = conn.execute(
+            "SELECT publisher, format, year FROM books WHERE id = ?",
+            (book_id,)
+        ).fetchone()
+        if not book:
+            return
+
+        publisher = book["publisher"]
+        fmt = book["format"]
+        if not publisher and not fmt:
+            return
+
+        decade = (str((book["year"] // 10) * 10) + "s"
+                  if book["year"] else None)
+    finally:
+        conn.close()
+
+    update_source_profile(publisher, decade, fmt, db_path)
+
+
+# ---------------------------------------------------------------------------
 # Book Overrides
 # ---------------------------------------------------------------------------
 
@@ -1423,6 +1671,35 @@ def _cmd_classify(args):
         print("Detected: likely two-column layout")
 
 
+def _cmd_recommend(args):
+    """Recommend extraction strategy from historical data."""
+    rec = get_recommended_strategy(
+        filename=args.filename,
+        source_file_path=args.filename,
+        source_type=args.source_type,
+        publisher=args.publisher,
+        format=args.format,
+        db_path=args.db_path,
+    )
+
+    print(f"Source:       {rec['source']}")
+    print(f"Confidence:   {rec['confidence']}")
+    if rec["strategy_order"]:
+        print(f"Strategies:   {' -> '.join(rec['strategy_order'])}")
+    else:
+        print("Strategies:   (none — no historical data)")
+    print(f"Reason:       {rec['reason']}")
+
+    if rec["best_prior_score"] is not None:
+        print(f"Best score:   {rec['best_prior_score']}")
+    if rec["prior_conversions"] > 0:
+        print(f"Prior runs:   {rec['prior_conversions']}")
+
+    flags = [k for k, v in rec["flags"].items() if v]
+    if flags:
+        print(f"Auto-flags:   {', '.join(flags)}")
+
+
 def _cmd_override_add(args):
     filename = args.filename
 
@@ -1697,6 +1974,24 @@ def main():
     )
     classify_parser.add_argument('pdf_path', help='Path to PDF file')
 
+    recommend_parser = subparsers.add_parser(
+        'recommend', help='Recommend extraction strategy from historical data'
+    )
+    recommend_parser.add_argument(
+        'filename', nargs='?', default=None,
+        help='Book filename or source file path (exact or partial match)'
+    )
+    recommend_parser.add_argument(
+        '--source-type', default=None,
+        help='Source type (digital_native, scan_with_text, scan_no_text)'
+    )
+    recommend_parser.add_argument(
+        '--publisher', default=None, help='Publisher name'
+    )
+    recommend_parser.add_argument(
+        '--format', default='pdf', help='File format (default: pdf)'
+    )
+
     cache_parser = subparsers.add_parser(
         'cache', help='Check if a book has a cached result'
     )
@@ -1768,6 +2063,7 @@ def main():
         'cost': _cmd_cost,
         'cache': _cmd_cache,
         'classify': _cmd_classify,
+        'recommend': _cmd_recommend,
     }
 
     commands[args.command](args)
