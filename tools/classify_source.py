@@ -374,6 +374,21 @@ def classify_pdf(pdf_path, config=None):
         # Producer says digital but density says scan — reduce confidence
         result["confidence"] = max(0.3, result["confidence"] - 0.15)
 
+    # Override: high text density + high file size per page = scan with OCR text layer
+    # Digital-native PDFs are typically < 15 KB/page (text + vector graphics only)
+    # Scanned PDFs with OCR are typically > 25 KB/page (full-page raster image + text layer)
+    if result["classification"] == "digital_native" and kb_per_page > 25:
+        result["classification"] = "scan_with_text"
+        result["confidence"] = max(result["confidence"] - 0.1, 0.6)
+        result["recommended_strategies"] = ["html_extraction", "legacy", "column_aware"]
+        result["flags"]["skip_html_extraction"] = False
+        log.info("Reclassified: digital_native -> scan_with_text "
+                 "(file size %.1f KB/page indicates scanned pages with OCR text layer)",
+                 kb_per_page)
+        # If producer also matches known scan tools, boost confidence
+        if is_scan_producer:
+            result["confidence"] = min(result["confidence"] + 0.1, 0.95)
+
     # Column detection: prepend column_aware if detected
     if likely_two_column:
         strats = result["recommended_strategies"]
