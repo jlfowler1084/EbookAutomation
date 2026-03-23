@@ -246,7 +246,7 @@ def fix_heading_formatting(text, log, file_type='txt'):
     else:
         # HTML: ensure <h1>/<h2> tags have paragraph breaks around them
         text, n = re.subn(
-            r'(?<!</p>\s*)(<h[1-6][^>]*>)', r'\n\1', text
+            r'(?<!</p>)(<h[1-6][^>]*>)', r'\n\1', text
         )
         fixes += n
         text, n = re.subn(

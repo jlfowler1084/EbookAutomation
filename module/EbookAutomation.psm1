@@ -3074,16 +3074,12 @@ function Invoke-ConvergeLoop {
             continue
         }
 
-        # --- Evaluate via VQA ---
-        # Use full VQA on the last iteration, quick on all others
-        $useFullVQA = ($iter -eq $effectiveMax)
-
-        Write-EbookLog "  Running VQA evaluation ($(if ($useFullVQA) {'full'} else {'quick'}))..." -Level INFO
+        # --- Evaluate via VQA (always quick — full adds cost without diagnostic value) ---
+        Write-EbookLog "  Running VQA evaluation (quick)..." -Level INFO
         $vqaParams = @{
             InputFile     = $outFile
             PassThreshold = $TargetScore
         }
-        if ($useFullVQA) { $vqaParams['FullVQA'] = $true }
         $vqaResult = Test-ConversionQuality @vqaParams
 
         # Save VQA report path for next iteration's fix engine
