@@ -940,23 +940,64 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                             }
                         }
                         else {
-                            # TXT output: use existing hints JSON path for pass 2 re-extraction
+                            # TXT output: check if headings exist as Markdown headings (# / ## / ###)
                             if (-not $cleanedText) { $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8 }
-                            $cleanedUpper = ($cleanedText -split "`r?`n" | ForEach-Object { $_.Trim().ToUpper() }) -join "`n"
+                            $txtLines = $cleanedText -split "`r?`n"
                             $missingCount = 0
+                            $insertedMd   = 0
+
                             foreach ($ch in $chapters) {
-                                $titleUpper = $ch.title.Trim().ToUpper()
-                                if ($cleanedUpper -notmatch [regex]::Escape($titleUpper)) {
+                                $title = $ch.title.Trim()
+                                $titleUpper = $title.ToUpper()
+                                $escapedTitle = [regex]::Escape($titleUpper)
+                                $level = $ch.level
+                                $mdPrefix = switch ($level) {
+                                    1 { '# ' }
+                                    2 { '## ' }
+                                    3 { '### ' }
+                                    default { '## ' }
+                                }
+
+                                # Check if it already exists as a Markdown heading
+                                $alreadyHeading = $false
+                                foreach ($line in $txtLines) {
+                                    if ($line.Trim() -match "^#{1,3}\s+" -and $line.Trim().ToUpper() -match $escapedTitle) {
+                                        $alreadyHeading = $true
+                                        break
+                                    }
+                                }
+
+                                if ($alreadyHeading) { continue }
+
+                                # Title exists as plain text — convert to Markdown heading
+                                $foundPlain = $false
+                                for ($li = 0; $li -lt $txtLines.Count; $li++) {
+                                    if ($txtLines[$li].Trim().ToUpper() -match "^$escapedTitle$") {
+                                        $txtLines[$li] = "$mdPrefix$title"
+                                        $insertedMd++
+                                        $foundPlain = $true
+                                        break
+                                    }
+                                }
+
+                                if (-not $foundPlain) {
                                     $missingCount++
                                 }
+                            }
+
+                            # Write back if we inserted any Markdown headings
+                            if ($insertedMd -gt 0) {
+                                $cleanedText = $txtLines -join "`r`n"
+                                Set-Content $convertInput -Value $cleanedText -Encoding UTF8
+                                Write-EbookLog "Kindle: converted $insertedMd heading(s) to Markdown format" -Level SUCCESS
                             }
 
                             if ($missingCount -gt 0) {
                                 $hintsJson = Join-Path $env:TEMP ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
                                 $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
-                                Write-EbookLog "Kindle: $missingCount of $($chapters.Count) headings missing -- writing hints for pass 2"
-                            } else {
-                                Write-EbookLog "Kindle: all $($chapters.Count) Claude chapters already present -- no re-run needed"
+                                Write-EbookLog "Kindle: $missingCount of $($chapters.Count) headings not found in text -- writing hints for pass 2"
+                            } elseif ($insertedMd -eq 0) {
+                                Write-EbookLog "Kindle: all $($chapters.Count) Claude chapters already have Markdown heading format -- no changes needed"
                             }
                         }
                     } else {
