@@ -576,6 +576,20 @@ function Convert-ToKindle {
     $overallSw  = [System.Diagnostics.Stopwatch]::StartNew()
     $stepTimings = [ordered]@{}
 
+    # Resolve glob patterns in InputFile (e.g. "Burge*.pdf" -> actual path)
+    if ($InputFile -match '[*?]') {
+        $resolved = Get-ChildItem -Path $InputFile -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($resolved) {
+            if ((Get-ChildItem -Path $InputFile -ErrorAction SilentlyContinue).Count -gt 1) {
+                Write-EbookLog "Kindle: glob matched multiple files, using: $($resolved.FullName)" -Level WARN
+            }
+            $InputFile = $resolved.FullName
+        } else {
+            Write-EbookLog "Kindle: no files match pattern: $InputFile" -Level ERROR
+            return $false
+        }
+    }
+
     # Default output directory from config if not specified
     if (-not $OutputDir) {
         $OutputDir = Resolve-ProjectPath $cfg.paths.kindle
@@ -823,10 +837,14 @@ print(json.dumps(output))
             $pyOutContent = if (Test-Path $pyOutFile) { Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue } else { '' }
             if ($pyOutContent -match 'Placed (\d+) bookmarks as chapter headings') {
                 $bookmarksUsed = $true
-                Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) chapter headings -- skipping Claude detection"
+                if ($UseClaudeChapters) {
+                    Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) headings -- -UseClaudeChapters overrides, running font+Claude detection anyway"
+                } else {
+                    Write-EbookLog "Kindle: PDF bookmarks placed $($Matches[1]) chapter headings -- skipping Claude detection"
+                }
             }
 
-            if (-not $bookmarksUsed) {
+            if (-not $bookmarksUsed -or $UseClaudeChapters) {
                 # Determine chapter hints: use provided file, or call Claude to detect
                 $hintsJson = $null
 
@@ -861,39 +879,126 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
 
                         $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8
                         $combinedText = $rawText + "`n`n--- CLEANED BODY TEXT FOLLOWS ---`n`n" + $cleanedText
-                        $chapters = Get-ChapterStructure -TextContent $combinedText
+                        $chapters = Get-ChapterStructure -TextContent $combinedText -InputFile $InputFile
                     } else {
                         Write-EbookLog "Kindle: could not extract raw PDF text -- falling back to cleaned text" -Level WARN
                         $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8
-                        $chapters = Get-ChapterStructure -TextContent $cleanedText
+                        $chapters = Get-ChapterStructure -TextContent $cleanedText -InputFile $InputFile
                     }
 
                     if ($chapters -and $chapters.Count -gt 0) {
-                        # Check how many of Claude's titles are missing from pass 1 output
-                        if (-not $cleanedText) { $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8 }
-                        $cleanedUpper = ($cleanedText -split "`r?`n" | ForEach-Object { $_.Trim().ToUpper() }) -join "`n"
-                        $missingCount = 0
-                        $missingTitles = @()
-                        foreach ($ch in $chapters) {
-                            $titleUpper = $ch.title.Trim().ToUpper()
-                            if ($cleanedUpper -notmatch [regex]::Escape($titleUpper)) {
-                                $missingCount++
-                                $missingTitles += $ch.title
+                        # Per-heading insertion for HTML output
+                        if ($convertInput -like '*.html') {
+                            $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
+                            $insertedCount = 0
+                            $skippedCount  = 0
+
+                            foreach ($ch in $chapters) {
+                                $title = $ch.title.Trim()
+                                $level = $ch.level
+                                $tag   = switch ($level) {
+                                    1 { 'h1' }
+                                    2 { 'h2' }
+                                    3 { 'h3' }
+                                    default { 'h2' }
+                                }
+
+                                $escapedTitle = [regex]::Escape($title)
+                                if ($htmlContent -match "<h[123][^>]*>\s*$escapedTitle\s*</h[123]>") {
+                                    $skippedCount++
+                                    continue
+                                }
+
+                                $pattern = "(<(?:p|div)[^>]*>)\s*$escapedTitle\s*(</(?:p|div)>)"
+                                $rx = [regex]::new($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                                if ($rx.IsMatch($htmlContent)) {
+                                    $htmlContent = $rx.Replace($htmlContent, "<$tag>$title</$tag>", 1)
+                                    $insertedCount++
+                                    continue
+                                }
+
+                                $words = $title -split '\s+'
+                                if ($words.Count -ge 5) {
+                                    $fuzzyPrefix = [regex]::Escape(($words[0..4]) -join ' ')
+                                    $fuzzyPattern = "(<(?:p|div)[^>]*>)\s*($fuzzyPrefix[^<]*)\s*(</(?:p|div)>)"
+                                    $rxFuzzy = [regex]::new($fuzzyPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                                    if ($rxFuzzy.IsMatch($htmlContent)) {
+                                        $htmlContent = $rxFuzzy.Replace($htmlContent, "<$tag>$title</$tag>", 1)
+                                        $insertedCount++
+                                        continue
+                                    }
+                                }
+
+                                Write-EbookLog "Kindle: heading not found in HTML: `"$title`"" -Level WARN
+                            }
+
+                            if ($insertedCount -gt 0) {
+                                Set-Content $convertInput -Value $htmlContent -Encoding UTF8
+                                Write-EbookLog "Kindle: inserted $insertedCount heading(s), skipped $skippedCount already present" -Level SUCCESS
+                            } else {
+                                Write-EbookLog "Kindle: all $($chapters.Count) headings already present in HTML"
                             }
                         }
+                        else {
+                            # TXT output: check if headings exist as Markdown headings (# / ## / ###)
+                            if (-not $cleanedText) { $cleanedText = Get-Content $convertInput -Raw -Encoding UTF8 }
+                            $txtLines = $cleanedText -split "`r?`n"
+                            $missingCount = 0
+                            $insertedMd   = 0
 
-                        Write-EbookLog "Kindle: Claude found $($chapters.Count) chapters, $missingCount missing from pass 1"
-                        if ($missingTitles.Count -gt 0) {
-                            foreach ($mt in $missingTitles) {
-                                Write-EbookLog "Kindle:   missing: $mt"
+                            foreach ($ch in $chapters) {
+                                $title = $ch.title.Trim()
+                                $titleUpper = $title.ToUpper()
+                                $escapedTitle = [regex]::Escape($titleUpper)
+                                $level = $ch.level
+                                $mdPrefix = switch ($level) {
+                                    1 { '# ' }
+                                    2 { '## ' }
+                                    3 { '### ' }
+                                    default { '## ' }
+                                }
+
+                                # Check if it already exists as a Markdown heading
+                                $alreadyHeading = $false
+                                foreach ($line in $txtLines) {
+                                    if ($line.Trim() -match "^#{1,3}\s+" -and $line.Trim().ToUpper() -match $escapedTitle) {
+                                        $alreadyHeading = $true
+                                        break
+                                    }
+                                }
+
+                                if ($alreadyHeading) { continue }
+
+                                # Title exists as plain text — convert to Markdown heading
+                                $foundPlain = $false
+                                for ($li = 0; $li -lt $txtLines.Count; $li++) {
+                                    if ($txtLines[$li].Trim().ToUpper() -match "^$escapedTitle$") {
+                                        $txtLines[$li] = "$mdPrefix$title"
+                                        $insertedMd++
+                                        $foundPlain = $true
+                                        break
+                                    }
+                                }
+
+                                if (-not $foundPlain) {
+                                    $missingCount++
+                                }
                             }
-                        }
 
-                        if ($missingCount -gt 0) {
-                            $hintsJson = Join-Path $env:TEMP ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
-                            $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
-                        } else {
-                            Write-EbookLog "Kindle: all $($chapters.Count) Claude chapters already present -- no re-run needed"
+                            # Write back if we inserted any Markdown headings
+                            if ($insertedMd -gt 0) {
+                                $cleanedText = $txtLines -join "`r`n"
+                                Set-Content $convertInput -Value $cleanedText -Encoding UTF8
+                                Write-EbookLog "Kindle: converted $insertedMd heading(s) to Markdown format" -Level SUCCESS
+                            }
+
+                            if ($missingCount -gt 0) {
+                                $hintsJson = Join-Path $env:TEMP ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
+                                $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
+                                Write-EbookLog "Kindle: $missingCount of $($chapters.Count) headings not found in text -- writing hints for pass 2"
+                            } elseif ($insertedMd -eq 0) {
+                                Write-EbookLog "Kindle: all $($chapters.Count) Claude chapters already have Markdown heading format -- no changes needed"
+                            }
                         }
                     } else {
                         Write-EbookLog 'Kindle: Claude returned no chapters -- keeping pass 1 output' -Level WARN
@@ -1011,6 +1116,88 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
             }
             catch {
                 Write-EbookLog "Kindle: EPUB extraction error -- $_ -- falling back to direct conversion" -Level WARN
+            }
+        }
+    }
+
+    # EPUB chapter detection: run after EPUB HTML extraction
+    if ($ext -eq 'epub' -and ($UseClaudeChapters -or $ChapterHintsFile) -and $convertInput -and (Test-Path $convertInput) -and $convertInput -like '*.html') {
+        $cfg    = Get-EbookConfig
+        $python = $cfg.paths.python
+
+        # Early-exit: skip Claude if HTML already has sufficient chapter headings
+        $epubHtml = Get-Content $convertInput -Raw -Encoding UTF8
+        $existingH1 = [regex]::Matches($epubHtml, '(?s)<h1[^>]*>(.+?)</h1>')
+        $backMatterKeywords = @('Notes','Bibliography','Index','Appendix','Glossary',
+                                'References','Further Reading','Works Cited')
+        $nonBackMatter = @($existingH1 | Where-Object {
+            $text = $_.Groups[1].Value
+            $isBM = $false
+            foreach ($kw in $backMatterKeywords) {
+                if ($text -match "^$kw$") { $isBM = $true; break }
+            }
+            -not $isBM
+        })
+
+        if ($nonBackMatter.Count -ge 5) {
+            Write-EbookLog "Kindle: EPUB has $($nonBackMatter.Count) non-back-matter h1 headings -- skipping Claude chapter detection"
+        } else {
+            Write-EbookLog "Kindle: EPUB needs chapter detection ($($nonBackMatter.Count) non-back-matter h1 found)..."
+            $epubText = Get-Content $convertInput -Raw -Encoding UTF8
+            $chapters = Get-ChapterStructure -TextContent $epubText -InputFile $InputFile
+
+            if ($chapters -and $chapters.Count -gt 0) {
+                $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
+                $insertedCount = 0
+                $skippedCount  = 0
+
+                foreach ($ch in $chapters) {
+                    $title = $ch.title.Trim()
+                    $level = $ch.level
+                    $tag   = switch ($level) {
+                        1 { 'h1' }
+                        2 { 'h2' }
+                        3 { 'h3' }
+                        default { 'h2' }
+                    }
+
+                    $escapedTitle = [regex]::Escape($title)
+                    if ($htmlContent -match "<h[123][^>]*>\s*$escapedTitle\s*</h[123]>") {
+                        $skippedCount++
+                        continue
+                    }
+
+                    $pattern = "(<(?:p|div)[^>]*>)\s*$escapedTitle\s*(</(?:p|div)>)"
+                    $rx = [regex]::new($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                    if ($rx.IsMatch($htmlContent)) {
+                        $htmlContent = $rx.Replace($htmlContent, "<$tag>$title</$tag>", 1)
+                        $insertedCount++
+                        continue
+                    }
+
+                    $words = $title -split '\s+'
+                    if ($words.Count -ge 5) {
+                        $fuzzyPrefix = [regex]::Escape(($words[0..4]) -join ' ')
+                        $fuzzyPattern = "(<(?:p|div)[^>]*>)\s*($fuzzyPrefix[^<]*)\s*(</(?:p|div)>)"
+                        $rxFuzzy = [regex]::new($fuzzyPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                        if ($rxFuzzy.IsMatch($htmlContent)) {
+                            $htmlContent = $rxFuzzy.Replace($htmlContent, "<$tag>$title</$tag>", 1)
+                            $insertedCount++
+                            continue
+                        }
+                    }
+
+                    Write-EbookLog "Kindle: heading not found in HTML: `"$title`"" -Level WARN
+                }
+
+                if ($insertedCount -gt 0) {
+                    Set-Content $convertInput -Value $htmlContent -Encoding UTF8
+                    Write-EbookLog "Kindle: inserted $insertedCount heading(s), skipped $skippedCount already present" -Level SUCCESS
+                } else {
+                    Write-EbookLog "Kindle: all $($chapters.Count) headings already present in EPUB HTML"
+                }
+            } else {
+                Write-EbookLog 'Kindle: Claude returned no chapters for EPUB -- keeping extracted HTML' -Level WARN
             }
         }
     }
@@ -1142,16 +1329,35 @@ else:
         $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
         $hasH1 = $htmlContent -match '<h1[^>]*>'
         $hasH2 = $htmlContent -match '<h2[^>]*>'
-        $tocArgs = ""
-        if ($hasH1) { $tocArgs += " --level1-toc `"//h:h1`"" }
-        if ($hasH2) { $tocArgs += " --level2-toc `"//h:h2`"" }
         # h3 tags provide visual structure but are excluded from the Kindle TOC
         # to avoid E24011 nesting errors in Kindle Previewer's KFX conversion.
+
+        # Smart TOC flag logic: Calibre's --level2-toc only works when level-2
+        # entries have a parent level-1 entry ABOVE them in the document. For books
+        # with no Parts (h1 is only back-matter like Notes/Bibliography), h2 chapters
+        # are orphaned and dropped from the TOC. Fix: detect whether h1 tags appear
+        # before h2 (real Part→Chapter hierarchy) or only after (back-matter).
+        $tocArgs = ""
+        if ($hasH1 -and $hasH2) {
+            $firstH1Pos = $htmlContent.IndexOf('<h1')
+            $firstH2Pos = $htmlContent.IndexOf('<h2')
+            if ($firstH1Pos -ge 0 -and $firstH1Pos -lt $firstH2Pos) {
+                # h1 before h2 = genuine Part/Chapter hierarchy
+                $tocArgs = " --level1-toc `"//h:h1`" --level2-toc `"//h:h2`""
+                Write-EbookLog "Kindle: using HTML input with h1 (Parts) + h2 (Chapters) TOC"
+            } else {
+                # h1 only after h2 (back matter) — combine as flat level1
+                $tocArgs = " --level1-toc `"//h:h1|//h:h2`""
+                Write-EbookLog "Kindle: using HTML input with h1+h2 flat TOC (h1 is back-matter only)"
+            }
+        } elseif ($hasH1) {
+            $tocArgs = " --level1-toc `"//h:h1`""
+            Write-EbookLog "Kindle: using HTML input with h1 TOC"
+        } elseif ($hasH2) {
+            $tocArgs = " --level1-toc `"//h:h2`""
+            Write-EbookLog "Kindle: using HTML input with h2 TOC (no h1 found)"
+        }
         $argString += $tocArgs
-        $levels = @()
-        if ($hasH1) { $levels += "h1" }
-        if ($hasH2) { $levels += "h2" }
-        Write-EbookLog "Kindle: using HTML input with $($levels -join ' + ') TOC"
 
         # Start reading at first non-front-matter h2
         if ($hasH2) {
@@ -2973,81 +3179,147 @@ function Send-ToClaudeAPI {
 
 function Get-ChapterStructure {
     <#
-    .SYNOPSIS  Use Claude to identify chapter/part titles in extracted book text.
+    .SYNOPSIS  Use Claude to identify chapter/part titles with font-based pre-analysis.
     .DESCRIPTION
-        Sends two kinds of text samples to Claude for chapter detection:
-          1. The first 4000 words of the book (usually contains the Table of Contents)
-          2. 15 evenly-spaced 100-word windows from throughout the remainder of the text
-
-        Claude uses the TOC as the primary source and the body samples to confirm
-        chapter boundaries, then returns all chapter/part titles as a JSON array.
+        Runs font-based heading detection on the source file, then sends three-zone
+        text samples + font candidates to Claude for chapter confirmation.
     .PARAMETER TextContent
-        The full extracted text of a book (from pdf_to_balabolka.py or similar).
+        The full extracted text of a book.
+    .PARAMETER InputFile
+        Path to the source PDF/EPUB. Required for font-based detection.
     .OUTPUTS
         An array of objects with 'level' and 'title' properties, or $null on failure.
-    .EXAMPLE
-        $chapters = Get-ChapterStructure -TextContent (Get-Content book.txt -Raw)
-        $chapters | Format-Table
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [string]$TextContent
+        [Parameter(Mandatory)] [string]$TextContent,
+        [string]$InputFile
     )
 
-    # -- Build sample: first 4000 words (likely contains TOC) + 15 evenly-spaced
-    #    100-word windows from throughout the text.
-    $words = $TextContent -split '\s+'
+    # -- Step 1: Run font-based heading detection (if source file provided)
+    $fontCandidatesSection = ""
+    if ($InputFile -and (Test-Path $InputFile)) {
+        $cfg    = Get-EbookConfig
+        $python = $cfg.paths.python
+        $detectScript = Join-Path $script:ModuleRoot 'tools\detect_headings_font.py'
 
-    # Section 1: first 4000 words
-    $first4k = ($words | Select-Object -First 4000) -join ' '
-
-    # Sections 2-16: 15 evenly-spaced 100-word windows
-    $totalWords  = $words.Count
-    $sampleParts = [System.Collections.Generic.List[string]]::new()
-    $sampleParts.Add($first4k)
-
-    if ($totalWords -gt 4100) {
-        $step = [int](($totalWords - 4000) / 15)
-        for ($i = 0; $i -lt 15; $i++) {
-            $start  = 4000 + $i * $step
-            $window = ($words[$start..([Math]::Min($start + 99, $totalWords - 1))]) -join ' '
-            $sampleParts.Add($window)
+        if (Test-Path $detectScript) {
+            Write-EbookLog "Chapter detection: running font-based heading analysis..."
+            try {
+                $fontJsonRaw = & $python $detectScript --input "$InputFile" --format json 2>$null
+                $fontJson = if ($fontJsonRaw -is [array]) { $fontJsonRaw -join "`n" } else { $fontJsonRaw }
+                if ($fontJson) {
+                    $fontResult = $fontJson | ConvertFrom-Json
+                    $candidates = $fontResult.heading_candidates
+                    if ($candidates -and $candidates.Count -gt 0) {
+                        Write-EbookLog "Chapter detection: font analysis found $($candidates.Count) heading candidates"
+                        $lines = @()
+                        $lines += "=== FONT-DETECTED HEADING CANDIDATES ==="
+                        $lines += "The following headings were detected from font analysis of the full document."
+                        $lines += "Confirm which are real chapter/section headings, flag false positives, and note any chapters in the text samples not in this list."
+                        $lines += ""
+                        foreach ($c in $candidates) {
+                            $sizeStr = if ($c.font_size) { "$($c.font_size)pt" } else { "" }
+                            $boldStr = if ($c.is_bold) { " bold" } else { "" }
+                            $detail  = if ($sizeStr) { " ($sizeStr$boldStr)" } else { "" }
+                            $lines += "  $($c.level)  p.$($c.page)  [$($c.confidence)] `"$($c.text)`"$detail"
+                        }
+                        $fontCandidatesSection = $lines -join "`n"
+                    } else {
+                        Write-EbookLog "Chapter detection: font analysis found 0 candidates -- Claude will search text only"
+                    }
+                }
+            } catch {
+                Write-EbookLog "Chapter detection: font analysis failed ($_) -- continuing without font candidates" -Level WARN
+            }
         }
     }
 
-    $sample = $sampleParts -join "`n---`n"
+    # -- Step 2: Build three-zone text samples
+    $words = $TextContent -split '\s+'
+    $totalWords = $words.Count
 
-    Write-EbookLog "Chapter detection: sending first 4000 words + 15 samples to Claude API..."
+    if ($totalWords -lt 9000) {
+        $sample = $TextContent
+        Write-EbookLog "Chapter detection: short book ($totalWords words) -- sending full text to Claude"
+    } else {
+        $sampleParts = [System.Collections.Generic.List[string]]::new()
 
-    # System prompt
-    $systemPrompt = @'
-You are a book structure analyst. I will give you text samples from a book. The first section is from the beginning of the book and likely contains the Table of Contents. The remaining sections are samples from throughout the book.
+        # Zone 1: Front matter (first 3000 words)
+        $zone1 = ($words[0..2999]) -join ' '
+        $sampleParts.Add("=== FRONT MATTER (first 3000 words) ===`n$zone1")
 
-Identify ALL chapter and part titles. Return them as a raw JSON array with level and title fields.
+        # Zone 2: 8 body samples at 10%-80%
+        for ($i = 0; $i -lt 8; $i++) {
+            $pct = 0.10 + $i * 0.10
+            $startWord = [Math]::Floor($totalWords * $pct)
+            $endWord = [Math]::Min($startWord + 499, $totalWords - 1)
+            $pageEstimate = [Math]::Floor($pct * 100)
+            $chunk = ($words[$startWord..$endWord]) -join ' '
+            $sampleParts.Add("=== BODY SAMPLE $($i + 1) (~${pageEstimate}% through book) ===`n$chunk")
+        }
 
-Level assignment rules:
-- level 1 = Part, Book, or Volume headings (top-level divisions)
+        # Zone 3: Back matter (last 2000 words)
+        $backStart = [Math]::Max(0, $totalWords - 2000)
+        $zone3 = ($words[$backStart..($totalWords - 1)]) -join ' '
+        $sampleParts.Add("=== BACK MATTER (last 2000 words) ===`n$zone3")
+
+        $sample = $sampleParts -join "`n`n"
+        Write-EbookLog "Chapter detection: three-zone sampling ($totalWords words total) -- sending ~9000 words to Claude"
+    }
+
+    # -- Step 3: Build Claude prompt
+    $systemPrompt = @"
+You are analyzing an ebook to build its table of contents. Identify the CHAPTER STRUCTURE.
+
+PRIORITY ORDER:
+1. MAIN CHAPTERS - numbered or titled divisions of core content
+2. MAJOR SECTIONS - Parts containing chapters
+3. FRONT MATTER - Preface, Foreword, Introduction, Acknowledgments
+4. BACK MATTER - Notes, Bibliography, Index, Appendix (mark is_back_matter: true)
+
+DO NOT treat as chapter headings:
+- Running headers/footers repeated on every page
+- Section sub-headings within a chapter
+- Decorative text, epigraphs, pull quotes
+- List items or numbered points within body text
+
+Respond with a raw JSON array (no markdown fences). Each entry:
+{"title": "exact heading text", "level": 1, "is_back_matter": false, "page_estimate": 45, "confidence": 0.95, "notes": "optional"}
+
+Rules:
+- level 1 = Part, Book, or Volume headings (top-level divisions containing chapters)
 - level 2 = Chapters, Prologue, Epilogue, Introduction, Foreword, Preface, Afterword, Conclusion, Appendix
+- level 3 = Sub-sections within a chapter (only include if clearly structured)
+- Most books have 0-5 level-1 entries and 5-30 level-2 entries
+- A book with 10 chapters should have >= 10 level-2 entries
+- If the book has no Parts/Volumes, use level 2 for all chapter headings (no level 1)
+- Preserve exact capitalization and numbering from the source
+- If font candidates are provided below, use them as the primary guide and ADD any chapters you find in the text that the font analysis missed
+- If no font candidates are provided, identify headings from the text samples only
+- Mark back matter sections (Notes, Bibliography, Index, Appendix) with is_back_matter: true
+"@
 
-Copy titles exactly as they appear in the text. If you find a Table of Contents, use it as your primary source.
+    $userContent = ""
+    if ($fontCandidatesSection) {
+        $userContent += "$fontCandidatesSection`n`n"
+    }
+    $userContent += "TEXT SAMPLES:`n`n$sample"
 
-Return only the JSON array, no markdown fences.
-
-Example output:
-[{"level":1,"title":"Part One: The Shah"},{"level":2,"title":"1. A Kind of Super Man"},{"level":2,"title":"Prologue"}]
-'@
-
-    $userMessage = "Here are text samples from a book. Identify all chapter/part headings:`n`n$sample"
-
-    $raw = Send-ToClaudeAPI -SystemPrompt $systemPrompt -UserMessage $userMessage
+    Write-EbookLog "Chapter detection: sending to Claude API..."
+    $raw = Send-ToClaudeAPI -SystemPrompt $systemPrompt -UserMessage $userContent
 
     if ($null -eq $raw) {
         Write-EbookLog 'Chapter detection: API call failed -- returning null' -Level ERROR
         return $null
     }
 
-    # Parse the JSON response
-    $json = $raw -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
+    # -- Step 4: Parse JSON response (handle prose before/after fenced JSON)
+    if ($raw -match '(?s)```(?:json)?\s*(\[.*?\])\s*```') {
+        $json = $Matches[1]
+    } else {
+        $json = $raw -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
+    }
     $json = $json.Trim()
 
     try {
