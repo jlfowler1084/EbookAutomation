@@ -561,6 +561,7 @@ function Convert-ToKindle {
         [string]$ChapterHintsFile,
         [switch]$ForceColumns,
         [switch]$UseOCR,
+        [switch]$DirectConversion,
         [switch]$ValidateVisual,
         [switch]$FullVQA,
 
@@ -935,6 +936,62 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
         }
         if ($UseClaudeChapters -or $ChapterHintsFile) {
             $stepTimings['ClaudeChapters'] = [math]::Round($claudeSw.Elapsed.TotalSeconds, 1)
+        }
+    }
+
+    # For EPUBs: extract and merge chapter HTML (unless -DirectConversion forces passthrough)
+    if ($ext -eq 'epub' -and -not $DirectConversion) {
+        Write-EbookLog "Kindle: extracting HTML from EPUB (preserving formatting)..."
+
+        $python   = $cfg.paths.python
+        $toolPath = Join-Path $script:ModuleRoot 'tools\pdf_to_balabolka.py'
+
+        if (Test-Path $toolPath) {
+            $tempDir = Join-Path $env:TEMP ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+            New-Item $tempDir -ItemType Directory -Force | Out-Null
+
+            try {
+                $env:PYTHONIOENCODING = 'utf-8'
+                $pyErrFile = Join-Path $env:TEMP 'kindle_epub_err.txt'
+                $pyOutFile = Join-Path $env:TEMP 'kindle_epub_out.txt'
+                $pySw      = [System.Diagnostics.Stopwatch]::StartNew()
+
+                $pyArgs = "$toolPath --input `"$InputFile`" --mode kindle --output-dir `"$tempDir`" --epub-html"
+
+                $pyProc = Start-Process -FilePath $python `
+                                        -ArgumentList $pyArgs `
+                                        -PassThru -NoNewWindow `
+                                        -RedirectStandardOutput $pyOutFile `
+                                        -RedirectStandardError $pyErrFile
+
+                while (-not $pyProc.HasExited) {
+                    Start-Sleep -Seconds 3
+                    Write-EbookLog "Kindle: extracting EPUB HTML... ($([math]::Round($pySw.Elapsed.TotalSeconds, 0))s elapsed)"
+                }
+                $pyProc.WaitForExit()
+
+                if ($pyProc.ExitCode -eq 0 -or $null -eq $pyProc.ExitCode) {
+                    $htmlFile = Get-ChildItem -Path $tempDir -Filter '*.html' -File | Select-Object -First 1
+                    if ($htmlFile) {
+                        $convertInput   = $htmlFile.FullName
+                        $extractionPath = 'epub_html'
+                        $txtSizeKB = [math]::Round($htmlFile.Length / 1KB, 0)
+                        Write-EbookLog "Kindle: extracted $txtSizeKB KB of HTML from EPUB in $([math]::Round($pySw.Elapsed.TotalSeconds, 1))s" -Level SUCCESS
+                        $stepTimings['EpubExtraction'] = [math]::Round($pySw.Elapsed.TotalSeconds, 1)
+                    } else {
+                        Write-EbookLog "Kindle: EPUB HTML extraction produced no output -- falling back to direct conversion" -Level WARN
+                    }
+                } else {
+                    Write-EbookLog "Kindle: EPUB HTML extraction failed (exit $($pyProc.ExitCode)) -- falling back to direct conversion" -Level WARN
+                    if (Test-Path $pyErrFile) {
+                        $lastLines = Get-Content $pyErrFile -Tail 3 -ErrorAction SilentlyContinue
+                        foreach ($line in $lastLines) { if ($line.Trim()) { Write-EbookLog "Kindle:   $line" -Level WARN } }
+                    }
+                }
+            }
+            catch {
+                Write-EbookLog "Kindle: EPUB extraction error -- $_ -- falling back to direct conversion" -Level WARN
+            }
         }
     }
 
@@ -3399,6 +3456,20 @@ print(json.dumps(result))
                     Description = "Tesseract OCR for scanned pages with no text layer"
                 }
             }
+            'epub_html' {
+                return @{
+                    Name        = "EPUB HTML extraction"
+                    Flags       = @{}
+                    Description = "Extract and merge EPUB chapter HTML preserving formatting"
+                }
+            }
+            'direct' {
+                return @{
+                    Name        = "Direct conversion"
+                    Flags       = @{ DirectConversion = $true }
+                    Description = "Send raw file straight to Calibre without extraction"
+                }
+            }
         }
     }
 
@@ -3440,11 +3511,23 @@ print(json.dumps(result))
             Flags       = @{ ForceColumns = $true }
             Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
         }
-    } else {
-        # EPUB/MOBI/AZW — only one path (direct to Calibre)
+    } elseif ($ext -eq 'epub') {
+        # EPUB gets HTML extraction first, then direct fallback
+        $strategies += @{
+            Name        = "EPUB HTML extraction"
+            Flags       = @{}
+            Description = "Extract and merge EPUB chapter HTML preserving formatting"
+        }
         $strategies += @{
             Name        = "Direct conversion"
-            Flags       = @{}
+            Flags       = @{ DirectConversion = $true }
+            Description = "Send raw EPUB straight to Calibre without extraction"
+        }
+    } else {
+        # MOBI/AZW — only one path (direct to Calibre)
+        $strategies += @{
+            Name        = "Direct conversion"
+            Flags       = @{ DirectConversion = $true }
             Description = "Native format straight to Calibre"
         }
     }

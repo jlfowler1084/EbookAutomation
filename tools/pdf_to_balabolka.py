@@ -653,6 +653,67 @@ def extract_text_from_epub(epub_path, log):
     return '\n\n'.join(all_text)
 
 
+def extract_html_from_epub(epub_path, log):
+    """Extract and merge EPUB chapter HTML into a single document.
+
+    Unlike extract_text_from_epub() which flattens to plain text, this
+    preserves the EPUB's native HTML structure: headings, bold, italic,
+    links, block quotes, lists, etc.
+
+    Returns a single HTML string ready for Calibre conversion.
+    """
+    try:
+        import ebooklib
+        from ebooklib import epub
+    except ImportError:
+        raise RuntimeError(
+            "ebooklib is not installed. Run: python -m pip install ebooklib"
+        )
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        raise RuntimeError(
+            "beautifulsoup4 is not installed. Run: python -m pip install beautifulsoup4"
+        )
+
+    book = epub.read_epub(epub_path, options={'ignore_ncx': True})
+    spine_ids = [item_id for item_id, _ in book.spine]
+    items = {item.get_id(): item for item in book.get_items()
+             if item.get_type() == ebooklib.ITEM_DOCUMENT}
+
+    spine_items = [items[sid] for sid in spine_ids if sid in items]
+    log(f"  EPUB loaded: {len(spine_items)} spine items")
+
+    # Collect the <body> content from each spine item
+    body_parts = []
+    for idx, item in enumerate(spine_items):
+        soup = BeautifulSoup(item.get_content(), 'html.parser')
+
+        # Extract the <body> content (or the whole document if no body tag)
+        body = soup.find('body')
+        if body:
+            content = ''.join(str(child) for child in body.children)
+        else:
+            content = str(soup)
+
+        if content.strip():
+            body_parts.append(f'<!-- EPUB chapter {idx + 1}: {item.get_name()} -->')
+            body_parts.append(content)
+
+        if (idx + 1) % 10 == 0:
+            log(f"  Extracted {idx + 1}/{len(spine_items)} chapters...")
+
+    log(f"  EPUB HTML extraction complete: {len(body_parts) // 2} chapters")
+
+    merged_html = (
+        '<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"></head>\n<body>\n'
+        + '\n'.join(body_parts)
+        + '\n</body>\n</html>'
+    )
+
+    return merged_html
+
+
 def extract_text_via_calibre(input_path, log, calibre_path=None):
     """Convert an ebook to plain text via Calibre's ebook-convert CLI.
 
@@ -8257,6 +8318,9 @@ Examples:
                     help="DPI for OCR page rendering (default: 300)")
     ap.add_argument("--calibre-path", default=None,
                     help="Path to Calibre's ebook-convert.exe (auto-detected if not specified)")
+    ap.add_argument("--epub-html", action="store_true",
+                    help="For EPUB input: extract and merge chapter HTML instead of plain text. "
+                         "Preserves formatting (bold, italic, headings, links).")
     ap.add_argument("--force-columns", action="store_true",
                     help="Force PyMuPDF column-aware extraction even if detection confidence is low")
     ap.add_argument("--tts-enhance", action="store_true",
@@ -8319,7 +8383,15 @@ Examples:
                 sys.exit(1)
             log_fn(f"[cli] Hints: {hints_path}")
 
-        if args.html_extraction and args.mode == "kindle":
+        if args.epub_html and ext == 'epub':
+            html_output = os.path.join(out_dir, safe_stem + '_kindle.html')
+            log_fn(f"[cli] EPUB HTML extraction -> {html_output}")
+            raw_html = extract_html_from_epub(input_path, log_fn)
+            with open(html_output, 'w', encoding='utf-8') as f:
+                f.write(raw_html)
+            log_fn(f"Done! Saved EPUB HTML to: {html_output}")
+            log_fn(f"  Size: {len(raw_html):,} chars")
+        elif args.html_extraction and args.mode == "kindle":
             html_output = re.sub(r'\.(txt|html?)$', '.html', output_path)
             if not html_output.endswith('.html'):
                 html_output = output_path + '.html'
