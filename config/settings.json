@@ -15,7 +15,8 @@
     "calibre":       "C:\\Program Files\\Calibre2\\ebook-convert.exe",
     "tesseract":     "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
     "poppler":       "tools\\poppler",
-    "data":          "tools\\data"
+    "data":          "tools\\data",
+    "ghostscript":   ""
   },
   "tts": {
     "enabled":         true,
@@ -69,7 +70,16 @@
     "enabled": true,
     "calibre_library": "C:\\Users\\Joe\\Calibre Library",
     "auto_send": false,
-    "delete_from_library_after_send": true
+    "delete_from_library_after_send": true,
+    "email": {
+      "kindle_address": "",
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "smtp_user": "",
+      "smtp_app_password_env": "EBOOK_SMTP_PASSWORD",
+      "convert_subject": true,
+      "max_email_size_mb": 50
+    }
   },
   "archive_originals":  true,
   "log_level":          "INFO"
