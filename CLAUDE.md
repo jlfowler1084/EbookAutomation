@@ -383,6 +383,54 @@ response = requests.post(
 
 ---
 
+## Kindle Email Delivery
+
+Send converted ebooks to Kindle via Amazon's Send-to-Kindle email service.
+
+### Environment Variable
+
+`EBOOK_SMTP_PASSWORD` — Gmail App Password for SMTP authentication. Set as a permanent user environment variable (same pattern as `ANTHROPIC_API_KEY`). The env var name is configurable via `kindle_delivery.email.smtp_app_password_env` in settings.json.
+
+### Config (settings.json)
+
+```json
+"kindle_delivery": {
+    "email": {
+        "kindle_address": "user_XXXX@kindle.com",
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "smtp_user": "user@gmail.com",
+        "smtp_app_password_env": "EBOOK_SMTP_PASSWORD",
+        "convert_subject": true,
+        "max_email_size_mb": 50
+    }
+}
+```
+
+### Supported Email Formats
+
+Amazon accepts: PDF, EPUB, DOC, DOCX, TXT, RTF, HTM, HTML, image files. KFX and MOBI are **not** accepted via email.
+
+### EPUB Intermediate Files
+
+When `-ProduceEpub` or `-EmailToKindle` is active, `Convert-ToKindle` saves:
+- `output\kindle\BookName.epub` — the EPUB for email delivery
+- `output\kindle\.intermediates\BookName_kindle.html` — preserved HTML for future EPUB regeneration
+
+The `.intermediates\` directory is hidden on Windows.
+
+### Usage
+
+```powershell
+Send-ToKindle -InputFile "book.epub" -Email                    # email EPUB
+Send-ToKindle -InputFile "book.pdf" -Email -EmailFormat PDF    # email PDF
+Send-ToKindle -InputFile "book.pdf" -Email -Compress           # compress before email
+Invoke-EbookPipeline -EmailToKindle                            # email after conversion
+Invoke-EbookPipeline -SendToKindle -EmailToKindle              # USB + email
+```
+
+---
+
 ## FOH Daily Brief Generation
 
 When generating FOH daily briefs from JSON data:
