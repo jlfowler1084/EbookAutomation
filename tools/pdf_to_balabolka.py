@@ -4090,6 +4090,12 @@ blockquote p {{ text-indent: 0; }}
         escaped_text = _html_escape(text)
         display_text = f'<em>{escaped_text}</em>' if (italic or display_override_em) else escaped_text
 
+        # Wrap bold non-heading body paragraphs in <strong>
+        if bold and tag == 'p' and not italic and not display_override_em:
+            display_text = f'<strong>{escaped_text}</strong>'
+        elif bold and italic and tag == 'p':
+            display_text = f'<strong><em>{escaped_text}</em></strong>'
+
         # FIX 6: Suppress h3 in back matter — use styled paragraph instead
         if in_back_matter and tag == 'h3':
             tag = 'p'
