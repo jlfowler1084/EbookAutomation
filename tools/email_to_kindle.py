@@ -30,6 +30,7 @@ import argparse
 import json
 import logging
 import math
+import re
 import shutil
 import smtplib
 import socket
@@ -333,6 +334,14 @@ def split_pdf(input_path: str, max_size_mb: float, output_dir: str):
     return part_paths, None
 
 
+def _sanitize_filename(name: str) -> str:
+    """Remove filesystem-unsafe characters from a filename (not the extension)."""
+    # Strip characters that are invalid in filenames or look ugly in Kindle library
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name
+
+
 # =================================================================================
 # SMTP sending
 # =================================================================================
@@ -342,8 +351,14 @@ def _build_mime_message(
     recipient: str,
     subject: str,
     file_path: str,
+    attachment_name: str = None,
 ) -> MIMEMultipart:
-    """Build a MIME multipart email with a single file attachment."""
+    """Build a MIME multipart email with a single file attachment.
+
+    attachment_name overrides the filename shown to the recipient (and used
+    by Amazon as the Kindle library title).  Defaults to the basename of
+    file_path if not provided.
+    """
     msg = MIMEMultipart()
     msg['From'] = sender
     msg['To'] = recipient
@@ -357,10 +372,11 @@ def _build_mime_message(
         part.set_payload(fh.read())
 
     encoders.encode_base64(part)
+    display_name = attachment_name or os.path.basename(file_path)
     part.add_header(
         'Content-Disposition',
         'attachment',
-        filename=os.path.basename(file_path),
+        filename=display_name,
     )
     msg.attach(part)
     return msg
@@ -388,13 +404,18 @@ def send_email(
     smtp_user: str,
     smtp_password: str,
     subject: str,
+    attachment_name: str = None,
 ) -> None:
     """Send a single file to the Kindle address via SMTP.
+
+    attachment_name overrides the MIME filename (used by Amazon as the
+    Kindle library title).
 
     Raises specific exceptions on failure; retries once on transient errors.
     Exit-code-mapped exceptions propagate to main().
     """
-    msg = _build_mime_message(smtp_user, kindle_address, subject, file_path)
+    msg = _build_mime_message(smtp_user, kindle_address, subject, file_path,
+                              attachment_name=attachment_name)
     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
     log.info(
         'Sending "%s" (%.1f MB) to %s via %s:%d',
@@ -676,6 +697,10 @@ def main() -> None:
                 'Sending part %d/%d (%.1f MB): subject="%s"',
                 idx, total_parts, part_size_mb, part_subject,
             )
+            ext = Path(part_path).suffix
+            clean_part_name = _sanitize_filename(
+                '{} - Part {} of {}{}'.format(args.book_title, idx, total_parts, ext)
+            )
             try:
                 send_email(
                     file_path=part_path,
@@ -685,6 +710,7 @@ def main() -> None:
                     smtp_user=args.smtp_user,
                     smtp_password=smtp_password,
                     subject=part_subject,
+                    attachment_name=clean_part_name,
                 )
                 parts_sent.append({
                     'part': idx,
@@ -756,6 +782,9 @@ def main() -> None:
         subject,
     )
 
+    ext = Path(file_to_send).suffix
+    clean_name = _sanitize_filename('{}{}'.format(args.book_title, ext))
+
     try:
         send_email(
             file_path=file_to_send,
@@ -765,6 +794,7 @@ def main() -> None:
             smtp_user=args.smtp_user,
             smtp_password=smtp_password,
             subject=subject,
+            attachment_name=clean_name,
         )
     except smtplib.SMTPAuthenticationError:
         _fail(

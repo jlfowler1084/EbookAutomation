@@ -2155,8 +2155,15 @@ function Send-ToKindle {
                 return
             }
 
-            # Build Python args
-            $bookTitle = [System.IO.Path]::GetFileNameWithoutExtension($emailFile)
+            # Build clean title from filename metadata (handles libgen/Anna's Archive patterns)
+            $emailMeta = Get-EbookMetadataFromFilename ([System.IO.Path]::GetFileName($emailFile))
+            $bookTitle = if ($emailMeta.Title -and $emailMeta.Authors) {
+                             "$($emailMeta.Title) - $($emailMeta.Authors)"
+                         } elseif ($emailMeta.Title) {
+                             $emailMeta.Title
+                         } else {
+                             [System.IO.Path]::GetFileNameWithoutExtension($emailFile)
+                         }
             $pyArgs = "`"$emailScript`" --file `"$emailFile`" --kindle-address `"$($emailCfg.kindle_address)`""
             $pyArgs += " --smtp-server `"$($emailCfg.smtp_server)`" --smtp-port $($emailCfg.smtp_port)"
             $pyArgs += " --smtp-user `"$($emailCfg.smtp_user)`" --book-title `"$bookTitle`""
