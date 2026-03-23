@@ -294,9 +294,11 @@ Current: if any headings already present, skip ALL insertion. New: per-heading c
 
 ### h3 Support
 
-**Phase 1 (this implementation):** The font detector reports h3 candidates and Claude returns level-3 entries. `Get-ChapterStructure` converts them to integer level 3 in the hints JSON. For the HTML insertion path in `Convert-ToKindle`, h3 headings are inserted as `<h3>` tags. The `--level3-toc "//h:h3"` flag is added to Calibre only when h3 headings exist.
+**Phase 1 (this implementation):** The font detector reports h3 candidates and Claude returns level-3 entries. `Get-ChapterStructure` converts them to integer level 3 in the hints JSON. For the HTML insertion path in `Convert-ToKindle`, h3 headings are inserted as `<h3>` tags for **visual structure only**.
 
-**Known gap:** `apply_chapter_hints()` in `pdf_to_balabolka.py` uses `if level == 1: parts` / `else: chapters`. Level 3 entries passed via `--chapter-hints` JSON will be treated as chapters (level 2) — they go into the `chapters` list and receive `<h2>` tags, not `<h3>`. This is acceptable for now because:
+**Important: No `--level3-toc` flag.** The existing codebase deliberately excludes h3 from the Kindle TOC to avoid E24011 nesting errors in KFX conversion. This was a previous fix (back-matter h3 suppression uses `<p><strong>` instead of `<h3>` to avoid KFX TOC nesting errors). We preserve this behavior: h3 tags provide visual formatting in the rendered book but do NOT generate Kindle TOC entries. Do not add `--level3-toc "//h:h3"` to Calibre flags.
+
+**Known gap in legacy path:** `apply_chapter_hints()` in `pdf_to_balabolka.py` uses `if level == 1: parts` / `else: chapters`. Level 3 entries passed via `--chapter-hints` JSON will be treated as chapters (level 2) — they go into the `chapters` list and receive `<h2>` tags, not `<h3>`. This is acceptable for now because:
 - The primary h3 insertion path is the HTML manipulation in `Convert-ToKindle` (which IS being modified)
 - The `--chapter-hints` path is a fallback used by the pypdf/legacy extraction
 - A future change to `pdf_to_balabolka.py` can add h3 support to `apply_chapter_hints()` when needed
@@ -390,4 +392,4 @@ python tools/test_pipeline.py
 6. **Smart EPUB early-exit** — >= 5 non-back-matter h1s required to skip Claude, prevents Burge-style false exits.
 7. **Integer levels in Claude prompt** — matches downstream `apply_chapter_hints()` convention (1 = Parts, 2 = Chapters), avoids string-to-int conversion bugs.
 8. **HTML insertion in Convert-ToKindle** — where `$htmlContent` is in scope, not inside `Get-ChapterStructure` which only returns the heading list.
-9. **h3 known gap** — `apply_chapter_hints()` ignores level 3 for now; primary h3 path is HTML insertion in `Convert-ToKindle`.
+9. **h3 visual-only** — h3 tags inserted for visual structure but excluded from `--level3-toc` to preserve E24011 fix. `apply_chapter_hints()` treats level 3 as level 2; primary h3 path is HTML insertion in `Convert-ToKindle`.
