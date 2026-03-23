@@ -500,7 +500,7 @@ function Convert-ToKindle {
     <#
     .SYNOPSIS  Convert an ebook to KFX or AZW3 via Calibre.
     .DESCRIPTION
-        Two extraction paths for PDF input:
+        Multiple extraction paths for PDF input:
 
         HtmlExtraction (recommended) — uses pdfminer font metadata to produce
         semantic HTML with h1/h2/h3 headings, then converts via Calibre.
@@ -510,6 +510,10 @@ function Convert-ToKindle {
         optional Claude AI chapter detection and quality validation.  This is
         the original path and remains the default so nothing breaks for
         existing callers.
+
+        OCR (Tesseract) — for scanned/image-only PDFs with no text layer.
+        Uses Tesseract OCR to extract text from page images. Slow but the
+        only option for scan_no_text PDFs.
 
         For other formats (EPUB, MOBI, etc.): sends directly to Calibre.
 
@@ -556,6 +560,7 @@ function Convert-ToKindle {
         [switch]$UseClaudeChapters,
         [string]$ChapterHintsFile,
         [switch]$ForceColumns,
+        [switch]$UseOCR,
         [switch]$ValidateVisual,
         [switch]$FullVQA,
 
@@ -585,6 +590,8 @@ function Convert-ToKindle {
         'html_extraction'
     } elseif ($ForceColumns) {
         'column_aware'
+    } elseif ($UseOCR) {
+        'ocr'
     } else {
         'legacy'
     }
@@ -599,6 +606,19 @@ function Convert-ToKindle {
     if (-not (Test-Path $calibre)) {
         Write-EbookLog "Calibre not found at: $calibre -- skipping Kindle conversion" -Level WARN
         return $false
+    }
+
+    # Tesseract pre-check when OCR is requested
+    if ($UseOCR) {
+        $tesseractCmd = if ($cfg.paths.tesseract -and (Test-Path (Resolve-ProjectPath $cfg.paths.tesseract))) {
+            Resolve-ProjectPath $cfg.paths.tesseract
+        } else { 'tesseract' }
+        try {
+            $null = & $tesseractCmd --version 2>&1
+        } catch {
+            Write-EbookLog "Kindle: Tesseract OCR not found. Install from github.com/UB-Mannheim/tesseract/wiki or set paths.tesseract in settings.json" -Level ERROR
+            return $false
+        }
     }
 
     $outFmt   = $cfg.kindle.output_format          # 'kfx' or 'azw3'
@@ -726,6 +746,28 @@ print(json.dumps(output))
                 }
                 if ($ForceColumns) {
                     $pyArgs += " --force-columns"
+                }
+                if ($UseOCR) {
+                    $pyArgs += " --ocr"
+                    Write-EbookLog "Kindle: OCR mode forced by -UseOCR switch"
+
+                    # Add tesseract path from config if available
+                    if ($cfg.paths.tesseract) {
+                        $resolvedTesseract = if (Test-Path $cfg.paths.tesseract) { $cfg.paths.tesseract }
+                                             else { Resolve-ProjectPath $cfg.paths.tesseract }
+                        if (Test-Path $resolvedTesseract) {
+                            $pyArgs += " --tesseract-path `"$resolvedTesseract`""
+                        }
+                    }
+
+                    # Add poppler path from config if available
+                    if ($cfg.paths.poppler) {
+                        $popplerBinDir = Get-ChildItem (Resolve-ProjectPath $cfg.paths.poppler) -Recurse -Filter 'pdftoppm.exe' -ErrorAction SilentlyContinue |
+                                         Select-Object -First 1
+                        if ($popplerBinDir) {
+                            $pyArgs += " --poppler-path `"$($popplerBinDir.DirectoryName)`""
+                        }
+                    }
                 }
                 # Add AI Quality Pass API key if requested
                 if ($ValidateQuality -or $env:ANTHROPIC_API_KEY) {
@@ -1857,8 +1899,8 @@ function Invoke-EbookPipeline {
         for AI-assisted chapter detection on all extraction paths.
 
     .PARAMETER UseOCR
-        Pass -UseOCR through to Convert-ToTTS to force Tesseract OCR extraction
-        for scanned/image-only PDFs.
+        Pass -UseOCR through to Convert-ToTTS and Convert-ToKindle to force
+        Tesseract OCR extraction for scanned/image-only PDFs.
 
     .EXAMPLE
         Invoke-EbookPipeline
@@ -2064,7 +2106,7 @@ function Invoke-EbookPipeline {
                 Write-EbookLog "  Kindle: starting conversion..."
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
