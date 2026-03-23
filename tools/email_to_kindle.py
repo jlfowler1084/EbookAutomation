@@ -498,6 +498,54 @@ def _fail(error_code: str, message: str, exit_code: int) -> None:
 
 
 # =================================================================================
+# Metadata injection
+# =================================================================================
+
+def inject_metadata_if_needed(file_path, metadata, temp_dir):
+    """Inject metadata into a PDF if its internal metadata is empty.
+
+    Args:
+        file_path: Path to the PDF file.
+        metadata: Dict with keys like 'title', 'authors', 'subject'.
+        temp_dir: Directory for writing the modified copy.
+
+    Returns:
+        Path to the file to send (original if metadata was already present,
+        or a new file in temp_dir with metadata injected).
+    """
+    if not file_path.lower().endswith('.pdf') or not metadata:
+        return file_path
+
+    try:
+        import fitz
+    except ImportError:
+        log.warning('PyMuPDF not installed — cannot inject PDF metadata')
+        return file_path
+
+    doc = fitz.open(file_path)
+    existing = doc.metadata or {}
+
+    if existing.get('author') and existing.get('title'):
+        doc.close()
+        return file_path
+
+    doc.set_metadata({
+        'author': metadata.get('authors', ''),
+        'title': metadata.get('title', ''),
+        'subject': metadata.get('subject', ''),
+        'creator': 'EbookAutomation',
+    })
+    stem = Path(file_path).stem
+    suffix = Path(file_path).suffix
+    output = os.path.join(temp_dir, f'{stem}_metadata{suffix}')
+    doc.save(output)
+    doc.close()
+    log.info('Injected metadata into PDF: title=%s, author=%s',
+             metadata.get('title', ''), metadata.get('authors', ''))
+    return output
+
+
+# =================================================================================
 # Argument parsing
 # =================================================================================
 
@@ -532,6 +580,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument('--password-env-var', default='EBOOK_SMTP_PASSWORD',
                    help='Name of the environment variable holding the SMTP password '
                         '(default: EBOOK_SMTP_PASSWORD)')
+    p.add_argument('--metadata-file', default=None,
+                   help='Path to JSON file with book metadata (title, authors, etc.) '
+                        'for injecting into PDFs with empty internal metadata')
     return p
 
 
@@ -570,6 +621,16 @@ def main() -> None:
     # (not system temp — Windows cleans that up aggressively)
     tmp_dir = str(SCRIPT_DIR.parent / 'processing')
     os.makedirs(tmp_dir, exist_ok=True)
+
+    # --- Load metadata from JSON file if provided ---
+    book_metadata = None
+    if args.metadata_file and os.path.isfile(args.metadata_file):
+        try:
+            with open(args.metadata_file, 'r', encoding='utf-8') as mf:
+                book_metadata = json.load(mf)
+            log.info('Loaded metadata from %s', args.metadata_file)
+        except (json.JSONDecodeError, OSError) as exc:
+            log.warning('Failed to load metadata file: %s', exc)
 
     # --- Format-aware size routing -----------------------------------------------
     if is_epub:
@@ -670,6 +731,10 @@ def main() -> None:
                 log.warning('Compression failed: %s; will attempt splitting original', exc)
                 # file_to_send stays as original
 
+    # --- Inject metadata into PDF if internal metadata is missing ---
+    if book_metadata and file_to_send.lower().endswith('.pdf'):
+        file_to_send = inject_metadata_if_needed(file_to_send, book_metadata, tmp_dir)
+
     # --- Check again after routing; if still over max and is PDF → split ----------
     final_size_mb = os.path.getsize(file_to_send) / (1024 * 1024)
     if final_size_mb > max_size_mb and (
@@ -697,6 +762,12 @@ def main() -> None:
                 'Sending part %d/%d (%.1f MB): subject="%s"',
                 idx, total_parts, part_size_mb, part_subject,
             )
+            # Inject metadata into split part
+            if book_metadata:
+                part_meta = dict(book_metadata)
+                part_meta['title'] = f"{book_metadata.get('title', args.book_title)} - Part {idx} of {total_parts}"
+                part_path = inject_metadata_if_needed(part_path, part_meta, tmp_dir)
+
             ext = Path(part_path).suffix
             clean_part_name = _sanitize_filename(
                 '{} - Part {} of {}{}'.format(args.book_title, idx, total_parts, ext)

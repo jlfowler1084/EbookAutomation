@@ -170,6 +170,28 @@ CREATE TABLE IF NOT EXISTS book_overrides (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Book metadata extracted from source files and merged across sources
+CREATE TABLE IF NOT EXISTS book_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id TEXT,
+    isbn TEXT,
+    title_hash TEXT,
+    title TEXT,
+    authors TEXT,
+    publisher TEXT,
+    year TEXT,
+    language TEXT DEFAULT 'en',
+    subject TEXT,
+    series TEXT,
+    description TEXT,
+    cover_path TEXT,
+    extra_json TEXT,
+    source_filename TEXT,
+    source_type TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 _INDEXES_SQL = """
@@ -193,6 +215,10 @@ CREATE INDEX IF NOT EXISTS idx_books_isbn
     ON books(isbn);
 CREATE INDEX IF NOT EXISTS idx_books_source_hash
     ON books(source_file_hash);
+CREATE INDEX IF NOT EXISTS idx_book_metadata_title_hash
+    ON book_metadata(title_hash);
+CREATE INDEX IF NOT EXISTS idx_book_metadata_isbn
+    ON book_metadata(isbn);
 """
 
 # ---------------------------------------------------------------------------
@@ -1853,6 +1879,57 @@ def _cmd_override_list(args):
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Known software/tool names that appear as author/publisher in PDF metadata
+_GARBAGE_CREATOR_NAMES = {
+    'microsoft word', 'adobe indesign', 'adobe acrobat', 'latex',
+    'pdflatex', 'xelatex', 'lualatex', 'tex', 'pdftex', 'xetex',
+    'quarkxpress', 'libreoffice', 'openoffice', 'google docs',
+    'calibre', 'prince', 'wkhtmltopdf', 'phantomjs', 'chrome',
+    'firefox', 'acrobat distiller', 'acrobat pdfmaker',
+    'microsoft office word', 'pages',
+}
+
+_GARBAGE_TITLES = {'untitled', 'document', 'microsoft word', 'unnamed'}
+
+
+def _clean_meta_field(value, field_type='generic'):
+    """Filter garbage values from PDF/EPUB metadata fields.
+
+    Returns cleaned string or None if the value is empty or garbage.
+    """
+    if not value or not value.strip():
+        return None
+
+    cleaned = value.strip()
+
+    if field_type == 'author':
+        if cleaned.lower() in ('unknown', 'unknown author', ''):
+            return None
+        if cleaned.lower() in _GARBAGE_CREATOR_NAMES:
+            return None
+
+    elif field_type == 'title':
+        if cleaned.lower() in _GARBAGE_TITLES:
+            return None
+
+    elif field_type == 'publisher':
+        if cleaned.lower() in _GARBAGE_CREATOR_NAMES:
+            return None
+
+    return cleaned
+
+
+def _extract_year(date_string):
+    """Extract a 4-digit year from a PDF date string or plain string.
+
+    PDF dates look like: D:20190415120000+00'00'
+    Returns year as string (e.g., '2019') or None.
+    """
+    if not date_string:
+        return None
+    match = re.search(r'(1[89]\d{2}|20\d{2})', str(date_string))
+    return match.group(1) if match else None
+
 
 def _normalize_title_hash(title, author=None):
     """Create a normalized hash for fuzzy title+author matching.
@@ -1927,9 +2004,380 @@ def _parse_metadata_from_filename(filename):
     return title, author
 
 
+def extract_pdf_metadata(file_path):
+    """Extract metadata from a PDF file via PyMuPDF.
+
+    Returns dict with keys: title, authors, publisher, year, language,
+    subject, description, isbn, extra_json. All values are strings or None.
+    Only non-None values are included in the returned dict.
+    """
+    import fitz
+    doc = fitz.open(file_path)
+    meta = doc.metadata or {}
+    doc.close()
+
+    result = {
+        'title': _clean_meta_field(meta.get('title'), field_type='title'),
+        'authors': _clean_meta_field(meta.get('author'), field_type='author'),
+        'subject': meta.get('subject') or None,
+        'publisher': _clean_meta_field(meta.get('creator'), field_type='publisher'),
+        'year': _extract_year(meta.get('creationDate')),
+    }
+
+    # Store raw metadata in extra_json for debugging/traceability
+    extra = {}
+    for key in ('keywords', 'producer', 'creator'):
+        val = meta.get(key)
+        if val:
+            extra[key] = val
+    if extra:
+        result['extra_json'] = json.dumps(extra)
+
+    return {k: v for k, v in result.items() if v}
+
+
+def _get_epub_meta(book, namespace, name):
+    """Get a single metadata value from an ebooklib EpubBook."""
+    try:
+        items = book.get_metadata(namespace, name)
+        if items:
+            val = items[0][0]
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _extract_isbn_from_epub(book):
+    """Extract ISBN from EPUB DC:identifier fields."""
+    try:
+        identifiers = book.get_metadata('DC', 'identifier')
+        for ident_tuple in identifiers:
+            val = str(ident_tuple[0]).strip()
+            for prefix in ('isbn:', 'urn:isbn:', 'ISBN:'):
+                if val.lower().startswith(prefix.lower()):
+                    val = val[len(prefix):]
+                    break
+            cleaned = val.replace('-', '')
+            if re.match(r'^(97[89])?\d{9}[\dXx]$', cleaned):
+                return cleaned
+    except Exception:
+        pass
+    return None
+
+
+def extract_epub_metadata(file_path):
+    """Extract metadata from an EPUB file via ebooklib."""
+    from ebooklib import epub
+    book = epub.read_epub(file_path, options={'ignore_ncx': True})
+
+    result = {
+        'title': _get_epub_meta(book, 'DC', 'title'),
+        'authors': _get_epub_meta(book, 'DC', 'creator'),
+        'publisher': _get_epub_meta(book, 'DC', 'publisher'),
+        'language': _get_epub_meta(book, 'DC', 'language'),
+        'description': _get_epub_meta(book, 'DC', 'description'),
+        'isbn': _extract_isbn_from_epub(book),
+        'subject': _get_epub_meta(book, 'DC', 'subject'),
+    }
+    return {k: v for k, v in result.items() if v}
+
+
+def extract_file_metadata(file_path):
+    """Extract internal metadata from a file based on its format.
+    Returns dict. For unsupported formats, returns empty dict.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == '.pdf':
+        return extract_pdf_metadata(file_path)
+    elif ext == '.epub':
+        return extract_epub_metadata(file_path)
+    else:
+        return {}
+
+
+# Source priority for merge decisions
+_SOURCE_PRIORITY = {
+    'filename_parser': 1,
+    'pdf_internal': 2,
+    'epub_opf': 3,
+    'database': 4,
+    'user_override': 5,
+    'claude_api': 5,
+    'merged': 3,
+}
+
+_METADATA_FIELDS = [
+    'title', 'authors', 'publisher', 'year', 'language', 'subject',
+    'series', 'description', 'isbn', 'cover_path', 'extra_json',
+]
+
+
+def merge_metadata(existing, new_fields, new_source_type):
+    """Merge new metadata fields into existing, respecting source priority.
+    For each field:
+    - If existing is empty/None, use new value
+    - If both have values, higher priority source wins
+    Returns merged dict with source_type set to 'merged' when multiple sources contribute.
+    """
+    result = dict(existing)
+    existing_priority = _SOURCE_PRIORITY.get(existing.get('source_type', ''), 0)
+    new_priority = _SOURCE_PRIORITY.get(new_source_type, 0)
+    sources_used = set()
+
+    if existing.get('source_type'):
+        sources_used.add(existing['source_type'])
+
+    for field in _METADATA_FIELDS:
+        existing_val = result.get(field)
+        new_val = new_fields.get(field)
+        if new_val and (not existing_val or new_priority > existing_priority):
+            result[field] = new_val
+            sources_used.add(new_source_type)
+        elif existing_val:
+            pass
+
+    if len(sources_used) > 1:
+        result['source_type'] = 'merged'
+    elif sources_used:
+        result['source_type'] = sources_used.pop()
+    else:
+        result['source_type'] = new_source_type
+
+    return result
+
+
+def store_book_metadata(title_hash=None, isbn=None, title=None, authors=None,
+                        publisher=None, year=None, language=None, subject=None,
+                        series=None, description=None, cover_path=None,
+                        extra_json=None, source_filename=None,
+                        source_type=None, book_id=None, db_path=None):
+    """Store or update book metadata in the database.
+    Uses COALESCE-based upsert keyed on title_hash.
+    Returns the stored metadata as a dict.
+    """
+    conn = get_db(db_path)
+    try:
+        existing = None
+        if title_hash:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE title_hash = ?",
+                (title_hash,)
+            ).fetchone()
+            if row:
+                existing = dict(row)
+
+        if existing:
+            conn.execute(
+                """UPDATE book_metadata SET
+                    book_id = COALESCE(?, book_id),
+                    isbn = COALESCE(?, isbn),
+                    title = COALESCE(?, title),
+                    authors = COALESCE(?, authors),
+                    publisher = COALESCE(?, publisher),
+                    year = COALESCE(?, year),
+                    language = COALESCE(?, language),
+                    subject = COALESCE(?, subject),
+                    series = COALESCE(?, series),
+                    description = COALESCE(?, description),
+                    cover_path = COALESCE(?, cover_path),
+                    extra_json = COALESCE(?, extra_json),
+                    source_filename = COALESCE(?, source_filename),
+                    source_type = COALESCE(?, source_type),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE title_hash = ?""",
+                (book_id, isbn, title, authors, publisher, year,
+                 language, subject, series, description, cover_path,
+                 extra_json, source_filename, source_type, title_hash)
+            )
+        else:
+            conn.execute(
+                """INSERT INTO book_metadata
+                   (book_id, isbn, title_hash, title, authors, publisher,
+                    year, language, subject, series, description,
+                    cover_path, extra_json, source_filename, source_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (book_id, isbn, title_hash, title, authors, publisher,
+                 year, language, subject, series, description,
+                 cover_path, extra_json, source_filename, source_type)
+            )
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM book_metadata WHERE title_hash = ?",
+            (title_hash,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_book_metadata(title_hash=None, isbn=None, title=None, author=None,
+                      db_path=None):
+    """Look up stored metadata for a book.
+    Priority: title_hash > isbn > title+author fuzzy match.
+    Returns dict or None.
+    """
+    conn = get_db(db_path)
+    try:
+        row = None
+
+        if title_hash:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE title_hash = ?",
+                (title_hash,)
+            ).fetchone()
+
+        if not row and isbn:
+            row = conn.execute(
+                "SELECT * FROM book_metadata WHERE isbn = ?",
+                (isbn,)
+            ).fetchone()
+
+        if not row and title:
+            computed_hash = _normalize_title_hash(title, author)
+            if computed_hash:
+                row = conn.execute(
+                    "SELECT * FROM book_metadata WHERE title_hash = ?",
+                    (computed_hash,)
+                ).fetchone()
+
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _cmd_extract_metadata(args):
+    """Extract internal metadata, merge with DB, store, output JSON."""
+    file_path = os.path.abspath(args.file)
+    if not os.path.isfile(file_path):
+        print(json.dumps({'error': f'File not found: {file_path}'}))
+        sys.exit(1)
+
+    internal_meta = extract_file_metadata(file_path)
+
+    filename = os.path.basename(file_path)
+    title = internal_meta.get('title')
+    authors = internal_meta.get('authors')
+    if not title:
+        parsed_title, parsed_author = _parse_metadata_from_filename(filename)
+        title = parsed_title
+        authors = authors or parsed_author
+
+    title_hash = _normalize_title_hash(title, authors)
+    if not title_hash:
+        title_hash = _normalize_title_hash(Path(file_path).stem)
+
+    existing = get_book_metadata(title_hash=title_hash, db_path=args.db_path)
+
+    ext = os.path.splitext(file_path)[1].lower()
+    source_type = 'pdf_internal' if ext == '.pdf' else 'epub_opf' if ext == '.epub' else 'filename_parser'
+
+    if existing:
+        merged = merge_metadata(existing, internal_meta, source_type)
+    else:
+        merged = dict(internal_meta)
+        merged['source_type'] = source_type
+
+    merged['title_hash'] = title_hash
+    merged['source_filename'] = filename
+    if title and 'title' not in merged:
+        merged['title'] = title
+    if authors and 'authors' not in merged:
+        merged['authors'] = authors
+
+    store_book_metadata(
+        title_hash=title_hash,
+        isbn=merged.get('isbn'),
+        title=merged.get('title'),
+        authors=merged.get('authors'),
+        publisher=merged.get('publisher'),
+        year=merged.get('year'),
+        language=merged.get('language'),
+        subject=merged.get('subject'),
+        series=merged.get('series'),
+        description=merged.get('description'),
+        cover_path=merged.get('cover_path'),
+        extra_json=merged.get('extra_json'),
+        source_filename=filename,
+        source_type=merged.get('source_type'),
+        db_path=args.db_path,
+    )
+
+    output = {k: v for k, v in merged.items()
+              if v is not None and k not in ('id', 'created_at', 'updated_at')}
+    with open(args.output_file, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_get_metadata(args):
+    """Retrieve stored metadata and write to JSON."""
+    result = get_book_metadata(
+        title_hash=args.title_hash,
+        isbn=args.isbn,
+        title=args.title,
+        author=args.author,
+        db_path=args.db_path,
+    )
+    output = {}
+    if result:
+        output = {k: v for k, v in result.items()
+                  if v is not None and k not in ('id', 'created_at', 'updated_at')}
+    with open(args.output_file, 'w', encoding='utf-8') as f:
+        json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_update_metadata(args):
+    """Update specific fields via merge priority logic."""
+    existing = get_book_metadata(title_hash=args.title_hash, db_path=args.db_path)
+    if not existing:
+        existing = {'title_hash': args.title_hash}
+
+    new_fields = {}
+    for field in ('title', 'authors', 'publisher', 'year', 'isbn', 'cover_path'):
+        val = getattr(args, field.replace('-', '_'), None)
+        if val:
+            new_fields[field] = val
+
+    merged = merge_metadata(existing, new_fields, args.source_type)
+    merged['title_hash'] = args.title_hash
+
+    store_book_metadata(
+        title_hash=args.title_hash,
+        title=merged.get('title'),
+        authors=merged.get('authors'),
+        publisher=merged.get('publisher'),
+        year=merged.get('year'),
+        isbn=merged.get('isbn'),
+        cover_path=merged.get('cover_path'),
+        source_type=merged.get('source_type'),
+        db_path=args.db_path,
+    )
+
+    if args.output_file:
+        output = {k: v for k, v in merged.items()
+                  if v is not None and k not in ('id', 'created_at', 'updated_at')}
+        with open(args.output_file, 'w', encoding='utf-8') as f:
+            json.dump(output, f, indent=2, ensure_ascii=False)
+
+
+def _cmd_store_metadata(args):
+    """Store metadata from a JSON file."""
+    with open(args.metadata_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    store_book_metadata(db_path=args.db_path, **{
+        k: v for k, v in data.items()
+        if k in ('title_hash', 'isbn', 'title', 'authors', 'publisher',
+                 'year', 'language', 'subject', 'series', 'description',
+                 'cover_path', 'extra_json', 'source_filename', 'source_type',
+                 'book_id')
+    })
 
 
 def main():
@@ -2035,6 +2483,45 @@ def main():
 
     override_cmds.add_parser('list', help='List all book overrides')
 
+    # ── Metadata subcommands ──────────────────────────────────────────
+    extract_meta_parser = subparsers.add_parser(
+        'extract-metadata',
+        help='Extract internal metadata from a file, merge with DB, store, output JSON'
+    )
+    extract_meta_parser.add_argument('--file', required=True, help='Path to ebook file')
+    extract_meta_parser.add_argument(
+        '--output-file', required=True, help='Path to write merged metadata JSON'
+    )
+
+    get_meta_parser = subparsers.add_parser(
+        'get-metadata', help='Retrieve stored metadata by title-hash, isbn, or title+author'
+    )
+    get_meta_parser.add_argument('--title-hash', default=None)
+    get_meta_parser.add_argument('--isbn', default=None)
+    get_meta_parser.add_argument('--title', default=None)
+    get_meta_parser.add_argument('--author', default=None)
+    get_meta_parser.add_argument('--output-file', required=True, help='Path to write JSON')
+
+    update_meta_parser = subparsers.add_parser(
+        'update-metadata', help='Update specific metadata fields (merge with priority)'
+    )
+    update_meta_parser.add_argument('--title-hash', required=True)
+    update_meta_parser.add_argument('--title', default=None)
+    update_meta_parser.add_argument('--authors', default=None)
+    update_meta_parser.add_argument('--publisher', default=None)
+    update_meta_parser.add_argument('--year', default=None)
+    update_meta_parser.add_argument('--isbn', default=None)
+    update_meta_parser.add_argument('--cover-path', default=None)
+    update_meta_parser.add_argument('--source-type', default='filename_parser')
+    update_meta_parser.add_argument('--output-file', default=None,
+                                    help='Optional: write merged result as JSON')
+
+    store_meta_parser = subparsers.add_parser(
+        'store-metadata', help='Store metadata from a JSON file'
+    )
+    store_meta_parser.add_argument('--metadata-file', required=True,
+                                   help='Path to JSON file with metadata fields')
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -2064,6 +2551,10 @@ def main():
         'cache': _cmd_cache,
         'classify': _cmd_classify,
         'recommend': _cmd_recommend,
+        'extract-metadata': _cmd_extract_metadata,
+        'get-metadata': _cmd_get_metadata,
+        'update-metadata': _cmd_update_metadata,
+        'store-metadata': _cmd_store_metadata,
     }
 
     commands[args.command](args)
