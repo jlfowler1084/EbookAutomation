@@ -3193,13 +3193,17 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
         log(f"  [WARN] Column detection error: {e} — using pdfminer")
     # ── existing pdfminer extraction (UNCHANGED below) ────────────────────────
     from pdfminer.high_level import extract_pages
-    from pdfminer.layout import LTTextBox, LTTextLine, LTChar, LTAnno
+    from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTChar, LTAnno
     from collections import Counter
+
+    # Tune LAParams for better word-boundary detection.
+    # Default word_margin=0.1 misses real word gaps in many PDFs.
+    laparams = LAParams(word_margin=0.05)
 
     all_paras = []
     total_pages = 0
 
-    for page_num, page_layout in enumerate(extract_pages(pdf_path)):
+    for page_num, page_layout in enumerate(extract_pages(pdf_path, laparams=laparams)):
         total_pages += 1
         pg = page_num + 1  # 1-indexed
         page_width = page_layout.width
@@ -3223,13 +3227,32 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 if not raw_text:
                     continue
 
-                # Collect font info from LTChar objects and detect superscripts
+                # Collect font info from LTChar objects and detect superscripts.
+                # Also detect missing word boundaries via character-gap analysis:
+                # if the gap between consecutive LTChar x-positions exceeds 30%
+                # of the running average character width, inject a space.
                 font_counts = Counter()
                 size_counts = Counter()
                 char_total = 0
                 char_data = []  # (char_text, font_size, font_name_or_None)
+                prev_x1 = None
+                avg_char_width = None
                 for char in line:
                     if isinstance(char, LTChar):
+                        # Gap-based space injection
+                        if prev_x1 is not None and avg_char_width is not None:
+                            gap = char.x0 - prev_x1
+                            if gap > avg_char_width * 0.3:
+                                # Inject space if last char_data entry isn't already a space
+                                if char_data and char_data[-1][0] != ' ':
+                                    char_data.append((' ', 0, None))
+                        prev_x1 = char.x1
+                        char_width = char.x1 - char.x0
+                        if char_width > 0:
+                            if avg_char_width is None:
+                                avg_char_width = char_width
+                            else:
+                                avg_char_width = avg_char_width * 0.9 + char_width * 0.1
                         sz = round(char.size * 2) / 2
                         font_counts[char.fontname] += 1
                         size_counts[sz] += 1
@@ -3412,6 +3435,76 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
         log(f"    {sz}pt {style}: {cnt} paragraphs")
 
     return all_paras, body_size
+
+
+# ── Preposition set for camelCase splitting (used by _fix_word_merges_html) ──
+_PREPOSITIONS = frozenset({
+    'the', 'a', 'an', 'of', 'in', 'to', 'for', 'on', 'at',
+    'by', 'is', 'as', 'and', 'but', 'from', 'with', 'that',
+    'this', 'was', 'had', 'has', 'not', 'its', 'his', 'her',
+    'are', 'were', 'been', 'be', 'or', 'nor', 'so', 'yet',
+})
+
+# Known merge patterns
+_MERGE_FIXES = {
+    'ofthe': 'of the', 'inthe': 'in the', 'tothe': 'to the',
+    'forthe': 'for the', 'onthe': 'on the', 'atthe': 'at the',
+    'bythe': 'by the', 'isthe': 'is the', 'andthe': 'and the',
+    'fromthe': 'from the', 'withthe': 'with the', 'asthe': 'as the',
+    'butthe': 'but the', 'ofthis': 'of this', 'inthis': 'in this',
+    'oftheir': 'of their', 'inthat': 'in that', 'tothis': 'to this',
+    'wasthe': 'was the', 'hasthe': 'has the', 'hadthe': 'had the',
+    'notthe': 'not the', 'orthe': 'or the', 'arethe': 'are the',
+}
+
+_MERGE_PATTERNS = [
+    (re.compile(r'\b' + pat + r'\b', re.IGNORECASE), repl)
+    for pat, repl in _MERGE_FIXES.items()
+]
+
+_CAMEL_RE = re.compile(r'(?<=[a-z])(?=[A-Z][a-z])')
+
+
+def _fix_word_merges_html(para_dicts, log):
+    """Fix common word-merge artifacts in HTML extraction output."""
+    total_fixes = 0
+    for p in para_dicts:
+        if p.get('is_page_marker') or not p.get('text'):
+            continue
+        text = p['text']
+
+        # Apply known merge patterns
+        for pattern, replacement in _MERGE_PATTERNS:
+            text, n = pattern.subn(replacement, text)
+            total_fixes += n
+
+        # CamelCase splitting: only when lowercase prefix is a common word
+        segments = re.split(r'(<[^>]+>)', text)
+        for si, seg in enumerate(segments):
+            if seg.startswith('<'):
+                continue
+
+            def _split_camel(m):
+                nonlocal total_fixes
+                start = m.start()
+                # Walk back to find word start in this segment
+                word_start = start
+                while word_start > 0 and segments[si][word_start - 1].isalpha():
+                    word_start -= 1
+                prefix = segments[si][word_start:start + 1].lower()
+                if prefix in _PREPOSITIONS:
+                    total_fixes += 1
+                    return ' '
+                return m.group()
+
+            segments[si] = _CAMEL_RE.sub(_split_camel, seg)
+        text = ''.join(segments)
+
+        p['text'] = text
+
+    if total_fixes:
+        log(f"  Fixed {total_fixes} word merges in HTML extraction output")
+    return total_fixes
 
 
 def _flush_line_group(lines, all_paras):
@@ -8138,6 +8231,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     log("\n-- STEP 1: Extracting text with font metadata --")
     para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log, force_columns=force_columns)
+
+    log("\n-- STEP 1a: Fixing word merges in extraction output ----")
+    _fix_word_merges_html(para_dicts, log)
 
     log("\n-- STEP 1b: Rejoining page-boundary fragments ----------")
     para_dicts = rejoin_html_fragments(para_dicts, body_size, log)
