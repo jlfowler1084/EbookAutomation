@@ -1,0 +1,1883 @@
+{
+  "run_id": "batch_20260323_231114",
+  "generated_at": "2026-03-24T03:32:46.317441+00:00",
+  "summary": {
+    "books_total": 25,
+    "books_passed": 8,
+    "books_warned": 3,
+    "books_failed": 14,
+    "books_errored": 0,
+    "total_duration_seconds": 1291.5,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": null,
+      "format_filter": null,
+      "parallel": 2,
+      "folder_path": "F:\\Projects\\EbookAutomation\\batch_qa_intake\\batch_2"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "EXTRACTION_FAILED",
+      "severity": "critical",
+      "label": "Text extraction failed",
+      "description": "Could not extract text from source file",
+      "recommendation": "Check extraction path; may need OCR fallback or alternate extraction method",
+      "book_count": 14,
+      "books": [
+        "Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+        "PRANAITIS, Rev. I.B. - The Talmud Unmasked_ The Secret Rabbinical Teachings Concerning Christians-E.N. SANCTUARY (1892).pdf",
+        "Rosanne Liebermann - Exile, Incorporated_ The Body in the Book of Ezekiel-Oxford University Press (2024).pdf",
+        "S. K. Bain - The Most Dangerous Book in the World_ 9_11 as Mass Ritual (2012, Trine Day) - libgen.li.pdf",
+        "Steven M. Greer - Disclosure _ Military and Government Witnesses Reveal the Greatest Secrets in Modern History (2001, Not Avail) - libgen.li.pdf",
+        "Steven S. Skiena (auth.) - The algorithm design manual-Springer-Verlag London (2008).pdf",
+        "TURNER, Karla, Ph.D. - Into the Fringe_ A True Story of Alien Abduction (1992, Berkley Books _ The Berkley Publishing Group) - libgen.li.pdf",
+        "The Oxford Companion to the Bible (Oxford Companions) -- Bruce M_ Metzger; Michael D_ Coogan; Hector Ignacio Avalos; -- New York; Oxford, Unknown, -- 9780191913709 -- 49449dc19354984bbb2795e800a7f5fb -- Anna’s Archive.pdf",
+        "The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+        "The tempest -- Shakespeare, William, 1564-1616; Frye, Northrop -- 1959 -- Baltimore, Penguin Books -- 7b7c374836119c7ab05c544efe39d126 -- Anna’s Archive.pdf",
+        "[1181360200]Hero Tales From American History.-Henry Cabot Lodge,Theodore Roosevelt by Unknown.pdf",
+        "[Cambridge Studies in Medieval Life and Thought Fourth Series 37] Robin R. Mundill - England’s Jewish Solution. Experiment and Expulsion, 1262-1290 (2002, Cambridge University Press) - libgen.li.pdf",
+        "[Oxford early christian texts] Origenes (Origen), John Behr (ed.,trans.) - On First Principles 1 (2017, Oxford University Press) - libgen.li.pdf",
+        "[Wall Street And...Trilogy] Antony C. Sutton - Wall Street and The Rise of Hitler (1999, Buccaneer Books) - libgen.lc.pdf"
+      ],
+      "source_types": {
+        "unknown": 14
+      },
+      "formats": {
+        "pdf": 14
+      }
+    },
+    {
+      "pattern_id": "CHAPTER_DETECTION_ZERO",
+      "severity": "high",
+      "label": "No chapters detected",
+      "description": "Chapter detection found zero real chapters. May be finding only back-matter headings.",
+      "recommendation": "Fix Get-ChapterStructure prompt hierarchy rules and increase text window size",
+      "book_count": 16,
+      "books": [
+        "Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+        "PRANAITIS, Rev. I.B. - The Talmud Unmasked_ The Secret Rabbinical Teachings Concerning Christians-E.N. SANCTUARY (1892).pdf",
+        "Rosanne Liebermann - Exile, Incorporated_ The Body in the Book of Ezekiel-Oxford University Press (2024).pdf",
+        "S. K. Bain - The Most Dangerous Book in the World_ 9_11 as Mass Ritual (2012, Trine Day) - libgen.li.pdf",
+        "Steven M. Greer - Disclosure _ Military and Government Witnesses Reveal the Greatest Secrets in Modern History (2001, Not Avail) - libgen.li.pdf",
+        "Steven S. Skiena (auth.) - The algorithm design manual-Springer-Verlag London (2008).pdf",
+        "TURNER, Karla, Ph.D. - Into the Fringe_ A True Story of Alien Abduction (1992, Berkley Books _ The Berkley Publishing Group) - libgen.li.pdf",
+        "The Hindu Pantheon -- Edward Moor -- J_ Johnson -- eaadda1cb83734ce18601cc50d5b7090 -- Anna’s Archive.pdf",
+        "The Oxford Companion to the Bible (Oxford Companions) -- Bruce M_ Metzger; Michael D_ Coogan; Hector Ignacio Avalos; -- New York; Oxford, Unknown, -- 9780191913709 -- 49449dc19354984bbb2795e800a7f5fb -- Anna’s Archive.pdf",
+        "The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+        "The tempest -- Shakespeare, William, 1564-1616; Frye, Northrop -- 1959 -- Baltimore, Penguin Books -- 7b7c374836119c7ab05c544efe39d126 -- Anna’s Archive.pdf",
+        "The_Tempest_FAX.pdf",
+        "[1181360200]Hero Tales From American History.-Henry Cabot Lodge,Theodore Roosevelt by Unknown.pdf",
+        "[Cambridge Studies in Medieval Life and Thought Fourth Series 37] Robin R. Mundill - England’s Jewish Solution. Experiment and Expulsion, 1262-1290 (2002, Cambridge University Press) - libgen.li.pdf",
+        "[Oxford early christian texts] Origenes (Origen), John Behr (ed.,trans.) - On First Principles 1 (2017, Oxford University Press) - libgen.li.pdf",
+        "[Wall Street And...Trilogy] Antony C. Sutton - Wall Street and The Rise of Hitler (1999, Buccaneer Books) - libgen.lc.pdf"
+      ],
+      "source_types": {
+        "unknown": 16
+      },
+      "formats": {
+        "pdf": 16
+      }
+    },
+    {
+      "pattern_id": "ENCODING_ERRORS",
+      "severity": "high",
+      "label": "Encoding errors in extracted text",
+      "description": "Non-UTF8 content caused garbled characters",
+      "recommendation": "Add encoding normalization as pre-processing step",
+      "book_count": 1,
+      "books": [
+        "The Thirteenth Tribe THE KHAZAR EMPIRE AND ITS HERITAGE.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "NO_FORMATTING_PRESERVED",
+      "severity": "medium",
+      "label": "No bold/italic formatting preserved",
+      "description": "Source likely had formatting but none was preserved in output",
+      "recommendation": "Check if extraction path supports inline formatting; may need HTML extraction mode",
+      "book_count": 4,
+      "books": [
+        "Peter Levanda - Unholy Alliance - A History of Nazi Involvement with the Occult-Continuum (2002).pdf",
+        "Robert Lacey - Inside the Kingdom_ Kings, Clerics, Modernists, Terrorists, and the Struggle for Saudi Arabia (2009) - libgen.li.pdf",
+        "The_Tempest_FAX.pdf",
+        "qabbalahphilosop00myer.pdf"
+      ],
+      "source_types": {
+        "unknown": 4
+      },
+      "formats": {
+        "pdf": 4
+      }
+    },
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 2,
+      "books": [
+        "Oswald Spengler - Decline of the West 1 & 2 (2016, Random Shack) - libgen.li.pdf",
+        "Texe Marrs - Codex Magica_ Secret Signs, Mysterious Symbols, and Hidden Codes of the Illuminati (2005, RiverCrest Publishing) - libgen.li.pdf"
+      ],
+      "source_types": {
+        "unknown": 2
+      },
+      "formats": {
+        "pdf": 2
+      }
+    }
+  ],
+  "observations": [
+    "Chapter detection affects 64% of all books (16/25). Fixing this could improve batch pass rate from 32% to ~96%."
+  ],
+  "books": [
+    {
+      "filename": "Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+      "file_size_bytes": 2238085,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:12:11.716304+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 21.0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "Oswald Spengler - Decline of the West 1 & 2 (2016, Random Shack) - libgen.li.pdf",
+      "file_size_bytes": 6440820,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:12:32.711205+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 278.5,
+        "html_produced": true,
+        "html_size_bytes": 2920493,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 19,
+        "h1_count": 1,
+        "h2_count": 18,
+        "h3_count": 19,
+        "heading_labels": [
+          "APPENDIX: TABLES I-III",
+          "Decline of the West",
+          "INTRODUCTION",
+          "The MEANING OF NUMBERS",
+          "THE PROBLEM OF WORLD HISTORY: 1",
+          "MAKROKOSMOS: 1",
+          "MUSIC AND PLASTIC: 1",
+          "SOUL IMAGE AND LIFE FEELING: 1",
+          "FAUSTIAN AND APOLLINIAN NATURE KNOWLEDGE",
+          "Decline of the West",
+          "ORIGIN AND LANDSCAPE: 1",
+          "ORIGIN AND LANDSCAPE: 3",
+          "CITIES AND PEOPLES: 1",
+          "CITIES AND PEOPLES: 3",
+          "PROBLEMS OF THE ARABIAN CULTURE: 1",
+          "PROBLEMS OF THE ARABIAN CULTURE: 3",
+          "THE STATE: 1",
+          "THE STATE: 3",
+          "THE FORM WORLD OF ECONOMIC LIFE: 1"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 470209,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 17,
+        "italic_tags": 5524,
+        "bold_tags": 10,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 2382
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "PRANAITIS, Rev. I.B. - The Talmud Unmasked_ The Secret Rabbinical Teachings Concerning Christians-E.N. SANCTUARY (1892).pdf",
+      "file_size_bytes": 1089206,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:17:56.449761+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 6.2,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "Peter Levanda - Unholy Alliance - A History of Nazi Involvement with the Occult-Continuum (2002).pdf",
+      "file_size_bytes": 75785333,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:17:11.797885+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 44.4,
+        "html_produced": true,
+        "html_size_bytes": 977218,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 593,
+        "heading_labels": [
+          "*"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 149914,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 3,
+        "footnotes_unlinked": 123
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Robert Lacey - Inside the Kingdom_ Kings, Clerics, Modernists, Terrorists, and the Struggle for Saudi Arabia (2009) - libgen.li.pdf",
+      "file_size_bytes": 958335,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:19:07.383671+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 28.4,
+        "html_produced": true,
+        "html_size_bytes": 945800,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 18,
+        "h1_count": 18,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [
+          "Inside the Kingdom",
+          "CHAPTER 1",
+          "Inside the Kingdom Vacationing Jihadi",
+          "Inside the Kingdom",
+          "Inside the Kingdom The Students",
+          "Inside the Kingdom New Century",
+          "Inside the Kingdom Fire",
+          "Chapter 7: Jihad in Afghanistan",
+          "Chapter 8: Special Relationship 68 annual flow of pilgrims: Monroe, p. 173.",
+          "Chapter 9: Dawn Visitors",
+          "Chapter 11: Into Exile",
+          "Chapter 15: Battle for Al-Khafji",
+          "Chapter 21: The Students",
+          "Chapter 22: Infinite Reach",
+          "Chapter 27: Prodigal Sons",
+          "Chapter 28: King Abdullah 264 “The Angel of Death”: Off the record, August 2006.",
+          "Chapter 31: End of the Affair 292 “a Muslim marriage”: Ottaway, p. 226.",
+          "Chapter 32: Condition of the People"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 150689,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Rosanne Liebermann - Exile, Incorporated_ The Body in the Book of Ezekiel-Oxford University Press (2024).pdf",
+      "file_size_bytes": 21025309,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:19:36.013900+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 28.3,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "S. K. Bain - The Most Dangerous Book in the World_ 9_11 as Mass Ritual (2012, Trine Day) - libgen.li.pdf",
+      "file_size_bytes": 7596290,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:20:04.361145+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 22.0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "Scytl Election Results User Guide.pdf",
+      "file_size_bytes": 1196540,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:20:26.358678+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 1.3,
+        "html_produced": true,
+        "html_size_bytes": 14903,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 9,
+        "heading_labels": [
+          "Scytl Election Results User Guide"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 2309,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 1,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 10,
+        "bold_tags": 1,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Steven M. Greer - Disclosure _ Military and Government Witnesses Reveal the Greatest Secrets in Modern History (2001, Not Avail) - libgen.li.pdf",
+      "file_size_bytes": 12651714,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:20:27.663158+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 55.8,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "Steven S. Skiena (auth.) - The algorithm design manual-Springer-Verlag London (2008).pdf",
+      "file_size_bytes": 4082875,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:21:14.836246+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 62.8,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "TURNER, Karla, Ph.D. - Into the Fringe_ A True Story of Alien Abduction (1992, Berkley Books _ The Berkley Publishing Group) - libgen.li.pdf",
+      "file_size_bytes": 20406013,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:24:37.316086+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 14.7,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "Texe Marrs - Codex Magica_ Secret Signs, Mysterious Symbols, and Hidden Codes of the Illuminati (2005, RiverCrest Publishing) - libgen.li.pdf",
+      "file_size_bytes": 32967980,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:21:23.463797+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 28.4,
+        "html_produced": true,
+        "html_size_bytes": 665894,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 521,
+        "heading_labels": [
+          "BLOOD RITUAL"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 97091,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 4,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 92,
+        "italic_tags": 1765,
+        "bold_tags": 1131,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 235
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "The Beginning of Wisdom_ Reading Genesis by Leon R. Kass.pdf",
+      "file_size_bytes": 15451616,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:21:52.015428+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 89.9,
+        "html_produced": true,
+        "html_size_bytes": 2006744,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 36,
+        "heading_labels": [
+          "13eginning oJWisdom"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 327769,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 3,
+        "italic_tags": 2941,
+        "bold_tags": 5,
+        "footnotes_linked": 1,
+        "footnotes_unlinked": 435
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "The Hindu Pantheon -- Edward Moor -- J_ Johnson -- eaadda1cb83734ce18601cc50d5b7090 -- Anna’s Archive.pdf",
+      "file_size_bytes": 24567281,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:22:45.111111+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 1.1,
+        "html_produced": true,
+        "html_size_bytes": 11650,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 84,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o"
+    },
+    {
+      "filename": "The Oxford Companion to the Bible (Oxford Companions) -- Bruce M_ Metzger; Michael D_ Coogan; Hector Ignacio Avalos; -- New York; Oxford, Unknown, -- 9780191913709 -- 49449dc19354984bbb2795e800a7f5fb -- Anna’s Archive.pdf",
+      "file_size_bytes": 47729419,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:22:46.259123+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 600.1,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "Extraction exited with code -1",
+          "TIMEOUT: extraction exceeded 600s"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Text extraction failed"
+    },
+    {
+      "filename": "The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+      "file_size_bytes": 1659608,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:23:22.330688+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 15.3,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "The Thirteenth Tribe THE KHAZAR EMPIRE AND ITS HERITAGE.pdf",
+      "file_size_bytes": 2186331,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:23:46.708626+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 12.8,
+        "html_produced": true,
+        "html_size_bytes": 460848,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 15,
+        "h1_count": 1,
+        "h2_count": 14,
+        "h3_count": 29,
+        "heading_labels": [
+          "The Thirteenth Tribe",
+          "APPENDIX I",
+          "A NOTE ON SPELLING",
+          "APPENDIX II",
+          "A NOTE ON SOURCES",
+          "APPENDIX III",
+          "THE “KHAZAR CORRESPONDENCE”",
+          "APPENDIX IV",
+          "SOME IMPLICATIONS - ISRAEL AND THE DIASPORA",
+          "Chapter III",
+          "Chapter V",
+          "Chapter IV",
+          "Chapter VIII",
+          "Chapter VI",
+          "Chapter VII"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 72919,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 1,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 475,
+        "bold_tags": 0,
+        "footnotes_linked": 15,
+        "footnotes_unlinked": 536
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters"
+    },
+    {
+      "filename": "The formation of a persecuting society _ authority and -- R_I_ (ROBERT IAN) MOORE -- 2ND ED_, OXFORD, Unknown, 2007 -- Wiley-Blackwell (an imprint of -- 9780470773987 -- 0df23bbbef7628da1e6fe4b12dce91bb -- Anna’s Archive.pdf",
+      "file_size_bytes": 2027993,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:22:17.637939+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 27.3,
+        "html_produced": true,
+        "html_size_bytes": 649074,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 14,
+        "h1_count": 2,
+        "h2_count": 12,
+        "h3_count": 49,
+        "heading_labels": [
+          "BIBLIOGRAPHY",
+          "Index",
+          "CONTENTS",
+          "PREFACE TO THE SECOND EDITION",
+          "PREFACE TO THE FIRST EDITION",
+          "INTRODUCTION",
+          "CHAPTER 1: PERSECUTION",
+          "HERETICS",
+          "JEWS",
+          "LEPERS",
+          "THE COMMON ENEMY",
+          "BIBLIOGRAPHICAL EXCURSUS: DEBATING THE PERSECUTING SOCIETY1",
+          "Jews",
+          "Lepers"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 94602,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 11,
+        "italic_tags": 1112,
+        "bold_tags": 5,
+        "footnotes_linked": 302,
+        "footnotes_unlinked": 45
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "The tempest -- Shakespeare, William, 1564-1616; Frye, Northrop -- 1959 -- Baltimore, Penguin Books -- 7b7c374836119c7ab05c544efe39d126 -- Anna’s Archive.pdf",
+      "file_size_bytes": 3736700,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:23:37.609108+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 9.1,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "The_Tempest_FAX.pdf",
+      "file_size_bytes": 2378431,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:23:59.590440+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 37.7,
+        "html_produced": true,
+        "html_size_bytes": 102508,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 13,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 17326,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o"
+    },
+    {
+      "filename": "[1181360200]Hero Tales From American History.-Henry Cabot Lodge,Theodore Roosevelt by Unknown.pdf",
+      "file_size_bytes": 16045367,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:11:14.796247+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 600.0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "Extraction exited with code -1",
+          "TIMEOUT: extraction exceeded 600s"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Text extraction failed"
+    },
+    {
+      "filename": "[Cambridge Studies in Medieval Life and Thought Fourth Series 37] Robin R. Mundill - England’s Jewish Solution. Experiment and Expulsion, 1262-1290 (2002, Cambridge University Press) - libgen.li.pdf",
+      "file_size_bytes": 8983201,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:11:14.797209+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 44.7,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "[Oxford early christian texts] Origenes (Origen), John Behr (ed.,trans.) - On First Principles 1 (2017, Oxford University Press) - libgen.li.pdf",
+      "file_size_bytes": 3039714,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:11:59.449429+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0.9,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "[Wall Street And...Trilogy] Antony C. Sutton - Wall Street and The Rise of Hitler (1999, Buccaneer Books) - libgen.lc.pdf",
+      "file_size_bytes": 635275,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:12:00.376429+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 11.3,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "No output file produced"
+        ],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Extraction produced no output"
+    },
+    {
+      "filename": "qabbalahphilosop00myer.pdf",
+      "file_size_bytes": 32448692,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_231114",
+      "timestamp": "2026-03-24T03:18:02.678671+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 64.4,
+        "html_produced": true,
+        "html_size_bytes": 1281745,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 218,
+        "heading_labels": [
+          "OABBALAH."
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 211990,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    }
+  ]
+}
