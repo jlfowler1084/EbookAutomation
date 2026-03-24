@@ -1,0 +1,426 @@
+[
+  {
+    "fn": "(Hermeneia) Walther Zimmerli - Ezekiel II_ A Commenta",
+    "filename": "(Hermeneia) Walther Zimmerli - Ezekiel II_ A Commentary on the Book of the Prophet Ezekiel Chapters 25-48-Fortress Press (1988).pdf",
+    "pages": 637,
+    "mb_per_page": 0.08360164468666448,
+    "pypdf_len": 3869,
+    "pm_len": 3883,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 53.25424766540527,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 303.1
+  },
+  {
+    "fn": "(In easy steps) Mike McGrath - Python in easy steps-I",
+    "filename": "(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf",
+    "pages": 297,
+    "mb_per_page": 0.02741193610811073,
+    "pypdf_len": 1578,
+    "pm_len": 1577,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 8.141345024108887,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 28.4
+  },
+  {
+    "fn": "(Supplements to Vetus Testamentum 76) Thomas Renz - T",
+    "filename": "(Supplements to Vetus Testamentum 76) Thomas Renz - The Rhetorical Function of the Book of Ezekiel-Brill Academic Publishers (2002).pdf",
+    "pages": 318,
+    "mb_per_page": 0.05534715772424854,
+    "pypdf_len": 1202,
+    "pm_len": 1446,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 17.600396156311035,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 43.3
+  },
+  {
+    "fn": "Andrew R. Casper - An Artful Relic_ The Shroud of Tur",
+    "filename": "Andrew R. Casper - An Artful Relic_ The Shroud of Turin in Baroque Italy (2021, Penn State University Press) [10.1515_9780271091082] - libgen.li.pdf",
+    "pages": 216,
+    "mb_per_page": 0.14979835351308188,
+    "pypdf_len": 1421,
+    "pm_len": 1428,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 32.356444358825684,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 19.9
+  },
+  {
+    "fn": "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt",
+    "filename": "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf",
+    "pages": 663,
+    "mb_per_page": 0.1251675043350611,
+    "pypdf_len": 1817,
+    "pm_len": 1819,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 82.98605537414551,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 30.7
+  },
+  {
+    "fn": "Christian D. Ginsburg - Kabbalah_ Its Doctrines, Deve",
+    "filename": "Christian D. Ginsburg - Kabbalah_ Its Doctrines, Development and Literature (2003, Kessinger Publishing, LLC) - libgen.li.pdf",
+    "pages": 171,
+    "mb_per_page": 0.042993623610825565,
+    "pypdf_len": 2803,
+    "pm_len": 3008,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 7.351909637451172,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 41.9
+  },
+  {
+    "fn": "Cooper, Andrew Scott - The Oil Kings_ How the U (2011",
+    "filename": "Cooper, Andrew Scott - The Oil Kings_ How the U (2011, Simon & Schuster) - libgen.li.pdf",
+    "pages": 406,
+    "mb_per_page": 0.010461750876140125,
+    "pypdf_len": 3251,
+    "pm_len": 3410,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 4.247470855712891,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 139.1
+  },
+  {
+    "fn": "Coulter, Fred R. - Occult Holidays Or God's Holy Days",
+    "filename": "Coulter, Fred R. - Occult Holidays Or God's Holy Days - Which - Hour of the Time (2012) - libgen.li.pdf",
+    "pages": 368,
+    "mb_per_page": 0.013427032076794168,
+    "pypdf_len": 3400,
+    "pm_len": 3304,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 4.941147804260254,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 31.9
+  },
+  {
+    "fn": "David Irving - Uprising! One Nation's Nightmare_ Hung",
+    "filename": "David Irving - Uprising! One Nation's Nightmare_ Hungary 1956-Focal Point Publications (1981).pdf",
+    "pages": 751,
+    "mb_per_page": 0.0032758268313147574,
+    "pypdf_len": 2590,
+    "pm_len": 2636,
+    "verdict": "DRM",
+    "enc": true,
+    "size_mb": 2.460145950317383,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 55.5
+  },
+  {
+    "fn": "First Folio of Shakespeare (The Norton Facsimile) - C",
+    "filename": "First Folio of Shakespeare (The Norton Facsimile) - Compressed.pdf",
+    "pages": 968,
+    "mb_per_page": 0.12046250331500345,
+    "pypdf_len": 324,
+    "pm_len": 376,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 116.60770320892334,
+    "errors": [
+      "Extraction exited with code -1",
+      "TIMEOUT: extraction exceeded 600s"
+    ],
+    "duration": 600.0
+  },
+  {
+    "fn": "First Folio of Shakespeare (The Norton Facsimile) -- ",
+    "filename": "First Folio of Shakespeare (The Norton Facsimile) -- William Shakespeare -- 1968-01-01 -- Norton_(ww Norton Co; Norton -- 9780393041316 -- 865ede6292f1c0642f596fd56fed8bf0 -- Anna\u2019s Archive.pdf",
+    "pages": 968,
+    "mb_per_page": 0.12074174762757356,
+    "pypdf_len": 324,
+    "pm_len": 376,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 116.87801170349121,
+    "errors": [
+      "Extraction exited with code -1",
+      "TIMEOUT: extraction exceeded 600s"
+    ],
+    "duration": 600.1
+  },
+  {
+    "fn": "Jesus and the Victory of God (Christian Origins and t",
+    "filename": "Jesus and the Victory of God (Christian Origins and the -- N T Wright, (Nicholas Thomas) -- 5th or later Edition, 1997 -- Augsburg Fortress Publishers -- 9780800626792 -- ec3e558db7473d118a69af99f452d271 -- Anna\u2019s Archive.pdf",
+    "pages": 765,
+    "mb_per_page": 0.09495466269698798,
+    "pypdf_len": 0,
+    "pm_len": 0,
+    "verdict": "SCAN",
+    "enc": false,
+    "size_mb": 72.6403169631958,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 2.5
+  },
+  {
+    "fn": "Joseph M. Hellerstein, Michael Stonebraker - Readings",
+    "filename": "Joseph M. Hellerstein, Michael Stonebraker - Readings in Database Systems, 4th Edition (2005, The MIT Press) - libgen.lc.pdf",
+    "pages": 879,
+    "mb_per_page": 0.04583209041035623,
+    "pypdf_len": 3680,
+    "pm_len": 3687,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 40.286407470703125,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 61.0
+  },
+  {
+    "fn": "Manly P. Hall - The Secret Destiny of America (1944) ",
+    "filename": "Manly P. Hall - The Secret Destiny of America (1944) - libgen.li.pdf",
+    "pages": 54,
+    "mb_per_page": 0.05017760947898582,
+    "pypdf_len": 5230,
+    "pm_len": 5485,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 2.7095909118652344,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 24.0
+  },
+  {
+    "fn": "Nathan P. Jones - Mexico's Illicit Drug Networks and ",
+    "filename": "Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+    "pages": 209,
+    "mb_per_page": 0.010212460203033886,
+    "pypdf_len": 125,
+    "pm_len": 127,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 2.134404182434082,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 21.0
+  },
+  {
+    "fn": "PRANAITIS, Rev. I.B. - The Talmud Unmasked_ The Secre",
+    "filename": "PRANAITIS, Rev. I.B. - The Talmud Unmasked_ The Secret Rabbinical Teachings Concerning Christians-E.N. SANCTUARY (1892).pdf",
+    "pages": 96,
+    "mb_per_page": 0.010820289452870687,
+    "pypdf_len": 1942,
+    "pm_len": 1960,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 1.038747787475586,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 6.2
+  },
+  {
+    "fn": "Rosanne Liebermann - Exile, Incorporated_ The Body in",
+    "filename": "Rosanne Liebermann - Exile, Incorporated_ The Body in the Book of Ezekiel-Oxford University Press (2024).pdf",
+    "pages": 241,
+    "mb_per_page": 0.08320040326890114,
+    "pypdf_len": 1800,
+    "pm_len": 1840,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 20.051297187805176,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 28.3
+  },
+  {
+    "fn": "S. K. Bain - The Most Dangerous Book in the World_ 9_",
+    "filename": "S. K. Bain - The Most Dangerous Book in the World_ 9_11 as Mass Ritual (2012, Trine Day) - libgen.li.pdf",
+    "pages": 374,
+    "mb_per_page": 0.01937001784217549,
+    "pypdf_len": 5138,
+    "pm_len": 5080,
+    "verdict": "DRM",
+    "enc": true,
+    "size_mb": 7.244386672973633,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 22.0
+  },
+  {
+    "fn": "Steven M. Greer - Disclosure _ Military and Governmen",
+    "filename": "Steven M. Greer - Disclosure _ Military and Government Witnesses Reveal the Greatest Secrets in Modern History (2001, Not Avail) - libgen.li.pdf",
+    "pages": 560,
+    "mb_per_page": 0.02154574053628104,
+    "pypdf_len": 3055,
+    "pm_len": 3262,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 12.065614700317383,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 55.8
+  },
+  {
+    "fn": "Steven S. Skiena (auth.) - The algorithm design manua",
+    "filename": "Steven S. Skiena (auth.) - The algorithm design manual-Springer-Verlag London (2008).pdf",
+    "pages": 739,
+    "mb_per_page": 0.0052689215488459645,
+    "pypdf_len": 2634,
+    "pm_len": 2764,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 3.893733024597168,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 62.8
+  },
+  {
+    "fn": "TURNER, Karla, Ph.D. - Into the Fringe_ A True Story ",
+    "filename": "TURNER, Karla, Ph.D. - Into the Fringe_ A True Story of Alien Abduction (1992, Berkley Books _ The Berkley Publishing Group) - libgen.li.pdf",
+    "pages": 261,
+    "mb_per_page": 0.07456203256073583,
+    "pypdf_len": 807,
+    "pm_len": 852,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 19.46069049835205,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 14.7
+  },
+  {
+    "fn": "The Oxford Companion to the Bible (Oxford Companions)",
+    "filename": "The Oxford Companion to the Bible (Oxford Companions) -- Bruce M_ Metzger; Michael D_ Coogan; Hector Ignacio Avalos; -- New York; Oxford, Unknown, -- 9780191913709 -- 49449dc19354984bbb2795e800a7f5fb -- Anna\u2019s Archive.pdf",
+    "pages": 936,
+    "mb_per_page": 0.04863068486890222,
+    "pypdf_len": 3842,
+    "pm_len": 3890,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 45.51832103729248,
+    "errors": [
+      "Extraction exited with code -1",
+      "TIMEOUT: extraction exceeded 600s"
+    ],
+    "duration": 600.1
+  },
+  {
+    "fn": "The Return of the Gods{Jonathan Cahn}(2022, Charisma ",
+    "filename": "The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+    "pages": 289,
+    "mb_per_page": 0.0054765589096966915,
+    "pypdf_len": 1677,
+    "pm_len": 1695,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 1.5827255249023438,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 15.3
+  },
+  {
+    "fn": "The tempest -- Shakespeare, William, 1564-1616; Frye,",
+    "filename": "The tempest -- Shakespeare, William, 1564-1616; Frye, Northrop -- 1959 -- Baltimore, Penguin Books -- 7b7c374836119c7ab05c544efe39d126 -- Anna\u2019s Archive.pdf",
+    "pages": 120,
+    "mb_per_page": 0.02969662348429362,
+    "pypdf_len": 1595,
+    "pm_len": 1758,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 3.5635948181152344,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 9.1
+  },
+  {
+    "fn": "[1181360200]Hero Tales From American History.-Henry C",
+    "filename": "[1181360200]Hero Tales From American History.-Henry Cabot Lodge,Theodore Roosevelt by Unknown.pdf",
+    "pages": 79,
+    "mb_per_page": 0.1936968912052203,
+    "pypdf_len": 543,
+    "pm_len": 650,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 15.302054405212402,
+    "errors": [
+      "Extraction exited with code -1",
+      "TIMEOUT: extraction exceeded 600s"
+    ],
+    "duration": 600.0
+  },
+  {
+    "fn": "[Cambridge Studies in Medieval Life and Thought Fourt",
+    "filename": "[Cambridge Studies in Medieval Life and Thought Fourth Series 37] Robin R. Mundill - England\u2019s Jewish Solution. Experiment and Expulsion, 1262-1290 (2002, Cambridge University Press) - libgen.li.pdf",
+    "pages": 364,
+    "mb_per_page": 0.0235358463538872,
+    "pypdf_len": 883,
+    "pm_len": 932,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 8.567048072814941,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 44.7
+  },
+  {
+    "fn": "[Oxford early christian texts] Origenes (Origen), Joh",
+    "filename": "[Oxford early christian texts] Origenes (Origen), John Behr (ed.,trans.) - On First Principles 1 (2017, Oxford University Press) - libgen.li.pdf",
+    "pages": 276,
+    "mb_per_page": 0.01050325061963952,
+    "pypdf_len": 0,
+    "pm_len": 0,
+    "verdict": "SCAN",
+    "enc": false,
+    "size_mb": 2.898897171020508,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 0.9
+  },
+  {
+    "fn": "[Wall Street And...Trilogy] Antony C. Sutton - Wall S",
+    "filename": "[Wall Street And...Trilogy] Antony C. Sutton - Wall Street and The Rise of Hitler (1999, Buccaneer Books) - libgen.lc.pdf",
+    "pages": 148,
+    "mb_per_page": 0.004093550346993111,
+    "pypdf_len": 3227,
+    "pm_len": 3353,
+    "verdict": "EXTRACTION_BUG",
+    "enc": false,
+    "size_mb": 0.6058454513549805,
+    "errors": [
+      "No output file produced"
+    ],
+    "duration": 11.3
+  }
+]
