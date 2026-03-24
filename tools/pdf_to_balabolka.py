@@ -4225,6 +4225,31 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     if back_matter_start_page:
         log(f"  Back matter detected starting at page {back_matter_start_page}")
 
+    # ── Content-based back-matter detection (no bookmarks) ─────
+    # When bookmarks don't provide a back_matter_start_page, scan paragraphs
+    # for back-matter section headings (bold/larger text matching keywords)
+    # in the last 40% of the book.
+    if back_matter_start_page is None:
+        total_pages_est = max(
+            (p.get('page_number', 0) for p in para_dicts if p.get('is_page_marker')),
+            default=100
+        )
+        for p in para_dicts:
+            if p.get('is_page_marker'):
+                continue
+            text_check = re.sub(r'<[^>]+>', '', p.get('text', '')).strip().lower()
+            sz_check = p.get('font_size', 0)
+            if (text_check in back_matter_labels
+                    and (p.get('is_bold') or sz_check > body_size)
+                    and p.get('page_number', 0) > 0):
+                page_pct = p['page_number'] / max(total_pages_est, 1)
+                if page_pct > 0.6:
+                    back_matter_start_page = p['page_number']
+                    log(f"  Back matter detected from content at page "
+                        f"{back_matter_start_page} ('{text_check}', "
+                        f"{page_pct:.0%} through book)")
+                    break
+
     # ── FIX 1: Font-cluster heading detection ──────────────────
     # Find distinct heading sizes from paragraphs that look like headings:
     # larger than body, AND either bold or (centered + short text).
@@ -4508,8 +4533,13 @@ blockquote p {{ text-indent: 0; }}
                          and current_page >= back_matter_start_page)
         if in_back_matter and bm_level is not None:
             # Check if this paragraph IS a back-matter section heading (on its bookmark page)
+            # Match exact labels AND multi-word variants like "Index of Modern Authors"
             text_norm = text.strip().lower()
-            is_section_heading = text_norm in back_matter_labels
+            is_section_heading = (
+                text_norm in back_matter_labels
+                or any(text_norm.startswith(bml + ' ') or text_norm.startswith(bml + ':')
+                       for bml in back_matter_labels)
+            )
             if not is_section_heading:
                 # It's a repeated chapter heading inside Notes/etc — demote to h3
                 bm_level = None
@@ -4538,6 +4568,35 @@ blockquote p {{ text-indent: 0; }}
         elif bold and char_count < 100 and not text.endswith('.'):
             # Bold short text at body size → h3
             tag = 'h3'
+
+        # ── Pattern-based heading promotion ────────────────────────
+        # If font-cluster detection left this as 'p' or 'h3', check
+        # if the text matches specific chapter keyword patterns.
+        # Only "Chapter X", "Part X", etc. are promoted here — they're
+        # unambiguous. Numbered headings ("1. Title") are left to FIX 9
+        # and FIX 6 which have better context for disambiguation.
+        if tag in ('p', 'h3') and char_count < 120 and not text.endswith('.'):
+            text_stripped_tags = re.sub(r'<[^>]+>', '', text).strip()
+
+            # "Chapter X", "Part II", "Book Three", "Volume 1" — specific keywords
+            _ch_pat = re.match(
+                r'^(chapter|part|book|volume)\s+(\w+)',
+                text_stripped_tags, re.IGNORECASE
+            )
+            # Standalone structural keywords — only if bold or centered
+            _kw_pat = (re.match(
+                r'^(prologue|epilogue|foreword|afterword|'
+                r'conclusion|preface|postscript)\s*$',
+                text_stripped_tags, re.IGNORECASE
+            ) if (bold or centered) else None)
+
+            is_chapter_pattern = _ch_pat or _kw_pat
+
+            if is_chapter_pattern:
+                if not in_back_matter:
+                    tag = 'h2'
+                else:
+                    tag = 'h3'
 
         # ── Guard: dedication lines misclassified as headings ───
         # Dedications ("To my family...", "For my mother...") appear in the
@@ -4721,6 +4780,53 @@ blockquote p {{ text-indent: 0; }}
         log(f"  Duplicate headings demoted to <p>: {heading_dedup_skipped}")
 
     html = ''.join(html_parts)
+
+    # ── Heading hierarchy normalization ────────────────────────────
+    # Safety net: if ALL h1/h2 headings are backmatter labels and h3 headings
+    # contain chapter patterns, the hierarchy is inverted. Swap them.
+    h1_texts = re.findall(r'<h1>(.*?)</h1>', html)
+    h2_texts = re.findall(r'<h2>(.*?)</h2>', html)
+    h3_texts = re.findall(r'<h3>(.*?)</h3>', html)
+
+    _h1h2_plain = [re.sub(r'<[^>]+>', '', t).strip().lower()
+                   for t in h1_texts + h2_texts]
+    _h3_plain = [re.sub(r'<[^>]+>', '', t).strip() for t in h3_texts]
+
+    _h1h2_all_backmatter = (
+        bool(_h1h2_plain)
+        and all(t in back_matter_labels for t in _h1h2_plain)
+    )
+    _h3_chapter_pattern = re.compile(
+        r'^(chapter|part|\d+[\.\)])\s', re.IGNORECASE
+    )
+    _h3_has_chapters = any(_h3_chapter_pattern.match(t) for t in _h3_plain)
+
+    if _h1h2_all_backmatter and _h3_has_chapters and len(_h3_plain) >= 3:
+        log(f"  Heading hierarchy inversion detected: "
+            f"{len(h1_texts)} h1 + {len(h2_texts)} h2 are all backmatter, "
+            f"but {len(_h3_plain)} h3 headings contain chapter patterns")
+        log(f"  Promoting chapter h3 -> h2, demoting backmatter h1/h2 -> h3")
+
+        # Step 1: temporarily mark backmatter h1/h2 as h4 (placeholder)
+        for bm_label in back_matter_labels:
+            html = re.sub(
+                rf'<h1>([^<]*(?:{re.escape(bm_label)})[^<]*)</h1>',
+                r'<h4>\1</h4>', html, flags=re.IGNORECASE
+            )
+            html = re.sub(
+                rf'<h2>([^<]*(?:{re.escape(bm_label)})[^<]*)</h2>',
+                r'<h4>\1</h4>', html, flags=re.IGNORECASE
+            )
+        # Step 2: promote h3 chapters -> h2
+        html = re.sub(
+            r'<h3>((?:Chapter|Part|\d+[\.\)])\s[^<]*)</h3>',
+            r'<h2>\1</h2>', html, flags=re.IGNORECASE
+        )
+        # Step 3: convert placeholder h4 -> h3
+        html = html.replace('<h4>', '<h3>').replace('</h4>', '</h3>')
+
+        _h2_after = len(re.findall(r'<h2>', html))
+        log(f"  Hierarchy fix complete: now {_h2_after} h2 chapter headings")
 
     # ── FIX 6: Bookmark whitelist reconciliation ────────────────────
     # When a book has 5+ descriptive bookmarks, they define the authoritative TOC.
