@@ -4100,6 +4100,114 @@ function Test-ConversionQuality {
 
 #endregion
 
+#region -- Batch QA ----------------------------------------------------------
+
+function Invoke-BatchQA {
+    <#
+    .SYNOPSIS
+        Run batch QA diagnostics on a folder of ebooks.
+    .DESCRIPTION
+        Processes every supported file in the target folder through the extraction
+        and conversion pipeline, collects structured diagnostics, detects failure
+        patterns across books, and produces a summary report.
+
+        Results are stored in the pattern database and written as both
+        JSON (machine-readable) and Markdown (human-readable) reports.
+    .PARAMETER FolderPath
+        Path to folder containing ebooks to process. Required.
+    .PARAMETER Quick
+        Skip KFX conversion and visual QA. HTML extraction diagnostics only.
+        This is the default mode.
+    .PARAMETER Full
+        Include KFX conversion (slower, more complete).
+    .PARAMETER IncludeVQA
+        Run visual QA scoring on each book's KFX output. Requires --Full.
+        Adds ~$0.04 per book in API costs.
+    .PARAMETER Limit
+        Maximum number of books to process.
+    .PARAMETER FormatFilter
+        Filter to specific format (pdf, epub, mobi, etc.)
+    .PARAMETER Parallel
+        Number of concurrent workers. Default: 1.
+    .PARAMETER Resume
+        Resume an interrupted batch run by its run ID.
+    .PARAMETER NoDb
+        Skip writing results to the pattern database (dry run).
+    .EXAMPLE
+        Invoke-BatchQA -FolderPath "F:\TestBooks"
+    .EXAMPLE
+        Invoke-BatchQA -FolderPath "F:\TestBooks" -Quick -Limit 10
+    .EXAMPLE
+        Invoke-BatchQA -FolderPath "F:\Library\PDFs" -Full -IncludeVQA
+    .EXAMPLE
+        Invoke-BatchQA -FolderPath "F:\TestBooks" -Parallel 3
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string]$FolderPath,
+
+        [switch]$Quick,
+
+        [switch]$Full,
+
+        [switch]$IncludeVQA,
+
+        [int]$Limit,
+
+        [string]$FormatFilter,
+
+        [int]$Parallel = 1,
+
+        [string]$Resume,
+
+        [switch]$NoDb
+    )
+
+    if (-not (Test-Path $FolderPath -PathType Container)) {
+        Write-EbookLog "Folder not found: $FolderPath" -Level ERROR
+        return $false
+    }
+
+    $config   = Get-EbookConfig
+    $python   = $config.paths.python
+    $qaScript = Join-Path $script:ModuleRoot "tools\batch_qa.py"
+
+    if (-not (Test-Path $qaScript)) {
+        Write-EbookLog "batch_qa.py not found at $qaScript" -Level ERROR
+        return $false
+    }
+
+    # Build argument list
+    $argList = @($qaScript, "run", $FolderPath)
+
+    if ($Full)       { $argList += "--full" }
+    if ($IncludeVQA) { $argList += "--vqa" }
+    if ($Limit -gt 0){ $argList += "--limit"; $argList += $Limit.ToString() }
+    if ($FormatFilter){ $argList += "--format"; $argList += $FormatFilter }
+    if ($Parallel -gt 1){ $argList += "--parallel"; $argList += $Parallel.ToString() }
+    if ($Resume)     { $argList += "--resume"; $argList += $Resume }
+    if ($NoDb)       { $argList += "--no-db" }
+
+    Write-EbookLog "Starting Batch QA on: $FolderPath"
+
+    try {
+        & $python @argList 2>&1 | ForEach-Object { Write-Host $_ }
+        $success = $LASTEXITCODE -eq 0
+        if ($success) {
+            Write-EbookLog "Batch QA completed successfully"
+        } else {
+            Write-EbookLog "Batch QA finished with errors (exit code $LASTEXITCODE)" -Level WARN
+        }
+        return $success
+    } catch {
+        Write-EbookLog "Batch QA error: $_" -Level ERROR
+        return $false
+    }
+}
+
+#endregion
+
 #region -- Converge Loop -----------------------------------------------------
 
 function Invoke-ConvergeLoop {
@@ -4705,6 +4813,7 @@ Export-ModuleMember -Function @(
     'Get-ChapterStructure'
     'Test-EbookPipeline'
     'Test-ConversionQuality'
+    'Invoke-BatchQA'
     'Invoke-ConvergeLoop'
     'Write-EbookLog'
     'Get-EbookConfig'

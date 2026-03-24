@@ -21,6 +21,7 @@
         'Get-ChapterStructure'
         'Test-EbookPipeline'
         'Test-ConversionQuality'
+        'Invoke-BatchQA'
         'Invoke-ConvergeLoop'
         'Write-EbookLog'
         'Get-EbookConfig'
