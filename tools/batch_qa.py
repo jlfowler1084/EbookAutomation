@@ -279,6 +279,38 @@ FAILURE_PATTERNS = {
         "description": "Multiple double-space artifacts in output text",
         "recommendation": "Check text normalization pass",
     },
+    "LIKELY_SCAN_NO_OCR": {
+        "condition": lambda d: (
+            d["source_classification"].get("source_type") == "scan"
+            and d["structure"]["word_count"] < 100
+        ),
+        "severity": "medium",
+        "label": "Likely scanned PDF without OCR",
+        "description": (
+            "File size suggests a full book but almost no text extracted. "
+            "Likely image-only."
+        ),
+        "recommendation": (
+            "Re-run with OCR enabled, or add auto-OCR fallback "
+            "for classified scans"
+        ),
+    },
+    "DRM_ENCRYPTED": {
+        "condition": lambda d: any(
+            "encrypt" in e.lower() or "password" in e.lower()
+            for e in d["extraction"].get("errors", [])
+        ),
+        "severity": "medium",
+        "label": "DRM-encrypted PDF",
+        "description": (
+            "PDF has encryption. May have empty password "
+            "(easily decryptable) or real DRM."
+        ),
+        "recommendation": (
+            "Try empty-password decrypt; if that fails, "
+            "manual DRM removal needed"
+        ),
+    },
 }
 
 
@@ -324,24 +356,29 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
         "--html-extraction",
     ]
 
+    # Scale timeout: base 600s + 10s per MB over 20MB
+    file_size_mb = os.path.getsize(str(pdf_path)) / (1024 * 1024)
+    timeout = max(600, 600 + int((file_size_mb - 20) * 10)) if file_size_mb > 20 else 600
+
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            encoding='utf-8', errors='replace', timeout=600
+            encoding='utf-8', errors='replace', timeout=timeout
         )
     except subprocess.TimeoutExpired:
-        return None, None, "", "TIMEOUT: extraction exceeded 600s", -1
+        return None, None, "", f"TIMEOUT: extraction exceeded {timeout}s", -1
 
     # Find the output file (HTML or TXT)
+    # Must match pdf_to_balabolka.py's sanitization (line ~8821)
     stem = Path(pdf_path).stem
-    safe_stem = re.sub(r'[^\w\-.]', '_', stem)
+    safe_stem = re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
 
     html_files = sorted(
-        glob.glob(str(Path(output_dir) / f"*{safe_stem[:40]}*.html")),
+        glob.glob(str(Path(output_dir) / f"*{safe_stem[:30]}*.html")),
         key=os.path.getmtime
     )
     txt_files = sorted(
-        glob.glob(str(Path(output_dir) / f"*{safe_stem[:40]}*.txt")),
+        glob.glob(str(Path(output_dir) / f"*{safe_stem[:30]}*.txt")),
         key=os.path.getmtime
     )
 
@@ -362,12 +399,16 @@ def run_kfx_conversion_for_book(pdf_path):
         f'Convert-ToKindle -InputFile "{pdf_path}" -UsePdfminer -NoCache'
     )
 
+    # Scale timeout: base 600s + 10s per MB over 20MB
+    file_size_mb = os.path.getsize(str(pdf_path)) / (1024 * 1024)
+    timeout = max(600, 600 + int((file_size_mb - 20) * 10)) if file_size_mb > 20 else 600
+
     t0 = time.time()
     try:
         result = subprocess.run(
             ["powershell", "-Command", ps_cmd],
             capture_output=True, text=True,
-            encoding='utf-8', errors='replace', timeout=600
+            encoding='utf-8', errors='replace', timeout=timeout
         )
         duration = time.time() - t0
 
@@ -539,6 +580,41 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         diag["extraction"]["success"] = True
         diag["extraction"]["extraction_path"] = "direct"
         diag["extraction"]["duration_seconds"] = round(time.time() - t0, 1)
+
+    # ── Phase 2b: Scan detection + DRM detection ────────────────
+    if ext == 'pdf' and diag["extraction"]["success"]:
+        word_count = diag["structure"]["word_count"]
+        file_size = diag["file_size_bytes"]
+        # Low text yield relative to file size → likely scanned/image-only
+        if word_count < 100 and file_size > 5 * 1024 * 1024:
+            diag["source_classification"]["source_type"] = "scan"
+            diag["source_classification"]["confidence"] = 0.8
+            diag["extraction"]["warnings"].append(
+                "Very low text yield for file size — likely scanned/image-only PDF. "
+                "Consider re-running with --use-ocr flag."
+            )
+
+    if ext == 'pdf' and not diag["extraction"]["success"]:
+        # Check for DRM/encryption via pypdf
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(str(file_path))
+            if reader.is_encrypted:
+                decrypted = False
+                try:
+                    decrypted = reader.decrypt("") > 0
+                except Exception:
+                    pass
+                if decrypted:
+                    diag["extraction"]["warnings"].append(
+                        "PDF was encrypted with empty password — decryptable"
+                    )
+                else:
+                    diag["extraction"]["errors"].append(
+                        "PDF is encrypted and password-protected"
+                    )
+        except Exception:
+            pass  # Don't let DRM check block the pipeline
 
     # ── Phase 3: KFX conversion (skip in quick mode) ────────────
     if not quick and ext == 'pdf':

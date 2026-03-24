@@ -1,0 +1,614 @@
+{
+  "run_id": "batch_20260323_235228",
+  "generated_at": "2026-03-24T03:57:30.306954+00:00",
+  "summary": {
+    "books_total": 5,
+    "books_passed": 4,
+    "books_warned": 1,
+    "books_failed": 0,
+    "books_errored": 0,
+    "total_duration_seconds": 301.9,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": 5,
+      "format_filter": null,
+      "parallel": 2,
+      "folder_path": "F:\\Projects\\EbookAutomation\\batch_qa_intake\\completed\\batch_1"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "ENCODING_ERRORS",
+      "severity": "high",
+      "label": "Encoding errors in extracted text",
+      "description": "Non-UTF8 content caused garbled characters",
+      "recommendation": "Add encoding normalization as pre-processing step",
+      "book_count": 1,
+      "books": [
+        "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 2,
+      "books": [
+        "(Hermeneia) Walther Zimmerli - Ezekiel II_ A Commentary on the Book of the Prophet Ezekiel Chapters 25-48-Fortress Press (1988).pdf",
+        "(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf"
+      ],
+      "source_types": {
+        "unknown": 2
+      },
+      "formats": {
+        "pdf": 2
+      }
+    },
+    {
+      "pattern_id": "NO_FORMATTING_PRESERVED",
+      "severity": "medium",
+      "label": "No bold/italic formatting preserved",
+      "description": "Source likely had formatting but none was preserved in output",
+      "recommendation": "Check if extraction path supports inline formatting; may need HTML extraction mode",
+      "book_count": 1,
+      "books": [
+        "Adult Children of Alcoholics Syndrome_ A Step By Step Guide -- by Wayne Kritsberg -- Toronto, New York, Ontario, 1988 -- Toronto ; New York_ Bantam -- 9780553272796 -- 876f9d8369265793e7e5ba438ac35dbe -- Anna’s Archive.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "DOUBLE_SPACES",
+      "severity": "low",
+      "label": "Excessive double spaces (>20)",
+      "description": "Multiple double-space artifacts in output text",
+      "recommendation": "Check text normalization pass",
+      "book_count": 2,
+      "books": [
+        "(Hermeneia) Walther Zimmerli - Ezekiel II_ A Commentary on the Book of the Prophet Ezekiel Chapters 25-48-Fortress Press (1988).pdf",
+        "(Supplements to Vetus Testamentum 76) Thomas Renz - The Rhetorical Function of the Book of Ezekiel-Brill Academic Publishers (2002).pdf"
+      ],
+      "source_types": {
+        "unknown": 2
+      },
+      "formats": {
+        "pdf": 2
+      }
+    }
+  ],
+  "observations": [],
+  "books": [
+    {
+      "filename": "(Hermeneia) Walther Zimmerli - Ezekiel II_ A Commentary on the Book of the Prophet Ezekiel Chapters 25-48-Fortress Press (1988).pdf",
+      "file_size_bytes": 55841126,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_235228",
+      "timestamp": "2026-03-24T03:52:28.384800+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 301.4,
+        "html_produced": true,
+        "html_size_bytes": 2584505,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 39,
+        "heading_labels": [
+          "• • .--."
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 421841,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 114,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 3,
+        "italic_tags": 5415,
+        "bold_tags": 108,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 22
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        },
+        {
+          "category": "double_spaces",
+          "severity": "low",
+          "description": "Multiple double-space artifacts in output text"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf",
+      "file_size_bytes": 8536819,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_235228",
+      "timestamp": "2026-03-24T03:52:28.384800+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 28.3,
+        "html_produced": true,
+        "html_size_bytes": 302492,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 93,
+        "h1_count": 0,
+        "h2_count": 93,
+        "h3_count": 185,
+        "heading_labels": [
+          "Contents",
+          "Preface",
+          "1 Getting started",
+          "Introducing Python",
+          "Installing Python on Windows",
+          "Installing Python on Linux",
+          "Meeting the interpreter",
+          "Writing your first program",
+          "Employing variables",
+          "Obtaining user input",
+          "Correcting errors",
+          "Summary",
+          "2 Performing operations",
+          "Doing arithmetic",
+          "Assigning values",
+          "Comparing values",
+          "Assessing logic",
+          "Examining conditions",
+          "Setting precedence",
+          "Casting data types",
+          "Manipulating bits",
+          "3 Making statements",
+          "Writing lists",
+          "Manipulating lists",
+          "Restricting lists",
+          "Associating list elements",
+          "Branching with if",
+          "Looping while true",
+          "Looping over items",
+          "Breaking out of loops",
+          "4 Defining functions",
+          "Understanding scope",
+          "Supplying arguments",
+          "Returning values",
+          "Using callbacks",
+          "Adding placeholders",
+          "Producing generators",
+          "Handling exceptions",
+          "Debugging assertions",
+          "5 Importing modules",
+          "Storing functions",
+          "Owning function names",
+          "Interrogating the system",
+          "Performing mathematics",
+          "Calculating decimals",
+          "Telling the time",
+          "Running a timer",
+          "Matching patterns",
+          "6 Managing strings",
+          "Manipulating strings",
+          "Formatting strings",
+          "Modifying strings",
+          "Converting strings",
+          "Accessing files",
+          "Reading and writing files",
+          "Updating file strings",
+          "Pickling data",
+          "7 Programming objects",
+          "Encapsulating data",
+          "Creating instance objects",
+          "Addressing class attributes",
+          "Examining built-in attributes",
+          "Collecting garbage",
+          "Inheriting features",
+          "Overriding base methods",
+          "Harnessing polymorphism",
+          "8 Processing requests",
+          "Sending responses",
+          "Handling values",
+          "Submitting forms",
+          "Providing text areas",
+          "Checking boxes",
+          "Choosing radio buttons",
+          "Selecting options",
+          "Uploading files",
+          "9 Building interfaces",
+          "Launching a window",
+          "Responding to buttons",
+          "Displaying messages",
+          "Gathering entries",
+          "Listing options",
+          "Polling radio buttons",
+          "Adding images",
+          "10 Developing applications",
+          "Generating random numbers",
+          "Planning the program",
+          "Designing the interface",
+          "Assigning static properties",
+          "Initializing dynamic properties",
+          "Adding runtime functionality",
+          "Testing the program",
+          "Installing a freezing tool",
+          "Freezing the program"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 41135,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 11,
+        "italic_tags": 97,
+        "bold_tags": 1639,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 51
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "(Supplements to Vetus Testamentum 76) Thomas Renz - The Rhetorical Function of the Book of Ezekiel-Brill Academic Publishers (2002).pdf",
+      "file_size_bytes": 18455353,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_235228",
+      "timestamp": "2026-03-24T03:52:56.799479+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 43.7,
+        "html_produced": true,
+        "html_size_bytes": 927810,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 67,
+        "h1_count": 0,
+        "h2_count": 67,
+        "h3_count": 232,
+        "heading_labels": [
+          "THE RHETORICAL FUNCTION OF THE BOOK OF EZEKIEL",
+          "C. T he Book of Ezekiel in Rhetorical Perspective",
+          "1. T he Origin of the Book in the Rhetorical Activity",
+          "3. Towards a Rhetorical Analysis of the Book of",
+          "(f) T he Logic of the Steps in Rhetorical Analysis",
+          "II T he Historical Context of the Book of Ezekiel 27",
+          "A. Perspectives from the History of Research",
+          "B. Perspectives from the Rhetorical Situation Within",
+          "C. A Social and Social-Psychological Perspective",
+          "A. T he Rhetorical Disposition of the Book of Ezekiel",
+          "1. T he First Cycle (Chaps. 1-7): Presenting the Case",
+          "IV Rhetorical Techniques Used in the Book to Support",
+          "A. T he Creation of a Theocentric Narrative",
+          "B. T he Use of Legal Traditions in the Narrative",
+          "F. T he Salvation Passages in the First Half of the",
+          "188 6. Total Judgement and Survivors 190",
+          "2. T he Designation ל א ר שי in the Book of Ezekiel",
+          ".... 218 J. T he Silences of the Book 222",
+          "V T he Rhetorical Effectiveness of the Book 229",
+          "A. Was the Book a Fitting Response to the Rhetorical",
+          "C. Whose Interests Might Have Been Served",
+          "Originally? 242 D. Why was the Book Preserved? 245",
+          "Commentaries on the Book of Ezekiel",
+          "B. The Methodological Programme",
+          "C. The Book of Ezekiel in Rhetorical Perspective",
+          "1. The Origin of the Book in the Rhetorical Activity of Ezekiel",
+          "2. Levels of Communication in the Book of Ezekiel",
+          "3. Towards a Rhetorical Analysis of the Book of Ezekiel",
+          "(b) The Rhetorical Situation",
+          "(c) The Rhetorical Disposition",
+          "(d) The Rhetorical Techniques",
+          "(e) The Rhetorical Effectiveness",
+          "(f) The Logic of the Steps in Rhetorical Analysis",
+          "B. Perspectives from the Rhetorical Situation Within the Book",
+          "C. A Social and Social-Psychological Perspective",
+          "A. The Rhetorical Disposition of the Book of Ezekiel",
+          "B. An Outline of the First Part of the Book of Ezekiel (Chaps. 1-24)",
+          "1. The First Cycle (Chaps. 1-7): Presenting the Case",
+          "2. The Second Cycle (Chaps. 8-13): Countering Objections",
+          "3. The Third Cycle (Chaps. 14-19): Challenging the Readers",
+          "4. The Fourth Cycle (Chaps. 20-24): Summarising the Argument",
+          "C. An Outline of the Second Part of the Book of Ezekiel (Chaps. 25-32)",
+          "D. An Outline of the Third Part of the Book of Ezekiel (Chaps. 33-48)",
+          "A. The Creation of a Theocentric Narrative",
+          "B. The Use of Legal Traditions in the Narrative",
+          "C. The Use of Emotive Language",
+          "D. The Narrative Slows Down: Chap. 24",
+          "E. Summing up the First Part of the Book: The Watchman Motif",
+          "F. The Salvation Passages in the First Half of the Book",
+          "G. The Fate of Jerusalem in 587 BC",
+          "1. Preliminary Observations",
+          "2. The Symbolic Acts in Chaps. 4-5",
+          "3. The Oracles in Chaps. 5-7",
+          "4. Visions of Judgement: Chaps. 8-11",
+          "5. The Two Sign Acts in Chap. 12",
+          "7. The Fate of Jerusalem in Chaps. 15-23: An Overview",
+          "8. Conclusion",
+          "H. The Exiles Between Life and Death",
+          "I. Terms Used for the Community",
+          "1. The Use of עם and גוי in the Book of Ezekiel",
+          "2. The Designation ל א ך שי in the Book of Ezekiel <sup>219</sup>",
+          "J. The Silences of the Book",
+          "A. Was the Book a Fitting Response to the Rhetorical Situation?",
+          "B. What Happened After the Exile?",
+          "C. Whose Interests Might Have Been Served Originally?",
+          "D. Why was the Book Preserved?",
+          "Conclusion"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 140956,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 17,
+        "double_spaces": 126,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 18,
+        "italic_tags": 3132,
+        "bold_tags": 1741,
+        "footnotes_linked": 6,
+        "footnotes_unlinked": 619
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "double_spaces",
+          "severity": "low",
+          "description": "Multiple double-space artifacts in output text"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Adult Children of Alcoholics Syndrome_ A Step By Step Guide -- by Wayne Kritsberg -- Toronto, New York, Ontario, 1988 -- Toronto ; New York_ Bantam -- 9780553272796 -- 876f9d8369265793e7e5ba438ac35dbe -- Anna’s Archive.pdf",
+      "file_size_bytes": 13723596,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_235228",
+      "timestamp": "2026-03-24T03:53:40.698533+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 15.2,
+        "html_produced": true,
+        "html_size_bytes": 292069,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 230,
+        "heading_labels": [
+          "5YK DROME"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 46827,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 8
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf",
+      "file_size_bytes": 12984901,
+      "format": "pdf",
+      "batch_run_id": "batch_20260323_235228",
+      "timestamp": "2026-03-24T03:53:55.972619+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 151.6,
+        "html_produced": true,
+        "html_size_bytes": 1510663,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 5,
+        "heading_labels": [
+          "Genealogical Stemma"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 209958,
+        "page_count": 0,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 2,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 2582,
+        "bold_tags": 18,
+        "footnotes_linked": 1118,
+        "footnotes_unlinked": 194
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters"
+    }
+  ]
+}
