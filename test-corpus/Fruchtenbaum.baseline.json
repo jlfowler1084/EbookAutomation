@@ -1,14 +1,14 @@
 {
-  "captured_at": "2026-03-23T21:47:46.313436+00:00",
+  "captured_at": "2026-03-24T02:11:17.537920+00:00",
   "source_file": "Fruchtenbaum.pdf",
   "source_format": "pdf",
-  "extraction_path": "unknown",
+  "extraction_path": "pdfminer",
   "file_size_bytes": 35441182,
   "file_hash_sha256": "ab05d17639b7a9d44045ccc19b578d5a371d264170d10654e60f1fc433675d9b",
   "baseline": {
     "h1_count": 1,
     "h2_count": 27,
-    "h3_count": 469,
+    "h3_count": 366,
     "h1_headings": [
       "T5RFIELDLD5P:"
     ],
@@ -44,10 +44,10 @@
     "linked_footnotes": 0,
     "unlinked_footnotes": 0,
     "blockquotes": 3,
-    "em_tags": 3562,
+    "em_tags": 3413,
     "attributions": 0,
     "ligature_splits_remaining": 0,
-    "double_spaces": 3,
+    "double_spaces": 0,
     "standalone_page_numbers": 0,
     "has_front_matter_h1": false,
     "chapter_openings": {
@@ -76,6 +76,7 @@
       "AN INTERCHANGE ON HEBREW CHRISTIAN/": "In February 1985, the Grace Community Church of Los Angeles,",
       "APPENDIX IV": "The Book of Hebrews is the only epistle in which the author ",
       "A SURVEY OF THE HEBREW CHRISTIAN/": "The Book of Hebrews is the only epistle in which the author "
-    }
+    },
+    "kfx_size_kb": 3414
   }
 }

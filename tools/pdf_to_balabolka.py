@@ -3377,13 +3377,35 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
         key = (p['font_size'], p['is_bold'], p['is_italic'])
         font_dist[key] += 1
 
-    # Detect body font (most common combination)
-    body_font = font_dist.most_common(1)[0] if font_dist else ((12.0, False, False), 0)
-    body_size, body_bold, body_italic = body_font[0]
-    body_count = body_font[1]
+    # Detect body font: use character-count weighting (not paragraph count).
+    # Running headers / page numbers produce many short paragraphs that can
+    # outnumber body text paragraphs despite carrying far fewer total characters.
+    # Character weighting ensures the true body font wins.  This mirrors the
+    # PyMuPDF path (see _extract_html_with_pymupdf_columns).
+    size_char_counts = Counter()
+    for p in all_paras:
+        if p.get('is_page_marker'):
+            continue
+        sz = p['font_size']
+        if sz > 0:
+            size_char_counts[sz] += p.get('char_count', len(p.get('text', '')))
+    body_size = size_char_counts.most_common(1)[0][0] if size_char_counts else 12.0
+
+    # Find the most common style at the detected body size for logging
+    body_style_dist = Counter()
+    for p in all_paras:
+        if p.get('is_page_marker'):
+            continue
+        if abs(p['font_size'] - body_size) <= 0.5:
+            key = (p['is_bold'], p['is_italic'])
+            body_style_dist[key] += 1
+    if body_style_dist:
+        (body_bold, body_italic), body_count = body_style_dist.most_common(1)[0]
+    else:
+        body_bold, body_italic, body_count = False, False, 0
 
     log(f"  pdfminer extraction: {total_pages} pages, {len(all_paras)} paragraphs")
-    log(f"  Body font detected: {body_size}pt {'Bold' if body_bold else ''}{'Italic' if body_italic else 'Regular'} ({body_count} paragraphs)")
+    log(f"  Body font detected: {body_size}pt {'Bold' if body_bold else ''}{'Italic' if body_italic else 'Regular'} ({body_count} paragraphs, char-weighted)")
     log(f"  Font distribution:")
     for (sz, bld, itl), cnt in font_dist.most_common(10):
         style = 'Bold' if bld else ('Italic' if itl else 'Regular')
@@ -4087,17 +4109,25 @@ blockquote p {{ text-indent: 0; }}
                 tag = 'p'
                 display_override_em = True  # will wrap in <em> below
 
-        # ── Guard: long sentence fragments misclassified as headings ───
-        # Real headings are short and descriptive. A heading candidate over
-        # 80 chars that looks like a sentence (ends with sentence punctuation
-        # or continues mid-sentence with lowercase) is body text, not a heading.
-        if tag in ('h1', 'h2', 'h3') and len(text) > 80:
+        # ── Guard: prose fragments misclassified as headings ───
+        # Real headings don't start with lowercase, don't contain mid-sentence
+        # punctuation (commas, semicolons), and are typically short titles.
+        if tag in ('h1', 'h2', 'h3'):
+            _starts_lower = text and text[0].islower()
             _ends_sentence = bool(re.search(r'[.,;:!?]$', text))
+            _has_mid_comma = bool(re.search(r',\s', text[:-10] if len(text) > 10 else ''))
             _has_verb_pattern = bool(re.search(
                 r'\b(is|are|was|were|has|have|had|do|does|did|will|would|could|should|may|might|can|shall|that|which|who|use|uses|used|buy|sell|make|take|give)\b',
                 text, re.IGNORECASE
             ))
-            if _ends_sentence or _has_verb_pattern:
+            # Lowercase-start is never a real heading
+            if _starts_lower:
+                tag = 'p'
+            # Long text (>80 chars) with sentence markers → prose
+            elif len(text) > 80 and (_ends_sentence or _has_verb_pattern):
+                tag = 'p'
+            # Medium text (>40 chars) with mid-sentence commas + verbs → prose
+            elif len(text) > 40 and _has_mid_comma and _has_verb_pattern:
                 tag = 'p'
 
         # FIX 1+2: Detect epigraphs: italic paragraphs after a heading until

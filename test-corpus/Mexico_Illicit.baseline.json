@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-24T00:03:44.872379+00:00",
+  "captured_at": "2026-03-24T02:12:36.225066+00:00",
   "source_file": "Mexico_Illicit.pdf",
   "source_format": "pdf",
   "extraction_path": "pdfminer",
@@ -8,7 +8,7 @@
   "baseline": {
     "h1_count": 4,
     "h2_count": 8,
-    "h3_count": 68,
+    "h3_count": 47,
     "h1_headings": [
       "Abbreviations",
       "Appendix: Comparison of Territorial versus Transactional Drug-Trafficking Networks",
