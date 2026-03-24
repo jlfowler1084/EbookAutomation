@@ -7983,6 +7983,10 @@ def _fix_ligature_splits(para_dicts, log):
         j = 0
         while j < len(words) - 1:
             left = words[j]
+            # Skip words containing HTML tags entirely as merge starters
+            if '<' in left or '>' in left:
+                j += 1
+                continue
             lc = re.sub(r'^[^A-Za-z]*', '', re.sub(r'[^A-Za-z]*$', '', left))
             if not lc:
                 j += 1
@@ -7994,6 +7998,12 @@ def _fix_ligature_splits(para_dicts, log):
                 all_ok = True
                 trailing_remainder = ''
                 for k in range(j, j + span):
+                    # Skip words containing HTML tags — merging tag fragments
+                    # with text produces false positives (e.g. <em>+End→"emend")
+                    # and destroys the tag structure, causing unclosed <em>/<strong>.
+                    if '<' in words[k] or '>' in words[k]:
+                        all_ok = False
+                        break
                     frag = re.sub(r'^[^A-Za-z]*', '', re.sub(r'[^A-Za-z]*$', '', words[k]))
                     if not frag:
                         all_ok = False
