@@ -49,6 +49,333 @@ EMPHATIC_RATE = "-1"           # Rate for emphatic closers (slower)
 #  CORE PROCESSING LOGIC
 # ───────────────────────────────────────────────────────────
 
+# ── Common English Words (top ~750 high-frequency words from COCA) ────────
+# Used by score_text_layer_quality() for word plausibility checks.
+# Includes academic/religious terms since the corpus is heavy on those.
+_COMMON_ENGLISH_WORDS = {
+    # Function words & pronouns
+    'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it',
+    'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at', 'this',
+    'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she', 'or',
+    'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their', 'what',
+    'so', 'up', 'out', 'if', 'about', 'who', 'get', 'which', 'go', 'me',
+    'when', 'make', 'can', 'like', 'time', 'no', 'just', 'him', 'know',
+    'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could',
+    'them', 'see', 'other', 'than', 'then', 'now', 'look', 'only', 'come',
+    'its', 'over', 'think', 'also', 'back', 'after', 'use', 'two', 'how',
+    'our', 'work', 'first', 'well', 'way', 'even', 'new', 'want',
+    'because', 'any', 'these', 'give', 'day', 'most', 'us',
+    # Common verbs & adjectives
+    'great', 'has', 'had', 'was', 'were', 'been', 'said', 'each', 'more',
+    'may', 'such', 'much', 'should', 'very', 'made', 'did', 'where',
+    'before', 'between', 'being', 'under', 'never', 'same', 'another',
+    'while', 'last', 'might', 'own', 'still', 'found', 'many', 'through',
+    'long', 'those', 'does', 'down', 'part', 'must', 'world', 'again',
+    'here', 'both', 'during', 'set', 'three', 'small', 'right', 'house',
+    'place', 'high', 'every', 'hand', 'large', 'old', 'off', 'left',
+    'end', 'along', 'little', 'state', 'men', 'man', 'life', 'head',
+    'too', 'went', 'few', 'without', 'against', 'until', 'since',
+    # Academic/religious terms (corpus-relevant)
+    'god', 'church', 'chapter', 'king', 'however', 'power', 'book',
+    'given', 'among', 'rather', 'often', 'already', 'lord', 'son',
+    'point', 'fact', 'general', 'name', 'upon', 'though', 'second',
+    'called', 'case', 'number', 'water', 'money', 'really', 'body',
+    'father', 'keep', 'eyes', 'mind', 'children', 'city', 'earth',
+    'mother', 'light', 'story', 'young', 'night', 'home', 'turn',
+    'play', 'run', 'read', 'help', 'line', 'things', 'move', 'live',
+    'believe', 'tell', 'hold', 'bring', 'happen', 'next', 'put',
+    'need', 'late', 'hard', 'start', 'open', 'try', 'walk', 'begin',
+    'show', 'hear', 'close', 'seem', 'stop', 'change', 'call', 'pay',
+    'let', 'mean', 'leave', 'keep', 'form', 'become', 'different',
+    'important', 'always', 'country', 'thought', 'find', 'thing',
+    'might', 'went', 'made', 'world', 'enough', 'almost', 'took',
+    'away', 'something', 'nothing', 'got', 'own', 'really', 'being',
+    'above', 'below', 'within', 'later', 'done', 'political',
+    'government', 'woman', 'following', 'number', 'four', 'five',
+    'six', 'seven', 'eight', 'nine', 'ten', 'hundred', 'thousand',
+    # Content words (extended)
+    'able', 'across', 'act', 'actually', 'age', 'ago', 'agree', 'air',
+    'although', 'american', 'answer', 'appear', 'area', 'ask', 'away',
+    'bad', 'based', 'became', 'best', 'better', 'big', 'black', 'blood',
+    'blue', 'boy', 'brought', 'build', 'business', 'buy', 'came',
+    'car', 'care', 'carry', 'cause', 'central', 'certain', 'child',
+    'clear', 'coming', 'common', 'community', 'company', 'complete',
+    'continue', 'control', 'course', 'court', 'cut', 'dark', 'data',
+    'dead', 'deal', 'death', 'deep', 'development', 'early', 'east',
+    'economic', 'effect', 'either', 'else', 'enough', 'entire',
+    'especially', 'ever', 'evidence', 'example', 'experience', 'eye',
+    'face', 'family', 'far', 'feel', 'field', 'figure', 'final',
+    'fire', 'follow', 'food', 'force', 'foreign', 'free', 'front',
+    'full', 'further', 'future', 'girl', 'going', 'green', 'ground',
+    'group', 'grow', 'growth', 'guy', 'half', 'having', 'health',
+    'human', 'idea', 'include', 'including', 'increase', 'indeed',
+    'individual', 'information', 'instead', 'interest', 'issue',
+    'job', 'kind', 'known', 'land', 'language', 'law', 'least',
+    'less', 'level', 'local', 'looking', 'lose', 'lost', 'love',
+    'low', 'making', 'market', 'matter', 'member', 'military',
+    'million', 'moment', 'month', 'morning', 'move', 'national',
+    'natural', 'nature', 'near', 'necessary', 'nor', 'north', 'note',
+    'office', 'once', 'order', 'own', 'past', 'period', 'perhaps',
+    'person', 'personal', 'place', 'plan', 'point', 'police',
+    'policy', 'position', 'possible', 'present', 'president',
+    'problem', 'process', 'produce', 'program', 'provide', 'public',
+    'question', 'quite', 'rate', 'real', 'reason', 'receive',
+    'recent', 'record', 'red', 'region', 'remain', 'remember',
+    'report', 'require', 'research', 'result', 'return', 'road',
+    'room', 'rule', 'school', 'sense', 'serve', 'service', 'several',
+    'shall', 'short', 'side', 'significant', 'similar', 'simply',
+    'single', 'sit', 'situation', 'social', 'society', 'south',
+    'space', 'speak', 'special', 'stand', 'strong', 'study',
+    'subject', 'support', 'sure', 'system', 'table', 'taken',
+    'talk', 'tell', 'term', 'test', 'themselves', 'therefore',
+    'third', 'today', 'together', 'toward', 'true', 'try',
+    'type', 'understand', 'united', 'value', 'view', 'voice',
+    'war', 'week', 'west', 'whether', 'white', 'whole', 'whose',
+    'why', 'wife', 'wish', 'woman', 'word', 'write', 'written',
+    'wrong', 'year', 'yes', 'yet',
+    # Religious/theological (corpus-heavy)
+    'spirit', 'temple', 'priest', 'prophet', 'israel', 'jerusalem',
+    'jewish', 'christian', 'bible', 'scripture', 'faith', 'prayer',
+    'heaven', 'holy', 'ancient', 'text', 'verse', 'psalm', 'prophet',
+    'worship', 'covenant', 'kingdom', 'salvation', 'divine', 'sacred',
+    'doctrine', 'tradition', 'teaching', 'revelation', 'angel',
+    'sin', 'grace', 'soul', 'blessing', 'people', 'law', 'truth',
+    # Academic/scholarly
+    'theory', 'analysis', 'approach', 'argument', 'author',
+    'century', 'chapter', 'claim', 'concept', 'conclusion',
+    'context', 'critical', 'cultural', 'discussion', 'editor',
+    'essay', 'focus', 'historical', 'history', 'interpretation',
+    'introduction', 'journal', 'literature', 'method', 'modern',
+    'moral', 'movement', 'noted', 'original', 'page', 'particular',
+    'passage', 'perspective', 'philosophical', 'practice',
+    'primary', 'principle', 'published', 'reference', 'role',
+    'scholar', 'section', 'series', 'source', 'suggests', 'theory',
+    'thesis', 'thus', 'university', 'volume', 'according',
+}
+
+
+def score_text_layer_quality(text, log=None):
+    """Score extracted text quality on a 0-100 scale.
+
+    Used as a quality gate after extraction to decide whether the result
+    is good enough to proceed, or should escalate to a higher extraction tier.
+
+    Checks:
+    - Character validity (Unicode printable ratio)
+    - Word plausibility (common word hit rate)
+    - Word length distribution (detects merges and garbling)
+    - Encoding artifacts (replacement chars, Latin-1 debris)
+    - Repetition (detects OCR stuttering, header/footer repeats)
+
+    Args:
+        text: Extracted text string (at least 1000 chars for reliable scoring)
+        log: Optional logging function
+
+    Returns:
+        dict with keys:
+            'score': int (0-100)
+            'details': dict of per-check scores and findings
+            'recommendation': str ('accept', 'try_reocr', 'try_vision', 'manual_review')
+            'tier_suggestion': int (1=accept, 2=re-ocr, 3=vision)
+    """
+    if log is None:
+        log = lambda msg: None
+
+    # Short-circuit for empty or very short text
+    if not text or len(text.strip()) < 100:
+        return {
+            'score': 0,
+            'details': {'error': 'Text too short for reliable scoring'},
+            'recommendation': 'manual_review',
+            'tier_suggestion': 3,
+        }
+
+    # ── Sample from the middle of the book (avoid front/back matter) ──
+    text_len = len(text)
+    start = text_len // 10
+    end = text_len * 9 // 10
+    if (end - start) > 5000:
+        sample = text[start:start + 5000]
+    else:
+        sample = text[start:end] if end > start else text
+
+    details = {}
+
+    # ── Check 1: Unicode printable ratio (25% weight) ──────────────
+    printable_count = 0
+    total_chars = len(sample)
+    for ch in sample:
+        cp = ord(ch)
+        # Standard printable: letters, digits, punctuation, whitespace
+        if ch.isprintable() or ch in ('\n', '\r', '\t'):
+            # Exclude private use area (U+E000-U+F8FF)
+            if not (0xE000 <= cp <= 0xF8FF):
+                printable_count += 1
+    printable_ratio = printable_count / max(total_chars, 1)
+    if printable_ratio > 0.99:
+        check1_score = 100
+    elif printable_ratio < 0.85:
+        check1_score = 0
+    else:
+        check1_score = int(((printable_ratio - 0.85) / 0.14) * 100)
+    details['unicode_printable'] = {
+        'score': check1_score,
+        'ratio': round(printable_ratio, 4),
+        'non_printable_count': total_chars - printable_count,
+    }
+
+    # ── Check 2: Common word hit rate (25% weight) ─────────────────
+    # Split into words, lowercase, strip punctuation
+    raw_words = sample.split()
+    stripped_words = []
+    for w in raw_words:
+        cleaned = w.lower().strip('.,;:!?()[]{}"\'-—–…»«""''')
+        if cleaned and cleaned.isalpha() and len(cleaned) > 1:
+            stripped_words.append(cleaned)
+    if stripped_words:
+        # Sample up to 500 words for speed
+        word_sample = stripped_words[:500]
+        hits = sum(1 for w in word_sample if w in _COMMON_ENGLISH_WORDS)
+        hit_rate = hits / len(word_sample)
+    else:
+        hit_rate = 0.0
+    if hit_rate > 0.40:
+        check2_score = 100
+    elif hit_rate < 0.10:
+        check2_score = 0
+    else:
+        check2_score = int(((hit_rate - 0.10) / 0.30) * 100)
+    details['common_word_rate'] = {
+        'score': check2_score,
+        'hit_rate': round(hit_rate, 4),
+        'words_sampled': len(stripped_words[:500]),
+        'hits': hits if stripped_words else 0,
+    }
+
+    # ── Check 3: Word length distribution (15% weight) ─────────────
+    word_lengths = [len(w) for w in stripped_words[:500]] if stripped_words else []
+    if len(word_lengths) >= 10:
+        avg_len = statistics.mean(word_lengths)
+        std_len = statistics.stdev(word_lengths)
+        # Normal English: avg 4-7, stddev 2-5
+        avg_ok = 4.0 <= avg_len <= 7.0
+        std_ok = 2.0 <= std_len <= 5.0
+        if avg_ok and std_ok:
+            check3_score = 100
+        else:
+            penalty = 0
+            if avg_len < 4.0:
+                penalty += min(40, int((4.0 - avg_len) * 20))
+            elif avg_len > 7.0:
+                penalty += min(40, int((avg_len - 7.0) * 15))
+            if std_len < 2.0:
+                penalty += min(30, int((2.0 - std_len) * 15))
+            elif std_len > 5.0:
+                penalty += min(30, int((std_len - 5.0) * 10))
+            check3_score = max(0, 100 - penalty)
+    else:
+        check3_score = 50  # Not enough data — neutral score
+        avg_len = 0.0
+        std_len = 0.0
+    details['word_length_distribution'] = {
+        'score': check3_score,
+        'avg_length': round(avg_len, 2),
+        'stddev': round(std_len, 2),
+        'words_measured': len(word_lengths),
+    }
+
+    # ── Check 4: Encoding artifact count (20% weight) ──────────────
+    artifact_count = 0
+    # Replacement characters (U+FFFD)
+    fffd_count = sample.count('\ufffd')
+    artifact_count += fffd_count
+    # UTF-8 decoded as Latin-1 artifacts
+    latin1_debris = len(re.findall(r'[ÃÂ][\x80-\xBF]|â€[^\w]', sample))
+    artifact_count += latin1_debris
+    # Windows-1252 control chars (U+0080-U+009F)
+    win1252_count = sum(1 for ch in sample if 0x0080 <= ord(ch) <= 0x009F)
+    artifact_count += win1252_count
+    # Sequences of 3+ non-ASCII non-diacritical chars
+    # (common diacritics: U+00C0-U+024F are OK)
+    non_ascii_seqs = re.findall(r'[^\x00-\x7F\u00C0-\u024F]{3,}', sample)
+    artifact_count += len(non_ascii_seqs)
+
+    per_1000 = (artifact_count / max(total_chars, 1)) * 1000
+    if per_1000 == 0:
+        check4_score = 100
+    elif per_1000 < 1:
+        check4_score = 80
+    elif per_1000 > 10:
+        check4_score = 0
+    else:
+        check4_score = max(0, int(80 - ((per_1000 - 1) / 9) * 80))
+    details['encoding_artifacts'] = {
+        'score': check4_score,
+        'total_artifacts': artifact_count,
+        'per_1000_chars': round(per_1000, 2),
+        'fffd_count': fffd_count,
+        'latin1_debris': latin1_debris,
+        'win1252_control': win1252_count,
+        'non_ascii_sequences': len(non_ascii_seqs),
+    }
+
+    # ── Check 5: Repeated line ratio (15% weight) ──────────────────
+    lines = [l.strip() for l in sample.split('\n') if l.strip()]
+    total_lines = len(lines)
+    if total_lines >= 10:
+        from collections import Counter as _Counter
+        line_counts = _Counter(lines)
+        repeated_occurrences = sum(
+            count for line, count in line_counts.items() if count >= 3
+        )
+        repeat_ratio = repeated_occurrences / total_lines
+        if repeat_ratio < 0.02:
+            check5_score = 100
+        elif repeat_ratio > 0.15:
+            check5_score = 0
+        else:
+            check5_score = max(0, int(100 - ((repeat_ratio - 0.02) / 0.13) * 100))
+    else:
+        check5_score = 80  # Not enough lines — assume mostly OK
+        repeat_ratio = 0.0
+    details['repeated_lines'] = {
+        'score': check5_score,
+        'ratio': round(repeat_ratio, 4) if total_lines >= 10 else 0.0,
+        'total_lines': total_lines,
+    }
+
+    # ── Weighted overall score ─────────────────────────────────────
+    weighted_score = (
+        check1_score * 0.25 +
+        check2_score * 0.25 +
+        check3_score * 0.15 +
+        check4_score * 0.20 +
+        check5_score * 0.15
+    )
+    score = max(0, min(100, int(round(weighted_score))))
+
+    # ── Recommendation logic ───────────────────────────────────────
+    if score >= 75:
+        recommendation = 'accept'
+        tier_suggestion = 1
+    elif score >= 50:
+        recommendation = 'try_reocr'
+        tier_suggestion = 2
+    elif score >= 30:
+        recommendation = 'try_vision'
+        tier_suggestion = 3
+    else:
+        recommendation = 'manual_review'
+        tier_suggestion = 3
+
+    return {
+        'score': score,
+        'details': details,
+        'recommendation': recommendation,
+        'tier_suggestion': tier_suggestion,
+    }
+
+
 def extract_cover_image(pdf_path, output_path, log, dpi=300, poppler_path=None):
     """
     Render the first page of a PDF as a JPEG cover image.
@@ -603,7 +930,18 @@ def extract_text(pdf_path, log, force_columns=False):
         if (i + 1) % 50 == 0:
             log(f"  Extracted {i + 1}/{total} pages...")
 
-    return "\n".join(pages)
+    full_text = "\n".join(pages)
+
+    # ── Text layer quality scoring ──────────────────────────────────
+    quality = score_text_layer_quality(full_text, log)
+    log(f"  Text layer quality score: {quality['score']}/100 — {quality['recommendation']}")
+    if quality['score'] < 75:
+        log(f"  ⚠ Quality below threshold. Details:")
+        for check, detail in quality['details'].items():
+            if isinstance(detail, dict) and 'score' in detail:
+                log(f"    {check}: {detail['score']}/100")
+
+    return full_text
 
 
 def extract_text_from_epub(epub_path, log):
@@ -1095,7 +1433,18 @@ def _extract_with_pdfminer(pdf_path, total_pages, log):
                 log(f"  Extracted {i + 1}/{total_pages} pages (pdfminer)...")
 
     log(f"  pdfminer extraction complete: {len(all_pages)} pages with content")
-    return "\n".join(all_pages)
+    full_text = "\n".join(all_pages)
+
+    # ── Text layer quality scoring ──────────────────────────────────
+    quality = score_text_layer_quality(full_text, log)
+    log(f"  Text layer quality score: {quality['score']}/100 — {quality['recommendation']}")
+    if quality['score'] < 75:
+        log(f"  ⚠ Quality below threshold. Details:")
+        for check, detail in quality['details'].items():
+            if isinstance(detail, dict) and 'score' in detail:
+                log(f"    {check}: {detail['score']}/100")
+
+    return full_text
 
 
 # Regex patterns for structural heading detection (used by clean_and_join)
@@ -8231,6 +8580,19 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     log("\n-- STEP 1: Extracting text with font metadata --")
     para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log, force_columns=force_columns)
+
+    # ── Text layer quality scoring ──────────────────────────────────
+    all_text_for_scoring = ' '.join(
+        p['text'] for p in para_dicts
+        if p.get('text') and not p.get('is_page_marker')
+    )
+    quality = score_text_layer_quality(all_text_for_scoring, log)
+    log(f"  Text layer quality score: {quality['score']}/100 — {quality['recommendation']}")
+    if quality['score'] < 75:
+        log(f"  ⚠ Quality below threshold. Details:")
+        for check, detail in quality['details'].items():
+            if isinstance(detail, dict) and 'score' in detail:
+                log(f"    {check}: {detail['score']}/100")
 
     log("\n-- STEP 1a: Fixing word merges in extraction output ----")
     _fix_word_merges_html(para_dicts, log)

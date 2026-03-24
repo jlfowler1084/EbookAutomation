@@ -56,6 +56,12 @@ try:
 except ImportError:
     HAS_TEST_PIPELINE = False
 
+try:
+    from pdf_to_balabolka import score_text_layer_quality
+    HAS_TEXT_SCORER = True
+except ImportError:
+    HAS_TEXT_SCORER = False
+
 logger = logging.getLogger("batch_qa")
 
 # Supported ebook formats
@@ -327,6 +333,37 @@ FAILURE_PATTERNS = {
             "Try re-running with --force-columns flag to compare output"
         ),
     },
+    "TEXT_LAYER_LOW_QUALITY": {
+        "condition": lambda d: (
+            d["text_quality"].get("text_layer_score", 100) < 50
+            and d["structure"]["word_count"] > 100
+        ),
+        "severity": "high",
+        "label": "Text layer quality below 50 — needs re-OCR or Vision extraction",
+        "description": (
+            "Extracted text has significant quality issues "
+            "(encoding errors, garbled characters, or merged words)"
+        ),
+        "recommendation": (
+            "Escalate to Tier 2 (Tesseract re-OCR) or "
+            "Tier 3 (Claude Vision)"
+        ),
+    },
+    "TEXT_LAYER_BORDERLINE": {
+        "condition": lambda d: (
+            50 <= d["text_quality"].get("text_layer_score", 100) < 75
+            and d["structure"]["word_count"] > 100
+        ),
+        "severity": "medium",
+        "label": "Text layer quality 50-74 — may benefit from re-OCR",
+        "description": (
+            "Extracted text has moderate quality issues "
+            "that re-OCR might improve"
+        ),
+        "recommendation": (
+            "Try Tier 2 (Tesseract re-OCR) and compare results"
+        ),
+    },
 }
 
 
@@ -519,6 +556,9 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "bold_tags": 0,
             "footnotes_linked": 0,
             "footnotes_unlinked": 0,
+            "text_layer_score": None,
+            "tier_suggestion": None,
+            "recommendation": None,
         },
         "kindle_conversion": {
             "attempted": False,
@@ -746,6 +786,17 @@ def _analyze_html_structure(diag, html_content):
 
     # Encoding error heuristic: count replacement characters
     diag["text_quality"]["encoding_errors"] = body_text.count('\ufffd')
+
+    # Text layer quality scoring
+    if HAS_TEXT_SCORER and diag["structure"]["word_count"] > 100:
+        try:
+            quality = score_text_layer_quality(body_text)
+            diag["text_quality"]["text_layer_score"] = quality["score"]
+            diag["text_quality"]["score_details"] = quality["details"]
+            diag["text_quality"]["tier_suggestion"] = quality["tier_suggestion"]
+            diag["text_quality"]["recommendation"] = quality["recommendation"]
+        except Exception:
+            pass  # non-blocking
 
 
 def _detect_issues(diag):
@@ -1197,6 +1248,9 @@ def record_batch_to_db(run_id, diagnostics_list, duration, flags,
                         book_id=book_id,
                         extraction_path=diag["extraction"]["extraction_path"],
                         vqa_score=diag.get("visual_qa", {}).get("score"),
+                        text_quality_score=diag["text_quality"].get(
+                            "text_layer_score"
+                        ),
                         duration_seconds=diag["extraction"]["duration_seconds"],
                         api_input_tokens=0,
                         api_output_tokens=0,
@@ -1532,7 +1586,10 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
                                  "encoding_errors": 0, "standalone_page_numbers": 0,
                                  "blockquotes_detected": 0, "italic_tags": 0,
                                  "bold_tags": 0, "footnotes_linked": 0,
-                                 "footnotes_unlinked": 0},
+                                 "footnotes_unlinked": 0,
+                                 "text_layer_score": None,
+                                 "tier_suggestion": None,
+                                 "recommendation": None},
                 "kindle_conversion": {"attempted": False, "success": False,
                                       "kfx_size_bytes": 0, "duration_seconds": 0},
                 "visual_qa": {"attempted": False, "score": None, "pass_threshold": 70,
