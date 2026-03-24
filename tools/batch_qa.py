@@ -311,6 +311,22 @@ FAILURE_PATTERNS = {
             "manual DRM removal needed"
         ),
     },
+    "MULTI_COLUMN_NOT_ROUTED": {
+        "condition": lambda d: (
+            d["source_classification"].get("column_confidence", 0) >= 0.3
+            and d["source_classification"].get("column_confidence", 0) < 0.6
+            and d["structure"]["word_count"] > 5000
+        ),
+        "severity": "low",
+        "label": "Possible multi-column PDF not routed to column extractor",
+        "description": (
+            "Column detection confidence is 30-59% — mixed layout. "
+            "May benefit from column-aware extraction on some pages."
+        ),
+        "recommendation": (
+            "Try re-running with --force-columns flag to compare output"
+        ),
+    },
 }
 
 
@@ -581,8 +597,24 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         diag["extraction"]["extraction_path"] = "direct"
         diag["extraction"]["duration_seconds"] = round(time.time() - t0, 1)
 
-    # ── Phase 2b: Scan detection + DRM detection ────────────────
+    # ── Phase 2b: Column detection + Scan detection + DRM detection ──
     if ext == 'pdf' and diag["extraction"]["success"]:
+        # Probe column layout for diagnostics
+        try:
+            from pdf_to_balabolka import detect_column_layout
+            col_info = detect_column_layout(
+                str(file_path), lambda msg: None)
+            diag["source_classification"]["is_multicolumn"] = col_info.get(
+                "is_multicolumn", False)
+            diag["source_classification"]["column_confidence"] = col_info.get(
+                "confidence", 0)
+            diag["source_classification"]["num_columns"] = col_info.get(
+                "num_columns", 1)
+            if col_info.get("is_multicolumn"):
+                diag["source_classification"]["source_type"] = "multi_column"
+        except Exception:
+            pass  # non-blocking
+
         word_count = diag["structure"]["word_count"]
         file_size = diag["file_size_bytes"]
         # Low text yield relative to file size → likely scanned/image-only
