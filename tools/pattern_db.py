@@ -338,6 +338,18 @@ def _migrate(conn):
         ("extraction_cache", "escalation_details", "TEXT"),
         # FU-3: Duration breakdown
         ("conversions", "duration_breakdown", "TEXT"),
+        # DE-1: Encryption and permissions
+        ("books", "is_encrypted", "BOOLEAN"),
+        ("books", "pdf_permissions", "TEXT"),
+        # DE-2: Bookmark depth and count
+        ("books", "bookmark_count", "INTEGER"),
+        ("books", "bookmark_max_depth", "INTEGER"),
+        # DE-4: Image density
+        ("books", "image_density", "TEXT"),
+        # DE-5: Encoding distribution
+        ("conversions", "encoding_distribution", "TEXT"),
+        # DE-6: Extraction completeness
+        ("conversions", "extraction_completeness", "TEXT"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -392,6 +404,20 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
             source_file_hash = compute_file_hash(source_file_path)
         except OSError:
             pass
+    # DE-3: Auto-populate file size if not provided
+    if file_size_bytes is None and source_file_path and os.path.isfile(source_file_path):
+        try:
+            file_size_bytes = os.path.getsize(source_file_path)
+        except Exception:
+            pass
+    # DE-3: Auto-populate page count for PDFs if not provided
+    if page_count is None and source_file_path and str(source_file_path).lower().endswith('.pdf'):
+        try:
+            from pypdf import PdfReader as _PageCountReader
+            _pcr = _PageCountReader(source_file_path)
+            page_count = len(_pcr.pages)
+        except Exception:
+            pass
     if isinstance(detected_scripts, dict):
         detected_scripts = json.dumps(detected_scripts)
     title_hash = _normalize_title_hash(title, author)
@@ -430,6 +456,41 @@ def get_book_by_filename(filename, db_path=None):
         conn.close()
 
 
+def _backfill_book_nulls(book_id, existing, kwargs, db_path=None):
+    """DE-3: Backfill NULL fields on existing book records."""
+    updates = []
+    params = []
+    src_path = kwargs.get('source_file_path')
+    for col, val in [
+        ('file_size_bytes', kwargs.get('file_size_bytes')),
+        ('page_count', kwargs.get('page_count')),
+        ('pdf_producer', kwargs.get('pdf_producer')),
+        ('pdf_creator', kwargs.get('pdf_creator')),
+        ('source_file_path', src_path),
+        ('source_file_hash', kwargs.get('source_file_hash')),
+    ]:
+        if val and not existing.get(col):
+            updates.append(f"{col} = ?")
+            params.append(val)
+    # Auto-compute missing file_size_bytes
+    if not existing.get('file_size_bytes') and 'file_size_bytes' not in [u.split(' =')[0] for u in updates]:
+        if src_path and os.path.isfile(src_path):
+            try:
+                updates.append("file_size_bytes = ?")
+                params.append(os.path.getsize(src_path))
+            except Exception:
+                pass
+    if updates:
+        params.append(book_id)
+        conn = get_db(db_path)
+        try:
+            conn.execute(
+                f"UPDATE books SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def get_or_create_book(filename, db_path=None, **kwargs):
     """Get existing book ID or create new. Returns book ID.
 
@@ -437,6 +498,7 @@ def get_or_create_book(filename, db_path=None, **kwargs):
     """
     existing = get_book_by_filename(filename, db_path)
     if existing:
+        _backfill_book_nulls(existing["id"], existing, kwargs, db_path)
         return existing["id"]
 
     # Try source_file_path match before creating a duplicate

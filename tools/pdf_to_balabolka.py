@@ -948,6 +948,108 @@ def detect_column_layout(pdf_path, log, sample_pages=8):
                 'column_boundaries': [], 'confidence': 0.0, 'page_width': 0.0}
 
 
+def detect_image_density(pdf_path, log, sample_pages=10):
+    """Detect embedded image density in a PDF (DE-4).
+
+    A PDF with ~1 image per page is likely a scan.
+    Returns dict: {total_images, pages_sampled, images_per_page, likely_scan}
+    """
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        total_pages = len(reader.pages)
+        if total_pages == 0:
+            return {'total_images': 0, 'pages_sampled': 0,
+                    'images_per_page': 0, 'likely_scan': False}
+
+        num_samples = min(sample_pages, total_pages)
+        if total_pages <= sample_pages:
+            sample_indices = list(range(total_pages))
+        else:
+            sample_indices = list(set(
+                min(int(total_pages * (i + 1) / (num_samples + 1)), total_pages - 1)
+                for i in range(num_samples)
+            ))
+
+        total_images = 0
+        for idx in sample_indices:
+            try:
+                page = reader.pages[idx]
+                resources = page.get('/Resources')
+                if resources:
+                    xobjects = resources.get('/XObject')
+                    if xobjects:
+                        xobj = xobjects.get_object() if hasattr(xobjects, 'get_object') else xobjects
+                        if isinstance(xobj, dict):
+                            for _, obj_ref in xobj.items():
+                                try:
+                                    obj = obj_ref.get_object() if hasattr(obj_ref, 'get_object') else obj_ref
+                                    if isinstance(obj, dict) and obj.get('/Subtype') == '/Image':
+                                        total_images += 1
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
+
+        images_per_page = total_images / len(sample_indices) if sample_indices else 0
+        likely_scan = images_per_page >= 0.8 and total_images >= len(sample_indices) * 0.8
+
+        return {
+            'total_images': total_images,
+            'pages_sampled': len(sample_indices),
+            'images_per_page': round(images_per_page, 2),
+            'likely_scan': likely_scan,
+        }
+    except Exception as e:
+        log(f"  Image density detection failed: {e}")
+        return {'total_images': 0, 'pages_sampled': 0,
+                'images_per_page': 0, 'likely_scan': False}
+
+
+def analyze_encoding_distribution(text, sample_size=10000):
+    """Analyze character encoding distribution of extracted text (DE-5).
+
+    Returns percentages of characters in different Unicode ranges.
+    High latin_ext_pct correlates with encoding confusion.
+    """
+    if not text or len(text.strip()) < 50:
+        return {'ascii_pct': 0, 'latin_ext_pct': 0, 'high_unicode_pct': 0,
+                'control_chars': 0, 'replacement_chars': 0}
+
+    text_len = len(text)
+    start = text_len // 10
+    end = min(start + sample_size, text_len * 9 // 10)
+    sample = text[start:end] if end > start else text[:sample_size]
+
+    total = len(sample)
+    ascii_count = 0
+    latin_ext = 0
+    high_unicode = 0
+    control = 0
+    replacement = 0
+
+    for ch in sample:
+        cp = ord(ch)
+        if cp == 0xFFFD:
+            replacement += 1
+        elif cp < 32 and ch not in ('\n', '\r', '\t'):
+            control += 1
+        elif cp < 128:
+            ascii_count += 1
+        elif cp < 256:
+            latin_ext += 1
+        else:
+            high_unicode += 1
+
+    return {
+        'ascii_pct': round(ascii_count / max(total, 1) * 100, 1),
+        'latin_ext_pct': round(latin_ext / max(total, 1) * 100, 1),
+        'high_unicode_pct': round(high_unicode / max(total, 1) * 100, 1),
+        'control_chars': control,
+        'replacement_chars': replacement,
+    }
+
+
 def extract_text_ocr(pdf_path, log, tesseract_path=None, poppler_path=None, dpi=300):
     """Extract text from an image-only PDF using Tesseract OCR.
 

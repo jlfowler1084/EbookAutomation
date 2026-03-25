@@ -619,8 +619,11 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "headings_look_like_backmatter": False,
             "word_count": 0,
             "page_count": 0,
+            "total_pages": 0,
             "has_toc": False,
             "toc_entries": 0,
+            "bookmark_count": 0,
+            "bookmark_max_depth": 0,
         },
         "text_quality": {
             "ligature_splits": 0,
@@ -654,6 +657,10 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         "metadata": {
             "pdf_producer": None,
             "pdf_creator": None,
+            "is_encrypted": False,
+            "encryption_type": None,
+            "file_size_mb": round(file_size / (1024 * 1024), 1),
+            "image_density": None,
         },
         "fonts": {
             "total_unique": 0,
@@ -662,6 +669,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "risky_fonts": [],
         },
         "scripts": {},
+        "encoding": {},
         "issues": [],
         "overall_status": "ERROR",
         "status_reason": "Not yet processed",
@@ -686,7 +694,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
     t0 = time.time()
 
     if ext == 'pdf':
-        # PDF producer/creator fingerprinting
+        # PDF metadata fingerprinting (producer, encryption, pages, bookmarks)
         try:
             from pypdf import PdfReader as _PdfReader
             _pr = _PdfReader(str(file_path))
@@ -694,6 +702,38 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             if _pm:
                 diag["metadata"]["pdf_producer"] = str(_pm.producer)[:200] if _pm.producer else None
                 diag["metadata"]["pdf_creator"] = str(_pm.creator)[:200] if _pm.creator else None
+            # DE-1: Encryption detection
+            diag["metadata"]["is_encrypted"] = _pr.is_encrypted
+            if _pr.is_encrypted:
+                try:
+                    _pr.decrypt('')
+                    diag["metadata"]["encryption_type"] = "copy_protection_only"
+                except Exception:
+                    diag["metadata"]["encryption_type"] = "full_encryption"
+            # DE-3: Page count
+            diag["structure"]["total_pages"] = len(_pr.pages)
+        except Exception:
+            pass
+
+        # DE-2: Bookmark depth and count
+        try:
+            from pdf_to_balabolka import extract_bookmarks as _extract_bm
+            _bms = _extract_bm(str(file_path), lambda msg: None)
+            diag["structure"]["bookmark_count"] = len(_bms) if _bms else 0
+            if _bms:
+                diag["structure"]["bookmark_max_depth"] = max(
+                    (bm.get('level', 1) for bm in _bms), default=0)
+        except Exception:
+            pass
+
+        # DE-4: Image density detection
+        try:
+            from pdf_to_balabolka import detect_image_density
+            _density = detect_image_density(str(file_path), lambda msg: None)
+            diag["metadata"]["image_density"] = _density
+            if _density.get('likely_scan'):
+                diag["extraction"]["warnings"].append(
+                    f"Image density suggests scan: {_density['images_per_page']:.1f} images/page")
         except Exception:
             pass
 
@@ -767,6 +807,46 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             for line in stdout.split('\n'):
                 if 'warn' in line.lower() or 'WARNING' in line:
                     diag["extraction"]["warnings"].append(line.strip()[:200])
+
+        # DE-5: Encoding distribution
+        _body_for_encoding = body_text if 'body_text' in dir() else None
+        if not _body_for_encoding and html_path and os.path.isfile(html_path):
+            try:
+                with open(html_path, 'r', encoding='utf-8', errors='replace') as _ef:
+                    _body_for_encoding = re.sub(r'<[^>]+>', '', _ef.read())
+            except Exception:
+                pass
+        if _body_for_encoding and len(_body_for_encoding) > 100:
+            try:
+                from pdf_to_balabolka import analyze_encoding_distribution
+                diag["encoding"] = analyze_encoding_distribution(_body_for_encoding)
+                if diag["encoding"].get('latin_ext_pct', 0) > 5:
+                    diag["extraction"]["warnings"].append(
+                        f"High Latin-extended chars: {diag['encoding']['latin_ext_pct']}%")
+                if diag["encoding"].get('replacement_chars', 0) > 10:
+                    diag["extraction"]["warnings"].append(
+                        f"Found {diag['encoding']['replacement_chars']} U+FFFD replacement characters")
+            except Exception:
+                pass
+
+        # DE-6: Extraction completeness
+        total_pg = diag["structure"].get("total_pages", 0)
+        if html_path and os.path.isfile(html_path) and total_pg > 0:
+            try:
+                with open(html_path, 'r', encoding='utf-8', errors='replace') as _cf:
+                    _hc = _cf.read()
+                _page_markers = re.findall(
+                    r'page[_-]?\d+|PAGE:\d+|class="page"', _hc, re.IGNORECASE)
+                _pages_with_text = len(set(_page_markers)) if _page_markers else (
+                    1 if _hc.strip() else 0)
+                diag["extraction"]["completeness"] = {
+                    "total_pages": total_pg,
+                    "pages_with_text": _pages_with_text,
+                    "completeness_pct": round(
+                        _pages_with_text / total_pg * 100, 1) if total_pg else 0,
+                }
+            except Exception:
+                pass
     else:
         # Non-PDF formats — just record basic metadata
         diag["extraction"]["success"] = True
