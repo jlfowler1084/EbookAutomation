@@ -13,12 +13,15 @@ Usage:
     python tools/pattern_db.py trend         # Show recent score trend
     python tools/pattern_db.py cost          # Show cost summary
     python tools/pattern_db.py cache <filename>          # Check cache for a book
+    python tools/pattern_db.py cache-stats               # Show extraction cache statistics
+    python tools/pattern_db.py cache-invalidate [opts]   # Invalidate extraction cache entries
     python tools/pattern_db.py override add <filename>   # Add a book override
     python tools/pattern_db.py override show <filename>  # Show overrides for a book
     python tools/pattern_db.py override list             # List all book overrides
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -34,6 +37,28 @@ if sys.platform == 'win32':
 # Default database path: data/ebook_patterns.db relative to project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "ebook_patterns.db"
+
+
+# ---------------------------------------------------------------------------
+# Hashing utilities
+# ---------------------------------------------------------------------------
+
+def compute_file_hash(file_path, algorithm='sha256'):
+    """Compute SHA-256 hash of a file. Returns hex digest string."""
+    h = hashlib.new(algorithm)
+    with open(file_path, 'rb') as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def compute_text_hash(text):
+    """Compute SHA-256 hash of text content for integrity verification."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -192,6 +217,33 @@ CREATE TABLE IF NOT EXISTS book_metadata (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Cached extraction results — stores extracted text to avoid re-extraction.
+-- Key table for commercial amortization: first extraction costs $6-12 (Vision),
+-- every subsequent request serves from cache at zero cost.
+CREATE TABLE IF NOT EXISTS extraction_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER REFERENCES books(id),
+    source_file_hash TEXT NOT NULL,
+    extraction_tier INTEGER NOT NULL,     -- 1=standard, 2=re-ocr, 3=vision
+    extraction_method TEXT NOT NULL,       -- pdfminer_html, pypdf, column_aware, tesseract5, claude_vision
+    quality_score INTEGER,
+    page_count INTEGER,
+    word_count INTEGER,
+    chapter_count INTEGER,
+    extracted_html TEXT,
+    extracted_text TEXT,
+    chapter_hints_json TEXT,
+    text_hash TEXT,
+    extraction_cost_usd REAL DEFAULT 0,
+    extraction_duration_seconds REAL,
+    pipeline_version TEXT,
+    cache_version INTEGER DEFAULT 1,
+    times_served INTEGER DEFAULT 0,
+    last_served_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_file_hash, extraction_tier)
+);
 """
 
 _INDEXES_SQL = """
@@ -219,6 +271,10 @@ CREATE INDEX IF NOT EXISTS idx_book_metadata_title_hash
     ON book_metadata(title_hash);
 CREATE INDEX IF NOT EXISTS idx_book_metadata_isbn
     ON book_metadata(isbn);
+CREATE INDEX IF NOT EXISTS idx_extraction_cache_hash
+    ON extraction_cache(source_file_hash);
+CREATE INDEX IF NOT EXISTS idx_extraction_cache_book
+    ON extraction_cache(book_id);
 """
 
 # ---------------------------------------------------------------------------
@@ -302,6 +358,12 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
              source_file_hash=None, cover_image_path=None, language='en',
              word_count=None, chapter_count=None, db_path=None):
     """Add a book record. Returns the book ID."""
+    # Auto-compute file hash if path given but hash not provided
+    if not source_file_hash and source_file_path and os.path.isfile(source_file_path):
+        try:
+            source_file_hash = compute_file_hash(source_file_path)
+        except OSError:
+            pass
     title_hash = _normalize_title_hash(title, author)
     conn = get_db(db_path)
     try:
@@ -897,6 +959,184 @@ def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
 
 
 # ---------------------------------------------------------------------------
+# Extraction Cache (content-addressable, stores extracted text)
+# ---------------------------------------------------------------------------
+
+
+def get_cached_extraction(source_file_hash=None, source_file_path=None,
+                          min_score=60, min_tier=1, cache_version=None,
+                          db_path=None):
+    """Look up cached extraction by source file hash.
+
+    Returns dict with cache entry fields, or None on miss.
+    On hit, increments times_served and updates last_served_at.
+    """
+    if not source_file_hash and source_file_path:
+        source_file_hash = compute_file_hash(source_file_path)
+    if not source_file_hash:
+        return None
+
+    conn = get_db(db_path)
+    try:
+        query = """
+            SELECT * FROM extraction_cache
+            WHERE source_file_hash = ?
+              AND (quality_score IS NULL OR quality_score >= ?)
+              AND extraction_tier >= ?
+        """
+        params = [source_file_hash, min_score, min_tier]
+
+        if cache_version is not None:
+            query += " AND cache_version >= ?"
+            params.append(cache_version)
+
+        query += " ORDER BY extraction_tier DESC, quality_score DESC LIMIT 1"
+
+        row = conn.execute(query, params).fetchone()
+        if not row:
+            return None
+
+        result = dict(row)
+
+        conn.execute("""
+            UPDATE extraction_cache
+            SET times_served = times_served + 1, last_served_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (result['id'],))
+        conn.commit()
+
+        return result
+    finally:
+        conn.close()
+
+
+def store_extraction(book_id, source_file_hash, tier, method,
+                     extracted_html=None, extracted_text=None,
+                     chapter_hints_json=None, quality_score=None,
+                     page_count=None, word_count=None, chapter_count=None,
+                     cost_usd=0, duration_seconds=None, pipeline_version=None,
+                     db_path=None):
+    """Store an extraction result in the cache.
+
+    Only replaces an existing entry if the new quality_score is higher.
+    Returns cache entry ID, or None on failure.
+    """
+    content = extracted_html or extracted_text or ""
+    text_hash = compute_text_hash(content) if content else None
+
+    conn = get_db(db_path)
+    try:
+        existing = conn.execute("""
+            SELECT id, quality_score FROM extraction_cache
+            WHERE source_file_hash = ? AND extraction_tier = ?
+        """, (source_file_hash, tier)).fetchone()
+
+        if existing and existing['quality_score'] and quality_score:
+            if existing['quality_score'] >= quality_score:
+                return existing['id']
+
+        if existing:
+            conn.execute("""
+                UPDATE extraction_cache SET
+                    book_id = ?, extraction_method = ?, quality_score = ?,
+                    page_count = ?, word_count = ?, chapter_count = ?,
+                    extracted_html = ?, extracted_text = ?, chapter_hints_json = ?,
+                    text_hash = ?, extraction_cost_usd = ?,
+                    extraction_duration_seconds = ?, pipeline_version = ?,
+                    cache_version = 1, created_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (book_id, method, quality_score, page_count, word_count,
+                  chapter_count, extracted_html, extracted_text,
+                  chapter_hints_json, text_hash, cost_usd, duration_seconds,
+                  pipeline_version, existing['id']))
+            conn.commit()
+            return existing['id']
+        else:
+            cursor = conn.execute("""
+                INSERT INTO extraction_cache
+                    (book_id, source_file_hash, extraction_tier, extraction_method,
+                     quality_score, page_count, word_count, chapter_count,
+                     extracted_html, extracted_text, chapter_hints_json,
+                     text_hash, extraction_cost_usd, extraction_duration_seconds,
+                     pipeline_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (book_id, source_file_hash, tier, method, quality_score,
+                  page_count, word_count, chapter_count, extracted_html,
+                  extracted_text, chapter_hints_json, text_hash, cost_usd,
+                  duration_seconds, pipeline_version))
+            conn.commit()
+            return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def invalidate_extraction_cache(source_file_hash=None, book_id=None,
+                                older_than_version=None, db_path=None):
+    """Invalidate cache entries. Returns number of entries deleted."""
+    conn = get_db(db_path)
+    try:
+        if source_file_hash:
+            cursor = conn.execute(
+                "DELETE FROM extraction_cache WHERE source_file_hash = ?",
+                (source_file_hash,))
+        elif book_id:
+            cursor = conn.execute(
+                "DELETE FROM extraction_cache WHERE book_id = ?",
+                (book_id,))
+        elif older_than_version is not None:
+            cursor = conn.execute(
+                "DELETE FROM extraction_cache WHERE cache_version < ?",
+                (older_than_version,))
+        else:
+            return 0
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def get_cache_stats(db_path=None):
+    """Return extraction cache statistics for monitoring."""
+    conn = get_db(db_path)
+    try:
+        row = conn.execute("""
+            SELECT COUNT(*) as total,
+                   COALESCE(SUM(times_served), 0) as total_served,
+                   COALESCE(SUM(extraction_cost_usd), 0) as total_cost,
+                   AVG(quality_score) as avg_quality,
+                   COALESCE(SUM(CASE WHEN times_served > 0
+                       THEN extraction_cost_usd * times_served ELSE 0 END), 0) as cost_saved
+            FROM extraction_cache
+        """).fetchone()
+
+        stats = {
+            'total_entries': row['total'] or 0,
+            'total_times_served': row['total_served'] or 0,
+            'total_extraction_cost_usd': round(row['total_cost'] or 0, 4),
+            'avg_quality_score': round(row['avg_quality'] or 0, 1),
+            'total_cost_saved_usd': round(row['cost_saved'] or 0, 4),
+        }
+
+        tiers = conn.execute("""
+            SELECT extraction_tier, COUNT(*) as count,
+                   COALESCE(SUM(times_served), 0) as served,
+                   AVG(quality_score) as avg_score
+            FROM extraction_cache GROUP BY extraction_tier
+        """).fetchall()
+        stats['by_tier'] = {r['extraction_tier']: dict(r) for r in tiers}
+
+        methods = conn.execute("""
+            SELECT extraction_method, COUNT(*) as count
+            FROM extraction_cache GROUP BY extraction_method
+        """).fetchall()
+        stats['by_method'] = {r['extraction_method']: r['count'] for r in methods}
+
+        return stats
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Smart Strategy Recommendation
 # ---------------------------------------------------------------------------
 
@@ -1440,6 +1680,19 @@ def _cmd_stats(args):
                                     f"/{s['fixes_attempted']}"
                                     f" = {s['fix_rate_pct']}%)")
                     print(f"  {s['category']}: {s['total_issues']}{fix_info}")
+
+        # Extraction cache summary
+        cache_stats = get_cache_stats(args.db_path)
+        if cache_stats['total_entries'] > 0:
+            tier_names = {1: 'standard', 2: 're-ocr', 3: 'vision'}
+            tier_parts = []
+            for tid, data in sorted(cache_stats['by_tier'].items()):
+                tier_parts.append(f"{data['count']} {tier_names.get(tid, '?')}")
+            print(f"\nExtraction Cache:")
+            print(f"  Entries: {cache_stats['total_entries']} ({', '.join(tier_parts)})")
+            print(f"  Times served: {cache_stats['total_times_served']}")
+            print(f"  Total extraction cost: ${cache_stats['total_extraction_cost_usd']:.2f}")
+            print(f"  Cost savings from cache: ${cache_stats['total_cost_saved_usd']:.2f}")
     finally:
         conn.close()
 
@@ -1644,27 +1897,94 @@ def _cmd_cache(args):
                 break
 
     if not result:
-        print(f"No cache hit for: {filename} (min score: {min_score})")
-        return
-
-    print(f"Cache HIT: {result['filename']}")
-    print(f"  VQA Score:       {result['vqa_score']}")
-    print(f"  Extraction path: {result['extraction_path']}")
-    print(f"  Cost:            ${result.get('cost_usd', 0):.4f}")
-    print(f"  Date:            {result['created_at']}")
-    if result.get('output_file_path'):
-        exists = Path(result['output_file_path']).exists()
-        status = "" if exists else " (FILE MISSING)"
-        print(f"  Output (DB):     {result['output_file_path']}{status}")
-
-    output_path = get_cached_output_path(
-        filename=result['filename'], min_score=min_score,
-        db_path=args.db_path
-    )
-    if output_path:
-        print(f"  Output file:     {output_path}")
+        print(f"Conversion cache: MISS for '{filename}' (min score: {min_score})")
     else:
-        print(f"  Output file:     NOT FOUND ON DISK (cache stale)")
+        print(f"Conversion cache: HIT — {result['filename']}")
+        print(f"  VQA Score:       {result['vqa_score']}")
+        print(f"  Extraction path: {result['extraction_path']}")
+        print(f"  Cost:            ${result.get('cost_usd', 0):.4f}")
+        print(f"  Date:            {result['created_at']}")
+        if result.get('output_file_path'):
+            exists = Path(result['output_file_path']).exists()
+            status = "" if exists else " (FILE MISSING)"
+            print(f"  Output (DB):     {result['output_file_path']}{status}")
+
+        output_path = get_cached_output_path(
+            filename=result['filename'], min_score=min_score,
+            db_path=args.db_path
+        )
+        if output_path:
+            print(f"  Output file:     {output_path}")
+        else:
+            print(f"  Output file:     NOT FOUND ON DISK (cache stale)")
+
+    # Also check extraction cache — find book's source_file_hash
+    conn = get_db(args.db_path)
+    try:
+        row = conn.execute(
+            "SELECT source_file_hash FROM books WHERE filename LIKE ? AND source_file_hash IS NOT NULL LIMIT 1",
+            (f"%{filename}%",)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row and row['source_file_hash']:
+        ext_cached = get_cached_extraction(
+            source_file_hash=row['source_file_hash'], min_score=0,
+            db_path=args.db_path
+        )
+        if ext_cached:
+            tier_names = {1: 'standard', 2: 're-ocr', 3: 'vision'}
+            print(f"Extraction cache: HIT (tier {ext_cached['extraction_tier']} "
+                  f"{tier_names.get(ext_cached['extraction_tier'], '?')}, "
+                  f"method: {ext_cached['extraction_method']}, "
+                  f"score: {ext_cached['quality_score']}, "
+                  f"served {ext_cached['times_served']} times)")
+        else:
+            print(f"Extraction cache: MISS")
+    else:
+        print(f"Extraction cache: MISS (no source_file_hash for this book)")
+
+
+def _cmd_cache_stats(args):
+    """Show extraction cache statistics."""
+    stats = get_cache_stats(db_path=args.db_path)
+    tier_names = {1: 'standard', 2: 're-ocr', 3: 'vision'}
+
+    print("Extraction Cache Statistics")
+    print(f"  Total entries:       {stats['total_entries']}")
+    print(f"  Total times served:  {stats['total_times_served']}")
+    print(f"  Extraction cost:     ${stats['total_extraction_cost_usd']:.2f}")
+    print(f"  Cost savings:        ${stats['total_cost_saved_usd']:.2f}")
+    print(f"  Avg quality score:   {stats['avg_quality_score']}")
+
+    if stats['by_tier']:
+        print("\n  By tier:")
+        for tier_id, data in sorted(stats['by_tier'].items()):
+            name = tier_names.get(tier_id, f'tier-{tier_id}')
+            print(f"    Tier {tier_id} ({name}): "
+                  f"{data['count']} entries, {data['served']} served")
+
+    if stats['by_method']:
+        print("\n  By method:")
+        for method, count in sorted(stats['by_method'].items()):
+            print(f"    {method:<20} {count}")
+
+
+def _cmd_cache_invalidate(args):
+    """Invalidate extraction cache entries."""
+    if not args.file_hash and not args.book_id and args.older_than_version is None:
+        print("Error: specify --file-hash, --book-id, or --older-than-version",
+              file=sys.stderr)
+        sys.exit(1)
+
+    count = invalidate_extraction_cache(
+        source_file_hash=args.file_hash,
+        book_id=args.book_id,
+        older_than_version=args.older_than_version,
+        db_path=args.db_path,
+    )
+    print(f"Invalidated {count} extraction cache entries")
 
 
 def _cmd_classify(args):
@@ -2522,6 +2842,19 @@ def main():
     store_meta_parser.add_argument('--metadata-file', required=True,
                                    help='Path to JSON file with metadata fields')
 
+    # ── Extraction cache subcommands ─────────────────────────────
+    subparsers.add_parser('cache-stats', help='Show extraction cache statistics')
+
+    cache_inv_parser = subparsers.add_parser(
+        'cache-invalidate', help='Invalidate extraction cache entries'
+    )
+    cache_inv_parser.add_argument('--file-hash', default=None,
+                                  help='SHA-256 hash of source file')
+    cache_inv_parser.add_argument('--book-id', type=int, default=None,
+                                  help='Book ID to invalidate')
+    cache_inv_parser.add_argument('--older-than-version', type=int, default=None,
+                                  help='Invalidate entries below this cache_version')
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -2549,6 +2882,8 @@ def main():
         'trend': _cmd_trend,
         'cost': _cmd_cost,
         'cache': _cmd_cache,
+        'cache-stats': _cmd_cache_stats,
+        'cache-invalidate': _cmd_cache_invalidate,
         'classify': _cmd_classify,
         'recommend': _cmd_recommend,
         'extract-metadata': _cmd_extract_metadata,

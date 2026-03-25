@@ -925,6 +925,9 @@ print(json.dumps(output))
                 if ($effectiveNoFootnotes) {
                     $pyArgs += " --skip-footnotes"
                 }
+                if ($NoCache) {
+                    $pyArgs += " --no-cache"
+                }
 
                 $pyProc = Start-Process -FilePath $python `
                                         -ArgumentList $pyArgs `
@@ -1201,6 +1204,9 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                 $effectiveNoFootnotes = $NoFootnotes -or $Profile -in @('clean-read', 'text-only')
                 if ($effectiveNoFootnotes) {
                     $pyArgs += " --skip-footnotes"
+                }
+                if ($NoCache) {
+                    $pyArgs += " --no-cache"
                 }
 
                 $pyProc = Start-Process -FilePath $python `

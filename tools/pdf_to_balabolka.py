@@ -8675,12 +8675,14 @@ def _fix_ligature_splits(para_dicts, log):
         log(f"  Ligature fixes applied to {total_fixes} paragraphs")
 
 
-def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False, skip_footnotes=False, apply_ai_fixes=False):
+def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False, skip_footnotes=False, apply_ai_fixes=False, no_cache=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
     derived from font size/bold/italic properties in the source PDF.
     """
+    import time as _time_mod
+    _extraction_start = _time_mod.time()
     log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
     bookmarks = extract_bookmarks(pdf_path, log)
 
@@ -8756,6 +8758,50 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     log(f"\nDone! Saved to: {html_path}")
     log(f"  Words: {word_count:,}")
     log(f"  HTML size: {len(html):,} chars")
+
+    # --- Store extraction in cache ---
+    if not no_cache:
+        try:
+            _tools_dir = os.path.dirname(os.path.abspath(__file__))
+            if _tools_dir not in sys.path:
+                sys.path.insert(0, _tools_dir)
+            from pattern_db import (store_extraction, compute_file_hash,
+                                    get_or_create_book)
+
+            _src_hash = compute_file_hash(pdf_path)
+            _extraction_duration = _time_mod.time() - _extraction_start
+
+            # Determine extraction method
+            _method = 'pdfminer_html'
+            if force_columns:
+                _method = 'column_aware'
+
+            # Count chapters from HTML
+            _chapter_count = len(re.findall(r'<h[12]>', html))
+
+            _book_id = get_or_create_book(
+                filename=os.path.basename(pdf_path),
+                format=os.path.splitext(pdf_path)[1].lstrip('.'),
+                source_file_path=pdf_path,
+                source_file_hash=_src_hash,
+            )
+
+            _quality_score = quality.get('score') if quality else None
+
+            store_extraction(
+                book_id=_book_id,
+                source_file_hash=_src_hash,
+                tier=1,
+                method=_method,
+                extracted_html=html,
+                quality_score=_quality_score,
+                word_count=word_count,
+                chapter_count=_chapter_count,
+                duration_seconds=round(_extraction_duration, 1),
+            )
+            log(f"Extraction cached: hash={_src_hash[:12]}..., tier=1, score={_quality_score}")
+        except Exception as _ce:
+            log(f"Extraction cache write failed (non-blocking): {_ce}")
 
     return html_path
 
@@ -9348,6 +9394,8 @@ Examples:
                          "Preserves formatting (bold, italic, headings, links).")
     ap.add_argument("--force-columns", action="store_true",
                     help="Force PyMuPDF column-aware extraction even if detection confidence is low")
+    ap.add_argument("--no-cache", action="store_true", default=False,
+                    help="Skip extraction cache lookup, force fresh extraction")
     ap.add_argument("--tts-enhance", action="store_true",
                     help="Apply TTS voice tags (silence, pacing, emphatic closers)")
     ap.add_argument("--tag-syntax", choices=["sapi", "universal"], default="sapi",
@@ -9426,10 +9474,42 @@ Examples:
             html_output = re.sub(r'\.(txt|html?)$', '.html', output_path)
             if not html_output.endswith('.html'):
                 html_output = output_path + '.html'
-            process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
-                                force_columns=args.force_columns,
-                                skip_footnotes=args.skip_footnotes,
-                                apply_ai_fixes=args.apply_ai_fixes)
+
+            # --- Extraction cache check ---
+            _cache_hit = False
+            if not args.no_cache:
+                try:
+                    _tools_dir = os.path.dirname(os.path.abspath(__file__))
+                    if _tools_dir not in sys.path:
+                        sys.path.insert(0, _tools_dir)
+                    from pattern_db import get_cached_extraction, compute_file_hash
+                    _src_hash = compute_file_hash(input_path)
+                    _cached = get_cached_extraction(source_file_hash=_src_hash, min_score=60)
+                    if _cached and _cached.get('extracted_html'):
+                        log_fn(f"EXTRACTION CACHE HIT: tier {_cached['extraction_tier']}, "
+                               f"method {_cached['extraction_method']}, "
+                               f"quality {_cached['quality_score']}, "
+                               f"served {_cached['times_served']} times")
+                        with open(html_output, 'w', encoding='utf-8') as _cf:
+                            _cf.write(_cached['extracted_html'])
+                        _word_count = len(re.sub(r'<[^>]+>', '', _cached['extracted_html']).split())
+                        log_fn(f"Done! Served from cache: {html_output}")
+                        log_fn(f"  Words: {_word_count:,}")
+                        log_fn(f"  HTML size: {len(_cached['extracted_html']):,} chars")
+                        _cache_hit = True
+                    else:
+                        log_fn(f"Extraction cache miss for {_src_hash[:12]}... — running fresh extraction")
+                except Exception as _ce:
+                    log_fn(f"Extraction cache check failed (continuing normally): {_ce}")
+            elif args.no_cache:
+                log_fn("Extraction cache bypassed (--no-cache)")
+
+            if not _cache_hit:
+                process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
+                                    force_columns=args.force_columns,
+                                    skip_footnotes=args.skip_footnotes,
+                                    apply_ai_fixes=args.apply_ai_fixes,
+                                    no_cache=args.no_cache)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,
