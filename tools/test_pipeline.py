@@ -143,6 +143,24 @@ TEST_CASES = {
             # at format_paragraphs_as_html line ~3662) prevents reliable stripping for this book
         }
     },
+    "Bain Dangerous Book": {
+        "pdf_pattern": "*Bain*Dangerous*",
+        "pdf_exclude": None,
+        "use_pdfminer": True,
+        "expected": {
+            "kfx_produced": False,   # HTML-only validation, skip KFX for speed
+            "min_h2": 10,            # actual=76; conservative floor to catch catastrophic regression
+        }
+    },
+    "Codex Magica": {
+        "pdf_pattern": "*Codex*Magica*",
+        "pdf_exclude": None,
+        "use_pdfminer": True,
+        "expected": {
+            "kfx_produced": False,   # HTML-only validation, skip KFX for speed
+            "min_h2": 8,             # actual=18; conservative floor to catch pattern promotion regression
+        }
+    },
 }
 
 
