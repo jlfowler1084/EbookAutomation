@@ -292,6 +292,7 @@ Changes to early phases cascade — always test downstream effects.
 | pymupdf | pip package | Two-column PDF layout detection and column-aware text extraction |
 | Poppler (`pdftoppm`) | `tools\poppler\` | PDF page rendering (cover extraction + Visual QA) |
 | pdf2image | pip package | Python wrapper for poppler page rendering |
+| google-genai | pip package | Gemini Flash OCR (Tier 2.5) — requires GEMINI_API_KEY env var |
 
 ---
 
@@ -458,6 +459,24 @@ response = requests.post(
     timeout=300,
 )
 ```
+
+---
+
+## Gemini API Integration (Tier 2.5 OCR)
+
+The project uses Google Gemini Flash as a Tier 2.5 extraction method — more capable than Tesseract OCR, 10-20x cheaper than Claude Vision.
+
+- **Package:** `google-genai` (install: `python -m pip install google-genai`)
+- **API key:** `GEMINI_API_KEY` environment variable (get free from https://aistudio.google.com)
+- **Free tier:** ~500 requests/day, no billing required
+- **Module:** `tools/gemini_ocr.py` (isolated — pipeline works fine without it)
+
+| Mode | Flag | Cost | Use Case |
+|------|------|------|----------|
+| Full book transcription | `--use-gemini` / `-UseGemini` | ~$0.50/book | Image-only PDFs, scans with bad OCR |
+| Page remediation | `--gemini-remediate` / `-GeminiRemediate` | ~$0.002/page | Fix specific low-quality pages |
+
+Both modes require explicit opt-in flags. Gemini never auto-escalates.
 
 ---
 

@@ -613,6 +613,15 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Maximum allowed cost for Vision extraction in USD (default: $15.00).')]
         [double]$VisionCostLimit = 15.0,
 
+        [Parameter(HelpMessage = 'Use Gemini Flash for full book transcription (Tier 2.5). Cost: ~$0.50/book. Requires GEMINI_API_KEY.')]
+        [switch]$UseGemini,
+
+        [Parameter(HelpMessage = 'Use Gemini Flash to remediate low-quality pages only. Cost: ~$0.002/page. Requires GEMINI_API_KEY.')]
+        [switch]$GeminiRemediate,
+
+        [Parameter(HelpMessage = 'Maximum cost for Gemini extraction in USD (default: $5.00).')]
+        [double]$GeminiCostLimit = 5.0,
+
         [Parameter(HelpMessage = 'Path to VQA report from a previous iteration, used by the fix engine for targeted corrections.')]
         [string]$VqaReportPath,
 
@@ -939,6 +948,22 @@ print(json.dumps(output))
                     Write-EbookLog "Kindle: Vision extraction (Tier 3) ENABLED — cost limit `$$VisionCostLimit" -Level WARN
                     if (-not $env:ANTHROPIC_API_KEY) {
                         Write-EbookLog "Kindle: ANTHROPIC_API_KEY not set — Vision extraction requires API key" -Level ERROR
+                        return $false
+                    }
+                }
+                if ($UseGemini) {
+                    $pyArgs += " --use-gemini --gemini-cost-limit $GeminiCostLimit"
+                    Write-EbookLog "Kindle: Gemini Flash extraction (Tier 2.5) ENABLED — cost limit `$$GeminiCostLimit" -Level INFO
+                    if (-not $env:GEMINI_API_KEY) {
+                        Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
+                        return $false
+                    }
+                }
+                if ($GeminiRemediate) {
+                    $pyArgs += " --gemini-remediate"
+                    Write-EbookLog "Kindle: Gemini page remediation ENABLED" -Level INFO
+                    if (-not $env:GEMINI_API_KEY) {
+                        Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
                         return $false
                     }
                 }
@@ -2700,6 +2725,9 @@ function Invoke-EbookPipeline {
         [switch]$NoCache,
         [switch]$UseVision,
         [double]$VisionCostLimit = 15.0,
+        [switch]$UseGemini,
+        [switch]$GeminiRemediate,
+        [double]$GeminiCostLimit = 5.0,
         [switch]$SendToKindle,
         [switch]$EmailToKindle,
 
@@ -2911,7 +2939,7 @@ function Invoke-EbookPipeline {
                 }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
@@ -4474,6 +4502,13 @@ print(json.dumps(result))
                     Description = "Send raw file straight to Calibre without extraction"
                 }
             }
+            'gemini' {
+                return @{
+                    Name        = "Gemini Flash extraction (Tier 2.5)"
+                    Flags       = @{ UseGemini = $true }
+                    Description = "Gemini Flash page-by-page transcription (Tier 2.5)"
+                }
+            }
         }
     }
 
@@ -4591,6 +4626,12 @@ print(json.dumps(result))
         if ($NoBackMatter)  { $convertParams['NoBackMatter']  = $true }
         if ($NoImages)      { $convertParams['NoImages']      = $true }
         if ($NoBlockQuotes) { $convertParams['NoBlockQuotes'] = $true }
+
+        # Guard: skip Gemini strategy unless explicitly requested
+        if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini) {
+            Write-EbookLog "  Skipping Gemini strategy (not explicitly requested via -UseGemini)" -Level INFO
+            continue
+        }
 
         $convertOk = Convert-ToKindle @convertParams
 

@@ -9314,7 +9314,9 @@ def _fix_ligature_splits(para_dicts, log):
 def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False,
                         skip_footnotes=False, apply_ai_fixes=False,
                         tesseract_path=None, poppler_path=None, ocr_dpi=300,
-                        no_cache=False, use_vision=False, vision_cost_limit=15.0):
+                        no_cache=False, use_vision=False, vision_cost_limit=15.0,
+                        use_gemini=False, gemini_remediate=False,
+                        gemini_cost_limit=5.0, gemini_model='gemini-2.5-flash'):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -9387,9 +9389,58 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 "falling back to standard extraction")
             use_vision = False
 
+    # ── Gemini extraction (Tier 2.5) — explicit opt-in only ──────
+    gemini_cost = 0
+    if use_gemini and not use_vision:
+        log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
+        bookmarks = extract_bookmarks(pdf_path, log)
+
+        log("\n-- STEP 1 (GEMINI): Gemini Flash transcription ---------")
+        log("  Tier 2.5 extraction — Gemini Flash OCR")
+
+        try:
+            from gemini_ocr import extract_text_gemini
+
+            gemini_result = extract_text_gemini(
+                pdf_path, log,
+                poppler_path=poppler_path,
+                dpi=200,
+                batch_size=5,
+                cost_limit=gemini_cost_limit,
+                model=gemini_model,
+            )
+
+            if gemini_result and gemini_result.get('text'):
+                para_dicts, body_size = vision_text_to_para_dicts(
+                    gemini_result['text'], log)
+                tier_used = 2
+                extraction_method = 'gemini_flash'
+                gemini_cost = gemini_result.get('cost_usd', 0)
+
+                gemini_text_flat = '\n'.join(
+                    d.get('text', '') for d in para_dicts)
+                try:
+                    quality = score_text_layer_quality(gemini_text_flat, log=log)
+                    log(f"  Gemini text quality: {quality.get('score', 0)}/100")
+                except Exception:
+                    quality = {'score': 85, 'recommendation': 'accept',
+                               'tier_suggestion': 1, 'details': {}}
+                log(f"  Gemini cost: ${gemini_cost:.4f}")
+            else:
+                log("  Gemini extraction failed — falling back to standard extraction")
+                use_gemini = False
+
+        except RuntimeError as e:
+            log(f"  Gemini not available: {e}")
+            log(f"  Falling back to standard extraction")
+            use_gemini = False
+        except Exception as e:
+            log(f"  Gemini error (non-blocking): {e}")
+            use_gemini = False
+
     _timing = {}  # FU-3: duration breakdown
 
-    if not use_vision:
+    if not use_vision and not use_gemini:
         # ── Standard Tier 1/2 extraction ──────────────────────────
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
@@ -9597,6 +9648,99 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     log(f"  Words: {word_count:,}")
     log(f"  HTML size: {len(html):,} chars")
 
+    # ── Gemini page remediation (Mode B) — post-extraction ───────
+    if gemini_remediate and not use_gemini and not use_vision:
+        log("\n-- STEP 3: Gemini page remediation --------------------")
+
+        pages_to_fix = []
+
+        # Check multi-sample quality variance for problem regions
+        if quality:
+            try:
+                _plain_for_var = re.sub(r'<[^>]+>', '', html)
+                _var_result = score_text_layer_quality(
+                    _plain_for_var, log=log, multi_sample=True)
+                _multi = _var_result.get('details', {}).get('multi_sample', {})
+                _problems = _multi.get('problem_regions', [])
+
+                if _problems:
+                    _total_pg = 0
+                    try:
+                        from pypdf import PdfReader as _RemPdfReader
+                        _total_pg = len(_RemPdfReader(pdf_path).pages)
+                    except Exception:
+                        pass
+                    if _total_pg > 0:
+                        for region in _problems:
+                            pos = region.get('position', 0.5)
+                            page_est = max(1, int(pos * _total_pg))
+                            for p in range(max(1, page_est - 1),
+                                           min(_total_pg + 1, page_est + 2)):
+                                if p not in pages_to_fix:
+                                    pages_to_fix.append(p)
+                        log(f"  Quality variance identified {len(pages_to_fix)} "
+                            f"candidate pages: {pages_to_fix}")
+            except Exception:
+                pass
+
+        if pages_to_fix:
+            try:
+                from gemini_ocr import remediate_pages_gemini
+
+                _rem_result = remediate_pages_gemini(
+                    pdf_path, pages_to_fix, log,
+                    poppler_path=poppler_path,
+                    dpi=200,
+                    model=gemini_model,
+                )
+
+                if _rem_result and _rem_result.get('pages'):
+                    _rem_count = 0
+                    for page_num, new_text in _rem_result['pages'].items():
+                        page_num = int(page_num)
+                        old_indices = [j for j, p in enumerate(para_dicts)
+                                       if p.get('page') == page_num]
+                        if old_indices:
+                            insert_pos = old_indices[0]
+                            for idx in reversed(old_indices):
+                                para_dicts.pop(idx)
+                            para_dicts.insert(insert_pos, {
+                                'text': new_text, 'sz': body_size,
+                                'bold': False, 'italic': False,
+                                'page': page_num, 'tag': None,
+                            })
+                            _rem_count += 1
+
+                    if _rem_count > 0:
+                        _rem_cost = _rem_result.get('cost_usd', 0)
+                        gemini_cost += _rem_cost
+                        log(f"  Gemini remediated {_rem_count} pages, "
+                            f"cost: ${_rem_cost:.4f}")
+
+                        # Re-format HTML with remediated content
+                        html = format_paragraphs_as_html(
+                            para_dicts, body_size, bookmarks, log, title=title)
+                        html = re.sub(r'\s*</em>\s*<em>\s*', ' ', html)
+                        html = re.sub(r'\s*</strong>\s*<strong>\s*', ' ', html)
+                        html = re.sub(r'\s+(</em>)\s*', r'\1 ', html)
+                        html = re.sub(r'\s+(</strong>)\s*', r'\1 ', html)
+                        html = re.sub(r'(?<=>)([^<]*)',
+                                      lambda m: re.sub(r'  +', ' ', m.group(0)), html)
+                        if not skip_footnotes:
+                            html = _link_endnotes(html, log)
+
+                        with open(html_path, 'w', encoding='utf-8') as f:
+                            f.write(html)
+                        word_count = len(re.sub(r'<[^>]+>', '', html).split())
+                        log(f"  Remediated HTML written: {word_count:,} words")
+
+            except RuntimeError as e:
+                log(f"  Gemini remediation not available: {e}")
+            except Exception as e:
+                log(f"  Gemini remediation error (non-blocking): {e}")
+        else:
+            log("  No pages identified for remediation — quality is uniform")
+
     # --- Store extraction in cache ---
     if not no_cache:
         try:
@@ -9631,7 +9775,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 quality_score=_quality_score,
                 word_count=word_count,
                 chapter_count=_chapter_count,
-                cost_usd=vision_cost,
+                cost_usd=vision_cost + gemini_cost,
                 duration_seconds=round(_extraction_duration, 1),
                 escalation_details=_escalation_info if '_escalation_info' in dir() else None,
             )
@@ -10233,6 +10377,18 @@ Examples:
                     help="Force PyMuPDF column-aware extraction even if detection confidence is low")
     ap.add_argument("--no-cache", action="store_true", default=False,
                     help="Skip extraction cache lookup, force fresh extraction")
+    ap.add_argument("--use-gemini", action="store_true",
+                    help="Use Gemini Flash for full book transcription (Tier 2.5). "
+                         "More capable than Tesseract, 10-20x cheaper than Claude Vision. "
+                         "Cost: ~$0.50/book. Requires GEMINI_API_KEY.")
+    ap.add_argument("--gemini-remediate", action="store_true",
+                    help="Use Gemini Flash to remediate specific low-quality pages "
+                         "identified by quality variance. Only re-extracts flagged pages. "
+                         "Cost: ~$0.002/page. Requires GEMINI_API_KEY.")
+    ap.add_argument("--gemini-cost-limit", type=float, default=5.0,
+                    help="Maximum allowed cost for Gemini extraction in USD (default: $5.00)")
+    ap.add_argument("--gemini-model", default="gemini-2.5-flash",
+                    help="Gemini model to use (default: gemini-2.5-flash)")
     ap.add_argument("--use-vision", action="store_true",
                     help="Use Claude Vision API for page-by-page transcription (Tier 3). "
                          "Highest quality — handles multi-script, custom fonts, degraded scans. "
@@ -10378,7 +10534,11 @@ Examples:
                                     ocr_dpi=args.ocr_dpi,
                                     no_cache=args.no_cache,
                                     use_vision=args.use_vision,
-                                    vision_cost_limit=args.vision_cost_limit)
+                                    vision_cost_limit=args.vision_cost_limit,
+                                    use_gemini=args.use_gemini,
+                                    gemini_remediate=args.gemini_remediate,
+                                    gemini_cost_limit=args.gemini_cost_limit,
+                                    gemini_model=args.gemini_model)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,

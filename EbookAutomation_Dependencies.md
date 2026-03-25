@@ -37,6 +37,7 @@ This document tracks every external dependency the EbookAutomation suite relies 
 | **pdf2image** | `pdf2image` | PDF page→image rendering for Kindle cover extraction AND Tesseract OCR page rendering | `pdf_to_balabolka.py` → `extract_cover_image()`, `extract_text_ocr()` | `pip install pdf2image` |
 | **tkinter** | (ships with Python) | GUI mode for `pdf_to_balabolka.py` (not used in CLI/pipeline mode) | `pdf_to_balabolka.py` | Included with standard Python install |
 | **PyMuPDF** | `pymupdf` | Two-column PDF layout detection and column-ordered text extraction | `pdf_to_balabolka.py` → `detect_column_layout()`, `extract_text_columns()` | `pip install pymupdf` |
+| **google-genai** | `google-genai` | Gemini Flash OCR — Tier 2.5 extraction (more capable than Tesseract, cheaper than Claude Vision). Requires `GEMINI_API_KEY` env var. | `gemini_ocr.py` → `extract_text_gemini()`, `remediate_pages_gemini()` | `python -m pip install google-genai` |
 
 ### Standard Library (no install needed)
 
@@ -127,6 +128,7 @@ Before adding a new Python package or external tool:
 | Date | Change |
 |---|---|
 | 2026-03-19 | Initial document created |
+| 2026-03-25 | Added google-genai for Gemini Flash OCR (Tier 2.5). Requires GEMINI_API_KEY env var. |
 | 2026-03-21 | Added pytesseract, Tesseract OCR 5.5.0, updated pdf2image and Poppler descriptions for OCR role |
 | 2026-03-19 | Added pdfminer.six (fallback PDF extraction for word-merging PDFs) |
 | 2026-03-18 | Added pyspellchecker (OCR artifact correction) |
