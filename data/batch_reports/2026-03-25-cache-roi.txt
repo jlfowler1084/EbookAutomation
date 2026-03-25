@@ -1,0 +1,64 @@
+
+Extraction Cache ROI
+===============================================================================================
+Book                                     Tier Method           Score    Cost Served  $/Serve
+-----------------------------------------------------------------------------------------------
+Cooper, Andrew Scott - The Oil Kings_ H     1 pdfminer_html       97 $ 0.00     30 $0.0000
+(Hermeneia) Walther Zimmerli - Ezekiel      1 pdfminer_html       97 $ 0.00     30 $0.0000
+Nathan P. Jones - Mexico's Illicit Drug     1 pdfminer_html       94 $ 0.00     29 $0.0000
+Reading Genesis After Darwin -- Barton,     1 pdfminer_html       97 $ 0.00     27 $0.0000
+S. K. Bain - The Most Dangerous Book in     1 pdfminer_html       97 $ 0.00     15 $0.0000
+Texe Marrs - Codex Magica_ Secret Signs     1 pdfminer_html       97 $ 0.00     15 $0.0000
+Burge_Jesus_and_the_Land.pdf                1 pdfminer_html       97 $ 0.00     15 $0.0000
+Fruchtenbaum.pdf                            1 pdfminer_html       97 $ 0.00     14 $0.0000
+Hershel Shanks, Ben Witherington III -      1 pdfminer_html       97 $ 0.00     13 $0.0000
+C. E. Rolt - Dionysius the Areopagite,      1 pdfminer_html       97 $ 0.00     13 $0.0000
+(In easy steps) Mike McGrath - Python i     1 pdfminer_html       97 $ 0.00      1 $0.0000
+(Supplements to Vetus Testamentum 76) T     1 pdfminer_html       92 $ 0.00      1 $0.0000
+Cambridge Studies in Medieval Life and      1 pdfminer_html       97 $ 0.00      1 $0.0000
+[Wall Street And...Trilogy] Antony C. S     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Adult Children of Alcoholics Syndrome_      1 pdfminer_html       97 $ 0.00      1 $0.0000
+Andrea Nicolotti - The Shroud of Turin_     1 pdfminer_html       84 $ 0.00      1 $0.0000
+Andrew R. Casper - An Artful Relic - Th     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Christian D. Ginsburg - Kabbalah_ Its D     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Coulter, Fred R. - Occult Holidays Or G     1 pdfminer_html       64 $ 0.00      1 $0.0000
+Don Jones_ Jeffrey Hicks - The Powershe     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Demons_ What the Bible Really Says abou     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Eberhard Kolb - The Weimar Republic-Rou     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Kevin MacDonald - The Culture of Critiq     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Manly P. Hall - The Secret Destiny of A     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Mehrzad Tabatabaian PhD PEng - Prompt E     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Martin Kleppmann - Designing Data-Inten     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Peter Levanda - Unholy Alliance - A His     1 pdfminer_html       97 $ 0.00      1 $0.0000
+PRANAITIS, Rev. I.B. - The Talmud Unmas     1 pdfminer_html       97 $ 0.00      1 $0.0000
+qabbalahphilosop00myer.pdf                  1 pdfminer_html       93 $ 0.00      1 $0.0000
+Robert Lacey - Inside the Kingdom_ King     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Rosanne Liebermann - Exile, Incorporate     1 pdfminer_html       97 $ 0.00      1 $0.0000
+Scytl Election Results User Guide.pdf       1 pdfminer_html       97 $ 0.00      1 $0.0000
+Steven M. Greer - Disclosure _ Military     1 pdfminer_html       97 $ 0.00      1 $0.0000
+The formation of a persecuting society      1 pdfminer_html       97 $ 0.00      1 $0.0000
+The Return of the Gods{Jonathan Cahn}(2     1 pdfminer_html       97 $ 0.00      1 $0.0000
+The tempest -- Shakespeare, William, 15     1 pdfminer_html       97 $ 0.00      1 $0.0000
+The Thirteenth Tribe THE KHAZAR EMPIRE      1 pdfminer_html       97 $ 0.00      1 $0.0000
+The_Tempest_FAX.pdf                         1 pdfminer_html       93 $ 0.00      1 $0.0000
+TURNER, Karla, Ph.D. - Into the Fringe_     1 pdfminer_html       97 $ 0.00      1 $0.0000
+[Oxford early christian texts] Origenes     1 pdfminer_html        0 $ 0.00      0 $0.0000
+Basic Writings of Saint Thomas Aquinas      1 pdfminer_html       97 $ 0.00      0 $0.0000
+Christiaan Brinkhoff, Sandeep Patnaik,      1 pdfminer_html       97 $ 0.00      0 $0.0000
+David Irving - Uprising! One Nation's N     1 pdfminer_html       97 $ 0.00      0 $0.0000
+Ed Knorr - Revelation and Bible Prophec     1 pdfminer_html       97 $ 0.00      0 $0.0000
+Jesus and the Victory of God Christian      1 pdfminer_html        0 $ 0.00      0 $0.0000
+Joseph M. Hellerstein, Michael Stonebra     1 pdfminer_html       97 $ 0.00      0 $0.0000
+Jonathan Gruber - Public Finance and Pu     1 pdfminer_html       97 $ 0.00      0 $0.0000
+Oswald Spengler - Decline of the West 1     1 pdfminer_html       97 $ 0.00      0 $0.0000
+Steven S. Skiena (auth.) - The algorith     1 pdfminer_html       97 $ 0.00      0 $0.0000
+The Hindu Pantheon -- Edward Moor -- J_     1 pdfminer_html        0 $ 0.00      0 $0.0000
+The Beginning of Wisdom_ Reading Genesi     1 pdfminer_html       97 $ 0.00      0 $0.0000
+-----------------------------------------------------------------------------------------------
+
+Summary:
+  Total entries: 51
+  Total extraction cost: $0.00
+  Total times served: 230
+  Estimated time saved: 303.7 minutes (18221s of repeated extraction avoided)
+

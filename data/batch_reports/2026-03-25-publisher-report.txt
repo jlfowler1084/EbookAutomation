@@ -1,0 +1,40 @@
+
+Publisher/Producer Report
+================================================================================
+Producer                                      Books  AvgQual  Pass% Paths Used
+--------------------------------------------------------------------------------
+Recoded by LuraDocument PDF v2.53                 2     0.0     0% N/A
+libtiff / tiff2pdf - 20100615                     1     0.0     0% N/A
+iText® 5.2.0 ©2000-2012 1T3XT BVBA                1     0.0     0% N/A
+iText 2.1.4 (by lowagie.com)                      1     0.0     0% N/A
+calibre 3.26.1 [https://calibre-ebook.com]        1     0.0     0% N/A
+calibre 3.14.0 [https://calibre-ebook.com]        1     0.0     0% N/A
+calibre (5.44.0) [http://calibre-ebook.com]       1     0.0     0% N/A
+calibre (4.16.0) [https://calibre-ebook.com]      1     0.0     0% N/A
+XeTeX 0.99999                                     1     0.0     0% N/A
+PyPDF2                                            1     0.0     0% N/A
+OmniPage 12 http://www.scansoft.com               1     0.0     0% N/A
+Lexcycle Stanza 1.0.0-beta18                      1     0.0     0% N/A
+Internet Archive PDF 1.4.9; including mupdf       1     0.0     0% N/A
+Internet Archive PDF 1.4.25; including mupdf      1     0.0     0% N/A
+Internet Archive PDF 1.4.24; including mupdf      1     0.0     0% N/A
+Internet Archive PDF 1.4.16; including mupdf      1     0.0     0% N/A
+Antenna House PDF Output Library 2.6.0 (Linu      1     0.0     0% N/A
+Adobe PDF Library 9.9                             1     0.0     0% N/A
+Adobe PDF Library 17.0                            1     0.0     0% N/A
+Adobe PDF Library 16.0.7                          1     0.0     0% N/A
+Adobe PDF Library 15.0; modified using iText      1     0.0     0% N/A
+Adobe Acrobat 9.0 Paper Capture Plug-in           1     0.0     0% N/A
+Adobe Acrobat 8.0 Paper Capture Plug-in           1     0.0     0% N/A
+Adobe Acrobat 6.0                                 1     0.0     0% N/A
+Acrobat PDFWriter 4.05  for Power Macintosh       1     0.0     0% N/A
+Acrobat Distiller 5.0.5 for Macintosh             1     0.0     0% N/A
+Acrobat Distiller 5.0 (Windows)                   1     0.0     0% N/A
+Acrobat Distiller 4.05 for Macintosh              1     0.0     0% N/A
+Acrobat Distiller 4.0 for Windows                 1     0.0     0% N/A
+Acrobat Distiller 4.0 for Macintosh               1     0.0     0% N/A
+Acrobat Distiller 21.0 (Windows)                  1     0.0     0% N/A
+AFPL Ghostscript 8.53                             1     0.0     0% N/A
+ABBYY FineReader PDF 15                           1     0.0     0% N/A
+ABBYY FineReader 10                               1     0.0     0% N/A
+

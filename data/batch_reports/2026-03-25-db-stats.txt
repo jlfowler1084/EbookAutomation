@@ -1,0 +1,18 @@
+Books:       63
+Conversions: 50
+Issues:      458
+Fix patterns:0
+
+Issues by category:
+  text_integrity: 184
+  paragraph_flow: 113
+  heading_formatting: 95
+  page_layout: 30
+  toc_navigation: 19
+  cover_images: 17
+
+Extraction Cache:
+  Entries: 51 (51 standard)
+  Times served: 230
+  Total extraction cost: $0.00
+  Cost savings from cache: $0.00
