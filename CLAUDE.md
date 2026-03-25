@@ -655,6 +655,75 @@ Before writing, modifying, or adding ANY outbound API call (Anthropic, Google, o
 
 ---
 
+## Claude Code Model Selection
+
+### Auto-Detect Rule
+
+At the START of every task, before doing any work, evaluate the task complexity and output a model recommendation:
+
+📊 **Model recommendation:** [HAIKU | SONNET | OPUS]
+**Reason:** [one-line justification]
+
+If the current session model is higher than needed, say so. If it's lower than what the task requires, warn immediately so the user can switch before work begins.
+
+### Model Tiers
+
+**HAIKU — Use for:**
+- File renaming, moving, copying, simple reorganization
+- Find-and-replace across files (mechanical changes)
+- Env var substitution (replacing hardcoded strings)
+- Adding boilerplate (error handlers, imports)
+- Simple grep/search tasks and reporting
+- Linting, formatting, or fixing syntax errors
+- Updating documentation with known facts
+- Running tests and reporting results
+- Git operations (commit, push, branch, merge)
+- Any task where the instructions are fully specified and require no judgment
+
+**SONNET — Use for:**
+- Writing new features or components with business logic
+- Refactoring code that requires understanding architecture
+- Debugging non-obvious issues (requires reasoning about state/flow)
+- Writing or modifying pipeline stages with complex logic
+- Designing data models or database schemas
+- Writing tests that require understanding intent and edge cases
+- Code review and suggesting improvements
+- Multi-file changes that need to stay internally consistent
+- Prompt engineering for AI-powered features
+- Any task that requires reading context, making decisions, or generating non-trivial code
+
+**OPUS — Use for:**
+- Architecture design across multiple systems
+- Complex multi-step planning with dependencies
+- Analyzing and redesigning entire subsystems
+- Tasks requiring deep reasoning about tradeoffs
+- Critical production changes with high stakes
+- Full codebase audits (like cost audits)
+- Writing design docs that require synthesizing many sources
+
+### Prompt Convention
+
+When writing prompts, include a model hint at the top:
+
+```
+[HAIKU] Add error handling to the email delivery function.
+
+[SONNET] Refactor the pdfminer extraction path to support footnote clustering.
+
+[OPUS] Audit all API call sites and produce a cost optimization report.
+```
+
+If no hint is provided, default to SONNET (safe middle ground). If the task turns out to be simpler or more complex than expected mid-execution, note the mismatch.
+
+### Decision Shortcuts
+
+Ask yourself: "Does this task require Claude to THINK, or just DO?"
+- Just DO → Haiku
+- Think then do → Sonnet
+- Think deeply about many things, then plan, then do → Opus
+
+---
+
 ## Current Priorities
 
 See `EbookAutomation_ProjectTracker.md` for the full backlog. Active items:
