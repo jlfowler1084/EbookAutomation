@@ -8429,6 +8429,28 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         raw = extract_text_auto(input_path, log, calibre_path=calibre_path,
                                 force_columns=force_columns)
 
+        # ── Zero-text OCR escalation for large PDFs (SCRUM-148) ──────
+        if is_pdf and raw:
+            raw_word_count = len(raw.split())
+            file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
+            if file_size_mb > 5 and raw_word_count < 200:
+                log(f"  Zero-text escalation: {file_size_mb:.1f}MB PDF, only {raw_word_count} words")
+                log(f"  Trying OCR...")
+                try:
+                    ocr_raw = extract_text_ocr(
+                        input_path, log,
+                        tesseract_path=tesseract_path,
+                        poppler_path=poppler_path,
+                        dpi=ocr_dpi
+                    )
+                    if ocr_raw and len(ocr_raw.split()) > raw_word_count * 2:
+                        log(f"  OCR wins ({len(ocr_raw.split())} words vs {raw_word_count})")
+                        raw = ocr_raw
+                    else:
+                        log(f"  OCR didn't improve — keeping original")
+                except Exception as e:
+                    log(f"  OCR escalation failed (non-blocking): {e}")
+
     log("\n-- STEP 2: Cleaning and joining paragraphs --")
     paragraphs = clean_and_join(raw, log)
 
@@ -9185,12 +9207,54 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         log("\n-- STEP 1c: Fixing ligature splits --------------------")
         _fix_ligature_splits(para_dicts, log)
 
-        # ── STEP 1d: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
+        # ── STEP 1d: Zero-text OCR escalation (SCRUM-148) ──────────
+        # If Tier 1 extraction produced very little text from a large PDF,
+        # the text layer is probably empty/corrupted. Try OCR on page images.
+        tier1_text = '\n'.join(d.get('text', '') for d in para_dicts)
+        tier1_word_count = len(tier1_text.split()) if tier1_text else 0
+        file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+
+        if file_size_mb > 5 and tier1_word_count < 200:
+            log(f"\n-- STEP 1d: Zero-text OCR escalation -------------------")
+            log(f"  Trigger: {file_size_mb:.1f}MB PDF produced only {tier1_word_count} words")
+            log(f"  Attempting Tesseract OCR on page images...")
+
+            try:
+                ocr_text = extract_text_ocr(
+                    pdf_path, log,
+                    tesseract_path=tesseract_path,
+                    poppler_path=poppler_path,
+                    dpi=ocr_dpi
+                )
+
+                if ocr_text and len(ocr_text.strip()) > len(tier1_text.strip()):
+                    ocr_word_count = len(ocr_text.split())
+                    log(f"  OCR produced {ocr_word_count} words (was {tier1_word_count})")
+
+                    if ocr_word_count > tier1_word_count * 2 or (tier1_word_count < 50 and ocr_word_count > 100):
+                        log(f"  OCR wins — switching to Tier 2 output")
+                        para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
+                        tier_used = 2
+                        extraction_method = 'tesseract5'
+                        # Re-score with OCR text
+                        quality = score_text_layer_quality(ocr_text, log=log)
+                    else:
+                        log(f"  OCR didn't produce enough improvement — keeping Tier 1")
+                else:
+                    log(f"  OCR produced no usable text — this PDF likely needs Vision (Tier 3)")
+
+            except RuntimeError as e:
+                log(f"  OCR escalation failed: {e}")
+                log(f"  Continuing with Tier 1 output (may be empty)")
+            except Exception as e:
+                log(f"  OCR escalation error (non-blocking): {e}")
+
+        # ── STEP 1e: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
         tier1_score = quality.get('score', 0) if quality else 0
         tier_suggestion = quality.get('tier_suggestion', 1) if quality else 1
 
-        if tier1_score <= 70 and tier_suggestion >= 2:
-            log(f"\n-- STEP 1d: Auto-escalating to Tier 2 (Re-OCR) --------")
+        if tier_used == 1 and tier1_score <= 70 and tier_suggestion >= 2:
+            log(f"\n-- STEP 1e: Auto-escalating to Tier 2 (Re-OCR) --------")
             log(f"  Reason: Tier 1 quality score {tier1_score} <= 70")
 
             try:

@@ -211,8 +211,9 @@ def _signal_image_vs_text(pdf_path, sample_pages):
 
 
 def _signal_producer(pdf_path):
-    """Signal 4: PDF Producer metadata (instant)."""
+    """Signal 4: PDF Producer and Creator metadata (instant)."""
     producer = None
+    creator = None
     try:
         from pypdf import PdfReader
         reader = PdfReader(pdf_path)
@@ -221,6 +222,9 @@ def _signal_producer(pdf_path):
             producer = meta.get('/Producer', '') or ''
             if not producer:
                 producer = getattr(meta, 'producer', '') or ''
+            creator = meta.get('/Creator', '') or ''
+            if not creator:
+                creator = getattr(meta, 'creator', '') or ''
     except Exception:
         pass
 
@@ -231,12 +235,13 @@ def _signal_producer(pdf_path):
             doc = fitz.open(pdf_path)
             meta = doc.metadata
             producer = meta.get('producer', '') or ''
+            creator = creator or meta.get('creator', '') or ''
             doc.close()
         except Exception:
             pass
 
     log.info("Signal 4 (producer): '%s'", producer or '(none)')
-    return producer or ''
+    return producer or '', creator or ''
 
 
 def classify_pdf(pdf_path, config=None):
@@ -255,6 +260,7 @@ def classify_pdf(pdf_path, config=None):
             "text_pages_with_content": 0,
             "image_dominant_pages": 0,
             "pdf_producer": "",
+            "pdf_creator": "",
             "has_text_layer": False,
             "total_pages": 0,
         },
@@ -313,8 +319,9 @@ def classify_pdf(pdf_path, config=None):
         result["flags"]["likely_two_column"] = likely_two_column
 
     # Signal 4: Producer metadata
-    producer = _signal_producer(pdf_path)
+    producer, creator = _signal_producer(pdf_path)
     result["signals"]["pdf_producer"] = producer
+    result["signals"]["pdf_creator"] = creator
 
     # --- Classification decision tree ---
     min_digital = config.get("min_text_density_digital", 500)
@@ -373,6 +380,34 @@ def classify_pdf(pdf_path, config=None):
     elif is_digital_producer and result["classification"].startswith("scan"):
         # Producer says digital but density says scan — reduce confidence
         result["confidence"] = max(0.3, result["confidence"] - 0.15)
+
+    # ── Producer-based routing overrides (SCRUM-148) ───────────────
+    # Internet Archive scans are almost always image-only or have bad OCR
+    if 'internet archive' in producer_lower:
+        if text_density < 200:
+            result["classification"] = "scan_no_text"
+            result["confidence"] = max(result["confidence"], 0.80)
+            result["flags"]["needs_ocr"] = True
+            result["recommended_strategies"] = ["ocr", "html_extraction", "legacy"]
+            log.info("Producer override: Internet Archive with low text density "
+                     "-> scan_no_text")
+        else:
+            result["classification"] = "scan_with_text"
+            result["confidence"] = max(result["confidence"], 0.70)
+            result["recommended_strategies"] = ["ocr", "html_extraction", "legacy"]
+            log.info("Producer override: Internet Archive with text "
+                     "-> scan_with_text (OCR preferred)")
+
+    # LuraDocument is a PDF recoding tool — recoded PDFs often have
+    # corrupted text layers
+    if 'luradocument' in producer_lower or 'lura' in producer_lower:
+        if text_density < 200:
+            result["classification"] = "scan_no_text"
+            result["confidence"] = max(result["confidence"], 0.75)
+            result["flags"]["needs_ocr"] = True
+            result["recommended_strategies"] = ["ocr", "html_extraction"]
+            log.info("Producer override: LuraDocument with low text density "
+                     "-> scan_no_text")
 
     # Override: high text density + high file size per page = scan with OCR text layer
     # Digital-native PDFs are typically < 15 KB/page (text + vector graphics only)

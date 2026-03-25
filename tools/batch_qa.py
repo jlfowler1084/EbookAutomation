@@ -384,6 +384,65 @@ FAILURE_PATTERNS = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Font inventory (SCRUM-148)
+# ═══════════════════════════════════════════════════════════════════════════
+
+RISKY_FONT_MARKERS = [
+    'symbol', 'zapfdingbats', 'cid', 'identity-h', 'identity-v',
+    'wingdings', 'dingbats',
+]
+
+
+def _collect_fonts_recursive(element, fonts_seen):
+    """Recursively collect font names from pdfminer layout elements."""
+    try:
+        from pdfminer.layout import LTChar
+    except ImportError:
+        return
+
+    if isinstance(element, LTChar):
+        if hasattr(element, 'fontname') and element.fontname:
+            fonts_seen.add(element.fontname)
+    elif hasattr(element, '__iter__'):
+        for child in element:
+            _collect_fonts_recursive(child, fonts_seen)
+
+
+def extract_font_inventory(pdf_path, max_pages=10):
+    """Extract font names from a PDF by sampling pages via pdfminer.
+
+    Returns dict with total_unique, names, has_risky_fonts, risky_fonts.
+    """
+    result = {
+        "total_unique": 0,
+        "names": [],
+        "has_risky_fonts": False,
+        "risky_fonts": [],
+    }
+    try:
+        from pdfminer.high_level import extract_pages
+
+        fonts_seen = set()
+        for page_num, page_layout in enumerate(extract_pages(str(pdf_path),
+                                                              maxpages=max_pages)):
+            _collect_fonts_recursive(page_layout, fonts_seen)
+
+        font_list = sorted(fonts_seen)
+        risky_fonts = [f for f in font_list if any(
+            risk in f.lower() for risk in RISKY_FONT_MARKERS
+        )]
+
+        result["total_unique"] = len(font_list)
+        result["names"] = font_list[:30]  # cap at 30 to keep reports readable
+        result["has_risky_fonts"] = bool(risky_fonts)
+        result["risky_fonts"] = risky_fonts
+    except Exception:
+        pass  # Non-blocking
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Folder scanning
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -520,7 +579,8 @@ def run_visual_qa_for_book(kfx_path):
         return None, {}, 0, time.time() - t0
 
 
-def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=False):
+def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=False,
+                        max_pages=0):
     """
     Process a single book and collect structured diagnostics.
     Returns a diagnostics dict.
@@ -607,6 +667,21 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         "status_reason": "Not yet processed",
     }
 
+    # ── Page-count cap (SCRUM-148) ──────────────────────────────
+    if ext == 'pdf' and max_pages and max_pages > 0:
+        try:
+            from pypdf import PdfReader as _SkipReader
+            _skip_r = _SkipReader(str(file_path))
+            _page_count = len(_skip_r.pages)
+            if _page_count > max_pages:
+                diag["overall_status"] = "SKIP"
+                diag["status_reason"] = (
+                    f"Skipped: {_page_count} pages exceeds --max-pages {max_pages}")
+                diag["structure"]["page_count"] = _page_count
+                return diag
+        except Exception:
+            pass  # Can't read page count — continue normally
+
     # ── Phase 1: Text extraction ────────────────────────────────
     t0 = time.time()
 
@@ -666,20 +741,13 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             except Exception:
                 pass
 
-            # Font inventory from extraction stdout
-            try:
-                from pdf_to_balabolka import _last_font_inventory
-                if _last_font_inventory:
-                    _risky = [f for f in _last_font_inventory
-                              if any(r in f.lower() for r in
-                                     ['symbol', 'zapfdingbats', 'cid', 'identity-h',
-                                      'identity-v', 'wingdings'])]
-                    diag["fonts"]["total_unique"] = len(_last_font_inventory)
-                    diag["fonts"]["names"] = _last_font_inventory[:20]
-                    diag["fonts"]["has_risky_fonts"] = bool(_risky)
-                    diag["fonts"]["risky_fonts"] = _risky
-            except Exception:
-                pass
+            # Font inventory — extract directly from PDF (SCRUM-148)
+            if ext == 'pdf':
+                try:
+                    font_data = extract_font_inventory(str(file_path), max_pages=10)
+                    diag["fonts"] = font_data
+                except Exception:
+                    pass
 
         elif txt_path and os.path.isfile(txt_path):
             diag["extraction"]["success"] = True
@@ -1046,6 +1114,9 @@ def generate_json_report(run_id, diagnostics_list, clusters, observations,
             ),
             "books_errored": sum(
                 1 for d in diagnostics_list if d["overall_status"] == "ERROR"
+            ),
+            "books_skipped": sum(
+                1 for d in diagnostics_list if d["overall_status"] == "SKIP"
             ),
             "total_duration_seconds": round(duration, 1),
             "total_api_cost_usd": round(sum(
@@ -1536,7 +1607,7 @@ def list_past_runs(db_path=None):
 
 def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
               format_filter=None, parallel=1, resume_run_id=None,
-              db_path=None, no_db=False):
+              db_path=None, no_db=False, max_pages=0):
     """
     Main batch QA entry point.
     Scans folder, processes each book, analyzes patterns, generates reports.
@@ -1620,6 +1691,7 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
             diag = collect_diagnostics(
                 file_path, str(batch_output), run_id,
                 quick=quick, include_vqa=include_vqa,
+                max_pages=max_pages,
             )
             status = diag["overall_status"]
             ch = diag["structure"]["chapter_count"]
@@ -1719,14 +1791,17 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
     warned = sum(1 for d in diagnostics_list if d["overall_status"] == "WARN")
     failed = sum(1 for d in diagnostics_list if d["overall_status"] == "FAIL")
     errored = sum(1 for d in diagnostics_list if d["overall_status"] == "ERROR")
+    skipped = sum(1 for d in diagnostics_list if d["overall_status"] == "SKIP")
     dur_min = int(batch_duration // 60)
     dur_sec = int(batch_duration % 60)
 
     print(f"\n{'=' * 60}")
     print(f"  Batch QA Complete — {run_id}")
+    skip_str = f", {skipped} skipped" if skipped else ""
     print(f"  Results: {passed} passed, {warned} warnings, "
-          f"{failed} failed, {errored} errors  ({total_count} total)")
-    rate = passed / total_count * 100 if total_count else 0
+          f"{failed} failed, {errored} errors{skip_str}  ({total_count} total)")
+    counted = total_count - skipped  # exclude skipped from pass rate
+    rate = passed / counted * 100 if counted else 0
     print(f"  Pass rate: {rate:.0f}%")
     print(f"  Duration: {dur_min}m {dur_sec}s")
     if clusters:
@@ -1796,6 +1871,11 @@ Examples:
         "--db-path", default=None,
         help="Override database path"
     )
+    run_parser.add_argument(
+        "--max-pages", type=int, default=0,
+        help="Skip PDFs with more than this many pages (0 = no limit). "
+             "Useful for excluding massive scans from routine batch runs."
+    )
 
     # ── compare ─────────────────────────────────────────────────
     cmp_parser = subparsers.add_parser(
@@ -1853,6 +1933,7 @@ Examples:
             resume_run_id=args.resume,
             db_path=args.db_path,
             no_db=args.no_db,
+            max_pages=args.max_pages,
         )
     elif args.command == "compare":
         compare_runs(args.run_id1, args.run_id2, args.db_path)
