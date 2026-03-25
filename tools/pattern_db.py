@@ -357,7 +357,7 @@ def _migrate(conn):
         except sqlite3.OperationalError:
             pass  # Column already exists
 
-    # FU-4: Unique index for source_profiles upsert
+    # FU-4: Unique index for source_profiles upsert (COALESCE handles NULLs)
     # First deduplicate any existing rows, then create the unique index
     try:
         conn.execute("""
@@ -366,9 +366,11 @@ def _migrate(conn):
                 GROUP BY COALESCE(publisher, ''), COALESCE(decade, ''), COALESCE(format, '')
             )
         """)
+        # Drop old non-COALESCE index if it exists
+        conn.execute("DROP INDEX IF EXISTS idx_source_profiles_unique")
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_source_profiles_unique "
-            "ON source_profiles(publisher, decade, format)")
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_source_profiles_key "
+            "ON source_profiles(COALESCE(publisher, ''), COALESCE(decade, ''), COALESCE(format, ''))")
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -552,12 +554,15 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                    api_output_tokens=0, cost_usd=0,
                    duration_seconds=None, output_file_path=None,
                    output_file_size=None, conversion_flags=None,
-                   category_scores=None, db_path=None):
+                   category_scores=None, duration_breakdown=None,
+                   db_path=None):
     """Record a conversion attempt. Returns conversion ID."""
     if isinstance(conversion_flags, dict):
         conversion_flags = json.dumps(conversion_flags)
     if isinstance(category_scores, dict):
         category_scores = json.dumps(category_scores)
+    if isinstance(duration_breakdown, dict):
+        duration_breakdown = json.dumps(duration_breakdown)
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
@@ -566,13 +571,15 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                 vqa_report_path, text_quality_score, fixes_applied,
                 fixes_failed, api_input_tokens, api_output_tokens,
                 cost_usd, duration_seconds, output_file_path,
-                output_file_size, conversion_flags, category_scores)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                output_file_size, conversion_flags, category_scores,
+                duration_breakdown)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, iteration, extraction_path, vqa_score,
              vqa_report_path, text_quality_score, fixes_applied,
              fixes_failed, api_input_tokens, api_output_tokens,
              cost_usd, duration_seconds, output_file_path,
-             output_file_size, conversion_flags, category_scores)
+             output_file_size, conversion_flags, category_scores,
+             duration_breakdown)
         )
         conn.commit()
         return cursor.lastrowid
@@ -883,7 +890,7 @@ def update_source_profile(publisher, decade, format, db_path=None):
             f"{r['category']}({r['cnt']})" for r in issue_cursor.fetchall()
         )
 
-        # Upsert the profile (FU-4: fixed to use proper unique key)
+        # Upsert the profile (FU-4: COALESCE keys to handle NULLs)
         conn.execute(
             """INSERT INTO source_profiles
                    (publisher, decade, format, books_processed,
@@ -891,7 +898,7 @@ def update_source_profile(publisher, decade, format, db_path=None):
                     avg_iterations_needed, best_extraction_path,
                     common_issues, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-               ON CONFLICT(publisher, decade, format) DO UPDATE SET
+               ON CONFLICT(COALESCE(publisher, ''), COALESCE(decade, ''), COALESCE(format, '')) DO UPDATE SET
                    books_processed = excluded.books_processed,
                    avg_initial_score = excluded.avg_initial_score,
                    avg_final_score = excluded.avg_final_score,
@@ -899,7 +906,7 @@ def update_source_profile(publisher, decade, format, db_path=None):
                    best_extraction_path = excluded.best_extraction_path,
                    common_issues = excluded.common_issues,
                    updated_at = CURRENT_TIMESTAMP""",
-            (publisher, decade, format, row["books_processed"],
+            (publisher or '', decade or '', format or '', row["books_processed"],
              row["avg_initial_score"], row["avg_final_score"],
              row["avg_iterations_needed"], best_path, common)
         )
@@ -2083,114 +2090,111 @@ def _cmd_cache_invalidate(args):
 
 
 def _cmd_publisher_report(args):
-    """Print publisher/producer aggregation report (FU-4)."""
+    """Print per-publisher conversion stats (FU-4)."""
     conn = get_db(getattr(args, 'db_path', None))
     try:
-        cursor = conn.execute("""
+        where = ""
+        params = []
+        if getattr(args, 'publisher', None):
+            where = "WHERE b.publisher LIKE ?"
+            params = [f"%{args.publisher}%"]
+
+        cursor = conn.execute(f"""
             SELECT
-                b.pdf_producer,
-                COUNT(DISTINCT b.id) as book_count,
-                ROUND(AVG(c.text_quality_score), 1) as avg_quality,
-                SUM(CASE WHEN c.text_quality_score >= 75 THEN 1 ELSE 0 END) as good_count,
-                GROUP_CONCAT(DISTINCT c.extraction_path) as paths_used
+                COALESCE(b.publisher, '(unknown)') as publisher,
+                COUNT(DISTINCT b.id) as books,
+                ROUND(AVG(CASE WHEN c.iteration = 1 THEN c.vqa_score END), 1) as avg_initial,
+                ROUND(AVG(c.vqa_score), 1) as avg_final,
+                ROUND(SUM(c.cost_usd), 4) as total_cost,
+                ROUND(AVG(c.duration_seconds), 1) as avg_duration
             FROM books b
             LEFT JOIN conversions c ON c.book_id = b.id
-            WHERE b.pdf_producer IS NOT NULL AND b.pdf_producer != ''
-            GROUP BY b.pdf_producer
-            ORDER BY book_count DESC
-        """)
+            {where}
+            GROUP BY COALESCE(b.publisher, '(unknown)')
+            HAVING books > 0
+            ORDER BY books DESC
+        """, params)
         rows = cursor.fetchall()
-
-        if not rows:
-            print("No producer data found. Run some books through the pipeline first.")
-            return
-
-        print("\nPublisher/Producer Report")
-        print("=" * 80)
-        header = "{:<45} {:>5} {:>8} {:>6} {}".format(
-            "Producer", "Books", "AvgQual", "Pass%", "Paths Used")
-        print(header)
-        print("-" * 80)
-        for r in rows:
-            producer = (r["pdf_producer"] or "Unknown")[:44]
-            books = r["book_count"]
-            avg_q = r["avg_quality"] or 0
-            good = r["good_count"] or 0
-            pct = round(good / books * 100) if books else 0
-            paths = r["paths_used"] or "N/A"
-            print("{:<45} {:>5} {:>7.1f} {:>5}% {}".format(
-                producer, books, avg_q, pct, paths[:25]))
-        print()
     finally:
         conn.close()
+
+    if not rows:
+        print("No publisher data found.")
+        return
+
+    print(f"{'Publisher':<30} {'Books':>5} {'Avg Init':>9} {'Avg Final':>9} "
+          f"{'Cost':>8} {'Avg Dur':>8}")
+    print("-" * 80)
+    for r in rows:
+        init_s = f"{r['avg_initial']:.1f}" if r['avg_initial'] else "-"
+        final_s = f"{r['avg_final']:.1f}" if r['avg_final'] else "-"
+        cost_s = f"${r['total_cost']:.2f}" if r['total_cost'] else "$0.00"
+        dur_s = f"{r['avg_duration']:.0f}s" if r['avg_duration'] else "-"
+        print(f"{r['publisher']:<30} {r['books']:>5} {init_s:>9} {final_s:>9} "
+              f"{cost_s:>8} {dur_s:>8}")
 
 
 def _cmd_cache_roi(args):
-    """Print extraction cache ROI / cost-per-serve report (FU-5)."""
+    """Print cost-per-serve amortization for all books (FU-5)."""
     conn = get_db(getattr(args, 'db_path', None))
     try:
-        cursor = conn.execute("""
+        min_cost_clause = ""
+        params = []
+        if getattr(args, 'min_cost', None):
+            min_cost_clause = "HAVING total_cost >= ?"
+            params = [args.min_cost]
+
+        cursor = conn.execute(f"""
             SELECT
                 b.filename,
-                ec.extraction_tier,
-                ec.extraction_method,
-                ec.quality_score,
-                ec.extraction_cost_usd,
-                ec.extraction_duration_seconds,
-                ec.times_served,
-                ec.created_at,
-                ec.escalation_details
-            FROM extraction_cache ec
-            JOIN books b ON b.id = ec.book_id
-            ORDER BY ec.times_served DESC
-        """)
+                COALESCE(b.title, '(untitled)') as title,
+                COUNT(c.id) as conversions,
+                ROUND(SUM(c.cost_usd), 4) as total_cost,
+                MAX(c.vqa_score) as best_score,
+                CASE
+                    WHEN COUNT(c.id) = 0 THEN 0
+                    ELSE ROUND(SUM(c.cost_usd) / COUNT(c.id), 4)
+                END as cost_per_serve
+            FROM books b
+            LEFT JOIN conversions c ON c.book_id = b.id
+            GROUP BY b.id
+            {min_cost_clause}
+            ORDER BY total_cost DESC
+        """, params)
         rows = cursor.fetchall()
-
-        if not rows:
-            print("No extraction cache entries. Run some books through the pipeline first.")
-            return
-
-        print("\nExtraction Cache ROI")
-        print("=" * 95)
-        header = "{:<40} {:>4} {:<16} {:>5} {:>7} {:>6} {:>8}".format(
-            "Book", "Tier", "Method", "Score", "Cost", "Served", "$/Serve")
-        print(header)
-        print("-" * 95)
-
-        total_cost = 0
-        total_served = 0
-        total_time_saved = 0
-
-        for r in rows:
-            name = (r["filename"] or "Unknown")[:39]
-            tier = r["extraction_tier"] or 0
-            method = (r["extraction_method"] or "unknown")[:15]
-            score = r["quality_score"] or 0
-            cost = r["extraction_cost_usd"] or 0
-            served = r["times_served"] or 0
-            dur = r["extraction_duration_seconds"] or 0
-
-            cost_per_serve = cost / served if served > 0 else cost
-            total_cost += cost
-            total_served += served
-            if served > 1:
-                total_time_saved += dur * (served - 1)
-
-            print("{:<40} {:>4} {:<16} {:>5} ${:>5.2f} {:>6} ${:>6.4f}".format(
-                name, tier, method, score, cost, served, cost_per_serve))
-
-        print("-" * 95)
-        print(f"\nSummary:")
-        print(f"  Total entries: {len(rows)}")
-        print(f"  Total extraction cost: ${total_cost:.2f}")
-        print(f"  Total times served: {total_served}")
-        if total_time_saved > 0:
-            mins = total_time_saved / 60
-            print(f"  Estimated time saved: {mins:.1f} minutes "
-                  f"({total_time_saved:.0f}s of repeated extraction avoided)")
-        print()
     finally:
         conn.close()
+
+    if not rows:
+        print("No conversion data found.")
+        return
+
+    print(f"{'Title':<35} {'Runs':>4} {'Cost':>8} {'$/Serve':>8} "
+          f"{'Best':>5} {'Status':<12}")
+    print("-" * 80)
+
+    total_all_cost = 0
+    for r in rows:
+        cost = r['total_cost'] or 0
+        cps = r['cost_per_serve'] or 0
+        total_all_cost += cost
+        score_s = str(r['best_score']) if r['best_score'] else "-"
+
+        if cps == 0:
+            status = "free"
+        elif cps < 0.50:
+            status = "amortized"
+        elif cps < 2.00:
+            status = "recovering"
+        else:
+            status = "sunk"
+
+        title = (r['title'] or r['filename'])[:34]
+        print(f"{title:<35} {r['conversions']:>4} ${cost:>7.2f} ${cps:>7.4f} "
+              f"{score_s:>5} {status:<12}")
+
+    print("-" * 80)
+    print(f"Total cost across all books: ${total_all_cost:.4f}")
 
 
 def _cmd_classify(args):
@@ -3050,11 +3054,14 @@ def main():
 
     # ── Publisher report + Cache ROI (SCRUM-133 follow-ups) ──────
     pub_rpt_parser = subparsers.add_parser(
-        'publisher-report', help='Show publisher/producer aggregation report')
+        'publisher-report', help='Show per-publisher conversion stats')
+    pub_rpt_parser.add_argument('--publisher', help='Filter to specific publisher (partial match)')
     pub_rpt_parser.add_argument('--db-path', default=None)
 
     cache_roi_parser = subparsers.add_parser(
-        'cache-roi', help='Show extraction cache cost-per-serve ROI')
+        'cache-roi', help='Show cost-per-serve amortization for all books')
+    cache_roi_parser.add_argument('--min-cost', type=float, default=None,
+                                  help='Only show books above this total cost')
     cache_roi_parser.add_argument('--db-path', default=None)
 
     # ── Extraction cache subcommands ─────────────────────────────

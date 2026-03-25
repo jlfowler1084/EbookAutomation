@@ -763,6 +763,8 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
 
         diag["extraction"]["duration_seconds"] = round(extraction_duration, 1)
 
+        t_analysis = time.time()
+
         if exit_code != 0:
             diag["extraction"]["errors"].append(
                 f"Extraction exited with code {exit_code}"
@@ -872,6 +874,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         diag["extraction"]["success"] = True
         diag["extraction"]["extraction_path"] = "direct"
         diag["extraction"]["duration_seconds"] = round(time.time() - t0, 1)
+        t_analysis = time.time()
 
     # ── Phase 2b: Column detection + Scan detection + DRM detection ──
     if ext == 'pdf' and diag["extraction"]["success"]:
@@ -924,6 +927,9 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         except Exception:
             pass  # Don't let DRM check block the pipeline
 
+    # Capture analysis duration (Phase 2 + 2b)
+    analysis_duration = round(time.time() - t_analysis, 1)
+
     # ── Phase 3: KFX conversion (skip in quick mode) ────────────
     if not quick and ext == 'pdf':
         diag["kindle_conversion"]["attempted"] = True
@@ -946,6 +952,14 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                     vqa_score is not None
                     and vqa_score >= diag["visual_qa"]["pass_threshold"]
                 )
+
+    # FU-3: Assemble duration breakdown
+    diag["duration_breakdown"] = {
+        "extraction": diag["extraction"]["duration_seconds"],
+        "analysis": analysis_duration,
+        "calibre": diag.get("kindle_conversion", {}).get("duration_seconds", 0),
+        "vqa": diag.get("visual_qa", {}).get("duration_seconds", 0),
+    }
 
     # ── Phase 5: Issue detection ────────────────────────────────
     _detect_issues(diag)
@@ -1502,6 +1516,7 @@ def record_batch_to_db(run_id, diagnostics_list, duration, flags,
                         category_scores=diag.get("visual_qa", {}).get(
                             "category_scores"
                         ),
+                        duration_breakdown=diag.get("duration_breakdown"),
                         db_path=db_path,
                     )
                 except Exception as e:
