@@ -233,7 +233,102 @@ def detect_scripts(text, sample_size=10000):
             for name, count in counts.items() if count > 0}
 
 
-def score_text_layer_quality(text, log=None):
+def _score_single_sample(sample):
+    """Score a single text sample on 5 quality checks. Returns weighted score (0-100)."""
+    total_chars = len(sample)
+    if total_chars < 50:
+        return 50  # Not enough data
+
+    # Check 1: Unicode printable ratio (25%)
+    printable_count = sum(
+        1 for ch in sample
+        if (ch.isprintable() or ch in ('\n', '\r', '\t'))
+        and not (0xE000 <= ord(ch) <= 0xF8FF)
+    )
+    printable_ratio = printable_count / max(total_chars, 1)
+    if printable_ratio > 0.99:
+        c1 = 100
+    elif printable_ratio < 0.85:
+        c1 = 0
+    else:
+        c1 = int(((printable_ratio - 0.85) / 0.14) * 100)
+
+    # Check 2: Common word hit rate (25%)
+    raw_words = sample.split()
+    stripped_words = [
+        w.lower().strip('.,;:!?()[]{}"\'-—–…»«""''')
+        for w in raw_words
+    ]
+    stripped_words = [w for w in stripped_words if w and w.isalpha() and len(w) > 1]
+    word_sample = stripped_words[:500]
+    if word_sample:
+        hits = sum(1 for w in word_sample if w in _COMMON_ENGLISH_WORDS)
+        hit_rate = hits / len(word_sample)
+    else:
+        hit_rate = 0.0
+    if hit_rate > 0.40:
+        c2 = 100
+    elif hit_rate < 0.10:
+        c2 = 0
+    else:
+        c2 = int(((hit_rate - 0.10) / 0.30) * 100)
+
+    # Check 3: Word length distribution (15%)
+    word_lengths = [len(w) for w in word_sample] if word_sample else []
+    if len(word_lengths) >= 10:
+        avg_len = statistics.mean(word_lengths)
+        std_len = statistics.stdev(word_lengths)
+        penalty = 0
+        if avg_len < 4.0:
+            penalty += min(40, int((4.0 - avg_len) * 20))
+        elif avg_len > 7.0:
+            penalty += min(40, int((avg_len - 7.0) * 15))
+        if std_len < 2.0:
+            penalty += min(30, int((2.0 - std_len) * 15))
+        elif std_len > 5.0:
+            penalty += min(30, int((std_len - 5.0) * 10))
+        c3 = max(0, 100 - penalty)
+    else:
+        c3 = 50
+
+    # Check 4: Encoding artifacts (20%)
+    fffd_count = sample.count('\ufffd')
+    latin1_debris = len(re.findall(r'[ÃÂ][\x80-\xBF]|â€[^\w]', sample))
+    win1252_count = sum(1 for ch in sample if 0x0080 <= ord(ch) <= 0x009F)
+    non_ascii_seqs = re.findall(r'[^\x00-\x7F\u00C0-\u024F]{3,}', sample)
+    artifact_count = fffd_count + latin1_debris + win1252_count + len(non_ascii_seqs)
+    per_1000 = (artifact_count / max(total_chars, 1)) * 1000
+    if per_1000 == 0:
+        c4 = 100
+    elif per_1000 < 1:
+        c4 = 80
+    elif per_1000 > 10:
+        c4 = 0
+    else:
+        c4 = max(0, int(80 - ((per_1000 - 1) / 9) * 80))
+
+    # Check 5: Repeated lines (15%)
+    lines = [l.strip() for l in sample.split('\n') if l.strip()]
+    if len(lines) >= 10:
+        from collections import Counter as _Counter
+        line_counts = _Counter(lines)
+        repeated = sum(c for _, c in line_counts.items() if c >= 3)
+        repeat_ratio = repeated / len(lines)
+        if repeat_ratio < 0.02:
+            c5 = 100
+        elif repeat_ratio > 0.15:
+            c5 = 0
+        else:
+            c5 = max(0, int(100 - ((repeat_ratio - 0.02) / 0.13) * 100))
+    else:
+        c5 = 80
+
+    return max(0, min(100, int(round(
+        c1 * 0.25 + c2 * 0.25 + c3 * 0.15 + c4 * 0.20 + c5 * 0.15
+    ))))
+
+
+def score_text_layer_quality(text, log=None, multi_sample=False):
     """Score extracted text quality on a 0-100 scale.
 
     Used as a quality gate after extraction to decide whether the result
@@ -249,6 +344,7 @@ def score_text_layer_quality(text, log=None):
     Args:
         text: Extracted text string (at least 1000 chars for reliable scoring)
         log: Optional logging function
+        multi_sample: If True, sample 5 positions and report quality variance
 
     Returns:
         dict with keys:
@@ -285,9 +381,7 @@ def score_text_layer_quality(text, log=None):
     total_chars = len(sample)
     for ch in sample:
         cp = ord(ch)
-        # Standard printable: letters, digits, punctuation, whitespace
         if ch.isprintable() or ch in ('\n', '\r', '\t'):
-            # Exclude private use area (U+E000-U+F8FF)
             if not (0xE000 <= cp <= 0xF8FF):
                 printable_count += 1
     printable_ratio = printable_count / max(total_chars, 1)
@@ -304,7 +398,6 @@ def score_text_layer_quality(text, log=None):
     }
 
     # ── Check 2: Common word hit rate (25% weight) ─────────────────
-    # Split into words, lowercase, strip punctuation
     raw_words = sample.split()
     stripped_words = []
     for w in raw_words:
@@ -312,7 +405,6 @@ def score_text_layer_quality(text, log=None):
         if cleaned and cleaned.isalpha() and len(cleaned) > 1:
             stripped_words.append(cleaned)
     if stripped_words:
-        # Sample up to 500 words for speed
         word_sample = stripped_words[:500]
         hits = sum(1 for w in word_sample if w in _COMMON_ENGLISH_WORDS)
         hit_rate = hits / len(word_sample)
@@ -336,7 +428,6 @@ def score_text_layer_quality(text, log=None):
     if len(word_lengths) >= 10:
         avg_len = statistics.mean(word_lengths)
         std_len = statistics.stdev(word_lengths)
-        # Normal English: avg 4-7, stddev 2-5
         avg_ok = 4.0 <= avg_len <= 7.0
         std_ok = 2.0 <= std_len <= 5.0
         if avg_ok and std_ok:
@@ -353,7 +444,7 @@ def score_text_layer_quality(text, log=None):
                 penalty += min(30, int((std_len - 5.0) * 10))
             check3_score = max(0, 100 - penalty)
     else:
-        check3_score = 50  # Not enough data — neutral score
+        check3_score = 50
         avg_len = 0.0
         std_len = 0.0
     details['word_length_distribution'] = {
@@ -365,17 +456,12 @@ def score_text_layer_quality(text, log=None):
 
     # ── Check 4: Encoding artifact count (20% weight) ──────────────
     artifact_count = 0
-    # Replacement characters (U+FFFD)
     fffd_count = sample.count('\ufffd')
     artifact_count += fffd_count
-    # UTF-8 decoded as Latin-1 artifacts
     latin1_debris = len(re.findall(r'[ÃÂ][\x80-\xBF]|â€[^\w]', sample))
     artifact_count += latin1_debris
-    # Windows-1252 control chars (U+0080-U+009F)
     win1252_count = sum(1 for ch in sample if 0x0080 <= ord(ch) <= 0x009F)
     artifact_count += win1252_count
-    # Sequences of 3+ non-ASCII non-diacritical chars
-    # (common diacritics: U+00C0-U+024F are OK)
     non_ascii_seqs = re.findall(r'[^\x00-\x7F\u00C0-\u024F]{3,}', sample)
     artifact_count += len(non_ascii_seqs)
 
@@ -415,7 +501,7 @@ def score_text_layer_quality(text, log=None):
         else:
             check5_score = max(0, int(100 - ((repeat_ratio - 0.02) / 0.13) * 100))
     else:
-        check5_score = 80  # Not enough lines — assume mostly OK
+        check5_score = 80
         repeat_ratio = 0.0
     details['repeated_lines'] = {
         'score': check5_score,
@@ -432,6 +518,30 @@ def score_text_layer_quality(text, log=None):
         check5_score * 0.15
     )
     score = max(0, min(100, int(round(weighted_score))))
+
+    # ── Multi-sample quality variance (FU-1) ───────────────────────
+    if multi_sample and text_len > 2000:
+        positions = [0.10, 0.25, 0.50, 0.75, 0.90]
+        sample_scores = []
+        for pos in positions:
+            s = int(text_len * pos)
+            e = min(s + 2000, text_len)
+            chunk = text[s:e]
+            if len(chunk.strip()) < 100:
+                continue
+            sample_scores.append({
+                'position': pos,
+                'score': _score_single_sample(chunk),
+            })
+        if sample_scores:
+            scores = [ss['score'] for ss in sample_scores]
+            details['multi_sample'] = {
+                'samples': sample_scores,
+                'variance': max(scores) - min(scores),
+                'min_score': min(scores),
+                'max_score': max(scores),
+                'problem_regions': [ss for ss in sample_scores if ss['score'] < 60],
+            }
 
     # ── Recommendation logic ───────────────────────────────────────
     if score >= 75:
@@ -9175,11 +9285,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 "falling back to standard extraction")
             use_vision = False
 
+    _timing = {}  # FU-3: duration breakdown
+
     if not use_vision:
         # ── Standard Tier 1/2 extraction ──────────────────────────
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
 
+        _t_extract = _time_mod.time()
         log("\n-- STEP 1: Extracting text with font metadata --")
         para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log,
                                                             force_columns=force_columns)
@@ -9213,6 +9326,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         tier1_text = '\n'.join(d.get('text', '') for d in para_dicts)
         tier1_word_count = len(tier1_text.split()) if tier1_text else 0
         file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+        _escalation_info = None  # FU-2: capture escalation comparison
 
         if file_size_mb > 5 and tier1_word_count < 200:
             log(f"\n-- STEP 1d: Zero-text OCR escalation -------------------")
@@ -9238,6 +9352,15 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         extraction_method = 'tesseract5'
                         # Re-score with OCR text
                         quality = score_text_layer_quality(ocr_text, log=log)
+                        ocr_score = quality.get('score', 0) if quality else 0
+                        _escalation_info = json.dumps({
+                            'trigger': 'zero_text',
+                            'tier1_score': 0,
+                            'tier2_score': ocr_score,
+                            'tier1_words': tier1_word_count,
+                            'tier2_words': ocr_word_count,
+                            'improvement_pct': 100,
+                        })
                     else:
                         log(f"  OCR didn't produce enough improvement — keeping Tier 1")
                 else:
@@ -9274,6 +9397,16 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                     if ocr_score > tier1_score:
                         log(f"  OCR wins: {ocr_score} > {tier1_score} — "
                             f"switching to Tier 2 output")
+                        ocr_word_count = len(ocr_text.split())
+                        _escalation_info = json.dumps({
+                            'trigger': 'quality_score',
+                            'tier1_score': tier1_score,
+                            'tier2_score': ocr_score,
+                            'tier1_words': tier1_word_count,
+                            'tier2_words': ocr_word_count,
+                            'improvement_pct': round(
+                                (ocr_score - tier1_score) / max(tier1_score, 1) * 100, 1),
+                        })
                         para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
                         tier_used = 2
                         extraction_method = 'tesseract5'
@@ -9292,6 +9425,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 log(f"  OCR escalation error (non-blocking): {e}")
                 log(f"  Continuing with Tier 1 output")
 
+    _timing['extraction_s'] = round(_time_mod.time() - _t_extract, 1) if '_t_extract' in dir() else 0
+    _t_format = _time_mod.time()
     log("\n-- STEP 2: Formatting as semantic HTML ----------------")
     # Extract title from bookmarks or filename
     title = 'Untitled'
@@ -9342,6 +9477,11 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     except Exception:
         pass
 
+    _timing['formatting_s'] = round(_time_mod.time() - _t_format, 1) if '_t_format' in dir() else 0
+    if _timing.get('extraction_s') or _timing.get('formatting_s'):
+        log(f"  Timing: extraction={_timing.get('extraction_s', 0)}s, "
+            f"formatting={_timing.get('formatting_s', 0)}s")
+
     # Write HTML output
     html_path = re.sub(r'\.(txt|html?)$', '.html', output_path)
     if not html_path.endswith('.html'):
@@ -9391,6 +9531,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 chapter_count=_chapter_count,
                 cost_usd=vision_cost,
                 duration_seconds=round(_extraction_duration, 1),
+                escalation_details=_escalation_info if '_escalation_info' in dir() else None,
             )
             log(f"Extraction cached: hash={_src_hash[:12]}..., tier={tier_used}, "
                 f"method={extraction_method}, score={_quality_score}")

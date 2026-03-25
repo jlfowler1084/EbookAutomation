@@ -923,14 +923,19 @@ def _analyze_html_structure(diag, html_content):
     # Encoding error heuristic: count replacement characters
     diag["text_quality"]["encoding_errors"] = body_text.count('\ufffd')
 
-    # Text layer quality scoring
+    # Text layer quality scoring (FU-1: multi-sample for variance)
     if HAS_TEXT_SCORER and diag["structure"]["word_count"] > 100:
         try:
-            quality = score_text_layer_quality(body_text)
+            quality = score_text_layer_quality(body_text, multi_sample=True)
             diag["text_quality"]["text_layer_score"] = quality["score"]
             diag["text_quality"]["score_details"] = quality["details"]
             diag["text_quality"]["tier_suggestion"] = quality["tier_suggestion"]
             diag["text_quality"]["recommendation"] = quality["recommendation"]
+            ms = quality.get("details", {}).get("multi_sample", {})
+            if ms:
+                diag["text_quality"]["variance"] = ms.get("variance", 0)
+                diag["text_quality"]["min_region"] = ms.get("min_score")
+                diag["text_quality"]["max_region"] = ms.get("max_score")
         except Exception:
             pass  # non-blocking
 
