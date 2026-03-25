@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS books (
     source_file_hash TEXT,  -- SHA-256 hash of the input file (identifies exact file version)
     cover_image_path TEXT,  -- path to extracted cover JPG
     language TEXT DEFAULT 'en',  -- ISO 639-1 language code
+    pdf_producer TEXT,  -- PDF metadata: software that produced the file
+    pdf_creator TEXT,   -- PDF metadata: original document creator
+    detected_scripts TEXT,  -- JSON: detected Unicode script blocks {"latin": 94.2, "hebrew": 3.1}
     word_count INTEGER,  -- approximate word count from extracted text
     chapter_count INTEGER,  -- number of chapters/headings detected
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -107,6 +110,7 @@ CREATE TABLE IF NOT EXISTS conversions (
     output_file_size INTEGER,  -- output file size in bytes
     conversion_flags TEXT,  -- JSON of active flags: {"UseHtmlExtraction": true, ...}
     category_scores TEXT,  -- JSON of per-category VQA scores: {"text_integrity": 83, ...}
+    font_inventory TEXT,  -- JSON: unique font names and encodings found during extraction
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -326,6 +330,10 @@ def _migrate(conn):
         ("conversions", "output_file_size", "INTEGER"),
         ("conversions", "conversion_flags", "TEXT"),
         ("conversions", "category_scores", "TEXT"),
+        ("conversions", "font_inventory", "TEXT"),
+        ("books", "pdf_producer", "TEXT"),
+        ("books", "pdf_creator", "TEXT"),
+        ("books", "detected_scripts", "TEXT"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -356,6 +364,7 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
              format='pdf', file_size_bytes=None, page_count=None,
              source_type='unknown', isbn=None, source_file_path=None,
              source_file_hash=None, cover_image_path=None, language='en',
+             pdf_producer=None, pdf_creator=None, detected_scripts=None,
              word_count=None, chapter_count=None, db_path=None):
     """Add a book record. Returns the book ID."""
     # Auto-compute file hash if path given but hash not provided
@@ -364,6 +373,8 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
             source_file_hash = compute_file_hash(source_file_path)
         except OSError:
             pass
+    if isinstance(detected_scripts, dict):
+        detected_scripts = json.dumps(detected_scripts)
     title_hash = _normalize_title_hash(title, author)
     conn = get_db(db_path)
     try:
@@ -372,12 +383,14 @@ def add_book(filename, title=None, author=None, publisher=None, year=None,
                (filename, title, author, publisher, year, format,
                 file_size_bytes, page_count, source_type, title_hash,
                 isbn, source_file_path, source_file_hash,
-                cover_image_path, language, word_count, chapter_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                cover_image_path, language, pdf_producer, pdf_creator,
+                detected_scripts, word_count, chapter_count)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (filename, title, author, publisher, year, format,
              file_size_bytes, page_count, source_type, title_hash,
              isbn, source_file_path, source_file_hash,
-             cover_image_path, language, word_count, chapter_count)
+             cover_image_path, language, pdf_producer, pdf_creator,
+             detected_scripts, word_count, chapter_count)
         )
         conn.commit()
         return cursor.lastrowid

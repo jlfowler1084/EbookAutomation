@@ -35,6 +35,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
 SUPPORTED_FORMATS = ['pdf', 'epub', 'mobi', 'azw', 'azw3', 'djvu']
 
+# Module-level storage for font inventory (set by extract_with_pdfminer_html)
+_last_font_inventory = []
+
 # ── TTS Enhancement Constants ─────────────────────────────────────────
 EMPHATIC_MAX_WORDS = 18        # Max words for a sentence to qualify as emphatic closer
 EMPHATIC_MIN_WORDS = 3         # Min words (avoid tagging fragments)
@@ -178,6 +181,56 @@ _COMMON_ENGLISH_WORDS = {
     'scholar', 'section', 'series', 'source', 'suggests', 'theory',
     'thesis', 'thus', 'university', 'volume', 'according',
 }
+
+
+def detect_scripts(text, sample_size=10000):
+    """Detect Unicode script blocks present in text.
+
+    Returns a dict of script names to percentages.
+    Used to identify multi-script books needing Vision extraction.
+    """
+    if not text or len(text.strip()) < 50:
+        return {"latin": 100.0}
+
+    text_len = len(text)
+    start = text_len // 10
+    end = min(start + sample_size, text_len * 9 // 10)
+    sample = text[start:end]
+
+    script_ranges = {
+        'latin':    lambda cp: (0x0000 <= cp <= 0x024F) or (0x1E00 <= cp <= 0x1EFF),
+        'greek':    lambda cp: (0x0370 <= cp <= 0x03FF) or (0x1F00 <= cp <= 0x1FFF),
+        'cyrillic': lambda cp: (0x0400 <= cp <= 0x04FF) or (0x0500 <= cp <= 0x052F),
+        'hebrew':   lambda cp: (0x0590 <= cp <= 0x05FF) or (0xFB1D <= cp <= 0xFB4F),
+        'arabic':   lambda cp: (0x0600 <= cp <= 0x06FF) or (0x0750 <= cp <= 0x077F) or (0xFB50 <= cp <= 0xFDFF),
+        'cjk':      lambda cp: (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF) or (0xF900 <= cp <= 0xFAFF),
+        'devanagari': lambda cp: (0x0900 <= cp <= 0x097F),
+        'thai':     lambda cp: (0x0E00 <= cp <= 0x0E7F),
+    }
+
+    counts = {name: 0 for name in script_ranges}
+    counts['other'] = 0
+    total_alpha = 0
+
+    for ch in sample:
+        if not ch.isalpha():
+            continue
+        total_alpha += 1
+        cp = ord(ch)
+        matched = False
+        for name, check in script_ranges.items():
+            if check(cp):
+                counts[name] += 1
+                matched = True
+                break
+        if not matched:
+            counts['other'] += 1
+
+    if total_alpha == 0:
+        return {"latin": 100.0}
+
+    return {name: round((count / total_alpha) * 100, 1)
+            for name, count in counts.items() if count > 0}
 
 
 def score_text_layer_quality(text, log=None):
@@ -3884,6 +3937,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     laparams = LAParams(word_margin=0.05)
 
     all_paras = []
+    fonts_seen = set()
     total_pages = 0
 
     for page_num, page_layout in enumerate(extract_pages(pdf_path, laparams=laparams)):
@@ -3922,6 +3976,8 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 avg_char_width = None
                 for char in line:
                     if isinstance(char, LTChar):
+                        if hasattr(char, 'fontname'):
+                            fonts_seen.add(char.fontname)
                         # Gap-based space injection
                         if prev_x1 is not None and avg_char_width is not None:
                             gap = char.x0 - prev_x1
@@ -4116,6 +4172,18 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     for (sz, bld, itl), cnt in font_dist.most_common(10):
         style = 'Bold' if bld else ('Italic' if itl else 'Regular')
         log(f"    {sz}pt {style}: {cnt} paragraphs")
+
+    # Font inventory for data collection
+    global _last_font_inventory
+    _last_font_inventory = sorted(fonts_seen)
+    log(f"  Fonts found: {len(_last_font_inventory)} unique "
+        f"({', '.join(_last_font_inventory[:5])}{'...' if len(_last_font_inventory) > 5 else ''})")
+    risky_fonts = [f for f in fonts_seen
+                   if any(r in f.lower() for r in
+                          ['symbol', 'zapfdingbats', 'cid', 'identity-h',
+                           'identity-v', 'wingdings'])]
+    if risky_fonts:
+        log(f"  WARNING: Risky fonts detected: {', '.join(risky_fonts)}")
 
     return all_paras, body_size
 
@@ -9031,6 +9099,23 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         extraction_method = 'column_aware'
     vision_cost = 0
     quality = None
+    _pdf_producer = None
+    _pdf_creator = None
+
+    # Capture PDF producer metadata for pattern recognition
+    try:
+        from pypdf import PdfReader as _PdfReader
+        _meta_reader = _PdfReader(pdf_path)
+        _meta = _meta_reader.metadata
+        if _meta:
+            _pdf_producer = str(_meta.producer)[:200] if _meta.producer else None
+            _pdf_creator = str(_meta.creator)[:200] if _meta.creator else None
+            if _pdf_producer:
+                log(f"  PDF producer: {_pdf_producer}")
+            if _pdf_creator:
+                log(f"  PDF creator: {_pdf_creator}")
+    except Exception:
+        pass
 
     # ── Vision extraction (Tier 3) — explicit opt-in only ──────────
     if use_vision:
@@ -9178,6 +9263,21 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     else:
         log("\n-- STEP 2b: Skipping endnote linking (--skip-footnotes) ---")
 
+    # Detect scripts for routing intelligence
+    _detected_scripts = {}
+    try:
+        _plain = re.sub(r'<[^>]+>', '', html)
+        _detected_scripts = detect_scripts(_plain)
+        _non_latin = {k: v for k, v in _detected_scripts.items()
+                      if k not in ('latin', 'other')}
+        if _non_latin:
+            log(f"  Scripts detected: {_detected_scripts}")
+            log(f"  Non-Latin content: {_non_latin} — consider -UseVision for best results")
+        else:
+            log(f"  Scripts: Latin only")
+    except Exception:
+        pass
+
     # Write HTML output
     html_path = re.sub(r'\.(txt|html?)$', '.html', output_path)
     if not html_path.endswith('.html'):
@@ -9209,6 +9309,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 format=os.path.splitext(pdf_path)[1].lstrip('.'),
                 source_file_path=pdf_path,
                 source_file_hash=_src_hash,
+                pdf_producer=_pdf_producer,
+                pdf_creator=_pdf_creator,
+                detected_scripts=_detected_scripts if _detected_scripts else None,
             )
 
             _quality_score = quality.get('score') if quality else None

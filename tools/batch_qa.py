@@ -317,6 +317,22 @@ FAILURE_PATTERNS = {
             "manual DRM removal needed"
         ),
     },
+    "MULTI_SCRIPT_NO_VISION": {
+        "condition": lambda d: (
+            d.get("scripts", {}).get("has_non_latin", False)
+            and d.get("scripts", {}).get("non_latin_pct", 0) > 5
+            and d.get("extraction", {}).get("extraction_path") != "claude_vision"
+        ),
+        "severity": "info",
+        "label": "Non-Latin scripts detected (>5%) without Vision extraction",
+        "description": (
+            "Book contains significant non-Latin script content "
+            "(Hebrew, Greek, CJK, etc.) but was not extracted with Vision"
+        ),
+        "recommendation": (
+            "Consider re-extracting with --use-vision for non-Latin content"
+        ),
+    },
     "MULTI_COLUMN_NOT_ROUTED": {
         "condition": lambda d: (
             d["source_classification"].get("column_confidence", 0) >= 0.3
@@ -575,6 +591,17 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "api_cost_usd": 0,
             "duration_seconds": 0,
         },
+        "metadata": {
+            "pdf_producer": None,
+            "pdf_creator": None,
+        },
+        "fonts": {
+            "total_unique": 0,
+            "names": [],
+            "has_risky_fonts": False,
+            "risky_fonts": [],
+        },
+        "scripts": {},
         "issues": [],
         "overall_status": "ERROR",
         "status_reason": "Not yet processed",
@@ -584,6 +611,17 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
     t0 = time.time()
 
     if ext == 'pdf':
+        # PDF producer/creator fingerprinting
+        try:
+            from pypdf import PdfReader as _PdfReader
+            _pr = _PdfReader(str(file_path))
+            _pm = _pr.metadata
+            if _pm:
+                diag["metadata"]["pdf_producer"] = str(_pm.producer)[:200] if _pm.producer else None
+                diag["metadata"]["pdf_creator"] = str(_pm.creator)[:200] if _pm.creator else None
+        except Exception:
+            pass
+
         html_path, txt_path, stdout, stderr, exit_code = \
             run_extraction_for_book(file_path, output_dir, quick)
         extraction_duration = time.time() - t0
@@ -612,6 +650,36 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                 html_content = f.read()
 
             _analyze_html_structure(diag, html_content)
+
+            # Script detection
+            try:
+                from pdf_to_balabolka import detect_scripts
+                import re as _re
+                _plain_text = _re.sub(r'<[^>]+>', '', html_content)
+                scripts = detect_scripts(_plain_text)
+                diag["scripts"] = scripts
+                if any(k not in ('latin', 'other') for k in scripts):
+                    diag["scripts"]["has_non_latin"] = True
+                    diag["scripts"]["non_latin_pct"] = round(
+                        sum(v for k, v in scripts.items()
+                            if k not in ('latin', 'other', 'has_non_latin', 'non_latin_pct')), 1)
+            except Exception:
+                pass
+
+            # Font inventory from extraction stdout
+            try:
+                from pdf_to_balabolka import _last_font_inventory
+                if _last_font_inventory:
+                    _risky = [f for f in _last_font_inventory
+                              if any(r in f.lower() for r in
+                                     ['symbol', 'zapfdingbats', 'cid', 'identity-h',
+                                      'identity-v', 'wingdings'])]
+                    diag["fonts"]["total_unique"] = len(_last_font_inventory)
+                    diag["fonts"]["names"] = _last_font_inventory[:20]
+                    diag["fonts"]["has_risky_fonts"] = bool(_risky)
+                    diag["fonts"]["risky_fonts"] = _risky
+            except Exception:
+                pass
 
         elif txt_path and os.path.isfile(txt_path):
             diag["extraction"]["success"] = True
