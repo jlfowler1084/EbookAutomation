@@ -39,6 +39,16 @@ if sys.platform == 'win32':
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
+# Load settings.json for tool paths (tesseract, poppler, calibre)
+_SETTINGS = {}
+_settings_path = PROJECT_ROOT / "config" / "settings.json"
+if _settings_path.exists():
+    try:
+        with open(_settings_path, 'r', encoding='utf-8') as _sf:
+            _SETTINGS = json.load(_sf).get("paths", {})
+    except Exception:
+        pass
+
 # Import project modules
 sys.path.insert(0, str(SCRIPT_DIR))
 try:
@@ -483,6 +493,16 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
         "--output-dir", str(output_dir),
         "--html-extraction",
     ]
+
+    # Pass tool paths from settings.json so OCR escalation can find Tesseract
+    _tess = _SETTINGS.get("tesseract")
+    if _tess and os.path.isfile(_tess):
+        cmd.extend(["--tesseract-path", str(_tess)])
+    _pop = _SETTINGS.get("poppler")
+    if _pop:
+        _pop_resolved = str(PROJECT_ROOT / _pop) if not os.path.isabs(_pop) else _pop
+        if os.path.isdir(_pop_resolved):
+            cmd.extend(["--poppler-path", _pop_resolved])
 
     # Scale timeout: base 600s + 10s per MB over 20MB
     file_size_mb = os.path.getsize(str(pdf_path)) / (1024 * 1024)

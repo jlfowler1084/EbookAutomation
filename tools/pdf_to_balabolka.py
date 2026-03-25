@@ -10248,6 +10248,26 @@ Examples:
 
     args = ap.parse_args()
 
+    # Fallback to settings.json for tool paths if not provided via CLI
+    if not args.tesseract_path or not args.poppler_path:
+        _cfg_path = Path(__file__).resolve().parent.parent / "config" / "settings.json"
+        if _cfg_path.exists():
+            try:
+                with open(_cfg_path, 'r', encoding='utf-8') as _cf:
+                    _cfg_paths = json.load(_cf).get("paths", {})
+                if not args.tesseract_path and _cfg_paths.get("tesseract"):
+                    _tpath = _cfg_paths["tesseract"]
+                    if os.path.isfile(_tpath):
+                        args.tesseract_path = _tpath
+                if not args.poppler_path and _cfg_paths.get("poppler"):
+                    _ppath = _cfg_paths["poppler"]
+                    if not os.path.isabs(_ppath):
+                        _ppath = str(Path(__file__).resolve().parent.parent / _ppath)
+                    if os.path.isdir(_ppath):
+                        args.poppler_path = _ppath
+            except Exception:
+                pass
+
     # Validate input
     input_path = os.path.abspath(args.input)
     if not os.path.isfile(input_path):
