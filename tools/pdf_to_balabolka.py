@@ -44,6 +44,32 @@ SCENE_BREAK_SILENCE_MS = 600   # Silence for scene breaks (*** etc.)
 EMPHATIC_SILENCE_MS = 500      # Silence after emphatic closers
 EMPHATIC_RATE = "-1"           # Rate for emphatic closers (slower)
 
+# ── Vision Transcription Prompt (Tier 3) ─────────────────────────────
+_VISION_TRANSCRIPTION_PROMPT = """You are a precise document transcription engine. Your task is to transcribe the text from each page image EXACTLY as it appears, preserving all content.
+
+RULES:
+1. Transcribe ALL text on each page. Never summarize, skip, or paraphrase.
+2. Preserve paragraph breaks as blank lines between paragraphs.
+3. Mark chapter/section headings with ## (level 2) or ### (level 3) prefix.
+4. Preserve italic text with *italic* markers and bold text with **bold** markers.
+5. Preserve footnote reference numbers as superscript markers: [^1], [^2], etc.
+6. For block quotes, prefix each line with >
+7. Transcribe non-Latin scripts (Hebrew, Greek, German, etc.) accurately in their original script. Do NOT transliterate.
+8. If a word is hyphenated across a line break, rejoin it (e.g., "con-\\ntinue" -> "continue").
+9. Do NOT include page numbers, running headers, or running footers.
+10. Do NOT include any commentary, notes, or metadata about the transcription itself.
+11. Separate each page's transcription with a page marker on its own line: <<PAGE:N>> where N is the page number.
+12. If a page is blank or contains only images/diagrams with no text, output just the page marker.
+
+OUTPUT FORMAT:
+<<PAGE:1>>
+[transcribed text of page 1]
+
+<<PAGE:2>>
+[transcribed text of page 2]
+
+Begin transcription now."""
+
 
 # ───────────────────────────────────────────────────────────
 #  CORE PROCESSING LOGIC
@@ -950,6 +976,221 @@ def ocr_text_to_para_dicts(ocr_text, log):
             })
 
     log(f"  OCR->HTML bridge: {len(para_dicts)} paragraphs from {current_page} pages")
+    return para_dicts, body_size
+
+
+def extract_text_vision(pdf_path, log, api_key=None, poppler_path=None,
+                        dpi=200, batch_size=3, cost_limit=15.0):
+    """Extract text from PDF pages using Claude Vision API (Tier 3).
+
+    Renders every page as an image and sends to Claude for transcription.
+    Highest quality — handles multi-script, custom fonts, degraded scans.
+
+    Cost: ~$0.02-0.04 per page (Sonnet). Cached after first extraction.
+
+    Returns:
+        dict with text, pages_processed, total_pages, input_tokens,
+        output_tokens, cost_usd — or None on failure/abort.
+    """
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        raise RuntimeError(
+            "Claude Vision extraction requires ANTHROPIC_API_KEY. "
+            "Set as environment variable or pass --api-key.")
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from visual_qa import (render_pages_to_png, call_claude_vision,
+                           find_poppler_path, get_pdf_page_count)
+
+    total_pages = get_pdf_page_count(pdf_path)
+    if total_pages == 0:
+        log("  Vision: PDF has 0 pages")
+        return None
+
+    log(f"  Vision: PDF has {total_pages} pages")
+
+    # Cost estimate (Sonnet: $3/M input, $15/M output)
+    est_input_tokens = total_pages * 2000
+    est_output_tokens = total_pages * 800
+    est_cost = (est_input_tokens / 1_000_000) * 3.0 + (est_output_tokens / 1_000_000) * 15.0
+
+    log(f"  Vision: Estimated cost: ${est_cost:.2f} "
+        f"(~{total_pages * 2800:,} tokens, {total_pages} pages at {dpi} DPI)")
+
+    if est_cost > cost_limit:
+        log(f"  Vision: ABORTED — estimated cost ${est_cost:.2f} exceeds "
+            f"limit ${cost_limit:.2f}")
+        log(f"  Vision: Use --vision-cost-limit to increase")
+        return None
+
+    resolved_poppler = find_poppler_path(poppler_path)
+    model = "claude-sonnet-4-20250514"
+
+    all_page_numbers = list(range(1, total_pages + 1))
+    all_text_parts = []
+    total_input = 0
+    total_output = 0
+    pages_processed = 0
+
+    import base64
+
+    for batch_start in range(0, len(all_page_numbers), batch_size):
+        batch_pages = all_page_numbers[batch_start:batch_start + batch_size]
+        batch_num = (batch_start // batch_size) + 1
+        total_batches = (len(all_page_numbers) + batch_size - 1) // batch_size
+
+        log(f"  Vision: Batch {batch_num}/{total_batches} — "
+            f"pages {batch_pages[0]}-{batch_pages[-1]}")
+
+        try:
+            page_images = render_pages_to_png(
+                pdf_path, batch_pages, dpi=dpi, poppler_path=resolved_poppler)
+        except Exception as e:
+            log(f"  Vision: Failed to render batch {batch_num}: {e}")
+            continue
+
+        if not page_images:
+            continue
+
+        content = []
+        for page_num, png_bytes in page_images:
+            b64_data = base64.b64encode(png_bytes).decode('utf-8')
+            content.append({"type": "text", "text": f"--- Page {page_num} ---"})
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64", "media_type": "image/png",
+                    "data": b64_data,
+                }
+            })
+        content.append({
+            "type": "text",
+            "text": f"Transcribe pages {batch_pages[0]} through {batch_pages[-1]} now."
+        })
+
+        payload = {
+            "model": model,
+            "max_tokens": 16384,
+            "system": _VISION_TRANSCRIPTION_PROMPT,
+            "messages": [{"role": "user", "content": content}]
+        }
+
+        try:
+            raw_text, in_tok, out_tok = call_claude_vision(payload, api_key)
+            total_input += in_tok
+            total_output += out_tok
+            pages_processed += len(batch_pages)
+            if raw_text:
+                all_text_parts.append(raw_text)
+            log(f"  Vision: Batch {batch_num} complete — "
+                f"{in_tok:,} in / {out_tok:,} out tokens")
+        except Exception as e:
+            log(f"  Vision: Batch {batch_num} API call failed: {e}")
+            continue
+
+    if not all_text_parts:
+        log("  Vision: No text extracted from any batch")
+        return None
+
+    full_text = '\n'.join(all_text_parts)
+    actual_cost = (total_input / 1_000_000) * 3.0 + (total_output / 1_000_000) * 15.0
+    word_count = len(full_text.split())
+    log(f"  Vision: Extraction complete — {pages_processed}/{total_pages} pages, "
+        f"{word_count:,} words, ${actual_cost:.4f}")
+
+    return {
+        'text': full_text,
+        'pages_processed': pages_processed,
+        'total_pages': total_pages,
+        'input_tokens': total_input,
+        'output_tokens': total_output,
+        'cost_usd': actual_cost,
+    }
+
+
+def vision_text_to_para_dicts(vision_text, log):
+    """Convert Vision-transcribed Markdown text into paragraph dicts.
+
+    Handles: ## headings, *italic*, **bold**, > blockquotes,
+    [^N] footnotes, <<PAGE:N>> page markers.
+
+    Returns: (para_dicts, body_size) tuple.
+    """
+    if not vision_text or not vision_text.strip():
+        log("  Vision->HTML bridge: no text to convert")
+        return [], 12.0
+
+    para_dicts = []
+    current_page = 1
+    body_size = 12.0
+
+    lines = vision_text.split('\n')
+    current_paragraph = []
+
+    def flush_paragraph():
+        nonlocal current_paragraph
+        if current_paragraph:
+            text = ' '.join(current_paragraph).strip()
+            if text:
+                text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+                text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)',
+                              r'<em>\1</em>', text)
+                text = re.sub(r'\[\^(\d+)\]', r'<sup>\1</sup>', text)
+                para_dicts.append({
+                    'text': text, 'sz': body_size,
+                    'bold': False, 'italic': False,
+                    'page': current_page, 'tag': None,
+                })
+            current_paragraph = []
+
+    for line in lines:
+        page_match = re.match(r'<<PAGE:(\d+)>>', line)
+        if page_match:
+            flush_paragraph()
+            current_page = int(page_match.group(1))
+            continue
+
+        stripped = line.strip()
+
+        if not stripped:
+            flush_paragraph()
+            continue
+
+        heading_match = re.match(r'^(#{1,3})\s+(.+)$', stripped)
+        if heading_match:
+            flush_paragraph()
+            level = len(heading_match.group(1))
+            heading_text = heading_match.group(2).strip()
+            heading_text = re.sub(r'\*\*(.+?)\*\*', r'\1', heading_text)
+            sz_multiplier = {1: 2.0, 2: 1.5, 3: 1.25}.get(level, 1.25)
+            para_dicts.append({
+                'text': heading_text, 'sz': body_size * sz_multiplier,
+                'bold': True, 'italic': False,
+                'page': current_page, 'tag': None,
+            })
+            continue
+
+        if stripped.startswith('> '):
+            flush_paragraph()
+            quote_text = stripped[2:].strip()
+            quote_text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', quote_text)
+            quote_text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)',
+                                r'<em>\1</em>', quote_text)
+            para_dicts.append({
+                'text': quote_text, 'sz': body_size,
+                'bold': False, 'italic': True,
+                'page': current_page, 'tag': 'blockquote',
+            })
+            continue
+
+        current_paragraph.append(stripped)
+
+    flush_paragraph()
+
+    log(f"  Vision->HTML bridge: {len(para_dicts)} paragraphs from {current_page} pages")
     return para_dicts, body_size
 
 
@@ -8771,7 +9012,7 @@ def _fix_ligature_splits(para_dicts, log):
 def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False,
                         skip_footnotes=False, apply_ai_fixes=False,
                         tesseract_path=None, poppler_path=None, ocr_dpi=300,
-                        no_cache=False):
+                        no_cache=False, use_vision=False, vision_cost_limit=15.0):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -8779,6 +9020,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     If Tier 1 text quality is poor (score <= 70), auto-escalates to Tesseract 5
     OCR (Tier 2) and keeps whichever result scores higher.
+
+    If use_vision=True, skips Tier 1/2 entirely and uses Claude Vision (Tier 3).
     """
     import time as _time_mod
     _extraction_start = _time_mod.time()
@@ -8786,77 +9029,119 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     extraction_method = 'pdfminer_html'
     if force_columns:
         extraction_method = 'column_aware'
-    log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
-    bookmarks = extract_bookmarks(pdf_path, log)
+    vision_cost = 0
+    quality = None
 
-    log("\n-- STEP 1: Extracting text with font metadata --")
-    para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log, force_columns=force_columns)
+    # ── Vision extraction (Tier 3) — explicit opt-in only ──────────
+    if use_vision:
+        log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
+        bookmarks = extract_bookmarks(pdf_path, log)
 
-    # ── Text layer quality scoring ──────────────────────────────────
-    all_text_for_scoring = ' '.join(
-        p['text'] for p in para_dicts
-        if p.get('text') and not p.get('is_page_marker')
-    )
-    quality = score_text_layer_quality(all_text_for_scoring, log)
-    log(f"  Text layer quality score: {quality['score']}/100 — {quality['recommendation']}")
-    if quality['score'] < 75:
-        log(f"  ⚠ Quality below threshold. Details:")
-        for check, detail in quality['details'].items():
-            if isinstance(detail, dict) and 'score' in detail:
-                log(f"    {check}: {detail['score']}/100")
+        log("\n-- STEP 1 (VISION): Claude Vision transcription -------")
+        log("  Tier 3 extraction — premium AI transcription")
 
-    log("\n-- STEP 1a: Fixing word merges in extraction output ----")
-    _fix_word_merges_html(para_dicts, log)
+        vision_result = extract_text_vision(
+            pdf_path, log,
+            api_key=api_key,
+            poppler_path=poppler_path,
+            dpi=200,
+            batch_size=3,
+            cost_limit=vision_cost_limit,
+        )
 
-    log("\n-- STEP 1b: Rejoining page-boundary fragments ----------")
-    para_dicts = rejoin_html_fragments(para_dicts, body_size, log)
+        if vision_result and vision_result.get('text'):
+            para_dicts, body_size = vision_text_to_para_dicts(vision_result['text'], log)
+            tier_used = 3
+            extraction_method = 'claude_vision'
+            vision_cost = vision_result.get('cost_usd', 0)
 
-    log("\n-- STEP 1c: Fixing ligature splits --------------------")
-    _fix_ligature_splits(para_dicts, log)
+            vision_text_flat = '\n'.join(d.get('text', '') for d in para_dicts)
+            try:
+                quality = score_text_layer_quality(vision_text_flat, log=log)
+                log(f"  Vision text quality: {quality.get('score', 0)}/100")
+            except Exception:
+                quality = {'score': 85, 'recommendation': 'accept',
+                           'tier_suggestion': 1, 'details': {}}
+            log(f"  Vision cost: ${vision_cost:.4f}")
+        else:
+            log("  Vision extraction failed or returned no text — "
+                "falling back to standard extraction")
+            use_vision = False
 
-    # ── STEP 1d: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
-    tier1_score = quality.get('score', 0) if quality else 0
-    tier_suggestion = quality.get('tier_suggestion', 1) if quality else 1
+    if not use_vision:
+        # ── Standard Tier 1/2 extraction ──────────────────────────
+        log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
+        bookmarks = extract_bookmarks(pdf_path, log)
 
-    if tier1_score <= 70 and tier_suggestion >= 2:
-        log(f"\n-- STEP 1d: Auto-escalating to Tier 2 (Re-OCR) --------")
-        log(f"  Reason: Tier 1 quality score {tier1_score} <= 70")
+        log("\n-- STEP 1: Extracting text with font metadata --")
+        para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log,
+                                                            force_columns=force_columns)
 
-        try:
-            ocr_text = extract_text_ocr(
-                pdf_path, log,
-                tesseract_path=tesseract_path,
-                poppler_path=poppler_path,
-                dpi=ocr_dpi
-            )
+        # ── Text layer quality scoring ──────────────────────────────────
+        all_text_for_scoring = ' '.join(
+            p['text'] for p in para_dicts
+            if p.get('text') and not p.get('is_page_marker')
+        )
+        quality = score_text_layer_quality(all_text_for_scoring, log)
+        log(f"  Text layer quality score: {quality['score']}/100 — "
+            f"{quality['recommendation']}")
+        if quality['score'] < 75:
+            log(f"  Warning: Quality below threshold. Details:")
+            for check, detail in quality['details'].items():
+                if isinstance(detail, dict) and 'score' in detail:
+                    log(f"    {check}: {detail['score']}/100")
 
-            if ocr_text and len(ocr_text.strip()) >= 100:
-                ocr_quality = score_text_layer_quality(ocr_text, log=log)
-                ocr_score = ocr_quality.get('score', 0)
-                log(f"  OCR quality score: {ocr_score}/100 "
-                    f"(Tier 1 was: {tier1_score}/100)")
+        log("\n-- STEP 1a: Fixing word merges in extraction output ----")
+        _fix_word_merges_html(para_dicts, log)
 
-                if ocr_score > tier1_score:
-                    log(f"  OCR wins: {ocr_score} > {tier1_score} — "
-                        f"switching to Tier 2 output")
-                    para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
-                    tier_used = 2
-                    extraction_method = 'tesseract5'
-                    tier1_score = ocr_score
-                    # Re-run quality variable for cache write
-                    quality = ocr_quality
+        log("\n-- STEP 1b: Rejoining page-boundary fragments ----------")
+        para_dicts = rejoin_html_fragments(para_dicts, body_size, log)
+
+        log("\n-- STEP 1c: Fixing ligature splits --------------------")
+        _fix_ligature_splits(para_dicts, log)
+
+        # ── STEP 1d: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
+        tier1_score = quality.get('score', 0) if quality else 0
+        tier_suggestion = quality.get('tier_suggestion', 1) if quality else 1
+
+        if tier1_score <= 70 and tier_suggestion >= 2:
+            log(f"\n-- STEP 1d: Auto-escalating to Tier 2 (Re-OCR) --------")
+            log(f"  Reason: Tier 1 quality score {tier1_score} <= 70")
+
+            try:
+                ocr_text = extract_text_ocr(
+                    pdf_path, log,
+                    tesseract_path=tesseract_path,
+                    poppler_path=poppler_path,
+                    dpi=ocr_dpi
+                )
+
+                if ocr_text and len(ocr_text.strip()) >= 100:
+                    ocr_quality = score_text_layer_quality(ocr_text, log=log)
+                    ocr_score = ocr_quality.get('score', 0)
+                    log(f"  OCR quality score: {ocr_score}/100 "
+                        f"(Tier 1 was: {tier1_score}/100)")
+
+                    if ocr_score > tier1_score:
+                        log(f"  OCR wins: {ocr_score} > {tier1_score} — "
+                            f"switching to Tier 2 output")
+                        para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
+                        tier_used = 2
+                        extraction_method = 'tesseract5'
+                        tier1_score = ocr_score
+                        quality = ocr_quality
+                    else:
+                        log(f"  Tier 1 wins: {tier1_score} >= {ocr_score} — "
+                            f"keeping pdfminer output")
                 else:
-                    log(f"  Tier 1 wins: {tier1_score} >= {ocr_score} — "
-                        f"keeping pdfminer output")
-            else:
-                log(f"  OCR produced insufficient text — keeping Tier 1")
+                    log(f"  OCR produced insufficient text — keeping Tier 1")
 
-        except RuntimeError as e:
-            log(f"  OCR escalation failed (non-blocking): {e}")
-            log(f"  Continuing with Tier 1 output")
-        except Exception as e:
-            log(f"  OCR escalation error (non-blocking): {e}")
-            log(f"  Continuing with Tier 1 output")
+            except RuntimeError as e:
+                log(f"  OCR escalation failed (non-blocking): {e}")
+                log(f"  Continuing with Tier 1 output")
+            except Exception as e:
+                log(f"  OCR escalation error (non-blocking): {e}")
+                log(f"  Continuing with Tier 1 output")
 
     log("\n-- STEP 2: Formatting as semantic HTML ----------------")
     # Extract title from bookmarks or filename
@@ -8937,6 +9222,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 quality_score=_quality_score,
                 word_count=word_count,
                 chapter_count=_chapter_count,
+                cost_usd=vision_cost,
                 duration_seconds=round(_extraction_duration, 1),
             )
             log(f"Extraction cached: hash={_src_hash[:12]}..., tier={tier_used}, "
@@ -9537,6 +9823,13 @@ Examples:
                     help="Force PyMuPDF column-aware extraction even if detection confidence is low")
     ap.add_argument("--no-cache", action="store_true", default=False,
                     help="Skip extraction cache lookup, force fresh extraction")
+    ap.add_argument("--use-vision", action="store_true",
+                    help="Use Claude Vision API for page-by-page transcription (Tier 3). "
+                         "Highest quality — handles multi-script, custom fonts, degraded scans. "
+                         "Cost: ~$0.02-0.04/page. Requires ANTHROPIC_API_KEY.")
+    ap.add_argument("--vision-cost-limit", type=float, default=15.0,
+                    help="Maximum allowed cost for Vision extraction in USD (default: $15.00). "
+                         "Aborts if estimated cost exceeds this limit.")
     ap.add_argument("--tts-enhance", action="store_true",
                     help="Apply TTS voice tags (silence, pacing, emphatic closers)")
     ap.add_argument("--tag-syntax", choices=["sapi", "universal"], default="sapi",
@@ -9653,7 +9946,9 @@ Examples:
                                     tesseract_path=args.tesseract_path,
                                     poppler_path=args.poppler_path,
                                     ocr_dpi=args.ocr_dpi,
-                                    no_cache=args.no_cache)
+                                    no_cache=args.no_cache,
+                                    use_vision=args.use_vision,
+                                    vision_cost_limit=args.vision_cost_limit)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,

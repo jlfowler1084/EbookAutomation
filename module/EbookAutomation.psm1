@@ -607,6 +607,12 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Skip cache lookup and force a fresh conversion even if this book has been successfully converted before.')]
         [switch]$NoCache,
 
+        [Parameter(HelpMessage = 'Use Claude Vision API for premium Tier 3 extraction. Cost: ~$0.02-0.04/page.')]
+        [switch]$UseVision,
+
+        [Parameter(HelpMessage = 'Maximum allowed cost for Vision extraction in USD (default: $15.00).')]
+        [double]$VisionCostLimit = 15.0,
+
         [Parameter(HelpMessage = 'Path to VQA report from a previous iteration, used by the fix engine for targeted corrections.')]
         [string]$VqaReportPath,
 
@@ -928,6 +934,14 @@ print(json.dumps(output))
                 if ($NoCache) {
                     $pyArgs += " --no-cache"
                 }
+                if ($UseVision) {
+                    $pyArgs += " --use-vision --vision-cost-limit $VisionCostLimit"
+                    Write-EbookLog "Kindle: Vision extraction (Tier 3) ENABLED — cost limit `$$VisionCostLimit" -Level WARN
+                    if (-not $env:ANTHROPIC_API_KEY) {
+                        Write-EbookLog "Kindle: ANTHROPIC_API_KEY not set — Vision extraction requires API key" -Level ERROR
+                        return $false
+                    }
+                }
 
                 $pyProc = Start-Process -FilePath $python `
                                         -ArgumentList $pyArgs `
@@ -974,6 +988,9 @@ print(json.dumps(output))
             $pyOutContent = if (Test-Path $pyOutFile) { Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue } else { '' }
             if ($pyOutContent -match 'Auto-escalating to Tier 2') {
                 Write-EbookLog "Kindle: auto-escalated to Tesseract OCR (poor text quality detected)"
+            }
+            if ($pyOutContent -match 'STEP 1 \(VISION\)') {
+                Write-EbookLog "Kindle: Claude Vision (Tier 3) transcription completed"
             }
             if ($pyOutContent -match 'EXTRACTION CACHE HIT') {
                 Write-EbookLog "Kindle: served from extraction cache (instant)"
@@ -2681,6 +2698,8 @@ function Invoke-EbookPipeline {
         [switch]$ForceColumns,
         [switch]$ValidateVisual,
         [switch]$NoCache,
+        [switch]$UseVision,
+        [double]$VisionCostLimit = 15.0,
         [switch]$SendToKindle,
         [switch]$EmailToKindle,
 
@@ -2892,7 +2911,7 @@ function Invoke-EbookPipeline {
                 }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
