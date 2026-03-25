@@ -14,7 +14,7 @@
     "python":        "python",
     "calibre":       "C:\\Program Files\\Calibre2\\ebook-convert.exe",
     "tesseract":     "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
-    "poppler":       "tools\\poppler",
+    "poppler":       "tools\\poppler\\Release-25.12.0-0\\poppler-25.12.0\\Library\\bin",
     "data":          "tools\\data",
     "ghostscript":   ""
   },
@@ -44,6 +44,12 @@
   "notifications": {
     "enabled":          true,
     "show_toast":       true
+  },
+  "api_models": {
+    "haiku":          "claude-haiku-4-5-20251001",
+    "sonnet":         "claude-sonnet-4-20250514",
+    "sonnet_latest":  "claude-sonnet-4-6",
+    "gemini_flash":   "gemini-2.5-flash"
   },
   "visual_qa": {
     "enabled":        false,

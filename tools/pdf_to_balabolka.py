@@ -35,6 +35,27 @@ load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
 SUPPORTED_FORMATS = ['pdf', 'epub', 'mobi', 'azw', 'azw3', 'djvu']
 
+
+def _load_api_model(tier="haiku"):
+    """Load API model string from config/settings.json, falling back to defaults."""
+    import json as _json
+    from pathlib import Path as _Path
+    _defaults = {
+        "haiku": "claude-haiku-4-5-20251001",
+        "sonnet": "claude-sonnet-4-20250514",
+        "sonnet_latest": "claude-sonnet-4-6",
+        "gemini_flash": "gemini-2.5-flash",
+    }
+    try:
+        settings_path = _Path(__file__).resolve().parent.parent / "config" / "settings.json"
+        if settings_path.exists():
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                cfg = _json.load(f)
+            return cfg.get("api_models", {}).get(tier, _defaults.get(tier, _defaults["haiku"]))
+    except Exception:
+        pass
+    return _defaults.get(tier, _defaults["haiku"])
+
 # Module-level storage for font inventory (set by extract_with_pdfminer_html)
 _last_font_inventory = []
 
@@ -7676,6 +7697,8 @@ def ai_detect_subheadings(paragraphs, log, api_key=None, bookmark_titles=None, h
     if len(candidates) > max_candidates:
         candidates = candidates[:max_candidates]
 
+    _model = _load_api_model("haiku")
+    log(f"  AI Sub-headings: using model={_model}")
     log(f"  AI Sub-headings: {total_candidates} candidates detected"
         + (f" (processing top {len(candidates)})" if total_candidates > max_candidates else ""))
 
@@ -7719,7 +7742,7 @@ Return a JSON object with:
                     "anthropic-version": "2023-06-01",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": _model,
                     "max_tokens": 1500,
                     "temperature": 0,
                     "system": (
@@ -7908,6 +7931,8 @@ def ai_rejoin_fragments(paragraphs, log, api_key=None, heading_indices=None):
     if len(candidates) > max_candidates:
         candidates = candidates[:max_candidates]
 
+    _model = _load_api_model("haiku")
+    log(f"  AI Rejoin: using model={_model}")
     log(f"  AI Rejoin: {total_candidates} candidate pairs detected"
         + (f" (processing first {len(candidates)}, {remaining_beyond_cap} beyond cap)" if remaining_beyond_cap else ""))
 
@@ -7945,7 +7970,7 @@ Only mark should_join as true when you are confident the paragraphs were split m
                     "anthropic-version": "2023-06-01",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": _model,
                     "max_tokens": 1500,
                     "temperature": 0,
                     "system": (
@@ -8118,7 +8143,37 @@ def ai_quality_pass(paragraphs, log, api_key=None, apply_fixes=False):
             para_idx, text = candidates[ci]
             samples.append({'paragraph_index': para_idx, 'text': text[:500]})
 
+    _model = _load_api_model("haiku")
+    log(f"  AI Quality Pass: using model={_model}")
     log(f"  AI Quality Pass: sampling {len(samples)} of {len(candidates)} paragraphs")
+
+    # --- Rules-based quality gate ---
+    # Check sampled paragraphs for known extraction artifacts.
+    # If zero regex issues detected, skip the AI call entirely.
+    _artifact_patterns = [
+        (re.compile(r'(?<=[a-z])(?=[A-Z][a-z])'), 'missing_space'),       # camelCase mid-word splits
+        (re.compile(r'\b\w+\s-\s\n?\s*\w+\b'), 'hyphen_split'),           # hyphenated line breaks kept
+        (re.compile(r'[\ufb01\ufb02\ufb00\ufb03\ufb04]'), 'ligature_chars'),  # unresolved ligatures
+        (re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]'), 'control_chars'),  # control characters
+        (re.compile(r'[^\x00-\x7f]{3,}'), 'encoding_garble'),             # 3+ consecutive non-ASCII (potential garble)
+        (re.compile(r'\b(\w)\s(\w)\s(\w)\s(\w)\b'), 'spaced_letters'),    # s p a c e d out letters
+        (re.compile(r'(\w)\1{4,}'), 'repeated_chars'),                     # 5+ repeated characters
+    ]
+
+    _gate_issues = 0
+    for s in samples:
+        for _pat, _name in _artifact_patterns:
+            if _pat.search(s['text']):
+                _gate_issues += 1
+                break  # one issue per paragraph is enough to count
+
+    if _gate_issues == 0 and not apply_fixes:
+        log(f"  AI Quality Pass: rules-based gate passed (0/{len(samples)} sampled paragraphs "
+            f"had regex artifacts) — skipping API call")
+        return paragraphs, {"gate_skipped": True, "gate_checked": len(samples), "gate_issues": 0}
+    elif _gate_issues > 0:
+        log(f"  AI Quality Pass: rules-based gate found {_gate_issues}/{len(samples)} paragraphs "
+            f"with potential artifacts — proceeding to AI analysis")
 
     # --- Build API request ---
     sample_text = "\n\n".join(
@@ -8177,7 +8232,7 @@ Only flag clear extraction artifacts in body text, not the author's original for
                 "anthropic-version": "2023-06-01",
             },
             json={
-                "model": "claude-sonnet-4-20250514",
+                "model": _model,
                 "max_tokens": 2000,
                 "temperature": 0,
                 "system": system_prompt,
@@ -8461,7 +8516,7 @@ Return a JSON object with:
                     "anthropic-version": "2023-06-01",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": _model,
                     "max_tokens": 2000,
                     "temperature": 0,
                     "system": (
@@ -10420,7 +10475,15 @@ Examples:
                     if not os.path.isabs(_ppath):
                         _ppath = str(Path(__file__).resolve().parent.parent / _ppath)
                     if os.path.isdir(_ppath):
-                        args.poppler_path = _ppath
+                        # Check if pdftoppm.exe is directly in this dir
+                        if os.path.isfile(os.path.join(_ppath, "pdftoppm.exe")):
+                            args.poppler_path = _ppath
+                        else:
+                            # Walk into nested release dirs (e.g. Release-X/poppler-X/Library/bin)
+                            for root, dirs, files in os.walk(_ppath):
+                                if "pdftoppm.exe" in files:
+                                    args.poppler_path = root
+                                    break
             except Exception:
                 pass
 

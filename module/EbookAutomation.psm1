@@ -3751,6 +3751,17 @@ function Send-ToClaudeAPI {
         return $null
     }
 
+    # Read model from settings.json if using default
+    if ($Model -eq 'claude-sonnet-4-6') {
+        try {
+            $cfg = Get-EbookConfig
+            $cfgModel = $cfg.api_models.sonnet_latest
+            if ($cfgModel) { $Model = $cfgModel }
+        } catch {
+            # Fall through to hardcoded default
+        }
+    }
+
     $body = @{
         model      = $Model
         max_tokens = $MaxTokens

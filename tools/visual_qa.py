@@ -767,8 +767,8 @@ def main():
         help="Full evaluation mode: 20 pages at 150 DPI (overrides --dpi and --max-pages defaults)"
     )
     parser.add_argument(
-        "--model", default="claude-sonnet-4-6",
-        help="Claude model for evaluation (default: claude-sonnet-4-6)"
+        "--model", default=None,
+        help="Claude model for evaluation (default: from settings.json or claude-sonnet-4-6)"
     )
     parser.add_argument(
         "--rubric", default=default_rubric,
@@ -784,6 +784,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Resolve model from settings.json if not specified on CLI
+    if args.model is None:
+        settings = load_settings_json()
+        args.model = settings.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
 
     # --full overrides to comprehensive evaluation
     if args.full:

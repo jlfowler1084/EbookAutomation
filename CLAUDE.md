@@ -621,6 +621,40 @@ When generating FOH daily briefs from JSON data:
 
 ---
 
+## API Cost Governance
+
+### Rules for ALL outbound API calls
+
+Before writing, modifying, or adding ANY outbound API call (Anthropic, Google, or third-party), you MUST:
+
+1. **Check alternatives first** (in this order):
+   - Can this be done with rules-based logic (regex, keyword matching, lookup table)?
+   - Can this be done with cached/precomputed results from pattern_db?
+   - If AI is genuinely needed, can Haiku handle it?
+   - Only use Sonnet if the task requires multi-step reasoning, nuanced generation, vision, or complex analysis.
+
+2. **Document the call** by updating `docs/api-registry.md` with: function path, service, model, purpose, trigger, and cost estimate.
+
+3. **Use config-driven model strings** — read from `config/settings.json` -> `api_models`. Never hardcode model names in code. Use `_load_api_model("haiku")` in Python or read from `Get-EbookConfig` in PowerShell.
+
+4. **Error handling is mandatory** — every API call must have try/catch with:
+   - No silent retries that could double-bill
+   - Graceful degradation (skip the AI step, don't retry in a loop)
+   - Timeout set (30s for text, 300s for vision)
+
+### Model selection quick reference
+
+| Task Type | Model | Examples |
+|-----------|-------|---------|
+| Binary classification | Haiku | Subheading detection, paragraph rejoin, artifact detection |
+| Structured extraction | Haiku | Quality scoring, fix verification |
+| Multi-level reasoning | Sonnet | Chapter hierarchy, complex analysis |
+| Vision + assessment | Sonnet | Visual QA, Vision OCR |
+| Cost-effective OCR | Gemini Flash | Full-book transcription, page remediation |
+| Data relay / search | NO AI | Email, scraping, file I/O |
+
+---
+
 ## Current Priorities
 
 See `EbookAutomation_ProjectTracker.md` for the full backlog. Active items:
