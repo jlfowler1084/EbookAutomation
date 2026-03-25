@@ -972,6 +972,12 @@ print(json.dumps(output))
             # Check if bookmarks were already used in Pass 1
             $bookmarksUsed = $false
             $pyOutContent = if (Test-Path $pyOutFile) { Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue } else { '' }
+            if ($pyOutContent -match 'Auto-escalating to Tier 2') {
+                Write-EbookLog "Kindle: auto-escalated to Tesseract OCR (poor text quality detected)"
+            }
+            if ($pyOutContent -match 'EXTRACTION CACHE HIT') {
+                Write-EbookLog "Kindle: served from extraction cache (instant)"
+            }
             if ($pyOutContent -match 'Placed (\d+) bookmarks as chapter headings') {
                 $bookmarksUsed = $true
                 if ($UseClaudeChapters) {

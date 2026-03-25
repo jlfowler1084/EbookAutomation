@@ -860,6 +860,99 @@ def extract_text_ocr(pdf_path, log, tesseract_path=None, poppler_path=None, dpi=
     return result
 
 
+def ocr_text_to_para_dicts(ocr_text, log):
+    """Convert OCR-extracted text (with <<PAGE:N>> markers) into paragraph dicts
+    compatible with the HTML formatting pipeline.
+
+    Since OCR doesn't provide font metadata, heading detection relies on
+    pattern-based promotion (Chapter X, ALL CAPS) in format_paragraphs_as_html().
+
+    Returns: (para_dicts, body_size) tuple matching extract_with_pdfminer_html() signature.
+    """
+    if not ocr_text or not ocr_text.strip():
+        log("  OCR->HTML bridge: no text to convert")
+        return [], 12.0
+
+    para_dicts = []
+    current_page = 1
+    body_size = 12.0  # Default — OCR doesn't know real font sizes
+
+    lines = ocr_text.split('\n')
+    current_paragraph = []
+
+    for line in lines:
+        page_match = re.match(r'<<PAGE:(\d+)>>', line)
+        if page_match:
+            if current_paragraph:
+                text = ' '.join(current_paragraph).strip()
+                if text:
+                    para_dicts.append({
+                        'text': text, 'sz': body_size,
+                        'bold': False, 'italic': False,
+                        'page': current_page, 'tag': None,
+                    })
+                current_paragraph = []
+            current_page = int(page_match.group(1))
+            continue
+
+        stripped = line.strip()
+
+        if not stripped:
+            if current_paragraph:
+                text = ' '.join(current_paragraph).strip()
+                if text:
+                    para_dicts.append({
+                        'text': text, 'sz': body_size,
+                        'bold': False, 'italic': False,
+                        'page': current_page, 'tag': None,
+                    })
+                current_paragraph = []
+            continue
+
+        # Detect likely headings by heuristic
+        is_likely_heading = False
+        if len(stripped) < 80:
+            words = stripped.split()
+            if stripped == stripped.upper() and any(c.isalpha() for c in stripped):
+                alpha_words = [w for w in words if len(w) >= 2 and w.isalpha()]
+                if alpha_words:
+                    is_likely_heading = True
+            if re.match(r'^(?:Chapter|CHAPTER|Part|PART|Section|SECTION)\s+[\dIVXLCivxlc]+',
+                        stripped, re.IGNORECASE):
+                is_likely_heading = True
+
+        if is_likely_heading:
+            if current_paragraph:
+                text = ' '.join(current_paragraph).strip()
+                if text:
+                    para_dicts.append({
+                        'text': text, 'sz': body_size,
+                        'bold': False, 'italic': False,
+                        'page': current_page, 'tag': None,
+                    })
+                current_paragraph = []
+            para_dicts.append({
+                'text': stripped, 'sz': body_size * 1.5,
+                'bold': True, 'italic': False,
+                'page': current_page, 'tag': None,
+            })
+            continue
+
+        current_paragraph.append(stripped)
+
+    if current_paragraph:
+        text = ' '.join(current_paragraph).strip()
+        if text:
+            para_dicts.append({
+                'text': text, 'sz': body_size,
+                'bold': False, 'italic': False,
+                'page': current_page, 'tag': None,
+            })
+
+    log(f"  OCR->HTML bridge: {len(para_dicts)} paragraphs from {current_page} pages")
+    return para_dicts, body_size
+
+
 def extract_text(pdf_path, log, force_columns=False):
     """Extract raw text from all pages, auto-selecting the best extraction backend.
 
@@ -8675,14 +8768,24 @@ def _fix_ligature_splits(para_dicts, log):
         log(f"  Ligature fixes applied to {total_fixes} paragraphs")
 
 
-def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False, skip_footnotes=False, apply_ai_fixes=False, no_cache=False):
+def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False,
+                        skip_footnotes=False, apply_ai_fixes=False,
+                        tesseract_path=None, poppler_path=None, ocr_dpi=300,
+                        no_cache=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
     derived from font size/bold/italic properties in the source PDF.
+
+    If Tier 1 text quality is poor (score <= 70), auto-escalates to Tesseract 5
+    OCR (Tier 2) and keeps whichever result scores higher.
     """
     import time as _time_mod
     _extraction_start = _time_mod.time()
+    tier_used = 1
+    extraction_method = 'pdfminer_html'
+    if force_columns:
+        extraction_method = 'column_aware'
     log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
     bookmarks = extract_bookmarks(pdf_path, log)
 
@@ -8710,6 +8813,50 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     log("\n-- STEP 1c: Fixing ligature splits --------------------")
     _fix_ligature_splits(para_dicts, log)
+
+    # ── STEP 1d: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
+    tier1_score = quality.get('score', 0) if quality else 0
+    tier_suggestion = quality.get('tier_suggestion', 1) if quality else 1
+
+    if tier1_score <= 70 and tier_suggestion >= 2:
+        log(f"\n-- STEP 1d: Auto-escalating to Tier 2 (Re-OCR) --------")
+        log(f"  Reason: Tier 1 quality score {tier1_score} <= 70")
+
+        try:
+            ocr_text = extract_text_ocr(
+                pdf_path, log,
+                tesseract_path=tesseract_path,
+                poppler_path=poppler_path,
+                dpi=ocr_dpi
+            )
+
+            if ocr_text and len(ocr_text.strip()) >= 100:
+                ocr_quality = score_text_layer_quality(ocr_text, log=log)
+                ocr_score = ocr_quality.get('score', 0)
+                log(f"  OCR quality score: {ocr_score}/100 "
+                    f"(Tier 1 was: {tier1_score}/100)")
+
+                if ocr_score > tier1_score:
+                    log(f"  OCR wins: {ocr_score} > {tier1_score} — "
+                        f"switching to Tier 2 output")
+                    para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
+                    tier_used = 2
+                    extraction_method = 'tesseract5'
+                    tier1_score = ocr_score
+                    # Re-run quality variable for cache write
+                    quality = ocr_quality
+                else:
+                    log(f"  Tier 1 wins: {tier1_score} >= {ocr_score} — "
+                        f"keeping pdfminer output")
+            else:
+                log(f"  OCR produced insufficient text — keeping Tier 1")
+
+        except RuntimeError as e:
+            log(f"  OCR escalation failed (non-blocking): {e}")
+            log(f"  Continuing with Tier 1 output")
+        except Exception as e:
+            log(f"  OCR escalation error (non-blocking): {e}")
+            log(f"  Continuing with Tier 1 output")
 
     log("\n-- STEP 2: Formatting as semantic HTML ----------------")
     # Extract title from bookmarks or filename
@@ -8770,13 +8917,6 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
             _src_hash = compute_file_hash(pdf_path)
             _extraction_duration = _time_mod.time() - _extraction_start
-
-            # Determine extraction method
-            _method = 'pdfminer_html'
-            if force_columns:
-                _method = 'column_aware'
-
-            # Count chapters from HTML
             _chapter_count = len(re.findall(r'<h[12]>', html))
 
             _book_id = get_or_create_book(
@@ -8791,15 +8931,16 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             store_extraction(
                 book_id=_book_id,
                 source_file_hash=_src_hash,
-                tier=1,
-                method=_method,
+                tier=tier_used,
+                method=extraction_method,
                 extracted_html=html,
                 quality_score=_quality_score,
                 word_count=word_count,
                 chapter_count=_chapter_count,
                 duration_seconds=round(_extraction_duration, 1),
             )
-            log(f"Extraction cached: hash={_src_hash[:12]}..., tier=1, score={_quality_score}")
+            log(f"Extraction cached: hash={_src_hash[:12]}..., tier={tier_used}, "
+                f"method={extraction_method}, score={_quality_score}")
         except Exception as _ce:
             log(f"Extraction cache write failed (non-blocking): {_ce}")
 
@@ -9509,6 +9650,9 @@ Examples:
                                     force_columns=args.force_columns,
                                     skip_footnotes=args.skip_footnotes,
                                     apply_ai_fixes=args.apply_ai_fixes,
+                                    tesseract_path=args.tesseract_path,
+                                    poppler_path=args.poppler_path,
+                                    ocr_dpi=args.ocr_dpi,
                                     no_cache=args.no_cache)
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
