@@ -287,6 +287,7 @@ Before extraction begins, `Invoke-ConvergeLoop` runs `tools/preflight_analysis.p
 | Source Classification | `classify_source.py` | ~3s | source type, confidence, flags |
 | Text Quality Assessment | pypdf sampling + `score_text_layer_quality()` | ~2s | quality tier, OCR artifact rate |
 | Chapter Structure | pypdf bookmarks | ~1s | bookmark count, recommended chapter source |
+| Content Viability | pypdf sampling (footnotes, index, links, images) | ~2s | per-element viability ratings |
 | Historical Data | `pattern_db.py` | instant | prior strategy, score, conversions |
 | Recipe Generation | decision tree | instant | profile, strategy, flags, confidence, reasoning |
 

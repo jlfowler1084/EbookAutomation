@@ -290,7 +290,258 @@ def _is_readable_bookmark(title):
 
 
 # ---------------------------------------------------------------------------
-# Step 4: Historical Data Lookup (delegates to pattern_db.py)
+# Step 4: Content Element Viability Assessment (NEW — Phase 2)
+# ---------------------------------------------------------------------------
+
+def _get_sample_page_indices(page_count, n_samples):
+    """Return n evenly-spaced page indices from the middle 80% of the book."""
+    start = max(0, int(page_count * 0.10))
+    end = min(page_count, int(page_count * 0.90))
+    if end <= start:
+        return list(range(min(n_samples, page_count)))
+    step = max(1, (end - start) // n_samples)
+    return [start + i * step for i in range(n_samples) if start + i * step < end]
+
+
+def _assess_footnote_viability(reader, page_count, text_quality_score, log_fn):
+    """Sample endnotes from the back of the book."""
+    start_page = max(0, int(page_count * 0.90))
+    back_text = ""
+    for i in range(start_page, min(page_count, start_page + 15)):
+        try:
+            back_text += reader.pages[i].extract_text() or ""
+        except Exception:
+            continue
+
+    if not back_text.strip():
+        return {"viability": "none", "sample_count": 0, "readable_ratio": 0.0,
+                "detail": "No text in back matter pages"}
+
+    endnote_pattern = re.compile(
+        r'^\s*(\d{1,4})[\.\s]\s*(\S.{10,})',
+        re.MULTILINE
+    )
+    matches = endnote_pattern.findall(back_text)
+
+    if len(matches) < 3:
+        return {"viability": "none", "sample_count": len(matches),
+                "readable_ratio": 0.0,
+                "detail": f"Only {len(matches)} endnote-like entries found in back matter"}
+
+    sample = matches[:10]
+    readable_count = 0
+    for num, text in sample:
+        words = text.split()[:8]
+        if not words:
+            continue
+        ascii_words = sum(1 for w in words if w.isascii() and 2 <= len(w) <= 20)
+        if ascii_words / len(words) >= 0.6:
+            readable_count += 1
+
+    ratio = readable_count / len(sample)
+    if ratio >= 0.80:
+        viability = "viable"
+    elif ratio >= 0.50:
+        viability = "degraded"
+    else:
+        viability = "unusable"
+
+    return {
+        "viability": viability,
+        "sample_count": len(sample),
+        "readable_ratio": round(ratio, 2),
+        "detail": f"{readable_count}/{len(sample)} sampled endnotes are readable text"
+    }
+
+
+def _assess_index_viability(reader, page_count, log_fn):
+    """Sample index entries from the back of the book."""
+    start_page = max(0, int(page_count * 0.95))
+    back_text = ""
+    for i in range(start_page, page_count):
+        try:
+            back_text += reader.pages[i].extract_text() or ""
+        except Exception:
+            continue
+
+    if not back_text.strip():
+        return {"viability": "none", "sample_count": 0, "structured_ratio": 0.0,
+                "detail": "No text in final pages"}
+
+    lines = [l.strip() for l in back_text.split('\n') if l.strip()]
+    if len(lines) < 5:
+        return {"viability": "none", "sample_count": 0, "structured_ratio": 0.0,
+                "detail": "Too few lines in final pages for index detection"}
+
+    sample = lines[:20]
+    structured_count = 0
+    index_pattern = re.compile(
+        r'.{3,},?\s+\d{1,4}(?:\s*[-\u2013,]\s*\d{1,4})*\s*$'
+    )
+    for line in sample:
+        if index_pattern.match(line):
+            structured_count += 1
+
+    ratio = structured_count / len(sample)
+    if ratio >= 0.50:
+        viability = "viable"
+    elif ratio >= 0.25:
+        viability = "degraded"
+    else:
+        viability = "unusable"
+
+    return {
+        "viability": viability,
+        "sample_count": len(sample),
+        "structured_ratio": round(ratio, 2),
+        "detail": f"{structured_count}/{len(sample)} sampled index entries have parseable page numbers"
+    }
+
+
+def _assess_hyperlink_viability(reader, page_count, log_fn):
+    """Check for PDF link annotations across a sample of pages."""
+    link_count = 0
+    valid_uri_count = 0
+
+    sample_pages = _get_sample_page_indices(page_count, 10)
+
+    for page_idx in sample_pages:
+        try:
+            page = reader.pages[page_idx]
+            annots = page.get('/Annots')
+            if annots is None:
+                continue
+            for annot in annots:
+                try:
+                    annot_obj = annot.get_object() if hasattr(annot, 'get_object') else annot
+                    if annot_obj.get('/Subtype') == '/Link':
+                        link_count += 1
+                        action = annot_obj.get('/A')
+                        if action:
+                            action_obj = action.get_object() if hasattr(action, 'get_object') else action
+                            uri = action_obj.get('/URI', '')
+                            if uri and re.match(r'https?://', str(uri)):
+                                valid_uri_count += 1
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if link_count == 0:
+        return {"viability": "none", "link_count": 0, "valid_uri_count": 0,
+                "detail": "No PDF link annotations found"}
+
+    return {
+        "viability": "viable",
+        "link_count": link_count,
+        "valid_uri_count": valid_uri_count,
+        "detail": f"{link_count} link annotations found ({valid_uri_count} valid URIs)"
+    }
+
+
+def _assess_images(reader, page_count, log_fn):
+    """Count and classify images in the PDF."""
+    image_count = 0
+    content_bearing = 0
+
+    sample_pages = _get_sample_page_indices(page_count, 10)
+
+    for page_idx in sample_pages:
+        try:
+            page = reader.pages[page_idx]
+            resources = page.get('/Resources')
+            if resources is None:
+                continue
+            res_obj = resources.get_object() if hasattr(resources, 'get_object') else resources
+            xobjects = res_obj.get('/XObject')
+            if xobjects is None:
+                continue
+            xobj = xobjects.get_object() if hasattr(xobjects, 'get_object') else xobjects
+            for name in xobj:
+                try:
+                    obj = xobj[name].get_object() if hasattr(xobj[name], 'get_object') else xobj[name]
+                    if obj.get('/Subtype') == '/Image':
+                        image_count += 1
+                        # Use /Length for compressed size (fast) rather than decoding
+                        stream_len = obj.get('/Length', 0)
+                        if hasattr(stream_len, 'get_object'):
+                            stream_len = stream_len.get_object()
+                        if isinstance(stream_len, int) and stream_len > 50_000:
+                            content_bearing += 1
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if image_count == 0:
+        return {"viability": "none", "image_count": 0,
+                "content_bearing_count": 0,
+                "detail": "No images found in sampled pages"}
+
+    viability = "viable" if content_bearing > 0 else "decorative_only"
+    return {
+        "viability": viability,
+        "image_count": image_count,
+        "content_bearing_count": content_bearing,
+        "detail": f"{image_count} images total, {content_bearing} content-bearing (>50KB)"
+    }
+
+
+def _assess_content_viability(pdf_path, page_count, text_quality, log_fn):
+    """Run all four content element viability assessments.
+
+    Returns dict with per-element viability for footnotes, index,
+    hyperlinks, and images. Each sub-assessment is independently
+    wrapped in try/except — failures are non-blocking.
+    """
+    default = {
+        "footnotes": {"viability": "none", "sample_count": 0, "readable_ratio": 0.0, "detail": "Not assessed"},
+        "index": {"viability": "none", "sample_count": 0, "structured_ratio": 0.0, "detail": "Not assessed"},
+        "hyperlinks": {"viability": "none", "link_count": 0, "valid_uri_count": 0, "detail": "Not assessed"},
+        "images": {"viability": "none", "image_count": 0, "content_bearing_count": 0, "detail": "Not assessed"},
+    }
+
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf_path))
+    except Exception as e:
+        log_fn(f"  Content viability: failed to open PDF — {e}")
+        return default
+
+    tq_score = text_quality.get('score', 0) if text_quality else 0
+
+    try:
+        default["footnotes"] = _assess_footnote_viability(reader, page_count, tq_score, log_fn)
+    except Exception as e:
+        log_fn(f"  Content viability: footnote assessment failed — {e}")
+
+    try:
+        default["index"] = _assess_index_viability(reader, page_count, log_fn)
+    except Exception as e:
+        log_fn(f"  Content viability: index assessment failed — {e}")
+
+    try:
+        default["hyperlinks"] = _assess_hyperlink_viability(reader, page_count, log_fn)
+    except Exception as e:
+        log_fn(f"  Content viability: hyperlink assessment failed — {e}")
+
+    try:
+        default["images"] = _assess_images(reader, page_count, log_fn)
+    except Exception as e:
+        log_fn(f"  Content viability: image assessment failed — {e}")
+
+    # Log summary
+    parts = []
+    for element in ("footnotes", "index", "hyperlinks", "images"):
+        v = default[element].get("viability", "none")
+        parts.append(f"{element}={v}")
+    log_fn(f"  Content viability: {', '.join(parts)}")
+
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Step 5: Historical Data Lookup (delegates to pattern_db.py)
 # ---------------------------------------------------------------------------
 
 def _lookup_historical_data(pdf_path, classification, db_path, log_fn):
@@ -347,7 +598,8 @@ def _lookup_historical_data(pdf_path, classification, db_path, log_fn):
 # ---------------------------------------------------------------------------
 
 def _generate_recipe(classification, text_quality, chapter_structure,
-                     historical_data, raw_historical, format_type):
+                     content_viability, historical_data, raw_historical,
+                     format_type):
     """Combine all signals into a conversion recipe.
 
     Decision tree (PDF):
@@ -358,6 +610,9 @@ def _generate_recipe(classification, text_quality, chapter_structure,
       5. digital_native → full, [html_extraction, legacy], all elements
       6. EPUB → full, [epub_html, direct]
       7. Other → full, [direct]
+
+    Phase 2: When content_viability data is available, per-element sampling
+    overrides the heuristic-only No* flag decisions from Phase 1.
 
     Historical data override: exact book with score >= 70 uses that strategy.
     """
@@ -511,6 +766,52 @@ def _generate_recipe(classification, text_quality, chapter_structure,
         reasoning.append(
             "Classification unknown — using safe defaults (full profile, HTML extraction)"
         )
+
+    # --- Content viability overrides (Phase 2) ---
+    # When viability data is available, use actual document sampling to set No* flags.
+    # This overrides the heuristic defaults set above for non-scan_no_text cases.
+    if content_viability and cls_type != 'scan_no_text':
+        fn = content_viability.get("footnotes", {})
+        ix = content_viability.get("index", {})
+        hl = content_viability.get("hyperlinks", {})
+
+        # Footnotes: skip if unusable or none detected
+        fn_viab = fn.get("viability", "none")
+        if fn_viab in ("unusable", "none"):
+            flags["NoFootnotes"] = True
+            reasoning.append(f"Footnotes: {fn_viab} — {fn.get('detail', 'no data')}")
+        elif fn_viab == "degraded":
+            if cls_type in ("scan_with_text", "scan_no_text"):
+                flags["NoFootnotes"] = True
+                reasoning.append(f"Footnotes: degraded on scanned source — skipping ({fn.get('detail', '')})")
+            else:
+                flags["NoFootnotes"] = False
+                reasoning.append(f"Footnotes: degraded but digital source — preserving ({fn.get('detail', '')})")
+        elif fn_viab == "viable":
+            flags["NoFootnotes"] = False
+            reasoning.append(f"Footnotes: viable — preserving ({fn.get('detail', '')})")
+
+        # Index: skip if unusable or degraded (high-noise, low-value on Kindle)
+        ix_viab = ix.get("viability", "none")
+        if ix_viab in ("unusable", "degraded", "none"):
+            flags["NoIndex"] = True
+            reasoning.append(f"Index: {ix_viab} — {ix.get('detail', 'no data')}")
+        else:
+            flags["NoIndex"] = False
+            reasoning.append(f"Index: viable — preserving ({ix.get('detail', '')})")
+
+        # Hyperlinks: skip if none found
+        hl_viab = hl.get("viability", "none")
+        if hl_viab == "none":
+            flags["NoHyperlinks"] = True
+            reasoning.append("Hyperlinks: none found in PDF")
+        else:
+            flags["NoHyperlinks"] = False
+            reasoning.append(f"Hyperlinks: {hl.get('detail', 'found')}")
+
+        # Confidence boost — viability data is more precise than heuristics
+        confidence = min(0.95, confidence + 0.05)
+        reasoning.append("Content viability assessed from actual document sampling")
 
     # Column detection override
     if classification.get('flags', {}).get('likely_two_column'):
@@ -672,7 +973,15 @@ def analyze_document(pdf_path, settings=None, db_path=None, verbose=False):
             "claude_chapters_recommended": False,
         }
 
-    # --- Step 4: Historical Data Lookup (PDFs only) ---
+    # --- Step 4: Content Element Viability (PDFs only) ---
+    if is_pdf:
+        content_viability = _assess_content_viability(
+            pdf_path, page_count, text_quality, log_fn
+        )
+    else:
+        content_viability = None
+
+    # --- Step 5: Historical Data Lookup (PDFs only) ---
     if is_pdf:
         historical_data, raw_historical = _lookup_historical_data(
             pdf_path, classification, db_path, log_fn
@@ -687,10 +996,10 @@ def analyze_document(pdf_path, settings=None, db_path=None, verbose=False):
         }
         raw_historical = None
 
-    # --- Step 5: Generate Recipe ---
+    # --- Step 6: Generate Recipe ---
     recipe = _generate_recipe(
         classification, text_quality, chapter_structure,
-        historical_data, raw_historical, ext
+        content_viability, historical_data, raw_historical, ext
     )
 
     duration = round(time.time() - t0, 2)
@@ -717,6 +1026,7 @@ def analyze_document(pdf_path, settings=None, db_path=None, verbose=False):
             "source_classification": cls_output,
             "text_quality": text_quality,
             "chapter_structure": chapter_structure,
+            "content_viability": content_viability,
             "historical_data": historical_data,
         },
         "recipe": recipe,

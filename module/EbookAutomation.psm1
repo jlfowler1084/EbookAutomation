@@ -4515,6 +4515,17 @@ function Invoke-ConvergeLoop {
                 if ($cs) {
                     Write-EbookLog "  Chapters: $($cs.bookmark_count) bookmarks ($($cs.recommended_chapter_source))"
                 }
+                $cv = $preflightResult.analysis.content_viability
+                if ($cv) {
+                    $viabilityParts = @()
+                    if ($cv.footnotes)   { $viabilityParts += "footnotes=$($cv.footnotes.viability)" }
+                    if ($cv.index)       { $viabilityParts += "index=$($cv.index.viability)" }
+                    if ($cv.hyperlinks)  { $viabilityParts += "links=$($cv.hyperlinks.viability)" }
+                    if ($cv.images)      { $viabilityParts += "images=$($cv.images.viability)" }
+                    if ($viabilityParts.Count -gt 0) {
+                        Write-EbookLog "  Content: $($viabilityParts -join ', ')"
+                    }
+                }
                 Write-EbookLog "  RECOMMENDATION: profile=$($recipe.profile), strategy=$($recipe.extraction_strategy -join ' -> ')"
                 Write-EbookLog "  CONFIDENCE: $($recipe.confidence)"
                 foreach ($reason in $recipe.reasoning) {
