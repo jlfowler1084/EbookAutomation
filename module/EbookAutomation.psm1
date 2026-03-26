@@ -4057,6 +4057,16 @@ function Test-ConversionQuality {
     $pythonPath = $config.paths.python
     if (-not $pythonPath) { $pythonPath = "python" }
 
+    # Read model from settings.json if using default
+    if ($Model -eq 'claude-sonnet-4-6') {
+        try {
+            $cfgModel = $config.api_models.sonnet_latest
+            if ($cfgModel) { $Model = $cfgModel }
+        } catch {
+            # Fall through to hardcoded default
+        }
+    }
+
     $qaScript = Join-Path (Join-Path $script:ModuleRoot "tools") "visual_qa.py"
     if (-not (Test-Path $qaScript)) {
         Write-EbookLog "Visual QA script not found: $qaScript" -Level ERROR

@@ -13,9 +13,11 @@ Two modes:
     Mode B: Page remediation (only VQA-flagged pages)
 """
 
+import json as _json
 import os
 import re
 import sys
+from pathlib import Path as _Path
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -36,6 +38,20 @@ Rules:
 10. Do NOT add any commentary about the transcription.
 11. Separate each page with: <<PAGE:N>> where N is the page number.
 12. If a page is blank or image-only with no text, output just the page marker."""
+
+
+def _load_gemini_model():
+    """Load Gemini model string from config/settings.json, falling back to default."""
+    _default = "gemini-2.5-flash"
+    try:
+        settings_path = _Path(__file__).resolve().parent.parent / "config" / "settings.json"
+        if settings_path.exists():
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                cfg = _json.load(f)
+            return cfg.get("api_models", {}).get("gemini_flash", _default)
+    except Exception:
+        pass
+    return _default
 
 
 def _get_gemini_client(api_key=None):
@@ -111,7 +127,7 @@ def _get_page_count(pdf_path):
 
 def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
                          dpi=200, batch_size=5, cost_limit=5.0,
-                         model='gemini-2.5-flash'):
+                         model=None):
     """Mode A: Full book transcription via Gemini Flash.
 
     Renders every page, sends to Gemini in batches, returns clean text.
@@ -121,6 +137,8 @@ def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
         dict: {text, pages_processed, total_pages, input_tokens, output_tokens, cost_usd}
         or None on failure
     """
+    if model is None:
+        model = _load_gemini_model()
     client = _get_gemini_client(api_key)
     from google.genai import types
 
@@ -241,7 +259,7 @@ def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
 
 def remediate_pages_gemini(pdf_path, page_numbers, log, api_key=None,
                             poppler_path=None, dpi=200,
-                            model='gemini-2.5-flash'):
+                            model=None):
     """Mode B: Page-level remediation via Gemini Flash.
 
     Only re-extracts specific pages identified as low quality.
@@ -251,6 +269,8 @@ def remediate_pages_gemini(pdf_path, page_numbers, log, api_key=None,
         dict: {pages: {N: text, ...}, input_tokens, output_tokens, cost_usd}
         or None on failure
     """
+    if model is None:
+        model = _load_gemini_model()
     if not page_numbers:
         log("  Gemini remediate: no pages specified")
         return None

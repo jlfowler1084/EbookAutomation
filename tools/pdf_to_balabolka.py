@@ -1480,7 +1480,7 @@ def extract_text_vision(pdf_path, log, api_key=None, poppler_path=None,
         return None
 
     resolved_poppler = find_poppler_path(poppler_path)
-    model = "claude-sonnet-4-20250514"
+    model = _load_api_model("sonnet")
 
     all_page_numbers = list(range(1, total_pages + 1))
     all_text_parts = []
@@ -9628,7 +9628,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         tesseract_path=None, poppler_path=None, ocr_dpi=300,
                         no_cache=False, use_vision=False, vision_cost_limit=15.0,
                         use_gemini=False, gemini_remediate=False,
-                        gemini_cost_limit=5.0, gemini_model='gemini-2.5-flash'):
+                        gemini_cost_limit=5.0, gemini_model=None):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -9641,6 +9641,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     """
     import time as _time_mod
     _extraction_start = _time_mod.time()
+    # Resolve gemini_model from config if not explicitly provided
+    if gemini_model is None:
+        gemini_model = _load_api_model("gemini_flash")
     tier_used = 1
     extraction_method = 'pdfminer_html'
     if force_columns:
@@ -10721,8 +10724,8 @@ Examples:
                          "Cost: ~$0.002/page. Requires GEMINI_API_KEY.")
     ap.add_argument("--gemini-cost-limit", type=float, default=5.0,
                     help="Maximum allowed cost for Gemini extraction in USD (default: $5.00)")
-    ap.add_argument("--gemini-model", default="gemini-2.5-flash",
-                    help="Gemini model to use (default: gemini-2.5-flash)")
+    ap.add_argument("--gemini-model", default=None,
+                    help="Gemini model to use (default: from settings.json or gemini-2.5-flash)")
     ap.add_argument("--use-vision", action="store_true",
                     help="Use Claude Vision API for page-by-page transcription (Tier 3). "
                          "Highest quality — handles multi-script, custom fonts, degraded scans. "
