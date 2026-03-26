@@ -712,6 +712,10 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "strategy_selected": "html_extraction" if ext == 'pdf' else "direct",
             "strategy_source": "default",
         },
+        "routing": {
+            "needs_paid_tier": False,
+            "recommended_paid_tier": None,
+        },
         "extraction": {
             "success": False,
             "extraction_path": "html_extraction" if ext == 'pdf' else "direct",
@@ -1015,6 +1019,18 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                 "Very low text yield for file size — likely scanned/image-only PDF. "
                 "Consider re-running with --use-ocr flag."
             )
+
+        # Run classify_source for routing recommendation (SCRUM-167)
+        try:
+            from classify_source import classify_pdf
+            classification = classify_pdf(str(file_path))
+            if classification:
+                diag["routing"]["needs_paid_tier"] = classification.get(
+                    "flags", {}).get("needs_paid_tier", False)
+                diag["routing"]["recommended_paid_tier"] = classification.get(
+                    "flags", {}).get("recommended_paid_tier")
+        except Exception:
+            pass  # non-blocking — classify_source may not be available
 
     if ext == 'pdf' and not diag["extraction"]["success"]:
         # Check for DRM/encryption via pypdf

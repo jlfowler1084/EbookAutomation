@@ -4409,6 +4409,10 @@ function Invoke-ConvergeLoop {
                     Write-EbookLog "ConvergeLoop: scanned PDF detected -- consider using -Profile text-only for best Kindle performance" -Level WARN
                 }
 
+                if ($classification.flags.needs_paid_tier) {
+                    $recTier = $classification.flags.recommended_paid_tier
+                    Write-EbookLog "  PAID TIER RECOMMENDED: $recTier -- free extraction methods likely insufficient" -Level WARN
+                }
                 if ($classification.flags.needs_ocr) {
                     Write-EbookLog "  WARNING: Source needs OCR - text layer is empty or unusable" -Level WARN
                 }
@@ -4518,6 +4522,13 @@ print(json.dumps(result))
                     Name        = "Gemini Flash extraction (Tier 2.5)"
                     Flags       = @{ UseGemini = $true }
                     Description = "Gemini Flash page-by-page transcription (Tier 2.5)"
+                }
+            }
+            'vision' {
+                return @{
+                    Name        = "Claude Vision extraction (Tier 3)"
+                    Flags       = @{ UseVision = $true }
+                    Description = "Claude Vision page-by-page transcription (Tier 3)"
                 }
             }
         }
@@ -4640,7 +4651,34 @@ print(json.dumps(result))
 
         # Guard: skip Gemini strategy unless explicitly requested
         if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini) {
-            Write-EbookLog "  Skipping Gemini strategy (not explicitly requested via -UseGemini)" -Level INFO
+            if ($classification -and $classification.flags.needs_paid_tier -and
+                $classification.flags.recommended_paid_tier -eq 'gemini') {
+                $pgCount = if ($classification.signals.total_pages) { $classification.signals.total_pages } else { 0 }
+                $estCost = '{0:F2}' -f ($pgCount * 0.0016)
+                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
+                Write-EbookLog "  RECOMMENDATION: This book's producer ($($classification.signals.pdf_producer))" -Level WARN
+                Write-EbookLog "  indicates it needs Gemini extraction (Tier 2.5)." -Level WARN
+                Write-EbookLog "  Free tiers (pdfminer, Tesseract) cannot read this PDF format." -Level WARN
+                Write-EbookLog "  To enable: re-run with -UseGemini flag" -Level WARN
+                Write-EbookLog "  Estimated cost: ~`$$estCost" -Level WARN
+                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
+            } else {
+                Write-EbookLog "  Skipping Gemini strategy (not explicitly requested via -UseGemini)" -Level INFO
+            }
+            continue
+        }
+
+        # Guard: skip Vision strategy unless explicitly requested
+        if ($convertParams.ContainsKey('UseVision') -and $convertParams['UseVision'] -and -not $UseVision) {
+            if ($classification -and $classification.flags.needs_paid_tier -and
+                $classification.flags.recommended_paid_tier -eq 'vision') {
+                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
+                Write-EbookLog "  RECOMMENDATION: This book needs Claude Vision extraction (Tier 3)." -Level WARN
+                Write-EbookLog "  To enable: re-run with -UseVision flag" -Level WARN
+                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
+            } else {
+                Write-EbookLog "  Skipping Vision strategy (not explicitly requested via -UseVision)" -Level INFO
+            }
             continue
         }
 

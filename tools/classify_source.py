@@ -269,6 +269,8 @@ def classify_pdf(pdf_path, config=None):
             "skip_html_extraction": False,
             "needs_ocr": False,
             "likely_two_column": False,
+            "needs_paid_tier": False,
+            "recommended_paid_tier": None,
         },
     }
 
@@ -381,33 +383,37 @@ def classify_pdf(pdf_path, config=None):
         # Producer says digital but density says scan — reduce confidence
         result["confidence"] = max(0.3, result["confidence"] - 0.15)
 
-    # ── Producer-based routing overrides (SCRUM-148) ───────────────
-    # Internet Archive scans are almost always image-only or have bad OCR
+    # ── Producer-based routing overrides (SCRUM-148 + SCRUM-167) ────
+    # Internet Archive scans — Tesseract can't read LuraDocument-recoded images
     if 'internet archive' in producer_lower:
+        if text_density < 200:
+            result["classification"] = "scan_no_text"
+            result["confidence"] = max(result["confidence"], 0.85)
+            result["flags"]["needs_ocr"] = True
+            result["flags"]["needs_paid_tier"] = True
+            result["flags"]["recommended_paid_tier"] = "gemini"
+            result["recommended_strategies"] = ["gemini", "vision", "ocr", "html_extraction"]
+            log.info("Producer override: Internet Archive with low text density "
+                     "-> scan_no_text (paid tier recommended)")
+        else:
+            # Has some text — try OCR first, Gemini as backup
+            result["classification"] = "scan_with_text"
+            result["confidence"] = max(result["confidence"], 0.70)
+            result["recommended_strategies"] = ["ocr", "html_extraction", "gemini"]
+            log.info("Producer override: Internet Archive with text "
+                     "-> scan_with_text (OCR preferred, Gemini backup)")
+
+    # LuraDocument recoded PDFs — image content in incompatible format
+    if 'luradocument' in producer_lower or 'lura' in producer_lower:
         if text_density < 200:
             result["classification"] = "scan_no_text"
             result["confidence"] = max(result["confidence"], 0.80)
             result["flags"]["needs_ocr"] = True
-            result["recommended_strategies"] = ["ocr", "html_extraction", "legacy"]
-            log.info("Producer override: Internet Archive with low text density "
-                     "-> scan_no_text")
-        else:
-            result["classification"] = "scan_with_text"
-            result["confidence"] = max(result["confidence"], 0.70)
-            result["recommended_strategies"] = ["ocr", "html_extraction", "legacy"]
-            log.info("Producer override: Internet Archive with text "
-                     "-> scan_with_text (OCR preferred)")
-
-    # LuraDocument is a PDF recoding tool — recoded PDFs often have
-    # corrupted text layers
-    if 'luradocument' in producer_lower or 'lura' in producer_lower:
-        if text_density < 200:
-            result["classification"] = "scan_no_text"
-            result["confidence"] = max(result["confidence"], 0.75)
-            result["flags"]["needs_ocr"] = True
-            result["recommended_strategies"] = ["ocr", "html_extraction"]
+            result["flags"]["needs_paid_tier"] = True
+            result["flags"]["recommended_paid_tier"] = "gemini"
+            result["recommended_strategies"] = ["gemini", "vision", "ocr", "html_extraction"]
             log.info("Producer override: LuraDocument with low text density "
-                     "-> scan_no_text")
+                     "-> scan_no_text (paid tier recommended)")
 
     # Override: high text density + high file size per page = scan with OCR text layer
     # Digital-native PDFs are typically < 15 KB/page (text + vector graphics only)
@@ -423,6 +429,24 @@ def classify_pdf(pdf_path, config=None):
         # If producer also matches known scan tools, boost confidence
         if is_scan_producer:
             result["confidence"] = min(result["confidence"] + 0.1, 0.95)
+
+    # ── Compound failure prediction (SCRUM-167) ─────────────────────
+    # Any producer with high image density + no text + no bookmarks
+    # is almost certainly a scan that needs paid-tier extraction.
+    # Conservative: requires BOTH low text density (<50 chars/page)
+    # AND high file size (>50 KB/page = large raster images).
+    if (not result["flags"].get("needs_paid_tier")
+            and text_density < 50
+            and kb_per_page > 50):
+        result["flags"]["needs_paid_tier"] = True
+        result["flags"]["recommended_paid_tier"] = "gemini"
+        if "gemini" not in result["recommended_strategies"]:
+            result["recommended_strategies"] = (
+                ["gemini"] + result["recommended_strategies"]
+            )
+        log.info("Compound failure prediction: low text (%.0f chars/page) + "
+                 "large file (%.0f KB/page) -> paid tier recommended",
+                 text_density, kb_per_page)
 
     # Column detection: prepend column_aware if detected
     if likely_two_column:
