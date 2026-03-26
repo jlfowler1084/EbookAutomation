@@ -87,6 +87,14 @@
       "max_email_size_mb": 50
     }
   },
+  "preflight": {
+    "enabled": true,
+    "text_quality_sample_pages": 5,
+    "ocr_artifact_threshold_poor": 0.30,
+    "ocr_artifact_threshold_moderate": 0.10,
+    "bookmark_readability_threshold": 0.80,
+    "min_bookmarks_for_viable": 3
+  },
   "archive_originals":  true,
   "log_level":          "INFO"
 }

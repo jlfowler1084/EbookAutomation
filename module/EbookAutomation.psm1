@@ -640,7 +640,11 @@ function Convert-ToKindle {
         [switch]$NoBlockQuotes,
 
         [Parameter(HelpMessage = 'Enable AI Quality Pass fix application. Without this, the quality pass only detects and scores issues without modifying text.')]
-        [switch]$ApplyAIFixes
+        [switch]$ApplyAIFixes,
+
+        # Reserved — active on Invoke-ConvergeLoop
+        [switch]$SkipPreflight,
+        [switch]$IgnoreRecommendation
     )
 
     $cfg        = Get-EbookConfig
@@ -2778,7 +2782,11 @@ function Invoke-EbookPipeline {
         [switch]$NoImages,
         [switch]$NoBlockQuotes,
 
-        [switch]$ApplyAIFixes
+        [switch]$ApplyAIFixes,
+
+        # Reserved — active on Invoke-ConvergeLoop
+        [switch]$SkipPreflight,
+        [switch]$IgnoreRecommendation
     )
 
     $pipelineStart  = Get-Date
@@ -4417,7 +4425,13 @@ function Invoke-ConvergeLoop {
         [switch]$UseVision,
 
         [Parameter(HelpMessage = 'Allow any paid extraction tier without per-strategy flags. Use for batch processing where cost is pre-approved.')]
-        [switch]$AllowPaidExtraction
+        [switch]$AllowPaidExtraction,
+
+        [Parameter(HelpMessage = 'Skip pre-flight analysis entirely; use existing default behavior.')]
+        [switch]$SkipPreflight,
+
+        [Parameter(HelpMessage = 'Run pre-flight analysis (logged) but do not apply recipe as defaults.')]
+        [switch]$IgnoreRecommendation
     )
 
     # ── Step 1: Setup ────────────────────────────────────────────────────────
@@ -4463,92 +4477,62 @@ function Invoke-ConvergeLoop {
     $lastVqaReportPath = ""   # VQA report from previous iteration for fix engine
     $cachedChapterHints = $null  # Chapter hints JSON cached from iteration 1 for reuse
 
-    # ── Step 1b: Pre-flight source classification ───────────────────────────
+    # ── Step 1b: Pre-flight analysis ─────────────────────────────────────
     $python   = $cfg.paths.python
     $toolsDir = Join-Path $script:ModuleRoot "tools"
 
-    $classification = $null
-    if ($ext -eq 'pdf') {
-        Write-EbookLog "ConvergeLoop: classifying source PDF..."
+    $preflightResult = $null
+    $classification  = $null
+    if (-not $SkipPreflight) {
+        Write-EbookLog "ConvergeLoop: running pre-flight analysis..."
         try {
-            $classifyScript = Join-Path $script:ModuleRoot "tools" "classify_source.py"
-            $classifyResult = & $python $classifyScript --input "$InputFile" 2>$null
-            if ($classifyResult) {
-                $classifyJson = $classifyResult -join "`n"
-                $classification = $classifyJson | ConvertFrom-Json
-                Write-EbookLog "ConvergeLoop: source classified as $($classification.classification) (confidence: $($classification.confidence))"
-                Write-EbookLog "  Text density: $($classification.signals.text_density_per_page) chars/page"
-                Write-EbookLog "  File size/page: $($classification.signals.file_size_per_page_kb) KB"
-                Write-EbookLog "  Recommended strategies: $($classification.recommended_strategies -join ' -> ')"
+            $preflightScript = Join-Path $script:ModuleRoot "tools" "preflight_analysis.py"
+            $preflightArgs = @("$preflightScript", "--input", "`"$InputFile`"")
 
-                # Recommend lean profile for scanned PDFs
-                if ($classification.classification -in @('scan_with_text', 'scan_no_text') -and $Profile -eq 'full') {
-                    Write-EbookLog "ConvergeLoop: scanned PDF detected -- consider using -Profile text-only for best Kindle performance" -Level WARN
-                }
+            # Pass database path if data directory exists
+            $dataDir = Join-Path $script:ModuleRoot "tools" "data"
+            $dbFile  = Join-Path $dataDir "ebook_patterns.db"
+            if (Test-Path $dbFile) {
+                $preflightArgs += @("--db-path", "`"$dbFile`"")
+            }
 
-                if ($classification.flags.needs_paid_tier) {
-                    $recTier = $classification.flags.recommended_paid_tier
-                    Write-EbookLog "  PAID TIER RECOMMENDED: $recTier -- free extraction methods likely insufficient" -Level WARN
+            $preflightRaw = & $python @preflightArgs 2>$null
+            if ($preflightRaw) {
+                $preflightJson   = ($preflightRaw -join "`n")
+                $preflightResult = $preflightJson | ConvertFrom-Json
+
+                # Log the analysis summary
+                $cls    = $preflightResult.analysis.source_classification
+                $tq     = $preflightResult.analysis.text_quality
+                $cs     = $preflightResult.analysis.chapter_structure
+                $recipe = $preflightResult.recipe
+
+                Write-EbookLog "Pre-flight: $fileName ($($preflightResult.page_count) pages)"
+                Write-EbookLog "  Source: $($cls.classification) (confidence: $($cls.confidence))"
+                if ($tq) {
+                    Write-EbookLog "  Text quality: $($tq.quality_tier) (score: $($tq.score)/100, OCR artifact rate: $([math]::Round($tq.ocr_artifact_rate * 100))%)"
                 }
-                if ($classification.flags.needs_ocr) {
-                    Write-EbookLog "  WARNING: Source needs OCR - text layer is empty or unusable" -Level WARN
+                if ($cs) {
+                    Write-EbookLog "  Chapters: $($cs.bookmark_count) bookmarks ($($cs.recommended_chapter_source))"
                 }
-                if ($classification.flags.likely_two_column) {
-                    Write-EbookLog "  Detected: likely two-column layout"
+                Write-EbookLog "  RECOMMENDATION: profile=$($recipe.profile), strategy=$($recipe.extraction_strategy -join ' -> ')"
+                Write-EbookLog "  CONFIDENCE: $($recipe.confidence)"
+                foreach ($reason in $recipe.reasoning) {
+                    Write-EbookLog "    - $reason"
                 }
             }
         } catch {
-            Write-EbookLog "ConvergeLoop: source classification failed (non-blocking) -- $_" -Level WARN
+            Write-EbookLog "ConvergeLoop: pre-flight analysis failed (non-blocking) -- $_" -Level WARN
         }
     }
 
-    # ── Step 1c: Smart strategy selection from historical data ────────────
-    $dbRecommendation = $null
-    $autoClaudeChapters = $false
-    if ($ext -eq 'pdf') {
-        try {
-            $sourceTypeArg = if ($classification) { "'$($classification.classification)'" } else { "None" }
-            $recScript = @"
-import sys, json
-sys.path.insert(0, r'$toolsDir')
-from pattern_db import get_recommended_strategy
-result = get_recommended_strategy(
-    source_file_path=r'$InputFile',
-    source_type=$sourceTypeArg,
-    format='pdf'
-)
-print(json.dumps(result))
-"@
-            $recResult = & $python -c $recScript 2>$null
-            if ($recResult) {
-                $dbRecommendation = ($recResult -join "`n") | ConvertFrom-Json
-                if ($dbRecommendation.source -ne 'default') {
-                    Write-EbookLog "ConvergeLoop: database recommendation ($($dbRecommendation.source)):"
-                    Write-EbookLog "  Strategy: $($dbRecommendation.strategy_order -join ' -> ')"
-                    Write-EbookLog "  Reason: $($dbRecommendation.reason)"
-                    Write-EbookLog "  Confidence: $($dbRecommendation.confidence)"
-                    if ($dbRecommendation.flags.UseClaudeChapters) {
-                        Write-EbookLog "  Auto-enabling: -UseClaudeChapters (no chapters in prior runs)"
-                    }
-                } else {
-                    Write-EbookLog "ConvergeLoop: no historical data for this book - using classification"
-                }
-            }
-        } catch {
-            Write-EbookLog "ConvergeLoop: strategy recommendation failed (non-blocking) -- $_" -Level WARN
-        }
-    }
-
-    # ── Step 2: Define strategy sequence (layered priority) ───────────────
-    # Priority 1: Database recommendation (if confidence >= 0.5)
-    # Priority 2: Classification recommendation (from classify_source.py)
-    # Priority 3: Default hardcoded order
-
+    # ── Step 2: Build strategy sequence from preflight recipe ─────────────
     $strategies     = @()
     $strategySource = 'default (no data)'
+    $autoClaudeChapters = $false
 
     # Helper to build strategy hashtable from a path name
-    # (used by all three priority levels)
+    # (used by preflight recipe and fallback priority levels)
     function _BuildStrategyFromPath {
         param([string]$PathName)
         switch ($PathName) {
@@ -4613,62 +4597,95 @@ print(json.dumps(result))
         }
     }
 
-    if ($dbRecommendation -and $dbRecommendation.confidence -ge 0.5 -and
-        $dbRecommendation.strategy_order -and $dbRecommendation.strategy_order.Count -gt 0) {
-        # Priority 1: Database recommendation
-        foreach ($strat in $dbRecommendation.strategy_order) {
+    # Apply preflight recipe (if available and not ignored)
+    if ($preflightResult -and -not $IgnoreRecommendation) {
+        $recipe = $preflightResult.recipe
+
+        # Strategy sequence from recipe
+        foreach ($strat in $recipe.extraction_strategy) {
             $s = _BuildStrategyFromPath $strat
             if ($s) { $strategies += $s }
         }
-        $strategySource = "database ($($dbRecommendation.source))"
+        $strategySource = "preflight (confidence: $($recipe.confidence))"
 
-        if ($dbRecommendation.flags.UseClaudeChapters) {
+        # Apply profile recommendation ONLY if user didn't explicitly set one
+        if ($recipe.profile -ne 'full' -and -not $PSBoundParameters.ContainsKey('Profile')) {
+            $Profile = $recipe.profile
+            Write-EbookLog "ConvergeLoop: preflight recommends profile '$($recipe.profile)' (auto-applied)"
+        }
+
+        # Apply content filter flags from recipe (only if user didn't explicitly set them)
+        $flagMap = @{
+            'NoFootnotes'  = 'NoFootnotes'
+            'NoIndex'      = 'NoIndex'
+            'NoHyperlinks' = 'NoHyperlinks'
+        }
+        foreach ($entry in $flagMap.GetEnumerator()) {
+            $recFlag = $entry.Key
+            $psParam = $entry.Value
+            if ($recipe.flags.$recFlag -and -not $PSBoundParameters.ContainsKey($psParam)) {
+                Set-Variable -Name $psParam -Value $true
+                Write-EbookLog "ConvergeLoop: preflight recommends -$psParam (auto-applied)"
+            }
+        }
+
+        # Claude chapters recommendation
+        if ($recipe.flags.UseClaudeChapters) {
             $autoClaudeChapters = $true
         }
 
-    } elseif ($classification -and $classification.recommended_strategies) {
-        # Priority 2: Classification recommendation
-        foreach ($strat in $classification.recommended_strategies) {
-            $s = _BuildStrategyFromPath $strat
-            if ($s) { $strategies += $s }
+        # Classification data (still needed for scanned PDF warnings downstream)
+        if ($preflightResult.analysis.source_classification) {
+            $classification = $preflightResult.analysis.source_classification
         }
-        $strategySource = "classification ($($classification.classification))"
+    }
 
-    } elseif ($ext -eq 'pdf') {
-        # Priority 3: Default order for PDFs
-        $strategies += @{
-            Name        = "HTML extraction (pdfminer)"
-            Flags       = @{ UseHtmlExtraction = $true }
-            Description = "Font-metadata semantic HTML extraction"
-        }
-        $strategies += @{
-            Name        = "Legacy extraction (pypdf)"
-            Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
-            Description = "Standard pypdf text extraction with Markdown headings"
-        }
-        $strategies += @{
-            Name        = "Column-aware extraction"
-            Flags       = @{ ForceColumns = $true }
-            Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
-        }
-    } elseif ($ext -eq 'epub') {
-        # EPUB gets HTML extraction first, then direct fallback
-        $strategies += @{
-            Name        = "EPUB HTML extraction"
-            Flags       = @{}
-            Description = "Extract and merge EPUB chapter HTML preserving formatting"
-        }
-        $strategies += @{
-            Name        = "Direct conversion"
-            Flags       = @{ DirectConversion = $true }
-            Description = "Send raw EPUB straight to Calibre without extraction"
-        }
-    } else {
-        # MOBI/AZW — only one path (direct to Calibre)
-        $strategies += @{
-            Name        = "Direct conversion"
-            Flags       = @{ DirectConversion = $true }
-            Description = "Native format straight to Calibre"
+    # Fallback: if preflight didn't produce strategies (skipped, failed, or ignored)
+    if ($strategies.Count -eq 0) {
+        if ($classification -and $classification.recommended_strategies) {
+            # Fallback Priority 1: Classification recommendation
+            foreach ($strat in $classification.recommended_strategies) {
+                $s = _BuildStrategyFromPath $strat
+                if ($s) { $strategies += $s }
+            }
+            $strategySource = "classification ($($classification.classification))"
+        } elseif ($ext -eq 'pdf') {
+            # Fallback Priority 2: Default order for PDFs
+            $strategies += @{
+                Name        = "HTML extraction (pdfminer)"
+                Flags       = @{ UseHtmlExtraction = $true }
+                Description = "Font-metadata semantic HTML extraction"
+            }
+            $strategies += @{
+                Name        = "Legacy extraction (pypdf)"
+                Flags       = @{ UseHtmlExtraction = $false; ForceColumns = $false }
+                Description = "Standard pypdf text extraction with Markdown headings"
+            }
+            $strategies += @{
+                Name        = "Column-aware extraction"
+                Flags       = @{ ForceColumns = $true }
+                Description = "PyMuPDF multi-column extraction for academic/commentary layouts"
+            }
+            $strategySource = "default (no data)"
+        } elseif ($ext -eq 'epub') {
+            $strategies += @{
+                Name        = "EPUB HTML extraction"
+                Flags       = @{}
+                Description = "Extract and merge EPUB chapter HTML preserving formatting"
+            }
+            $strategies += @{
+                Name        = "Direct conversion"
+                Flags       = @{ DirectConversion = $true }
+                Description = "Send raw EPUB straight to Calibre without extraction"
+            }
+            $strategySource = "default (epub)"
+        } else {
+            $strategies += @{
+                Name        = "Direct conversion"
+                Flags       = @{ DirectConversion = $true }
+                Description = "Native format straight to Calibre"
+            }
+            $strategySource = "default (direct)"
         }
     }
 

@@ -276,6 +276,30 @@ Three extraction paths exist. Path selection happens inside `extract_text()` bef
 
 Changes to early phases cascade — always test downstream effects.
 
+### Pre-Flight Analysis
+
+Before extraction begins, `Invoke-ConvergeLoop` runs `tools/preflight_analysis.py` to analyze the source document and generate a conversion recipe. The recipe sets profile, extraction strategy, and content filter flags as defaults — user-explicit flags always override.
+
+#### Analysis Steps
+
+| Step | Source | Time | Output |
+|------|--------|------|--------|
+| Source Classification | `classify_source.py` | ~3s | source type, confidence, flags |
+| Text Quality Assessment | pypdf sampling + `score_text_layer_quality()` | ~2s | quality tier, OCR artifact rate |
+| Chapter Structure | pypdf bookmarks | ~1s | bookmark count, recommended chapter source |
+| Historical Data | `pattern_db.py` | instant | prior strategy, score, conversions |
+| Recipe Generation | decision tree | instant | profile, strategy, flags, confidence, reasoning |
+
+#### Bypass Switches
+
+- `-SkipPreflight` — skip analysis entirely, use existing default behavior
+- `-IgnoreRecommendation` — run analysis (logged) but don't apply as defaults
+
+#### CLI
+```bash
+python tools/preflight_analysis.py --input "book.pdf" [--db-path "path/to/db"] [--verbose]
+```
+
 ---
 
 ## External Dependencies
