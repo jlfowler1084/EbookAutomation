@@ -854,6 +854,214 @@ def do_capture(name, pdf_pattern, quick=False):
     return baseline
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Filter content tests (unit + integration)
+# ═══════════════════════════════════════════════════════════════════════════
+
+TEST_FILTER_HTML = (
+    '<html><body>'
+    '<h1>Foreword</h1>'
+    '<p>This is the foreword text.</p>'
+    '<h1>Chapter 1: The Beginning</h1>'
+    '<p>Body text with a footnote<sup><a href="#endnote_1">1</a></sup> reference.</p>'
+    '<p>More body text with <a href="http://example.com">a hyperlink</a>.</p>'
+    '<blockquote><p>A quoted passage.</p></blockquote>'
+    '<figure><img src="figure1.png" alt="Figure 1"/><figcaption>Figure 1</figcaption></figure>'
+    '<h1>Chapter 2: The Middle</h1>'
+    '<p>More chapter content here.</p>'
+    '<h2>Notes</h2>'
+    '<p><a id="endnote_1">1.</a> This is a footnote.</p>'
+    '<h2>Bibliography</h2>'
+    '<p>Author, A. (2020). Book Title. Publisher.</p>'
+    '<h2>Index</h2>'
+    '<p>Abraham, 12, 45, 67</p>'
+    '<p>Moses, 23, 89, 112</p>'
+    '</body></html>'
+)
+
+
+def run_filter_tests(quick=False):
+    """Run unit tests for filter_content.py profiles and individual filters.
+
+    Returns list of (name, passed, passes, failures, elapsed).
+    """
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    from filter_content import filter_html_with_report
+
+    results = []
+
+    def _run(name, fn):
+        t0 = time.time()
+        passes, failures = [], []
+        try:
+            fn(passes, failures)
+        except Exception as e:
+            failures.append(f"Exception: {e}")
+        elapsed = round(time.time() - t0, 3)
+        results.append((name, len(failures) == 0, passes, failures, elapsed))
+
+    # ── Profile tests ───────────────────────────────────────────────────
+
+    def test_full_profile(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, profile='full')
+        (P if result == TEST_FILTER_HTML else F).append(
+            "full profile: output == input (no changes)")
+        (P if report['size_reduction_percent'] == 0 else F).append(
+            "full profile: 0% size reduction")
+        (P if not report['removed'] else F).append(
+            "full profile: empty removed dict")
+
+    def test_clean_read_profile(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, profile='clean-read')
+        (P if 'Chapter 1' in result else F).append("clean-read: Chapter 1 preserved")
+        (P if 'Body text' in result else F).append("clean-read: body text preserved")
+        (P if 'Foreword' not in result else F).append("clean-read: Foreword stripped")
+        (P if '<a href=' not in result else F).append("clean-read: hyperlinks stripped")
+        (P if 'a hyperlink' in result else F).append("clean-read: link text preserved")
+        (P if '<sup>' not in result else F).append("clean-read: footnote <sup> stripped")
+        (P if 'Abraham' not in result else F).append("clean-read: index entries stripped")
+        (P if 'Bibliography' in result else F).append("clean-read: Bibliography preserved (not back matter)")
+        (P if '<blockquote' in result else F).append("clean-read: blockquotes preserved")
+        (P if '<img' in result else F).append("clean-read: images preserved")
+        (P if report['size_reduction_percent'] > 0 else F).append(
+            f"clean-read: size reduced ({report['size_reduction_percent']}%)")
+
+    def test_text_only_profile(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, profile='text-only')
+        (P if 'Chapter 1' in result else F).append("text-only: Chapter 1 preserved")
+        (P if 'Body text' in result else F).append("text-only: body text preserved")
+        (P if 'Foreword' not in result else F).append("text-only: Foreword stripped")
+        (P if '<blockquote' not in result else F).append("text-only: blockquotes stripped")
+        (P if '<img' not in result else F).append("text-only: images stripped")
+        (P if 'Bibliography' not in result else F).append("text-only: Bibliography stripped")
+        _, cr_report = filter_html_with_report(TEST_FILTER_HTML, profile='clean-read')
+        (P if report['size_reduction_percent'] > cr_report['size_reduction_percent'] else F).append(
+            "text-only: strips more than clean-read")
+
+    # ── Individual filter tests ─────────────────────────────────────────
+
+    def test_no_footnotes(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_footnotes=True)
+        (P if '<sup>' not in result else F).append("no_footnotes: <sup> markers removed")
+        (P if 'endnote_1' not in result else F).append("no_footnotes: endnote section removed")
+        (P if 'Chapter 1' in result else F).append("no_footnotes: chapters preserved")
+        (P if report['removed'].get('footnotes', 0) > 0 else F).append(
+            f"no_footnotes: report count = {report['removed'].get('footnotes', 0)}")
+
+    def test_no_index(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_index=True)
+        (P if 'Abraham' not in result else F).append("no_index: Abraham entry removed")
+        (P if 'Moses' not in result else F).append("no_index: Moses entry removed")
+        (P if 'Chapter 1' in result else F).append("no_index: chapters preserved")
+        (P if report['removed'].get('index_sections', 0) > 0 else F).append(
+            "no_index: report shows sections removed")
+
+    def test_no_hyperlinks(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_hyperlinks=True)
+        (P if '<a href=' not in result else F).append("no_hyperlinks: <a href> removed")
+        (P if 'a hyperlink' in result else F).append("no_hyperlinks: link text preserved")
+        (P if report['removed'].get('hyperlinks', 0) > 0 else F).append(
+            "no_hyperlinks: report shows links removed")
+
+    def test_no_front_matter(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_front_matter=True)
+        (P if 'Foreword' not in result else F).append("no_front_matter: Foreword removed")
+        (P if 'foreword text' not in result else F).append("no_front_matter: Foreword body removed")
+        (P if 'Chapter 1' in result else F).append("no_front_matter: chapters preserved")
+        (P if report['removed'].get('front_matter_sections', 0) > 0 else F).append(
+            "no_front_matter: report shows sections removed")
+
+    def test_no_back_matter(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_back_matter=True)
+        # Notes is first back-matter heading → everything from Notes onward removed
+        (P if 'Bibliography' not in result else F).append("no_back_matter: Bibliography removed")
+        (P if 'Abraham' not in result else F).append("no_back_matter: Index removed")
+        (P if 'Chapter 1' in result else F).append("no_back_matter: chapters preserved")
+
+    def test_no_images(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_images=True)
+        (P if '<img' not in result else F).append("no_images: <img> tags removed")
+        (P if 'Chapter 1' in result else F).append("no_images: chapters preserved")
+        (P if report['removed'].get('images', 0) > 0 else F).append(
+            "no_images: report shows images removed")
+
+    def test_no_block_quotes(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_block_quotes=True)
+        (P if '<blockquote' not in result else F).append("no_block_quotes: tag removed")
+        (P if 'quoted passage' in result else F).append("no_block_quotes: text preserved")
+        (P if report['removed'].get('block_quotes', 0) > 0 else F).append(
+            "no_block_quotes: report shows quotes removed")
+
+    # ── Edge case tests ─────────────────────────────────────────────────
+
+    def test_profile_plus_override(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, profile='full', no_index=True)
+        (P if 'Abraham' not in result else F).append("full+no_index: index stripped")
+        (P if 'Foreword' in result else F).append("full+no_index: Foreword preserved")
+        (P if '<a href=' in result else F).append("full+no_index: hyperlinks preserved")
+        (P if '<sup>' in result else F).append("full+no_index: footnotes preserved")
+
+    def test_empty_input(P, F):
+        result, report = filter_html_with_report('', profile='clean-read')
+        (P if result == '' else F).append("empty input: returns empty string")
+        P.append("empty input: no crash")
+
+    def test_no_match_input(P, F):
+        html = '<html><body><h1>Chapter 1</h1><p>Just body text.</p></body></html>'
+        result, report = filter_html_with_report(html, profile='clean-read')
+        (P if 'Chapter 1' in result else F).append("no_match: Chapter 1 preserved")
+        (P if 'Just body text' in result else F).append("no_match: body text preserved")
+
+    # ── Integration test: real book HTML through clean-read ─────────────
+
+    def test_integration_clean_read(P, F):
+        case = TEST_CASES.get("Dionysius")
+        if not case:
+            P.append("integration: skipped (no Dionysius test case)")
+            return
+        pdf = find_pdf(case["pdf_pattern"], case.get("pdf_exclude"))
+        if not pdf:
+            P.append("integration: skipped (Dionysius PDF not found)")
+            return
+
+        html_path, stdout, stderr = run_extraction(pdf, use_pdfminer=True, test_name="filter_integ")
+        if not html_path or not os.path.isfile(html_path):
+            F.append("integration: extraction failed (no output HTML)")
+            return
+
+        with open(html_path, 'r', encoding='utf-8') as fh:
+            full_html = fh.read()
+
+        P.append("integration: extraction succeeded")
+
+        filtered, report = filter_html_with_report(full_html, profile='clean-read')
+
+        (P if len(filtered) < len(full_html) else F).append(
+            f"integration: clean-read smaller ({report['size_reduction_percent']}% reduction)")
+        (P if report['removed'] else F).append(
+            f"integration: content stripped ({', '.join(f'{k}={v}' for k, v in report['removed'].items())})")
+
+    # ── Register and run ────────────────────────────────────────────────
+
+    _run("filter: full profile", test_full_profile)
+    _run("filter: clean-read profile", test_clean_read_profile)
+    _run("filter: text-only profile", test_text_only_profile)
+    _run("filter: --no-footnotes", test_no_footnotes)
+    _run("filter: --no-index", test_no_index)
+    _run("filter: --no-hyperlinks", test_no_hyperlinks)
+    _run("filter: --no-front-matter", test_no_front_matter)
+    _run("filter: --no-back-matter", test_no_back_matter)
+    _run("filter: --no-images", test_no_images)
+    _run("filter: --no-block-quotes", test_no_block_quotes)
+    _run("filter: full + --no-index override", test_profile_plus_override)
+    _run("filter: empty input", test_empty_input)
+    _run("filter: no-match input", test_no_match_input)
+    _run("filter: integration clean-read", test_integration_clean_read)
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description="Test harness for pdfminer HTML extraction pipeline")
     ap.add_argument("test_name", nargs="?", default=None,
@@ -1038,24 +1246,29 @@ def main():
                        if args.test_name.lower() in n.lower()}
         corpus_matches = [b for b in corpus_books
                           if args.test_name.lower() in b.stem.lower()]
-        if not hc_matches and not cap_matches and not corpus_matches:
+        run_filters = 'filter' in args.test_name.lower()
+        if not hc_matches and not cap_matches and not corpus_matches and not run_filters:
             print(f"No test case matching '{args.test_name}'")
             all_names = list(TEST_CASES.keys()) + list(extra_captured.keys()) + [b.stem for b in corpus_books]
+            all_names.append("filter (14 unit + integration tests)")
             print(f"Available: {', '.join(all_names)}")
             sys.exit(1)
     else:
         hc_matches = TEST_CASES
         cap_matches = extra_captured
         corpus_matches = corpus_books
+        run_filters = True
 
-    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches)
+    n_filter = 14 if run_filters else 0
+    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
     print(f"\n{'=' * 60}")
     print(f"  EbookAutomation Pipeline Test Suite")
     print(f"  Mode: {mode}")
     corpus_note = f", {len(corpus_matches)} corpus" if corpus_matches else ""
+    filter_note = f", {n_filter} filter" if n_filter else ""
     print(f"  Tests: {total_tests} ({len(hc_matches)} hardcoded, "
-          f"{len(cap_matches)} captured{corpus_note})")
+          f"{len(cap_matches)} captured{corpus_note}{filter_note})")
     print(f"{'=' * 60}\n")
 
     results = {}
@@ -1123,6 +1336,26 @@ def main():
             check_count = len(passes) + len(failures)
             print(f"\r  {status}: {book.stem} [corpus] "
                   f"({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
+
+            if failures:
+                for f in failures:
+                    print(f"    FAIL: {f}")
+            elif args.verbose:
+                for p in passes:
+                    print(f"    PASS: {p}")
+
+            if passed:
+                total_pass += 1
+            else:
+                total_fail += 1
+
+    # Run filter content tests
+    if run_filters:
+        filter_results = run_filter_tests(args.quick)
+        for name, passed, passes, failures, elapsed in filter_results:
+            check_count = len(passes) + len(failures)
+            status = "PASS" if passed else "FAIL"
+            print(f"  {status}: {name} ({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
 
             if failures:
                 for f in failures:
