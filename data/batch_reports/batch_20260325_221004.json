@@ -1,0 +1,796 @@
+{
+  "run_id": "batch_20260325_221004",
+  "generated_at": "2026-03-26T02:10:16.400056+00:00",
+  "summary": {
+    "books_total": 3,
+    "books_passed": 0,
+    "books_warned": 3,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 12.1,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": null,
+      "format_filter": null,
+      "parallel": 1,
+      "folder_path": "F:\\Projects\\EbookAutomation\\batch_qa_intake\\encoding_test"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "ENCODING_ERRORS",
+      "severity": "high",
+      "label": "Encoding errors in extracted text",
+      "description": "Non-UTF8 content caused garbled characters",
+      "recommendation": "Add encoding normalization as pre-processing step",
+      "book_count": 3,
+      "books": [
+        "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf",
+        "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf",
+        "The Thirteenth Tribe THE KHAZAR EMPIRE AND ITS HERITAGE.pdf"
+      ],
+      "source_types": {
+        "unknown": 3
+      },
+      "formats": {
+        "pdf": 3
+      }
+    }
+  ],
+  "observations": [],
+  "books": [
+    {
+      "filename": "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf",
+      "file_size_bytes": 12984901,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_221004",
+      "timestamp": "2026-03-26T02:10:04.328508+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0.9,
+        "html_produced": true,
+        "html_size_bytes": 1510659,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 525,
+          "pages_with_text": 525,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 5,
+        "heading_labels": [
+          "Genealogical Stemma"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 210187,
+        "page_count": 0,
+        "total_pages": 525,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 0,
+        "encoding_errors": 2,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 2582,
+        "bold_tags": 18,
+        "footnotes_linked": 1114,
+        "footnotes_unlinked": 206,
+        "text_layer_score": 96,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 94.8,
+          "std_dev": 4.3,
+          "segment_scores": [
+            90,
+            99,
+            90,
+            95,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.452,
+            "words_sampled": 500,
+            "hits": 226
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.96,
+            "stddev": 2.72,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 80,
+            "total_artifacts": 3,
+            "per_1000_chars": 0.6,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 3
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 22
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 92
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 5,
+            "min_score": 92,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 5,
+        "min_region": 92,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "PyPDF2",
+        "pdf_creator": null,
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 12.4,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 5,
+        "names": [
+          "FFYTTM+Palatino",
+          "Palatino-Bold_u-",
+          "Palatino-Italic_ul",
+          "Palatino-Roman_uq",
+          "XLBXLC+GoudyOldStyleT-Regular"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.6,
+        "greek": 0.3,
+        "other": 0.1,
+        "has_non_latin": true,
+        "non_latin_pct": 0.3
+      },
+      "encoding": {
+        "ascii_pct": 98.9,
+        "latin_ext_pct": 0.2,
+        "high_unicode_pct": 0.9,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 0.9,
+        "analysis": 2.9,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf",
+      "file_size_bytes": 87017186,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_221004",
+      "timestamp": "2026-03-26T02:10:08.102123+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 4.3,
+        "html_produced": true,
+        "html_size_bytes": 699272,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.2 images/page"
+        ],
+        "completeness": {
+          "total_pages": 663,
+          "pages_with_text": 663,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 66,
+        "h1_count": 2,
+        "h2_count": 64,
+        "h3_count": 45,
+        "heading_labels": [
+          "Further reading",
+          "Index",
+          "Contributors",
+          "Forewords",
+          "Table of Contents",
+          "Improving Microsoft Teams calls • 396",
+          "Setting frame rates from Microsoft Intune • 399",
+          "Chapter 9: Securing Cloud PCs 411",
+          "Mobile application management integration ����������������������������������������������������������������� 427",
+          "Creating a compliance policy • 431",
+          "How to become a local administrator of your Cloud PC �������������������������������������������������� 444",
+          "Configuring the local admin setting • 445",
+          "Windows Local Administrator Password Solution ���������������������������������������������������������� 448",
+          "Enabling the built-in administrator • 450",
+          "Enabling Defender for Endpoint in Intune • 467",
+          "Chapter 10: Windows 365 Link 473",
+          "Chapter 11: Analyzing, Monitoring, and Troubleshooting Cloud PCs 483",
+          "Configuring notifications for the failed provisioning of Cloud PCs • 501",
+          "Cloud PC utilization • 505 Frontline Cloud PC utilization • 507",
+          "Collecting logs and helping users remotely • 516",
+          "Display and graphics • 518",
+          "Enabling RDS AAD Auth to reduce the connection time • 523 Optimizing Cloud PCs • 523",
+          "Microsoft Remote Desktop client for Windows • 526 Microsoft Remote Desktop web client • 526",
+          "Collecting Microsoft Teams logs • 527",
+          "Collecting multimedia redirection logs • 528",
+          "Contacting Microsoft support • 529",
+          "Chapter 12: Windows 365 Partner Solutions 533",
+          "Protocol-enhanced partners—Omnissa and Windows 365 ��������������������������������������������� 544",
+          "Configuring the IGEL Windows 365 app • 573",
+          "Package modernization partners—Rimo3 ���������������������������������������������������������������������� 580",
+          "Export to Intune • 585",
+          "About ControlUp Enrich • 592",
+          "Chapter 13: Community Experts Hall of Fame 601",
+          "Preface",
+          "Chapter 6, Application Management and Delivery to Cloud PCs, explores application delivery methods",
+          "Chapter 11, Analyzing, Monitoring, and Troubleshooting Cloud PCs, covers everything about analyzing",
+          "The future of Windows is in the Cloud",
+          "Chapter 1",
+          "Windows 365 and Azure Virtual Desktop",
+          "Windows 365 migration scenarios",
+          "Windows 365 and its various editions",
+          "Windows 365 Business and Enterprise",
+          "Functions Windows 365 Business Windows 365 Enterprise",
+          "Security",
+          "Windows 365 Frontline Shared",
+          "Windows 365 for Government",
+          "Windows 365 license requirements",
+          "Windows 365 Business license pre-requirements",
+          "Windows 365 Enterprise license pre-requirements",
+          "Windows 365 Frontline license pre-requirements",
+          "Windows 365 for Government license pre-requirements",
+          "GPU-based Cloud PCs",
+          "Windows 365-supported regions",
+          "Windows 365 for Business supported regions",
+          "Windows 365 for Enterprise and Frontline supported regions",
+          "Windows 365 for Government supported regions",
+          "Microsoft Entra ID",
+          "Microsoft Intune",
+          "Microsoft Intune Suite",
+          "Windows Autopatch",
+          "Microsoft Dev Box",
+          "Universal Print",
+          "Microsoft 365 Copilot",
+          "AI PCs and Copilot+ PCs",
+          "Copilot, your everyday AI companion",
+          "Supported endpoints"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 93560,
+        "page_count": 0,
+        "total_pages": 663,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 407,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 5799,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 5,
+        "italic_tags": 186,
+        "bold_tags": 2221,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 95.2,
+          "std_dev": 3.0,
+          "segment_scores": [
+            98,
+            94,
+            96,
+            90,
+            98
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 90,
+          "best_score": 98
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.46,
+            "words_sampled": 500,
+            "hits": 230
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.53,
+            "stddev": 2.67,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 22
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 3,
+            "min_score": 97,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 97,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 17.0",
+        "pdf_creator": "Adobe InDesign 19.5 (Windows)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 83.0,
+        "image_density": {
+          "total_images": 12,
+          "pages_sampled": 10,
+          "images_per_page": 1.2,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 10,
+        "names": [
+          "AFQRGT+Consolas",
+          "CCXNIP+Jost-Semi",
+          "GGUGMH+CrimsonPro-Italic",
+          "JDETCB+Jost-Bold",
+          "JFFYCB+CrimsonPro-Regular",
+          "LAGPEX+Jost-Book",
+          "PEDDIP+CrimsonPro-SemiBold",
+          "TCIGMH+CrimsonPro-Italic",
+          "TFCWMH+Jost-Medium",
+          "ZDHVSV+CrimsonPro-Regular"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.7,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.3,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 4.3,
+        "analysis": 2.2,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "The Thirteenth Tribe THE KHAZAR EMPIRE AND ITS HERITAGE.pdf",
+      "file_size_bytes": 2186331,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_221004",
+      "timestamp": "2026-03-26T02:10:14.554666+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0.4,
+        "html_produced": true,
+        "html_size_bytes": 461467,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 85,
+          "pages_with_text": 85,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 9,
+        "h1_count": 1,
+        "h2_count": 8,
+        "h3_count": 27,
+        "heading_labels": [
+          "The Thirteenth Tribe",
+          "APPENDIX I",
+          "A N O T E O N S P E L L I N G",
+          "APPENDIX II",
+          "A N O T E O N S O U R C E S",
+          "APPENDIX III",
+          "T H E “ K H A Z A R C O R R E S P O N D E N C E ”",
+          "APPENDIX IV",
+          "S O M E I M P L I C A T I O N S - I S R A E L A N D T H E D I A S P O R A"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 73319,
+        "page_count": 0,
+        "total_pages": 85,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 1,
+        "encoding_errors": 1,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 475,
+        "bold_tags": 11,
+        "footnotes_linked": 15,
+        "footnotes_unlinked": 536,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 98.2,
+          "std_dev": 1.3,
+          "segment_scores": [
+            100,
+            99,
+            98,
+            98,
+            96
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.9,
+          "worst_score": 96,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.596,
+            "words_sampled": 500,
+            "hits": 298
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.91,
+            "stddev": 2.71,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 7
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 0,
+            "min_score": 97,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 97,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Acrobat PDFWriter 4.05  for Power Macintosh",
+        "pdf_creator": "Microsoft Word",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 2.1,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 8,
+        "names": [
+          "Arial-Black",
+          "Arial-ItalicMT",
+          "ArialMT",
+          "Times-Bold",
+          "Times-Italic",
+          "Times-Roman",
+          "TimesNewRomanPS-ItalicMT",
+          "TimesNewRomanPSMT"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.5,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.5,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 0.4,
+        "analysis": 1.4,
+        "calibre": 0,
+        "vqa": 0
+      }
+    }
+  ]
+}
