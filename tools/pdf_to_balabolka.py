@@ -1570,6 +1570,10 @@ def vision_text_to_para_dicts(vision_text, log):
     Handles: ## headings, *italic*, **bold**, > blockquotes,
     [^N] footnotes, <<PAGE:N>> page markers.
 
+    Output keys match format_paragraphs_as_html() expectations:
+      font_size, is_bold, is_italic, is_centered, is_all_caps,
+      page_number, char_count, is_page_marker.
+
     Returns: (para_dicts, body_size) tuple.
     """
     if not vision_text or not vision_text.strip():
@@ -1579,9 +1583,39 @@ def vision_text_to_para_dicts(vision_text, log):
     para_dicts = []
     current_page = 1
     body_size = 12.0
+    heading_count = 0
+    last_emitted_page = 0  # track which page markers we've emitted
 
     lines = vision_text.split('\n')
     current_paragraph = []
+
+    def _emit_page_marker_if_needed():
+        """Emit a page marker entry when the page changes."""
+        nonlocal last_emitted_page
+        if current_page != last_emitted_page:
+            para_dicts.append({
+                'text': '', 'font_size': 0, 'is_bold': False,
+                'is_italic': False, 'is_centered': False,
+                'is_all_caps': False, 'page_number': current_page,
+                'line_count': 0, 'char_count': 0,
+                'is_page_marker': True,
+            })
+            last_emitted_page = current_page
+
+    def _make_para(text, font_size=None, is_bold=False, is_italic=False,
+                   is_all_caps=False):
+        """Build a paragraph dict with correct keys for format_paragraphs_as_html."""
+        _emit_page_marker_if_needed()
+        return {
+            'text': text,
+            'font_size': font_size if font_size is not None else body_size,
+            'is_bold': is_bold,
+            'is_italic': is_italic,
+            'is_centered': False,
+            'is_all_caps': is_all_caps,
+            'page_number': current_page,
+            'char_count': len(text),
+        }
 
     def flush_paragraph():
         nonlocal current_paragraph
@@ -1592,11 +1626,7 @@ def vision_text_to_para_dicts(vision_text, log):
                 text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)',
                               r'<em>\1</em>', text)
                 text = re.sub(r'\[\^(\d+)\]', r'<sup>\1</sup>', text)
-                para_dicts.append({
-                    'text': text, 'sz': body_size,
-                    'bold': False, 'italic': False,
-                    'page': current_page, 'tag': None,
-                })
+                para_dicts.append(_make_para(text))
             current_paragraph = []
 
     for line in lines:
@@ -1614,6 +1644,7 @@ def vision_text_to_para_dicts(vision_text, log):
 
         words_in_line = stripped.split()
 
+        # Rule 1: ## HEADING markers from Gemini/Vision
         heading_match = re.match(r'^(#{1,3})\s+(.+)$', stripped)
         if heading_match:
             flush_paragraph()
@@ -1621,27 +1652,33 @@ def vision_text_to_para_dicts(vision_text, log):
             heading_text = heading_match.group(2).strip()
             heading_text = re.sub(r'\*\*(.+?)\*\*', r'\1', heading_text)
             sz_multiplier = {1: 2.0, 2: 1.5, 3: 1.25}.get(level, 1.25)
-            para_dicts.append({
-                'text': heading_text, 'sz': body_size * sz_multiplier,
-                'bold': True, 'italic': False,
-                'page': current_page, 'tag': None,
-            })
+            para_dicts.append(_make_para(
+                heading_text, font_size=body_size * sz_multiplier,
+                is_bold=True, is_all_caps=(heading_text == heading_text.upper()),
+            ))
+            heading_count += 1
             continue
 
-        # ALL CAPS heading detection (matches ocr_text_to_para_dicts logic)
+        # Rule 2: ALL CAPS heading detection
         if len(stripped) < 100 and stripped == stripped.upper() and any(c.isalpha() for c in stripped):
             alpha_words = [w for w in words_in_line if len(w) >= 2 and w.isalpha()]
             if alpha_words:
-                flush_paragraph()
-                sz_mult = 1.5 if len(alpha_words) <= 4 else 1.25
-                para_dicts.append({
-                    'text': stripped, 'sz': body_size * sz_mult,
-                    'bold': True, 'italic': False,
-                    'page': current_page, 'tag': None,
-                })
-                continue
+                # Filter: not ending with period (running headers), not starting
+                # with digit (page numbers), has a word with 3+ letters
+                has_long_word = any(len(w) >= 3 for w in alpha_words)
+                if (has_long_word
+                        and not stripped.endswith('.')
+                        and not stripped[0].isdigit()):
+                    flush_paragraph()
+                    sz_mult = 1.5 if len(alpha_words) <= 4 else 1.25
+                    para_dicts.append(_make_para(
+                        stripped, font_size=body_size * sz_mult,
+                        is_bold=True, is_all_caps=True,
+                    ))
+                    heading_count += 1
+                    continue
 
-        # Chapter/Part/Section keyword heading detection
+        # Rule 3: Chapter/Part/Section keyword heading detection
         chapter_match = re.match(
             r'^(?:Chapter|CHAPTER|Part|PART|Section|SECTION|Book|BOOK|'
             r'Introduction|INTRODUCTION|Preface|PREFACE|Foreword|FOREWORD|'
@@ -1652,11 +1689,12 @@ def vision_text_to_para_dicts(vision_text, log):
         )
         if chapter_match and len(stripped) < 120:
             flush_paragraph()
-            para_dicts.append({
-                'text': stripped, 'sz': body_size * 1.5,
-                'bold': True, 'italic': False,
-                'page': current_page, 'tag': None,
-            })
+            para_dicts.append(_make_para(
+                stripped, font_size=body_size * 1.5,
+                is_bold=True,
+                is_all_caps=(stripped == stripped.upper()),
+            ))
+            heading_count += 1
             continue
 
         # Short standalone line heuristic — lines at paragraph boundaries
@@ -1666,11 +1704,12 @@ def vision_text_to_para_dicts(vision_text, log):
                 and not current_paragraph
                 and stripped[0].isupper()):
             flush_paragraph()
-            para_dicts.append({
-                'text': stripped, 'sz': body_size * 1.25,
-                'bold': True, 'italic': False,
-                'page': current_page, 'tag': None,
-            })
+            para_dicts.append(_make_para(
+                stripped, font_size=body_size * 1.25,
+                is_bold=True,
+                is_all_caps=(stripped == stripped.upper()),
+            ))
+            heading_count += 1
             continue
 
         if stripped.startswith('> '):
@@ -1679,18 +1718,18 @@ def vision_text_to_para_dicts(vision_text, log):
             quote_text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', quote_text)
             quote_text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)',
                                 r'<em>\1</em>', quote_text)
-            para_dicts.append({
-                'text': quote_text, 'sz': body_size,
-                'bold': False, 'italic': True,
-                'page': current_page, 'tag': 'blockquote',
-            })
+            para_dicts.append(_make_para(
+                quote_text, is_italic=True,
+            ))
             continue
 
         current_paragraph.append(stripped)
 
     flush_paragraph()
 
-    log(f"  Vision->HTML bridge: {len(para_dicts)} paragraphs from {current_page} pages")
+    total_paras = sum(1 for p in para_dicts if not p.get('is_page_marker'))
+    log(f"  Vision->HTML bridge: {heading_count} headings detected "
+        f"from {total_paras} paragraphs ({current_page} pages)")
     return para_dicts, body_size
 
 

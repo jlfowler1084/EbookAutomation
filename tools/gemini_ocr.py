@@ -156,6 +156,12 @@ def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
         log(f"  Gemini: Copied to temp path (Unicode filename workaround)")
 
     try:
+        # Diagnostic: confirm heading instruction is present in prompt
+        if '##' in _GEMINI_TRANSCRIPTION_PROMPT:
+            log(f"  Gemini prompt includes ## heading instruction (rule #3 confirmed)")
+        else:
+            log(f"  WARNING: Gemini prompt missing ## heading instruction")
+
         for batch_start in range(0, len(all_page_numbers), batch_size):
             batch_pages = all_page_numbers[batch_start:batch_start + batch_size]
             batch_num = (batch_start // batch_size) + 1
