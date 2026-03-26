@@ -2358,6 +2358,42 @@ function Send-ToKindle {
 
         Write-EbookLog "SendToKindle: preparing to send '$fileName'..."
 
+        # ── Scanned PDF pre-flight warning ──
+        # When emailing a raw PDF (not a pipeline-converted file), check if it's a scan.
+        # Scanned PDFs are unusably slow on Kindle — warn the user.
+        if ($Email -and $EmailFormat -eq 'PDF') {
+            $inputExt = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
+            if ($inputExt -eq 'pdf') {
+                try {
+                    $python = (Get-EbookConfig).paths.python
+                    $classifyScript = Join-Path $script:ModuleRoot 'tools' 'classify_source.py'
+                    if (Test-Path $classifyScript) {
+                        $classifyResult = & $python $classifyScript --input "$InputFile" 2>$null
+                        if ($classifyResult) {
+                            $classification = ($classifyResult -join "`n") | ConvertFrom-Json
+                            if ($classification.classification -in @('scan_with_text', 'scan_no_text', 'image_only')) {
+                                Write-EbookLog "" -Level WARN
+                                Write-EbookLog "═══════════════════════════════════════════════════════════════" -Level WARN
+                                Write-EbookLog " WARNING: This appears to be a scanned/image PDF." -Level WARN
+                                Write-EbookLog " Sending raw scanned PDFs to Kindle causes extremely slow" -Level WARN
+                                Write-EbookLog " page turns, long load times, and potential device freezes." -Level WARN
+                                Write-EbookLog "" -Level WARN
+                                Write-EbookLog " RECOMMENDED: Run through the conversion pipeline first:" -Level WARN
+                                Write-EbookLog "   Invoke-EbookPipeline -EmailToKindle" -Level WARN
+                                Write-EbookLog " This will OCR the text and produce a fast reflowable EPUB." -Level WARN
+                                Write-EbookLog "═══════════════════════════════════════════════════════════════" -Level WARN
+                                Write-EbookLog "" -Level WARN
+                                # Don't block — user may have a reason to send raw PDF
+                            }
+                        }
+                    }
+                } catch {
+                    # Classification failure is non-blocking — proceed with send
+                    Write-EbookLog "SendToKindle: source classification failed (non-blocking) -- $_" -Level WARN
+                }
+            }
+        }
+
         # ── Email delivery path ──
         if ($Email) {
             $fileExt = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToUpper()
@@ -2933,13 +2969,35 @@ function Invoke-EbookPipeline {
                 Write-EbookLog "  Kindle: starting conversion..."
                 # Auto-enable HTML extraction for EPUB generation when -EmailToKindle is active
                 $useHtml = $false
+                $useOcrAuto = $UseOCR   # Preserve explicit -UseOCR if passed
                 if ($emailActive -and $ext -eq 'pdf') {
                     $useHtml = $true
                     Write-EbookLog "  Kindle: HTML extraction auto-enabled for EPUB generation (-EmailToKindle)"
+
+                    # Classify source to auto-enable OCR for scans
+                    if (-not $useOcrAuto) {
+                        try {
+                            $python = (Get-EbookConfig).paths.python
+                            $classifyScript = Join-Path $script:ModuleRoot 'tools' 'classify_source.py'
+                            if (Test-Path $classifyScript) {
+                                $classifyResult = & $python $classifyScript --input "$workCopy" 2>$null
+                                if ($classifyResult) {
+                                    $pipelineClassification = ($classifyResult -join "`n") | ConvertFrom-Json
+                                    if ($pipelineClassification.classification -in @('scan_with_text', 'scan_no_text', 'image_only')) {
+                                        $useOcrAuto = $true
+                                        Write-EbookLog "  Kindle: OCR auto-enabled — scanned PDF detected ($($pipelineClassification.classification))" -Level INFO
+                                        Write-EbookLog "  Kindle: OCR will produce reflowable text for Kindle email delivery"
+                                    }
+                                }
+                            }
+                        } catch {
+                            Write-EbookLog "  Kindle: source classification failed (non-blocking) -- $_" -Level WARN
+                        }
+                    }
                 }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
+                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$useOcrAuto -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
                     $kindleDuration = (Get-Date) - $kindleStart
 
                     if ($kindleOk) {
