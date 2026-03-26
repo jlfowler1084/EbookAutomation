@@ -137,10 +137,7 @@ TEST_CASES = {
         "pdf_exclude": None,
         "use_pdfminer": True,   # --html-extraction → routes to PyMuPDF for multi-column
         "expected": {
-            "kfx_produced": False,   # skip KFX step; validate HTML only
-            "min_h3": 8,             # chapters land as h3 from font-cluster path (Hermeneia format)
-            # no_standalone_page_numbers omitted: known pipeline bug (size used before assignment
-            # at format_paragraphs_as_html line ~3662) prevents reliable stripping for this book
+            "min_h3": 15,            # commentary section headings via font-cluster path
         }
     },
     "Bain Dangerous Book": {

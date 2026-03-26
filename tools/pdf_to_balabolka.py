@@ -4170,7 +4170,8 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
             if page_w <= 0 or page_h <= 0:
                 continue
             page_mid = page_w / 2.0
-            footnote_y = page_h * 0.85    # bottom 15% — footnote apparatus zone
+            footnote_y_hard = page_h * 0.85   # hard threshold: always footnote
+            footnote_y_soft = page_h * 0.60   # soft threshold: footnote if smaller font
 
             # Insert page marker (same schema as extract_with_pdfminer_html)
             all_paras.append({
@@ -4178,6 +4179,42 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
                 'is_centered': False, 'is_all_caps': False, 'page_number': pg,
                 'line_count': 0, 'char_count': 0, 'is_page_marker': True
             })
+
+            # Pre-scan: compute dominant font size per block for footnote detection
+            text_blocks = []
+            for block in page_dict["blocks"]:
+                if block["type"] != 0:
+                    continue
+                x0, y0, x1, y1 = block["bbox"]
+                has_text = any(
+                    span["text"].strip()
+                    for line in block["lines"]
+                    for span in line["spans"]
+                )
+                if not has_text:
+                    continue
+                # Compute dominant font size for this block
+                sw = defaultdict(int)
+                for line in block["lines"]:
+                    for span in line["spans"]:
+                        n = len(span["text"].strip())
+                        if n > 0:
+                            sw[round(span["size"] * 2) / 2] += n
+                dom_size = max(sw, key=sw.get, default=0.0) if sw else 0.0
+                text_blocks.append((block, dom_size))
+
+            # Estimate body font size from upper 60% of page (above footnote zone)
+            upper_sizes = defaultdict(int)
+            for block, dom_size in text_blocks:
+                if block["bbox"][1] < footnote_y_soft and dom_size > 0:
+                    span_ratio = (block["bbox"][2] - block["bbox"][0]) / page_w
+                    if span_ratio <= 0.70:  # column blocks only
+                        for line in block["lines"]:
+                            for span in line["spans"]:
+                                n = len(span["text"].strip())
+                                if n > 0:
+                                    upper_sizes[round(span["size"] * 2) / 2] += n
+            page_body_size = max(upper_sizes, key=upper_sizes.get, default=0.0) if upper_sizes else 0.0
 
             # Classify blocks into zones
             top_wide       = []
@@ -4189,22 +4226,25 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
             col_blocks     = []
             wide_blocks_raw = []
 
-            for block in page_dict["blocks"]:
-                if block["type"] != 0:               # skip image blocks
-                    continue
+            for block, dom_size in text_blocks:
                 x0, y0, x1, y1 = block["bbox"]
-                has_text = any(
-                    span["text"].strip()
-                    for line in block["lines"]
-                    for span in line["spans"]
-                )
-                if not has_text:
-                    continue
                 span_ratio = (x1 - x0) / page_w
                 x_mid = (x0 + x1) / 2.0
+
+                # Hybrid footnote detection:
+                # 1. Hard threshold (y >= 85%): always footnote
+                # 2. Soft threshold (y >= 60% AND font < 90% of body): likely footnote
+                is_fn = False
+                if span_ratio <= 0.70:  # only classify column blocks as footnotes
+                    if y0 >= footnote_y_hard:
+                        is_fn = True
+                    elif (y0 >= footnote_y_soft and page_body_size > 0
+                          and dom_size > 0 and dom_size < page_body_size * 0.95):
+                        is_fn = True
+
                 if span_ratio > 0.70:
                     wide_blocks_raw.append(block)
-                elif y0 >= footnote_y:
+                elif is_fn:
                     if x_mid < page_mid:
                         left_col_fnotes.append(block)
                     else:
@@ -5352,6 +5392,8 @@ blockquote p {{ text-indent: 0; }}
         if not text:
             continue
 
+        size = p.get('font_size', body_size)
+
         # Strip standalone page numbers (1-3 digit paragraphs at body/small font size)
         # Don't strip decorative chapter numbers (large heading fonts like 42pt)
         if re.match(r'^\d{1,3}$', text) and size <= body_size + 1:
@@ -5364,7 +5406,6 @@ blockquote p {{ text-indent: 0; }}
                 toc_skipped += 1
                 continue
 
-        size = p.get('font_size', body_size)
         bold = p.get('is_bold', False)
         italic = p.get('is_italic', False)
         centered = p.get('is_centered', False)
