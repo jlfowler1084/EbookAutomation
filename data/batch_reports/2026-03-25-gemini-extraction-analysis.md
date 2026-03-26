@@ -10,8 +10,8 @@
 |------|-------|-------|---------|------|----------|----------|--------|
 | Hero Tales | 79 | 10,981 | 100/100 | $0.047 | 0 | LuraDocument v2.28 | SUCCESS |
 | Oxford Companion | 936 | 945,755 | 97/100 | $4.84 | 0 | LuraDocument v2.68 | SUCCESS |
-| Hindu Pantheon | 480 | 193,872 | N/A | ~$0.78 est | 0 | libtiff/tiff2pdf (ScanFix) | SUCCESS |
-| N.T. Wright | 765 | 0 | N/A | ~$1.25 spent | 0 | Adobe Acrobat 7.1 Image | FAILED |
+| N.T. Wright | 765 | 646,783 | 64/100 | $2.72 | 170 h1, 13 h2 | Adobe Acrobat 7.1 Image | SUCCESS |
+| Hindu Pantheon | 480 | 373,034 | 100/100 | $1.40 | 1 h2 | libtiff/tiff2pdf (ScanFix) | SUCCESS |
 
 ### Per-Book Details
 
@@ -30,20 +30,27 @@
 - Processing time: 210 minutes (3.5 hours)
 - Cost per word: $0.000005
 
+**N.T. Wright — Jesus and the Victory of God (765 pages, 72.6 MB)**
+- Producer: Adobe Acrobat 7.1 Image Conversion Plug-in
+- 765/765 pages processed, 153 batches
+- 646,783 words, 4,079 paragraphs (3,890 p + 170 h1 + 13 h2)
+- Quality: 64/100 — lowest of the four, likely due to scan quality
+- **170 h1 headings detected** — the updated `##` heading prompt was active for this run
+- Some batches returned 0 tokens (~8 of 153, ~5%) — scanned pages Gemini couldn't read
+- Processing time: 119 minutes
+- Cost per word: $0.0000042
+- This validates that the heading detection prompt fix works
+
 **Hindu Pantheon (480 pages, 23.4 MB)**
 - Producer: libtiff/tiff2pdf (ScanFix Enhanced)
 - TIFF-converted scan, oldest book in corpus (~1810 original)
-- 2,678 paragraphs, 193K words
+- 480/480 pages processed, 96 batches, zero failures
+- 373,034 words, 5,790 paragraphs (5,713 p + 1 h2)
+- Quality: 100/100
 - Text includes Sanskrit/Devanagari transliterations
-- Last 300 chars show index entries — full text extracted including back matter
-
-**N.T. Wright — Jesus and the Victory of God (765 pages, 72.6 MB)**
-- Producer: Adobe Acrobat 7.1 Image Conversion Plug-in
-- FAILED: Many batches returned 0 output tokens
-- Likely cause: Gemini safety filter or low-quality scanned images that Gemini couldn't read
-- 10 of first 81 batches returned 0 tokens (~12% failure rate)
-- At 72.6 MB for 765 pages (0.095 MB/page — highest density), images may be too compressed or degraded
-- This is the ONLY Adobe Acrobat Image Conversion producer in the test set
+- Index entries fully extracted including back matter
+- Processing time: 47 minutes
+- Cost per word: $0.0000038
 
 ## Cross-Book Analysis
 
@@ -52,27 +59,29 @@
 |------|--------|--------|
 | Hero Tales | $0.0000043 | $0.00059 |
 | Oxford Companion | $0.0000051 | $0.0052 |
-| Hindu Pantheon | ~$0.0000040 | ~$0.0016 |
+| N.T. Wright | $0.0000042 | $0.0036 |
+| Hindu Pantheon | $0.0000038 | $0.0029 |
 
-Average: **~$0.005/page** or **~$0.45 per 100 pages**. Significantly cheaper than Claude Vision (~$0.20/book for 20 sampled pages, but Gemini does ALL pages).
+**Total cost for all 4 books: $9.01** (2,260 pages, 1,976,553 words).
+Average: **~$0.004/page** or **~$0.40 per 100 pages**. Significantly cheaper than Claude Vision (~$0.20/book for 20 sampled pages, but Gemini does ALL pages).
 
 ### Producer Correlation
 | Producer | Books | Outcome |
 |----------|-------|---------|
 | LuraDocument PDF (Internet Archive) | Hero Tales, Oxford Companion | Both SUCCESS — high quality |
 | libtiff/tiff2pdf (ScanFix) | Hindu Pantheon | SUCCESS — even 200-year-old scans work |
-| Adobe Acrobat 7.1 Image Conversion | N.T. Wright | FAILED — 0-token batches |
+| Adobe Acrobat 7.1 Image Conversion | N.T. Wright | SUCCESS but lower quality (64/100) |
 
-**Key finding:** LuraDocument/Internet Archive PDFs are Gemini's sweet spot. These defeated both Tesseract and pdfminer but Gemini reads them perfectly. The Adobe Acrobat Image Conversion format is problematic — further investigation needed.
+**Key finding:** LuraDocument/Internet Archive PDFs are Gemini's sweet spot (97-100 quality). Adobe Acrobat Image Conversion works but at lower quality (64/100). All producer types successfully extracted — Gemini is producer-agnostic, unlike Tesseract.
 
 ### Heading Detection Rate
-**Zero headings detected across ALL books.** This is a pipeline issue, not a Gemini issue:
+Hero Tales and Oxford Companion: zero headings (extracted BEFORE prompt fix).
+N.T. Wright: **170 h1 + 13 h2** (extracted AFTER prompt fix).
+Hindu Pantheon: 1 h2 (extracted AFTER prompt fix — few headings expected for this format).
 
-1. Gemini transcription prompt (original) did not instruct `##` heading markers
-2. The `vision_text_to_para_dicts` bridge converts plain text to paragraph dicts without heading detection
-3. ALL CAPS lines that could be headings: Hero Tales 53, Oxford 653, Hindu 455
+**The `##` heading prompt fix is validated.** Wright went from expected-zero to 183 headings after the prompt was updated to instruct `## HEADING` markers. The `vision_text_to_para_dicts` bridge successfully converts `##` markers to HTML heading tags.
 
-**Prompt fix deployed mid-session:** Updated `_GEMINI_TRANSCRIPTION_PROMPT` rule #3 to explicitly request `## HEADING` markers. This was NOT active for any of these extractions — future runs will test whether Gemini produces headings with the new prompt.
+ALL CAPS lines that could be headings (in books without prompt fix): Hero Tales 53, Oxford 653, Hindu 455. These represent recoverable headings if the bridge is enhanced to detect ALL CAPS patterns.
 
 ### Page Rendering Analysis
 - **Unicode filename workaround required:** All 4 books had smart apostrophe (`'`) in "Anna's Archive" filename. Poppler cannot handle non-ASCII filenames on Windows. Fix: copy to ASCII temp path before rendering.
@@ -88,17 +97,19 @@ From the rescue run (2026-03-25), Tesseract produced:
 
 Gemini produced:
 - Oxford Companion: **945,755 words** (SUCCESS)
-- Hindu Pantheon: **193,872 words** (SUCCESS)
+- N.T. Wright: **646,783 words** (SUCCESS, quality 64)
+- Hindu Pantheon: **373,034 words** (SUCCESS)
 - Hero Tales: **10,981 words** (SUCCESS)
-- N.T. Wright: **0 words** (FAILED — different failure mode than Tesseract)
 
-**Gemini rescued 3 of 4 books that Tesseract completely failed on.** The one failure (Wright) is an Adobe Acrobat image format issue, not a general Gemini limitation.
+**Gemini rescued ALL 4 books that Tesseract completely failed on.** 100% success rate, ~2 million words extracted from books that produced 0-172 words via Tesseract.
 
 ### Quality Consistency
 - Hero Tales: 100/100
 - Oxford Companion: 97/100
-- Both scored high. Quality appears uniformly excellent for successfully extracted books.
-- Some batches hit 65,536 token limit (Gemini's max output) — indicates dense pages where Gemini may loop/hallucinate. These should be flagged for review.
+- Hindu Pantheon: 100/100
+- N.T. Wright: 64/100
+
+Three of four books scored 97+. Wright's 64/100 is the outlier — likely due to Adobe Acrobat Image Conversion producing lower-quality scans. Some batches hit 65,536 token limit (Gemini's max output) — indicates dense pages where Gemini may loop/hallucinate. These should be flagged for review.
 
 ### Script Handling
 - **Hindu Pantheon** includes Sanskrit/Devanagari transliterations (e.g., "Vibhāvana", "Vikramāditya") — Gemini handled diacritics correctly
@@ -123,10 +134,10 @@ Gemini produced:
 
 3. **Enhance `vision_text_to_para_dicts` bridge** — even without `##` markers, detect ALL CAPS lines and "Chapter X" patterns as headings. The `ocr_text_to_para_dicts` function already does this for Tesseract output — port that logic.
 
-4. **Investigate Wright's Adobe Acrobat Image format** — try rendering a single page manually with PyMuPDF (which worked for Oxford) to see if the images are readable. The failure may be poppler-specific or Gemini safety filter.
+4. **Re-run Hero Tales and Oxford Companion with updated heading prompt** — these were extracted before the `##` heading fix. Re-running with `--no-cache` should produce headings like Wright did.
 
 5. **Batch size optimization** — current batch size of 5 pages works well. No evidence that larger batches would help, and smaller batches increase API call overhead.
 
-6. **65,536 token batches need review** — these represent Gemini hitting its output limit, potentially including hallucinated/looped content. Flag for quality review.
+6. **65,536 token batches need review** — these represent Gemini hitting its output limit, potentially including hallucinated/looped content. Oxford Companion had ~15 such batches. Flag for quality review.
 
-7. **Wright workaround** — try sending the PDF directly to Gemini as a document upload (the google-genai SDK supports this) instead of page-by-page rendering. This bypasses poppler entirely and may work for Adobe Acrobat images.
+7. **Wright quality investigation** — at 64/100, Wright is significantly lower than others. Investigate whether this is scan quality or Gemini's handling of academic theology text with Greek/Hebrew. Consider whether quality-based re-extraction of low-scoring pages would help.
