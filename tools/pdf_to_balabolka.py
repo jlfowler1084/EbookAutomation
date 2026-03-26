@@ -1071,6 +1071,173 @@ def analyze_encoding_distribution(text, sample_size=10000):
     }
 
 
+def normalize_encoding(text, log=None):
+    """Fix common encoding corruption patterns in extracted PDF text.
+
+    Handles three main corruption types:
+    1. Latin-1/Windows-1252 bytes misinterpreted as UTF-8 (mojibake)
+       e.g., "\xe2\x80\x99" should be "\u2019", "\xc3\xa9" should be "é"
+    2. Replacement characters (U+FFFD) from failed decoding
+    3. Control characters that shouldn't appear in text
+
+    Runs after extraction, before formatting. Non-destructive on clean text —
+    only modifies characters that are clearly encoding artifacts.
+
+    Returns: (cleaned_text, stats_dict)
+        stats_dict: {replacements_made, mojibake_fixed, control_chars_removed,
+                     replacement_chars_found}
+    """
+    if not text:
+        return text, {'replacements_made': 0}
+
+    if log is None:
+        log = lambda msg: None
+
+    stats = {
+        'replacements_made': 0,
+        'mojibake_fixed': 0,
+        'control_chars_removed': 0,
+        'replacement_chars_found': 0,
+    }
+
+    # ── Pattern 1: UTF-8 mojibake from Windows-1252 / Latin-1 ──────────
+    # These are the most common: Windows-1252 smart quotes and special chars
+    # that got double-encoded (interpreted as Latin-1 bytes, then encoded as UTF-8)
+    mojibake_map = {
+        # Smart quotes (Windows-1252 -> UTF-8 double-encoding)
+        '\xe2\x80\x99': '\u2019',   # right single quote '
+        '\xe2\x80\x98': '\u2018',   # left single quote '
+        '\xe2\x80\x9c': '\u201C',   # left double quote "
+        '\xe2\x80\x9d': '\u201D',   # right double quote "
+        '\xe2\x80\x93': '\u2013',   # en dash –
+        '\xe2\x80\x94': '\u2014',   # em dash —
+        '\xe2\x80\xa6': '\u2026',   # ellipsis …
+        '\xe2\x80\xa2': '\u2022',   # bullet •
+        '\xe2\x80\xb2': '\u2032',   # prime ′
+        '\xe2\x80\xb3': '\u2033',   # double prime ″
+        '\xe2\x84\xa2': '\u2122',   # trademark ™
+        '\xc3\xa9': 'é',            # e-acute
+        '\xc3\xa8': 'è',            # e-grave
+        '\xc3\xaa': 'ê',            # e-circumflex
+        '\xc3\xab': 'ë',            # e-diaeresis
+        '\xc3\xa0': 'à',            # a-grave
+        '\xc3\xa1': 'á',            # a-acute
+        '\xc3\xa2': 'â',            # a-circumflex
+        '\xc3\xa4': 'ä',            # a-diaeresis
+        '\xc3\xa7': 'ç',            # c-cedilla
+        '\xc3\xad': 'í',            # i-acute
+        '\xc3\xaf': 'ï',            # i-diaeresis
+        '\xc3\xb1': 'ñ',            # n-tilde
+        '\xc3\xb3': 'ó',            # o-acute
+        '\xc3\xb6': 'ö',            # o-diaeresis
+        '\xc3\xba': 'ú',            # u-acute
+        '\xc3\xbc': 'ü',            # u-diaeresis
+        '\xc3\x9f': 'ß',            # sharp s (German)
+        '\xc3\x86': 'Æ',            # AE ligature
+        '\xc3\xa6': 'æ',            # ae ligature
+        '\xc3\x98': 'Ø',            # O-stroke
+        '\xc3\xb8': 'ø',            # o-stroke
+        '\xc2\xa3': '£',            # pound sign
+        '\xc2\xa9': '©',            # copyright
+        '\xc2\xae': '®',            # registered
+        '\xc2\xb0': '°',            # degree
+        '\xc2\xb7': '·',            # middle dot
+        '\xc2\xbd': '½',            # one-half
+        '\xc2\xbc': '¼',            # one-quarter
+        '\xc2\xbe': '¾',            # three-quarters
+    }
+
+    for bad, good in mojibake_map.items():
+        if bad in text:
+            count = text.count(bad)
+            text = text.replace(bad, good)
+            stats['mojibake_fixed'] += count
+            stats['replacements_made'] += count
+
+    # ── Pattern 1b: Generic Latin-1 -> UTF-8 mojibake detection ─────────
+    # Catch remaining Ã+byte patterns that aren't in the explicit map
+    # Only fix if the result is a valid printable character
+    def _fix_c3_mojibake(match):
+        """Fix Ã+byte mojibake: try decoding the two bytes as UTF-8."""
+        try:
+            b1 = ord('\xc3')  # 0xC3
+            b2 = ord(match.group(1))
+            decoded = bytes([b1, b2]).decode('utf-8')
+            if decoded.isprintable():
+                stats['mojibake_fixed'] += 1
+                stats['replacements_made'] += 1
+                return decoded
+        except (UnicodeDecodeError, ValueError):
+            pass
+        return match.group(0)  # Return unchanged if can't fix
+
+    # Match Ã followed by a byte in the 0x80-0xBF range (UTF-8 continuation bytes)
+    text = re.sub(r'\xc3([\x80-\xbf])', _fix_c3_mojibake, text)
+
+    # Match Â followed by a byte in the 0x80-0xBF range
+    def _fix_c2_mojibake(match):
+        try:
+            b1 = ord('\xc2')  # 0xC2
+            b2 = ord(match.group(1))
+            decoded = bytes([b1, b2]).decode('utf-8')
+            if decoded.isprintable() or decoded in ('\u00a0',):  # Allow NBSP
+                stats['mojibake_fixed'] += 1
+                stats['replacements_made'] += 1
+                return decoded
+        except (UnicodeDecodeError, ValueError):
+            pass
+        return match.group(0)
+
+    text = re.sub(r'\xc2([\x80-\xbf])', _fix_c2_mojibake, text)
+
+    # ── Pattern 2: Replacement characters (U+FFFD) ────────────────────
+    # Count them but don't remove — they indicate data loss that can't be recovered
+    replacement_count = text.count('\ufffd')
+    if replacement_count > 0:
+        stats['replacement_chars_found'] = replacement_count
+        log(f"  Encoding: found {replacement_count} replacement characters (U+FFFD)")
+
+    # ── Pattern 3: Control characters ─────────────────────────────────
+    # Remove ASCII control characters (0x00-0x1F) except tab, newline, carriage return
+    control_pattern = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+    control_matches = control_pattern.findall(text)
+    if control_matches:
+        text = control_pattern.sub('', text)
+        stats['control_chars_removed'] = len(control_matches)
+        stats['replacements_made'] += len(control_matches)
+
+    # ── Pattern 4: Stray Windows-1252 characters in the 0x80-0x9F range ──
+    # These are control characters in Latin-1 but printable in Windows-1252
+    win1252_map = {
+        '\x80': '\u20AC',  # Euro sign €
+        '\x85': '\u2026',  # Ellipsis …
+        '\x91': '\u2018',  # Left single quote '
+        '\x92': '\u2019',  # Right single quote '
+        '\x93': '\u201C',  # Left double quote "
+        '\x94': '\u201D',  # Right double quote "
+        '\x95': '\u2022',  # Bullet •
+        '\x96': '\u2013',  # En dash –
+        '\x97': '\u2014',  # Em dash —
+        '\x99': '\u2122',  # Trademark ™
+    }
+
+    for bad, good in win1252_map.items():
+        if bad in text:
+            count = text.count(bad)
+            text = text.replace(bad, good)
+            stats['mojibake_fixed'] += count
+            stats['replacements_made'] += count
+
+    # ── Log summary ──────────────────────────────────────────────────
+    total = stats['replacements_made']
+    if total > 0:
+        log(f"  Encoding normalization: {total} fixes "
+            f"({stats['mojibake_fixed']} mojibake, "
+            f"{stats['control_chars_removed']} control chars)")
+
+    return text, stats
+
+
 def extract_text_ocr(pdf_path, log, tesseract_path=None, poppler_path=None, dpi=300):
     """Extract text from an image-only PDF using Tesseract OCR.
 
@@ -8718,6 +8885,10 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
                 except Exception as e:
                     log(f"  OCR escalation failed (non-blocking): {e}")
 
+    # Encoding normalization
+    log("  Encoding normalization...")
+    raw, enc_stats = normalize_encoding(raw, log=log)
+
     log("\n-- STEP 2: Cleaning and joining paragraphs --")
     paragraphs = clean_and_join(raw, log)
 
@@ -9426,7 +9597,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         )
 
         if vision_result and vision_result.get('text'):
-            para_dicts, body_size = vision_text_to_para_dicts(vision_result['text'], log)
+            vision_text, _ = normalize_encoding(vision_result['text'], log=log)
+            para_dicts, body_size = vision_text_to_para_dicts(vision_text, log)
             tier_used = 3
             extraction_method = 'claude_vision'
             vision_cost = vision_result.get('cost_usd', 0)
@@ -9466,8 +9638,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             )
 
             if gemini_result and gemini_result.get('text'):
+                gemini_text, _ = normalize_encoding(gemini_result['text'], log=log)
                 para_dicts, body_size = vision_text_to_para_dicts(
-                    gemini_result['text'], log)
+                    gemini_text, log)
                 tier_used = 2
                 extraction_method = 'gemini_flash'
                 gemini_cost = gemini_result.get('cost_usd', 0)
@@ -9528,6 +9701,20 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         log("\n-- STEP 1c: Fixing ligature splits --------------------")
         _fix_ligature_splits(para_dicts, log)
 
+        # ── STEP 1c2: Encoding normalization (SCRUM-165) ────────────
+        log("\n-- STEP 1c2: Encoding normalization --------------------")
+        total_encoding_fixes = 0
+        for pd in para_dicts:
+            if pd.get('text'):
+                cleaned, enc_stats = normalize_encoding(pd['text'], log=None)  # Silent per-para
+                if enc_stats['replacements_made'] > 0:
+                    pd['text'] = cleaned
+                    total_encoding_fixes += enc_stats['replacements_made']
+        if total_encoding_fixes > 0:
+            log(f"  Fixed {total_encoding_fixes} encoding issues across {len(para_dicts)} paragraphs")
+        else:
+            log(f"  No encoding issues found")
+
         # ── STEP 1d: Zero-text OCR escalation (SCRUM-148) ──────────
         # If Tier 1 extraction produced very little text from a large PDF,
         # the text layer is probably empty/corrupted. Try OCR on page images.
@@ -9555,6 +9742,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
                     if ocr_word_count > tier1_word_count * 2 or (tier1_word_count < 50 and ocr_word_count > 100):
                         log(f"  OCR wins — switching to Tier 2 output")
+                        ocr_text, _ = normalize_encoding(ocr_text, log=log)
                         para_dicts, body_size = ocr_text_to_para_dicts(ocr_text, log)
                         tier_used = 2
                         extraction_method = 'tesseract5'
@@ -9605,6 +9793,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                     if ocr_score > tier1_score:
                         log(f"  OCR wins: {ocr_score} > {tier1_score} — "
                             f"switching to Tier 2 output")
+                        ocr_text, _ = normalize_encoding(ocr_text, log=log)
                         ocr_word_count = len(ocr_text.split())
                         _escalation_info = json.dumps({
                             'trigger': 'quality_score',
@@ -9866,6 +10055,10 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
     log(f"\n-- STEP 1: Extracting text from {ext_upper} --")
     raw = extract_text_auto(input_path, log, calibre_path=calibre_path,
                             force_columns=force_columns)
+
+    # Encoding normalization
+    log("  Encoding normalization...")
+    raw, enc_stats = normalize_encoding(raw, log=log)
 
     log("\n-- STEP 2: Cleaning and joining paragraphs --")
     paragraphs = clean_and_join(raw, log)

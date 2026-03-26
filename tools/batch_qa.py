@@ -390,6 +390,20 @@ FAILURE_PATTERNS = {
             "Try Tier 2 (Tesseract re-OCR) and compare results"
         ),
     },
+    "ENCODING_FIXED": {
+        "condition": lambda d: (
+            d.get("encoding_normalization", {}).get("fixes", 0) > 10
+        ),
+        "severity": "info",
+        "label": "Encoding issues detected and fixed by normalization",
+        "description": (
+            "Encoding normalization applied — mojibake, control characters, "
+            "or stray Windows-1252 bytes were corrected"
+        ),
+        "recommendation": (
+            "Encoding normalization applied — verify output quality"
+        ),
+    },
 }
 
 
@@ -785,6 +799,25 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             # ── Phase 2: Structural analysis from HTML ──────────
             with open(html_path, 'r', encoding='utf-8', errors='replace') as f:
                 html_content = f.read()
+
+            # Encoding normalization (SCRUM-165)
+            diag["encoding_normalization"] = {
+                "fixes": 0, "mojibake": 0, "control_chars": 0}
+            if html_content and len(html_content) > 100:
+                try:
+                    from pdf_to_balabolka import normalize_encoding
+                    cleaned_html, enc_stats = normalize_encoding(html_content)
+                    if enc_stats['replacements_made'] > 0:
+                        diag["encoding_normalization"] = {
+                            "fixes": enc_stats['replacements_made'],
+                            "mojibake": enc_stats['mojibake_fixed'],
+                            "control_chars": enc_stats['control_chars_removed'],
+                            "replacement_chars": enc_stats.get(
+                                'replacement_chars_found', 0),
+                        }
+                        html_content = cleaned_html
+                except Exception:
+                    pass
 
             _analyze_html_structure(diag, html_content)
 
