@@ -26,7 +26,7 @@ _GEMINI_TRANSCRIPTION_PROMPT = """Transcribe ALL text from each page image EXACT
 Rules:
 1. Transcribe every word. Never summarize, skip, or paraphrase.
 2. Preserve paragraph breaks as blank lines.
-3. Mark headings with ## or ### prefix based on visual prominence.
+3. Mark ALL chapter titles, section headings, and part headings with ## prefix. This is critical for navigation. If text appears visually larger, bolder, or centered on the page — or if it reads like a chapter title (e.g., "Chapter 1", "THE BATTLE OF BUNKER HILL", "INTRODUCTION") — always prefix it with ##. When in doubt, add the ## marker. Examples: ## CHAPTER I, ## THE BATTLE OF BUNKER HILL, ## Introduction, ## Part One: The Early Years.
 4. Preserve italic text with *italic* and bold with **bold**.
 5. Preserve footnote numbers as [^1], [^2], etc.
 6. For block quotes, prefix each line with >
@@ -56,16 +56,46 @@ def _get_gemini_client(api_key=None):
     return genai.Client(api_key=key)
 
 
+def _ensure_safe_path(pdf_path):
+    """Return an ASCII-safe path for poppler, copying if needed.
+
+    Poppler (pdftoppm) can't handle non-ASCII filenames on Windows.
+    Returns (safe_path, tmp_dir_or_None). Caller must clean up tmp_dir.
+    """
+    try:
+        pdf_path.encode('ascii')
+        return pdf_path, None
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        import tempfile, shutil
+        tmp_dir = tempfile.mkdtemp(prefix='gemini_ocr_')
+        tmp_copy = os.path.join(tmp_dir, 'input.pdf')
+        shutil.copy2(pdf_path, tmp_copy)
+        return tmp_copy, tmp_dir
+
+
+def _cleanup_safe_path(tmp_dir):
+    """Remove temp directory created by _ensure_safe_path."""
+    if tmp_dir and os.path.isdir(tmp_dir):
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except OSError:
+            pass
+
+
 def _render_pages(pdf_path, page_numbers, dpi=200, poppler_path=None):
     """Render specific PDF pages to PNG bytes.
 
     Returns list of (page_number, png_bytes) tuples.
+    If pdf_path contains non-ASCII chars, caller should use _ensure_safe_path
+    once and pass the safe path to avoid repeated file copies.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
     from visual_qa import render_pages_to_png, find_poppler_path
     resolved_poppler = find_poppler_path(poppler_path)
+
     return render_pages_to_png(pdf_path, page_numbers, dpi=dpi,
                                 poppler_path=resolved_poppler)
 
@@ -120,58 +150,66 @@ def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
     total_output_tokens = 0
     pages_processed = 0
 
-    for batch_start in range(0, len(all_page_numbers), batch_size):
-        batch_pages = all_page_numbers[batch_start:batch_start + batch_size]
-        batch_num = (batch_start // batch_size) + 1
-        total_batches = (len(all_page_numbers) + batch_size - 1) // batch_size
+    # Copy PDF once to ASCII-safe temp path (avoids re-copying per batch)
+    safe_pdf, _tmp_dir = _ensure_safe_path(pdf_path)
+    if _tmp_dir:
+        log(f"  Gemini: Copied to temp path (Unicode filename workaround)")
 
-        log(f"  Gemini: Batch {batch_num}/{total_batches} — "
-            f"pages {batch_pages[0]}-{batch_pages[-1]}")
+    try:
+        for batch_start in range(0, len(all_page_numbers), batch_size):
+            batch_pages = all_page_numbers[batch_start:batch_start + batch_size]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (len(all_page_numbers) + batch_size - 1) // batch_size
 
-        try:
-            page_images = _render_pages(pdf_path, batch_pages, dpi=dpi,
-                                         poppler_path=poppler_path)
-        except Exception as e:
-            log(f"  Gemini: Failed to render batch {batch_num}: {e}")
-            continue
+            log(f"  Gemini: Batch {batch_num}/{total_batches} — "
+                f"pages {batch_pages[0]}-{batch_pages[-1]}")
 
-        if not page_images:
-            log(f"  Gemini: No images rendered for batch {batch_num}")
-            continue
+            try:
+                page_images = _render_pages(safe_pdf, batch_pages, dpi=dpi,
+                                             poppler_path=poppler_path)
+            except Exception as e:
+                log(f"  Gemini: Failed to render batch {batch_num}: {e}")
+                continue
 
-        contents = []
-        for page_num, png_bytes in page_images:
-            contents.append(types.Part.from_bytes(
-                data=png_bytes, mime_type='image/png'))
-            contents.append(f'--- Page {page_num} ---')
-        contents.append(
-            f"Transcribe pages {batch_pages[0]} through {batch_pages[-1]} now.")
+            if not page_images:
+                log(f"  Gemini: No images rendered for batch {batch_num}")
+                continue
 
-        try:
-            response = client.models.generate_content(
-                model=model,
-                config={'system_instruction': _GEMINI_TRANSCRIPTION_PROMPT},
-                contents=contents
-            )
+            contents = []
+            for page_num, png_bytes in page_images:
+                contents.append(types.Part.from_bytes(
+                    data=png_bytes, mime_type='image/png'))
+                contents.append(f'--- Page {page_num} ---')
+            contents.append(
+                f"Transcribe pages {batch_pages[0]} through {batch_pages[-1]} now.")
 
-            text = response.text or ''
-            usage = response.usage_metadata
-            in_tok = usage.prompt_token_count if usage else 0
-            out_tok = usage.candidates_token_count if usage else 0
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    config={'system_instruction': _GEMINI_TRANSCRIPTION_PROMPT},
+                    contents=contents
+                )
 
-            total_input_tokens += in_tok
-            total_output_tokens += out_tok
-            pages_processed += len(batch_pages)
+                text = response.text or ''
+                usage = response.usage_metadata
+                in_tok = (usage.prompt_token_count or 0) if usage else 0
+                out_tok = (usage.candidates_token_count or 0) if usage else 0
 
-            if text:
-                all_text_parts.append(text)
+                total_input_tokens += in_tok
+                total_output_tokens += out_tok
+                pages_processed += len(batch_pages)
 
-            log(f"  Gemini: Batch {batch_num} complete — "
-                f"{in_tok:,} in / {out_tok:,} out tokens")
+                if text:
+                    all_text_parts.append(text)
 
-        except Exception as e:
-            log(f"  Gemini: Batch {batch_num} failed: {e}")
-            continue
+                log(f"  Gemini: Batch {batch_num} complete — "
+                    f"{in_tok:,} in / {out_tok:,} out tokens")
+
+            except Exception as e:
+                log(f"  Gemini: Batch {batch_num} failed: {e}")
+                continue
+    finally:
+        _cleanup_safe_path(_tmp_dir)
 
     if not all_text_parts:
         log("  Gemini: No text extracted from any batch")
@@ -216,12 +254,15 @@ def remediate_pages_gemini(pdf_path, page_numbers, log, api_key=None,
 
     log(f"  Gemini remediate: processing {len(page_numbers)} pages: {page_numbers}")
 
+    safe_pdf, _tmp_dir = _ensure_safe_path(pdf_path)
     try:
-        page_images = _render_pages(pdf_path, page_numbers, dpi=dpi,
+        page_images = _render_pages(safe_pdf, page_numbers, dpi=dpi,
                                      poppler_path=poppler_path)
     except Exception as e:
         log(f"  Gemini remediate: render failed: {e}")
         return None
+    finally:
+        _cleanup_safe_path(_tmp_dir)
 
     if not page_images:
         log("  Gemini remediate: no images rendered")

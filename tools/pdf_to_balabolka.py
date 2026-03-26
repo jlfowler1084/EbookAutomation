@@ -1612,6 +1612,8 @@ def vision_text_to_para_dicts(vision_text, log):
             flush_paragraph()
             continue
 
+        words_in_line = stripped.split()
+
         heading_match = re.match(r'^(#{1,3})\s+(.+)$', stripped)
         if heading_match:
             flush_paragraph()
@@ -1621,6 +1623,51 @@ def vision_text_to_para_dicts(vision_text, log):
             sz_multiplier = {1: 2.0, 2: 1.5, 3: 1.25}.get(level, 1.25)
             para_dicts.append({
                 'text': heading_text, 'sz': body_size * sz_multiplier,
+                'bold': True, 'italic': False,
+                'page': current_page, 'tag': None,
+            })
+            continue
+
+        # ALL CAPS heading detection (matches ocr_text_to_para_dicts logic)
+        if len(stripped) < 100 and stripped == stripped.upper() and any(c.isalpha() for c in stripped):
+            alpha_words = [w for w in words_in_line if len(w) >= 2 and w.isalpha()]
+            if alpha_words:
+                flush_paragraph()
+                sz_mult = 1.5 if len(alpha_words) <= 4 else 1.25
+                para_dicts.append({
+                    'text': stripped, 'sz': body_size * sz_mult,
+                    'bold': True, 'italic': False,
+                    'page': current_page, 'tag': None,
+                })
+                continue
+
+        # Chapter/Part/Section keyword heading detection
+        chapter_match = re.match(
+            r'^(?:Chapter|CHAPTER|Part|PART|Section|SECTION|Book|BOOK|'
+            r'Introduction|INTRODUCTION|Preface|PREFACE|Foreword|FOREWORD|'
+            r'Prologue|PROLOGUE|Epilogue|EPILOGUE|Conclusion|CONCLUSION|'
+            r'Appendix|APPENDIX|Bibliography|BIBLIOGRAPHY|Index|INDEX)'
+            r'(?:\s+[\dIVXLCivxlc]+)?(?:[.:]\s+.*)?$',
+            stripped, re.IGNORECASE
+        )
+        if chapter_match and len(stripped) < 120:
+            flush_paragraph()
+            para_dicts.append({
+                'text': stripped, 'sz': body_size * 1.5,
+                'bold': True, 'italic': False,
+                'page': current_page, 'tag': None,
+            })
+            continue
+
+        # Short standalone line heuristic — lines at paragraph boundaries
+        # that look like headings (short, no terminal punctuation, capitalized)
+        if (len(words_in_line) <= 7 and len(stripped) < 80
+                and stripped[-1] not in '.!?,;:)'
+                and not current_paragraph
+                and stripped[0].isupper()):
+            flush_paragraph()
+            para_dicts.append({
+                'text': stripped, 'sz': body_size * 1.25,
                 'bold': True, 'italic': False,
                 'page': current_page, 'tag': None,
             })
