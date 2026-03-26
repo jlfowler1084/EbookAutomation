@@ -11,7 +11,7 @@
                 "-NoExit",
                 "-ExecutionPolicy", "Bypass",
                 "-Command",
-                "Import-Module '.\\module\\EbookAutomation.psm1' -Force; Write-Host '  EbookAutomation module loaded.' -ForegroundColor Green"
+                "Import-Module 'F:\\Projects\\EbookAutomation\\module\\EbookAutomation.psm1' -Force; Write-Host '  EbookAutomation module loaded.' -ForegroundColor Green"
             ]
         }
     },

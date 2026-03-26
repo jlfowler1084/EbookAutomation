@@ -1,0 +1,443 @@
+{
+  "run_id": "batch_20260325_092040",
+  "generated_at": "2026-03-25T13:20:49.036050+00:00",
+  "summary": {
+    "books_total": 2,
+    "books_passed": 2,
+    "books_warned": 0,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 8.8,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": 2,
+      "format_filter": null,
+      "parallel": 1,
+      "folder_path": "F:\\Projects\\EbookAutomation\\test-corpus"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 1,
+      "books": [
+        "Ezekiel_II.pdf"
+      ],
+      "source_types": {
+        "multi_column": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "DOUBLE_SPACES",
+      "severity": "low",
+      "label": "Excessive double spaces (>20)",
+      "description": "Multiple double-space artifacts in output text",
+      "recommendation": "Check text normalization pass",
+      "book_count": 1,
+      "books": [
+        "Ezekiel_II.pdf"
+      ],
+      "source_types": {
+        "multi_column": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    }
+  ],
+  "observations": [],
+  "books": [
+    {
+      "filename": "Burge_Jesus_and_the_Land.pdf",
+      "file_size_bytes": 986489,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_092040",
+      "timestamp": "2026-03-25T13:20:40.212214+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 4.7,
+        "html_produced": true,
+        "html_size_bytes": 389296,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 172,
+          "pages_with_text": 172,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 12,
+        "h1_count": 2,
+        "h2_count": 10,
+        "h3_count": 67,
+        "heading_labels": [
+          "Notes",
+          "Further reading",
+          "The Holy Land in the first century",
+          "Introduction: land, place, and religion",
+          "1 The biblical heritage",
+          "2 Diaspora Judaism and the land",
+          "3 Jesus and the land",
+          "4 The Fourth Gospel and the land",
+          "5 The book of Acts and the land",
+          "6 Paul and the promises to Abraham",
+          "7 Developments beyond Paul",
+          "8 Land, theology, and the Church"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 60504,
+        "page_count": 0,
+        "total_pages": 172,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 13,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 1,
+        "italic_tags": 631,
+        "bold_tags": 94,
+        "footnotes_linked": 106,
+        "footnotes_unlinked": 17,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.652,
+            "words_sampled": 500,
+            "hits": 326
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.6,
+            "stddev": 2.4,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 8
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 3,
+            "min_score": 97,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 97,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "calibre 3.24.0 [https://calibre-ebook.com]",
+        "pdf_creator": "calibre 3.24.0 [https://calibre-ebook.com]",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.9,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 3,
+        "names": [
+          "AAAAAA+LiberationSerif",
+          "AAAAAB+LiberationSerif-Italic",
+          "AAAAAC+LiberationSerif-Bold"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.4,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.6,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    },
+    {
+      "filename": "Ezekiel_II.pdf",
+      "file_size_bytes": 55841126,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_092040",
+      "timestamp": "2026-03-25T13:20:46.185657+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 0.875,
+        "num_columns": 2
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 1.1,
+        "html_produced": true,
+        "html_size_bytes": 2584836,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.0 images/page"
+        ],
+        "completeness": {
+          "total_pages": 637,
+          "pages_with_text": 637,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 3,
+        "h1_count": 2,
+        "h2_count": 1,
+        "h3_count": 38,
+        "heading_labels": [
+          "Front Matter",
+          "• • .--.",
+          "Foreword"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 422151,
+        "page_count": 0,
+        "total_pages": 637,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 114,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 3,
+        "italic_tags": 5415,
+        "bold_tags": 108,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 22,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.554,
+            "words_sampled": 500,
+            "hits": 277
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.71,
+            "stddev": 2.57,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 20
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 82
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 15,
+            "min_score": 82,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 15,
+        "min_region": 82,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe Acrobat 9.34 Paper Capture Plug-in",
+        "pdf_creator": "Adobe Acrobat 9.3.4",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 53.3,
+        "image_density": {
+          "total_images": 10,
+          "pages_sampled": 10,
+          "images_per_page": 1.0,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 7,
+        "names": [
+          "Helvetica",
+          "Helvetica-Bold",
+          "Helvetica-Oblique",
+          "HiddenHorzOCR",
+          "Times-Bold",
+          "Times-Italic",
+          "Times-Roman"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.8,
+        "latin_ext_pct": 0.2,
+        "high_unicode_pct": 0.0,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        },
+        {
+          "category": "double_spaces",
+          "severity": "low",
+          "description": "Multiple double-space artifacts in output text"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed"
+    }
+  ]
+}

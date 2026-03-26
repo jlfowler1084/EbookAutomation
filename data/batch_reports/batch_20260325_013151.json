@@ -1,0 +1,219 @@
+{
+  "run_id": "batch_20260325_013151",
+  "generated_at": "2026-03-25T05:31:51.563561+00:00",
+  "summary": {
+    "books_total": 2,
+    "books_passed": 0,
+    "books_warned": 0,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 2,
+    "total_duration_seconds": 0.5,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": 2,
+      "format_filter": null,
+      "parallel": 1,
+      "folder_path": "F:\\Projects\\EbookAutomation\\test-corpus"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "EXTRACTION_FAILED",
+      "severity": "critical",
+      "label": "Text extraction failed",
+      "description": "Could not extract text from source file",
+      "recommendation": "Check extraction path; may need OCR fallback or alternate extraction method",
+      "book_count": 2,
+      "books": [
+        "Burge_Jesus_and_the_Land.pdf",
+        "Ezekiel_II.pdf"
+      ],
+      "source_types": {
+        "unknown": 2
+      },
+      "formats": {
+        "pdf": 2
+      }
+    },
+    {
+      "pattern_id": "CHAPTER_DETECTION_ZERO",
+      "severity": "high",
+      "label": "No chapters detected",
+      "description": "Chapter detection found zero real chapters. May be finding only back-matter headings.",
+      "recommendation": "Fix Get-ChapterStructure prompt hierarchy rules and increase text window size",
+      "book_count": 2,
+      "books": [
+        "Burge_Jesus_and_the_Land.pdf",
+        "Ezekiel_II.pdf"
+      ],
+      "source_types": {
+        "unknown": 2
+      },
+      "formats": {
+        "pdf": 2
+      }
+    }
+  ],
+  "observations": [
+    "Chapter detection affects 100% of all books (2/2). Fixing this could improve batch pass rate from 0% to ~100%."
+  ],
+  "books": [
+    {
+      "filename": "Burge_Jesus_and_the_Land.pdf",
+      "file_size_bytes": 986489,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_013151",
+      "timestamp": "2026-03-25T05:31:51.106539+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 172,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": null,
+        "tier_suggestion": null,
+        "recommendation": null
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": null,
+        "pdf_creator": null
+      },
+      "fonts": {
+        "total_unique": 0,
+        "names": [],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {},
+      "issues": [],
+      "overall_status": "SKIP",
+      "status_reason": "Skipped: 172 pages exceeds --max-pages 50"
+    },
+    {
+      "filename": "Ezekiel_II.pdf",
+      "file_size_bytes": 55841126,
+      "format": "pdf",
+      "batch_run_id": "batch_20260325_013151",
+      "timestamp": "2026-03-25T05:31:51.293539+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [],
+        "warnings": []
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 637,
+        "has_toc": false,
+        "toc_entries": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": null,
+        "tier_suggestion": null,
+        "recommendation": null
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": null,
+        "pdf_creator": null
+      },
+      "fonts": {
+        "total_unique": 0,
+        "names": [],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {},
+      "issues": [],
+      "overall_status": "SKIP",
+      "status_reason": "Skipped: 637 pages exceeds --max-pages 50"
+    }
+  ]
+}

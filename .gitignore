@@ -1,6 +1,7 @@
 # Large source files (PDFs, ebooks)
 archive/
 inbox/
+batch_qa_intake/
 
 # Generated output
 output/
@@ -46,6 +47,9 @@ tools/data/foh_session.json
 # Pattern database (local run data)
 data/ebook_patterns.db
 data/covers/
+
+# Pipeline cache (local run data)
+tools/data/pipeline_cache.db
 
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json

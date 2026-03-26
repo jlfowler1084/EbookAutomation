@@ -2,7 +2,7 @@
 
 **Owner:** Joe
 **Started:** March 2026
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-24
 
 ---
 
@@ -60,6 +60,12 @@ F:\Projects\EbookAutomation\
 | `pdf_to_balabolka.py` — PDF → TTS/Kindle text converter (GUI + CLI) | Python | Active |
 | `foh_scraper.py` — Fires of Heaven forum scraper | Python | Active |
 | `foh_parser.py` — FOH data parser / brief generator | Python | Active |
+| `visual_qa.py` — Visual QA pipeline (KFX→PDF→PNG→Claude Vision) | Python | Active |
+| `batch_qa.py` — Batch QA system for cross-book diagnostics | Python | Active |
+| `pattern_db.py` — Pattern database + metadata CLI | Python | Active |
+| `content_filter.py` — Profile-based content filtering | Python | Active |
+| `email_to_kindle.py` — SMTP delivery to Kindle | Python | Active |
+| `detect_headings_font.py` — PDF font-based heading detection | Python | Active |
 | `settings.json` — Central config file | JSON | Active |
 | `balcon/` — Balabolka command-line TTS engine | External tool | Bundled |
 | Calibre `ebook-convert.exe` + KFX Output plugin | External tool | Installed separately |
@@ -75,6 +81,12 @@ F:\Projects\EbookAutomation\
 - `Initialize-EbookAutomation` — First-run setup (dependency check + folder creation)
 - `Write-EbookLog` / `Get-EbookConfig` — Shared utilities
 - `Get-EbookMetadataFromFilename` — Parse title/author from common ebook filename patterns
+- `Send-ToKindle` — Deliver ebooks to Kindle via USB (Calibre) or email (SMTP)
+- `Send-ToClaudeAPI` — General-purpose Anthropic Messages API wrapper
+- `Get-ChapterStructure` — Claude-assisted chapter/part detection from book text
+- `Test-EbookPipeline` — Run pdfminer HTML extraction regression test suite
+- `Test-ConversionQuality` — Visual QA on converted ebooks via Claude Vision API
+- `Invoke-ConvergeLoop` — Autonomous conversion pipeline with iteration
 
 ### Internal Functions (not exported)
 
@@ -88,23 +100,23 @@ F:\Projects\EbookAutomation\
 
 ### 1. Expand Format Support in PDF-to-Balabolka Converter
 
-**Priority:** High  
-**Status:** Not Started  
+**Priority:** High
+**Status:** ✅ Done (2026-03-22)
 **Component:** `pdf_to_balabolka.py`
 
-**Current state:** The Python converter only handles PDF input directly. EPUB support exists in the PowerShell wrapper (`Convert-ToTTS`) via a Calibre EPUB→PDF intermediate step, but the Python script itself is PDF-only.
+**Current state:** All major ebook formats now supported natively.
 
 **Goals:**
-- [ ] Add native EPUB text extraction (e.g., via `ebooklib` or `BeautifulSoup` on the XHTML chapters)
-- [ ] Add MOBI support (Calibre CLI conversion to intermediate, or `mobi` Python lib)
-- [ ] Add AZW/AZW3 support (Calibre conversion to intermediate format)
-- [ ] Add DJVU support (if useful — `djvulibre` or conversion path)
-- [ ] Update the Tkinter GUI file dialog filters to show all supported formats
-- [ ] Update `settings.json` → `tts.input_formats` to reflect newly supported types
-- [ ] Update `--help` text and docstrings
+- [x] Add native EPUB text extraction (via `ebooklib` + `BeautifulSoup`) — **done 2026-03-22**
+- [x] Add MOBI support (Calibre CLI intermediate conversion) — **done 2026-03-22**
+- [x] Add AZW/AZW3 support (Calibre CLI intermediate) — **done 2026-03-22**
+- [x] Add DJVU support (Calibre conversion path) — **done 2026-03-22**
+- [x] Update the Tkinter GUI file dialog filters to show all supported formats — **done 2026-03-22**
+- [x] Update `settings.json` → `tts.input_formats` to reflect newly supported types — **done 2026-03-22**
+- [x] Update `--help` text and docstrings — **done 2026-03-22**
 
-**Notes:**  
-Consider whether each format should have a native Python extraction path or whether routing everything through Calibre to a common intermediate (PDF or plain text) is simpler and more maintainable. Native extraction gives better quality; Calibre gives broader format coverage with less code.
+**Notes:**
+Architecture: EPUB uses native Python extraction via ebooklib + BeautifulSoup (best quality). MOBI/AZW/AZW3/DJVU route through Calibre CLI intermediate conversion (broad coverage, less code). New `extract_text_auto()` dispatcher routes by file extension. `--calibre-path` CLI argument added. PowerShell EPUB→PDF intermediate step removed in favor of native extraction.
 
 ---
 
@@ -192,11 +204,11 @@ See Completed Work section below for details.
 
 ### 5. Kindle Conversion Quality Improvements
 
-**Priority:** Medium  
-**Status:** In Progress  
+**Priority:** Medium
+**Status:** Mostly Done (2026-03-24)
 **Component:** `pdf_to_balabolka.py`, `EbookAutomation.psm1`
 
-**Current state:** PDF → Kindle pipeline works: text is extracted cleanly, metadata (title/author) is parsed from filenames, and KFX output is produced via Calibre. However, the automated chapter/TOC detection is unreliable — footnotes and inline references get misidentified as chapters, and some real chapters are missed.
+**Current state:** Full pipeline operational: pdfminer HTML extraction with font-based heading detection, bookmark reconciliation, endnote linking, conversion profiles, metadata capture, email-to-Kindle delivery, tiered extraction with quality gates. 50-book baseline established with 74% structural pass rate. TOC detection significantly improved by SCRUM-126 (pattern promotion + hierarchy normalization).
 
 **Goals:**
 - [x] Extract clean text from PDF before Calibre conversion (instead of raw PDF) — **done 2026-03-17**
@@ -376,10 +388,10 @@ This is the single biggest quality differentiator vs. other PDF-to-ebook convert
 ### 13. Comprehensive PDF Conversion Testing (NEW)
 
 **Priority:** High
-**Status:** In Progress
-**Component:** All conversion components
+**Status:** In Progress (50-book baseline established 2026-03-24)
+**Component:** All conversion components, `tools/batch_qa.py`
 
-Systematic testing of the conversion pipeline against diverse PDF types to identify and fix format-specific issues.
+Systematic testing of the conversion pipeline against diverse PDF types to identify and fix format-specific issues. Batch QA system (SCRUM-87) processes entire folders with structured diagnostics and cross-book pattern analysis. 50-book baseline run completed 2026-03-24 with 74% structural pass rate (37/50 PASS). VQA baseline on 37 passing books: avg 57.9, median 58, range 33-81. Text integrity identified as #1 weakness (11/33 books below 70).
 
 **Test Library:**
 
@@ -397,9 +409,14 @@ Systematic testing of the conversion pipeline against diverse PDF types to ident
 | Secret Societies of All Ages | 417 | 0 | 1875 scan, image-only PDF | ✅ Score ~70 — Tesseract OCR extraction (10.8 min, 300 DPI). 409/417 pages with text, 63,733 words, 16 chapters detected. Victorian typography causes expected OCR artifacts (ligature garbling in headings). Body text highly legible. First image-only PDF successfully processed. |
 | Justinian's Novella 146 | 26 | 0 | Short legal/historical | ✅ 275 KB KFX. Clean pass but per-page footnote issues remain. |
 | Civilta Cattolica | ? | ? | Journal article | ❌ Failed — spaceless text layer, pdfminer gets concatenated text. Needs word-boundary reconstruction. |
-| Ezekiel II (Hermeneia) | 637 | ? | Dense academic commentary | ⬜ Extracted in 155s. KFX filename bug (special chars). Hebrew/Greek garbled. Per-page footnotes not linked. Future priority. |
+| Ezekiel II (Hermeneia) | 637 | ? | Dense academic commentary, two-column | ✅ Extracted in 155s. PyMuPDF column extraction. Hebrew/Greek garbled (non-Latin scripts). AZW3 fallback (KFX crash). Regression target in test suite. |
 | Gospel of Nicodemus | 72 | 0 | Short, no bookmarks | ⬜ Partially tested |
 | Dumitru Duduman Prophecies | 39 | 0 | Very short, no bookmarks | ⬜ Not tested |
+| S. K. Bain — Most Dangerous Book | ? | 0 | No bookmarks, many chapters | ✅ Pattern promotion rescued 0→76 chapters (SCRUM-126). Regression target. |
+| Texe Marrs — Codex Magica | ? | 0 | No bookmarks | ✅ Pattern promotion rescued 0→18 chapters (SCRUM-126). Regression target. |
+| Ann Coulter — Various | ? | ? | Scanned PDFs | ✅ Tier 2 re-OCR auto-escalation: quality score 64→100 (SCRUM-122). |
+| Fruchtenbaum | ? | 0 | Single-column OCR/scanned PDF | ✅ Core regression test book. pdfminer+OCR path. |
+| Burge | ? | ? | Paragraph flow, mid-sentence breaks | ✅ Core regression test book. pdfminer path. |
 
 **Tasks:**
 - [ ] Test each book in the archive and document results
@@ -418,10 +435,10 @@ Systematic testing of the conversion pipeline against diverse PDF types to ident
 ### 14. Conversion Profiles for Different Book Types (NEW)
 
 **Priority:** Medium
-**Status:** Proposed
-**Component:** tools/pdf_to_balabolka.py, module/EbookAutomation.psm1
+**Status:** ✅ Done (2026-03-23)
+**Component:** tools/pdf_to_balabolka.py, tools/content_filter.py, module/EbookAutomation.psm1
 
-Different book types (academic, fiction, self-published, scanned) have different characteristics that affect conversion quality. A profile system would auto-detect the book type and adjust settings accordingly.
+Profile system implemented with auto-detection and per-profile content filtering. `-Profile` parameter on `Convert-ToKindle` and `Invoke-EbookPipeline`. Content filter script with profile-specific rules and tests. `-No*` skip parameters for individual pipeline stages.
 
 **Proposed Profiles:**
 - **Academic** — running headers with page numbers, footnote references, dense bibliography, multi-level TOC (Parts/Chapters), author names in TOC
@@ -558,16 +575,16 @@ Automated visual quality assurance pass for ebook conversions. Converts output f
 - [x] Module export in `.psm1` and `.psd1`
 - [x] `visual_qa` section in `settings.json`
 
-**Phase 2 (Pipeline Integration) — Pending:**
-- [ ] Add `-ValidateVisual` switch to `Convert-ToKindle`
-- [ ] Wire into `Invoke-EbookPipeline`
-- [ ] Test in pipeline mode on a batch
+**Phase 2 (Pipeline Integration) — Done (2026-03-22):**
+- [x] Add `-ValidateVisual` switch to `Convert-ToKindle` — **done 2026-03-22**
+- [x] Wire into `Invoke-EbookPipeline` — **done 2026-03-22**
+- [x] Test in pipeline mode on a batch — **done 2026-03-24** (37-book VQA baseline run)
 
-**Phase 3 (Refinement) — Future:**
-- [ ] Tune rubric based on real QA results across book types
-- [ ] Add fix-and-retry loop for traceable HTML issues (cap at 3 iterations)
-- [ ] Batch summary report across multiple books
-- [ ] Adapt for Balabolka TXT QA (TXT → PDF → PNG → evaluate)
+**Phase 3 (Refinement) — Done (2026-03-22, SCRUM-74):**
+- [x] Tune rubric based on real QA results across book types — **done 2026-03-22**
+- [x] Add fix-and-retry loop for traceable HTML issues (cap at 3 iterations) — **done 2026-03-22**
+- [x] Batch summary report across multiple books — **done 2026-03-22** (via batch_qa.py)
+- [ ] Adapt for Balabolka TXT QA (TXT → PDF → PNG → evaluate) — future
 
 **Dependencies:** Calibre (installed), poppler (installed in tools/poppler), pdf2image (installed), ANTHROPIC_API_KEY env var (configured).
 
@@ -954,14 +971,83 @@ Automated visual quality assurance pass for ebook conversions. Converts output f
 | 2026-03-21 | New dependencies: pytesseract 0.3.13, Tesseract OCR 5.5.0 (UB-Mannheim), pdf2image upgraded from optional to required-for-OCR |
 | 2026-03-21 | Secret Societies test: 417 pages, 300 DPI, 10.8 min, 409/417 pages with text, 63,733 words, 16 chapters detected. Zero errors |
 | 2026-03-21 | Regression verified: Reading Genesis (95,169 words, 14 chapters) and Brother of Jesus (101,479 words, 35 chapters) produce identical output with and without OCR auto-detection |
+| **2026-03-22** | **Batch QA system (`tools/batch_qa.py`) — SCRUM-87** |
+| 2026-03-22 | Process entire folders of ebooks with structured diagnostics, cross-book pattern analysis, failure clustering, and per-book overrides. Parallel processing with configurable concurrency. JSON report output with summary statistics |
+| 2026-03-22 | Heading duplication bug fixed (SCRUM-75) — styled headings duplicated as garbled OCR text in body paragraphs. Font-based detection now suppresses duplicates |
+| 2026-03-22 | Double spacing cleanup (SCRUM-49) — eliminated consecutive blank paragraphs and excessive `<br>` tags in pdfminer HTML output |
+| 2026-03-22 | Ligature fix corruption guard — prevent `_fix_ligature_splits()` from corrupting inline HTML tags |
+| 2026-03-22 | Character-weighted body size detection and prose heading guard — improved heading vs body text classification |
+| 2026-03-22 | Chapter promotion for bookmark-less PDFs — heuristic detection of chapter patterns in unbookmarked books |
+| 2026-03-22 | Test-corpus hot folder (`test-corpus/`) — drop-in regression testing with baseline capture/comparison |
+| 2026-03-22 | Post-edit auto-test hook — `test_pipeline.py --quick` runs automatically after edits to core pipeline files |
+| 2026-03-22 | Visual QA Phase 2 & 3 complete (SCRUM-74) — `-ValidateVisual` switch, pipeline integration, rubric tuning, auto-fix loop |
+| 2026-03-22 | VQA API cost optimization (SCRUM-76) — reduced prompt size and response tokens |
+| 2026-03-22 | EPUB/MOBI/AZW/DJVU native format support (SCRUM-62/67) — native EPUB extraction via ebooklib, Calibre intermediate for others |
+| 2026-03-22 | AZW3 fallback when KFX conversion fails (SCRUM-59/63) |
+| 2026-03-22 | Pipeline step timing instrumentation (SCRUM-60/64) |
+| 2026-03-22 | PDF hyperlink preservation in Kindle output (SCRUM-61/65) |
+| 2026-03-22 | Inline bold/italic preservation via per-span font analysis |
+| 2026-03-22 | Baselines captured for 6 core regression test books |
+| **2026-03-23** | **Email-to-Kindle delivery system (SCRUM-83/84/89)** |
+| 2026-03-23 | `email_to_kindle.py` — SMTP delivery to Amazon Send-to-Kindle with format routing, error mapping, size limits |
+| 2026-03-23 | `Send-ToKindle -Email` — PowerShell orchestrator with EPUB fallback chain, PDF splitting for large files |
+| 2026-03-23 | `Convert-ToKindle -ProduceEpub` — EPUB generation from intermediate HTML |
+| 2026-03-23 | `Invoke-EbookPipeline -EmailToKindle` — email delivery + EPUB production in pipeline |
+| 2026-03-23 | Kindle email delivery config schema in settings.json |
+| 2026-03-23 | `Initialize-EbookAutomation` — email config checks and approved sender reminder |
+| **2026-03-23** | **Book metadata capture system (SCRUM-91)** |
+| 2026-03-23 | `book_metadata` table in pattern database — stores merged metadata per book keyed on title_hash |
+| 2026-03-23 | PDF metadata extraction via PyMuPDF, EPUB metadata extraction via ebooklib |
+| 2026-03-23 | Metadata priority hierarchy: user override > pattern DB > EPUB OPF > PDF internal > filename parser |
+| 2026-03-23 | CLI subcommands: extract-metadata, get-metadata, update-metadata, store-metadata |
+| 2026-03-23 | Pipeline integration: `Convert-ToKindle` extracts + merges metadata before Calibre, `Convert-ToTTS` populates database |
+| 2026-03-23 | `Send-ToKindle` email path injects metadata into PDFs with empty internal metadata |
+| **2026-03-23** | **Conversion profiles system (SCRUM-92)** |
+| 2026-03-23 | `-Profile` parameter on `Convert-ToKindle`, `Invoke-EbookPipeline`, `Invoke-ConvergeLoop` |
+| 2026-03-23 | `content_filter.py` with profile-specific rules and tests |
+| 2026-03-23 | `-No*` skip parameters for individual pipeline stages (NoFootnotes, NoHeadings, etc.) |
+| **2026-03-23** | **Other March 23 work** |
+| 2026-03-23 | Font-based heading detection spec and implementation (`detect_headings_font.py`) |
+| 2026-03-23 | Converge loop — autonomous conversion pipeline (SCRUM-90) |
+| 2026-03-23 | AI quality pass made detection-only by default with fix guardrails |
+| 2026-03-23 | EPUB merge rewrites cross-file links and extracts images |
+| 2026-03-23 | Smart Calibre TOC flags — detect h1/h2 hierarchy vs flat structure |
+| 2026-03-23 | `Get-ChapterStructure` rewrite + EPUB heading detection (NCX/nav + HTML parsing) |
+| **2026-03-24** | **50-book clean baseline + WARN/FAIL diagnosis** |
+| 2026-03-24 | Batch QA overnight run: 50 books across 2 batches. After glob fix + timeout scaling + scan/DRM detection: 74% pass rate (was 36% with broken glob) |
+| 2026-03-24 | Top failure clusters: footnotes not linked (11), no bold/italic (9), no chapters detected (5), encoding errors (3), scanned without OCR (2) |
+| 2026-03-24 | Batch QA fixes: glob mismatch, scaled timeouts, scan detection, DRM detection |
+| **2026-03-24** | **VQA quality baseline for 37 structurally-passing books** |
+| 2026-03-24 | Full mode run (HTML + KFX + VQA): avg score 57.9, median 58, range 33-81. Only 5/34 (15%) scored above 70 |
+| 2026-03-24 | Category averages: page_layout 89.9, cover_images 89.9, heading_formatting 88.7, paragraph_flow 84.6, text_integrity 75.9, toc_navigation 66.8 |
+| 2026-03-24 | Key finding: structural extraction quality ≠ visual output quality. TOC navigation and text integrity are systemic weaknesses |
+| **2026-03-24** | **Text integrity deep dive on 11 VQA-failing books (SCRUM-118)** |
+| 2026-03-24 | Investigated all 11 books with text_integrity below 70. Dominant problems: word merges (4,969 occurrences) and OCR debris (2,911 occurrences), mostly originating in source PDFs |
+| 2026-03-24 | Word spacing fix in pdfminer HTML extraction |
+| 2026-03-24 | Column detection diagnostics added to batch_qa |
+| **2026-03-24** | **Intelligent Extraction — Tiered system (SCRUM-120, phases 1-4 + 6)** |
+| 2026-03-24 | Phase 1 (SCRUM-121): Text layer quality scorer — scores extracted text quality 0-100 for routing decisions. Done |
+| 2026-03-24 | Phase 2 (SCRUM-122): Re-OCR with Tesseract 5 — auto-escalate when quality score ≤70. OCR-to-HTML bridge, score comparison keeps winner. Coulter: 64→100. Zero API cost |
+| 2026-03-24 | Phase 3 (SCRUM-123): Claude Vision extraction — premium Tier 3 transcription for books defeating all other methods. Structured transcription prompt preserves headings, formatting, footnotes, non-Latin scripts. Cost management with `--vision-cost-limit`. Never auto-escalates — requires explicit `--use-vision` |
+| 2026-03-24 | Phase 4 (SCRUM-124): Extraction cache — SHA-256 content-addressable storage in pattern database. `times_served` counter for commercial amortization tracking. Cache stats and invalidation CLI. `--no-cache` flag. Corpus tests served in <1s |
+| 2026-03-24 | Phase 6 (SCRUM-126): TOC heading detection fix — pattern promotion ("Chapter X", "Part X" keywords → h2), heading hierarchy normalization (swap inverted h1/h2/h3), content-based backmatter detection. Bain: 0→76 chapters, Codex Magica: 0→18 |
+| **2026-03-24** | **Data collection enrichment (SCRUM-133)** |
+| 2026-03-24 | PDF producer/creator fingerprinting in books table and batch diagnostics |
+| 2026-03-24 | Font inventory collection during pdfminer extraction, risky fonts flagged |
+| 2026-03-24 | Unicode script detection identifies non-Latin content (Hebrew, Greek, CJK, etc.) |
+| 2026-03-24 | `MULTI_SCRIPT_NO_VISION` failure pattern for books with >5% non-Latin content |
+| **2026-03-24** | **Post-TOC fix structural comparison** |
+| 2026-03-24 | Re-ran 37 books after SCRUM-126: total chapters 1,565→1,587 (+22), h3 headings 8,045→7,126 (-919 from hierarchy normalization), 5 books rescued from 1-chapter to multi-chapter detection |
+| 2026-03-24 | Bain and Codex Magica added as regression targets with conservative thresholds |
+| 2026-03-24 | test_pipeline.py: 14/14 pass across all regression books |
 
 ---
 
 ## Notes & Ideas (Parking Lot)
 
-- **HTML-Based Extraction Refactor — Phase 1 COMPLETE (2026-03-20).** Phase 2 remaining: internal links/footnote extraction. ~~Tesseract hOCR integration for scanned PDFs~~ — **DONE 2026-03-21** via `detect_pdf_type()` + `extract_text_ocr()` using standard Tesseract (not hOCR). See Completed Work changelog and SCRUM-26/SCRUM-30 in Jira.
+- **HTML-Based Extraction Refactor — Phase 1 COMPLETE (2026-03-20).** ~~Phase 2 remaining: internal links/footnote extraction.~~ Footnote linking done (Strategy 1/2/3). ~~Tesseract hOCR integration for scanned PDFs~~ — **DONE 2026-03-21** via `detect_pdf_type()` + `extract_text_ocr()` using standard Tesseract (not hOCR). See Completed Work changelog and SCRUM-26/SCRUM-30 in Jira.
 - ~~**Multi-syllable ligature splits in pdfminer path**~~ — **DONE 2026-03-21.** Multi-fragment ligature merges (2-4 parts) implemented: "att en tion"→"attention", "traf fi cking"→"trafficking", "eff ort"→"effort". Function-word guard protects "as a", "in a" etc.
-- **Front Matter TOC leakage in pdfminer path** — Jesus and the Land and Mexico both show synthetic Front Matter sections with leaked TOC entries. The 5+ bookmark guard may only be active in the pypdf path. Need to verify and port the guard to `format_paragraphs_as_html()`.
+- ~~**Front Matter TOC leakage in pdfminer path**~~ — **DONE 2026-03-21** (SCRUM-41). Fixed guard ported to `format_paragraphs_as_html()`.
 - **Chapter alignment verification function** — Post-conversion verification comparing kindle.txt chapter openings against source PDF page content using fuzzy matching. Catches misalignment automatically instead of during manual review. Compare first 200 chars of body text after each heading against raw pypdf extraction from the bookmark's page.
 - **Bookmark whitespace matching** — Jesus/Land TOC missing chapters due to tab chars in bookmark titles breaking `_match_bookmark()`. High priority.
 - **Bookmark level mapping** — Mexico chapters nesting under Abbreviations due to h1/h2 level mapping from bookmark levels. High priority.
@@ -986,7 +1072,9 @@ Automated visual quality assurance pass for ebook conversions. Converts output f
 - **Context7 MCP server configured for live API documentation** — use when working with pdfminer, pypdf, Calibre CLI, or any dependency where training data may be outdated.
 - **Tesseract OCR Integration (high priority future feature)** — Enable conversion of image-only scanned PDFs (like Secret Societies 1875, 417 pages). Pipeline: detect image-only PDF (pypdf extracts near-zero text) → run Tesseract on each page image → feed OCR text into existing fix_ocr_artifacts() pipeline → Claude chapter detection → KFX output. This is the key differentiator — modern books have EPUBs; old scanned books don't. The existing 8-phase OCR cleanup pipeline is already built for this. Needs: Tesseract installation, page image extraction (pdf2image/Poppler already bundled), confidence scoring to flag low-quality OCR pages, and possibly a two-pass approach (fast OCR first, then targeted re-OCR on low-confidence pages). Natural evolution of Task 16 (Conversion Profiles) — "scanned" profile would auto-enable OCR.
 - **Book Metadata Cache (future)** — Shared database storing validated chapter structures (hints JSON), extraction backend preference (pypdf vs pdfminer), and conversion parameters per book. Keyed by content hash + ISBN. First conversion pays the detection cost; subsequent conversions get instant cached results. Could also store OCR artifact patterns, TOC structure, and user-reported corrections. Natural evolution of the conversion profiles system (Task 14). Would need: SQLite or cloud DB, content hashing, cache hit/miss logic in Convert-ToKindle, and an admin interface for reviewing/correcting entries.
-- **Claude API Quality Validation Pass — Phase 1 (scan) and Phase 2 (auto-fix with global propagation) IMPLEMENTED.** Remaining: Phase 3 (sub-heading detection) and Phase 4 (feedback loop). See `docs/AI_Quality_Pass_Design.md` for architecture. Tracked in Jira under "EA: AI Integration" epic.
+- ~~**Claude API Quality Validation Pass — Phase 1 (scan) and Phase 2 (auto-fix with global propagation) IMPLEMENTED.** Remaining: Phase 3 (sub-heading detection) and Phase 4 (feedback loop).~~ — **Phases 1-3 DONE.** Phase 4 (feedback loop, SCRUM-13) is To Do. AI quality pass now detection-only by default with fix guardrails. See `docs/AI_Quality_Pass_Design.md` for architecture.
+- **50-book baseline findings (2026-03-24):** Structural extraction is strong (74% pass) but visual output quality lags (avg VQA 57.9). The two systemic weaknesses are TOC navigation (avg 66.8) and text integrity (11/33 books below 70). Word merges (4,969 across failing books) and OCR debris (2,911) are the dominant text integrity problems, mostly originating in source PDFs. Tiered extraction (SCRUM-120) addresses this — Tier 2 re-OCR and Tier 3 Vision extraction can rescue the worst cases.
+- **Intelligent Extraction (SCRUM-120) — 5 of 6 phases done.** Remaining: Phase 5 (SCRUM-125) multi-extractor comparison for borderline books. Commercial model: cache expensive Vision extractions, charge same rate regardless of tier, popular books amortize fast.
 - **Image Preservation in PDF-to-Kindle Conversion (medium-high priority)** — Currently the pipeline strips all images during PDF text extraction. Books like Mexico's Illicit Drug Networks contain maps, organizational charts, photographs, and diagrams that are essential to understanding the content. Need to: (1) detect and extract embedded images from PDFs (pypdf can do this with page.images), (2) preserve image positioning relative to surrounding text, (3) embed images in the HTML intermediate output so Calibre includes them in the KFX, (4) handle caption text associated with images. This is a significant feature — image extraction, positioning, and HTML embedding are each non-trivial. May also need the Claude API to generate alt-text descriptions for images that don't have captions, which would also improve the TTS/audiobook output (narrator can describe what the image shows).
 - **AI Vision TOC Extraction (high priority)** — When a PDF has no bookmarks, use Claude API vision to read the printed Table of Contents page and extract chapter structure. Pipeline: detect no-bookmark PDF → scan first 10-15% of pages for TOC page (look for "Contents" or "Table of Contents" heading) → extract page as image → send to Claude vision API → receive structured JSON with chapter titles, page numbers, and nesting levels → use as bookmark-equivalent data for chapter placement. Far more reliable than regex heuristic chapter detection, which produces garbage results on books like The Khazars (grabbed bibliography entries and index fragments as chapters). Natural extension of existing Claude API integration. Can combine with -UseClaudeChapters flag or replace the heuristic path entirely for no-bookmark books.
 - **Hyperlink preservation in HTML output (low priority)** — When future HTML output mode is implemented, preserve PDF hyperlinks as `<a>` tags. Currently URLs in endnotes are extracted as plain text (5 instances in Oil Kings, all in Notes section). Not a body text issue — only affects endnotes/bibliography.
