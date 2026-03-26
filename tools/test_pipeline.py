@@ -1062,6 +1062,155 @@ def run_filter_tests(quick=False):
     return results
 
 
+def run_spaced_letter_tests():
+    """Run unit tests for Phase 8 character spacing collapse in fix_ocr_artifacts().
+
+    Returns list of (name, passed, passes, failures, elapsed).
+    """
+    if str(SCRIPT_DIR) not in sys.path:
+        sys.path.insert(0, str(SCRIPT_DIR))
+    from pdf_to_balabolka import fix_ocr_artifacts
+
+    results = []
+    log_messages = []
+
+    def _log(msg):
+        log_messages.append(msg)
+
+    def _run(name, fn):
+        t0 = time.time()
+        passes, failures = [], []
+        try:
+            fn(passes, failures)
+        except Exception as e:
+            failures.append(f"Exception: {e}")
+        elapsed = round(time.time() - t0, 3)
+        results.append((name, len(failures) == 0, passes, failures, elapsed))
+
+    def _collapse(text):
+        """Run a single paragraph through fix_ocr_artifacts and return result."""
+        log_messages.clear()
+        paras = [text]
+        fix_ocr_artifacts(paras, _log)
+        return paras[0]
+
+    # ── Fully-spaced word collapse (Phase 8 core behavior) ─────────
+
+    def test_fully_spaced_wilson(P, F):
+        """Single fully-spaced word collapses to dictionary word."""
+        result = _collapse("W i l s o n")
+        result_lower = result.lower()
+        (P if "wilson" in result_lower else F).append(
+            f"Wilson collapsed: got '{result}'")
+        (P if "W i l" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    def test_fully_spaced_manhattan(P, F):
+        """Fully-spaced 'Manhattan' with all 9 chars."""
+        result = _collapse("M a n h a t t a n")
+        result_lower = result.lower()
+        (P if "manhattan" in result_lower else F).append(
+            f"manhattan collapsed: got '{result}'")
+        (P if "a n h" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    def test_fully_spaced_phrase(P, F):
+        """Multiple fully-spaced words in a phrase with normal words between."""
+        result = _collapse("W i l s o n in P a r i s")
+        result_lower = result.lower()
+        (P if "wilson" in result_lower else F).append(
+            f"Wilson collapsed: got '{result}'")
+        (P if "paris" in result_lower else F).append(
+            f"Paris collapsed: got '{result}'")
+        (P if "W i l" not in result and "P a r" not in result else F).append(
+            f"all spaced runs collapsed: got '{result}'")
+
+    def test_fully_spaced_dominion(P, F):
+        """Doctrinal text: 'exact harmony of dominion'."""
+        result = _collapse("e x a c t h a r m o n y o f d o m i n i o n")
+        result_lower = result.lower()
+        (P if "exact" in result_lower else F).append(
+            f"'exact' found: got '{result}'")
+        (P if "dominion" in result_lower else F).append(
+            f"'dominion' found: got '{result}'")
+        (P if "e x a" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    # ── Mixed spaced/fused from real pdfminer output ─────────────────
+
+    def test_mixed_paris_collapses(P, F):
+        """Real pdfminer: 'W i ls on in P a r i s' — only 'P a r i s' is fully spaced."""
+        result = _collapse("W i ls on in P a r i s")
+        # 'P a r i s' is fully spaced (5 single chars) → collapses to 'Paris'
+        # 'W i ls on' has fused pairs → regex doesn't match → stays as-is
+        (P if "Paris" in result else F).append(
+            f"fully-spaced 'Paris' collapsed: got '{result}'")
+        (P if "W i ls on" in result else F).append(
+            f"fused 'W i ls on' unchanged (expected): got '{result}'")
+
+    def test_mixed_normal_prefix(P, F):
+        """Normal text prefix followed by fully-spaced word."""
+        result = _collapse("He visited W i l s o n in Paris")
+        result_lower = result.lower()
+        (P if "he visited" in result_lower else F).append(
+            f"normal prefix preserved: got '{result}'")
+        (P if "wilson" in result_lower else F).append(
+            f"Wilson collapsed: got '{result}'")
+
+    # ── Edge cases ────────────────────────────────────────────────────
+
+    def test_normal_text_unchanged(P, F):
+        original = "The quick brown fox"
+        result = _collapse(original)
+        (P if result == original else F).append(
+            f"normal text unchanged: got '{result}'")
+
+    def test_toc_dot_leaders_unchanged(P, F):
+        original = ". . . . . . ."
+        result = _collapse(original)
+        (P if result == original else F).append(
+            f"TOC dots unchanged: got '{result}'")
+
+    def test_short_sequence_unchanged(P, F):
+        """2-char sequence below the 3+ threshold — should not trigger."""
+        original = "a b"
+        result = _collapse(original)
+        (P if result == original else F).append(
+            f"2-char sequence unchanged: got '{result}'")
+
+    def test_short_acronym_unchanged(P, F):
+        """'U S A' = 3 chars but only 2 repetitions of (char space) — below regex {3,}."""
+        original = "U S A"
+        result = _collapse(original)
+        (P if result == original else F).append(
+            f"short acronym unchanged: got '{result}'")
+
+    def test_punctuation_apostrophe(P, F):
+        """Spaced word with trailing apostrophe-s."""
+        result = _collapse("d o m i n i o n ' s")
+        result_lower = result.lower()
+        (P if "dominion" in result_lower else F).append(
+            f"dominion collapsed: got '{result}'")
+        (P if "d o m" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    # ── Register and run ──────────────────────────────────────────────
+
+    _run("spaced: fully-spaced Wilson", test_fully_spaced_wilson)
+    _run("spaced: fully-spaced Manhattan", test_fully_spaced_manhattan)
+    _run("spaced: fully-spaced phrase", test_fully_spaced_phrase)
+    _run("spaced: fully-spaced dominion phrase", test_fully_spaced_dominion)
+    _run("spaced: mixed Paris collapses", test_mixed_paris_collapses)
+    _run("spaced: mixed normal prefix", test_mixed_normal_prefix)
+    _run("spaced: normal text unchanged", test_normal_text_unchanged)
+    _run("spaced: TOC dot leaders", test_toc_dot_leaders_unchanged)
+    _run("spaced: short sequence (2 chars)", test_short_sequence_unchanged)
+    _run("spaced: short acronym (U S A)", test_short_acronym_unchanged)
+    _run("spaced: apostrophe punctuation", test_punctuation_apostrophe)
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description="Test harness for pdfminer HTML extraction pipeline")
     ap.add_argument("test_name", nargs="?", default=None,
@@ -1247,10 +1396,12 @@ def main():
         corpus_matches = [b for b in corpus_books
                           if args.test_name.lower() in b.stem.lower()]
         run_filters = 'filter' in args.test_name.lower()
-        if not hc_matches and not cap_matches and not corpus_matches and not run_filters:
+        run_spaced = 'spaced' in args.test_name.lower()
+        if not hc_matches and not cap_matches and not corpus_matches and not run_filters and not run_spaced:
             print(f"No test case matching '{args.test_name}'")
             all_names = list(TEST_CASES.keys()) + list(extra_captured.keys()) + [b.stem for b in corpus_books]
             all_names.append("filter (14 unit + integration tests)")
+            all_names.append("spaced (11 character spacing collapse tests)")
             print(f"Available: {', '.join(all_names)}")
             sys.exit(1)
     else:
@@ -1258,17 +1409,20 @@ def main():
         cap_matches = extra_captured
         corpus_matches = corpus_books
         run_filters = True
+        run_spaced = True
 
     n_filter = 14 if run_filters else 0
-    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter
+    n_spaced = 11 if run_spaced else 0
+    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter + n_spaced
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
     print(f"\n{'=' * 60}")
     print(f"  EbookAutomation Pipeline Test Suite")
     print(f"  Mode: {mode}")
     corpus_note = f", {len(corpus_matches)} corpus" if corpus_matches else ""
     filter_note = f", {n_filter} filter" if n_filter else ""
+    spaced_note = f", {n_spaced} spaced" if n_spaced else ""
     print(f"  Tests: {total_tests} ({len(hc_matches)} hardcoded, "
-          f"{len(cap_matches)} captured{corpus_note}{filter_note})")
+          f"{len(cap_matches)} captured{corpus_note}{filter_note}{spaced_note})")
     print(f"{'=' * 60}\n")
 
     results = {}
@@ -1353,6 +1507,26 @@ def main():
     if run_filters:
         filter_results = run_filter_tests(args.quick)
         for name, passed, passes, failures, elapsed in filter_results:
+            check_count = len(passes) + len(failures)
+            status = "PASS" if passed else "FAIL"
+            print(f"  {status}: {name} ({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
+
+            if failures:
+                for f in failures:
+                    print(f"    FAIL: {f}")
+            elif args.verbose:
+                for p in passes:
+                    print(f"    PASS: {p}")
+
+            if passed:
+                total_pass += 1
+            else:
+                total_fail += 1
+
+    # Run spaced-letter collapse tests
+    if run_spaced:
+        spaced_results = run_spaced_letter_tests()
+        for name, passed, passes, failures, elapsed in spaced_results:
             check_count = len(passes) + len(failures)
             status = "PASS" if passed else "FAIL"
             print(f"  {status}: {name} ({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
