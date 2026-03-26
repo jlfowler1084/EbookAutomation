@@ -10,7 +10,7 @@ EbookAutomation is a PowerShell + Python automation suite for:
 
 **Owner:** Joe
 **Location:** `F:\Projects\EbookAutomation\`
-**Platform:** Windows, PowerShell 5.1+, Python 3.8+
+**Platform:** Windows, PowerShell 5.1+, Python 3.12
 
 ---
 
@@ -18,13 +18,13 @@ EbookAutomation is a PowerShell + Python automation suite for:
 
 - **OS:** Windows 10/11
 - **Shell:** PowerShell 5.1+ (do NOT use bash syntax, `&` operator, or unix paths)
-- **Python:** Microsoft Store Python 3.8+ (use `python -m pip install` not bare `pip`)
+- **Python:** Python 3.12 (use `py -3.12 -m pip install` for package installs)
 - **Node.js:** v24.14.0 (installed at `C:\Program Files\nodejs\`)
 - **MCP config:** `.mcp.json` in project root (NOT settings.json)
 
 This project runs on Windows. Use PowerShell syntax, not bash/Unix syntax. Do not use `&` pipe operators or Unix-style paths unless explicitly in WSL. Use backslash `\` path separators in PowerShell commands.
 
-Use `python -m pip install` for package installs — bare `pip install` targets a different Python installation (project uses Microsoft Store Python 3.8).
+Use `py -3.12 -m pip install` for package installs to ensure packages install to the correct Python instance.
 
 Temp files may be cleaned up quickly by Windows — save diagnostic outputs to persistent locations (e.g., the project's `debug/` or `output/` directory), not system temp folders. When debugging, always verify you are looking at current output, not stale files from a previous run.
 
