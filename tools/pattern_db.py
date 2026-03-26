@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS conversions (
     output_file_size INTEGER,  -- output file size in bytes
     conversion_flags TEXT,  -- JSON of active flags: {"UseHtmlExtraction": true, ...}
     category_scores TEXT,  -- JSON of per-category VQA scores: {"text_integrity": 83, ...}
+    quality_variance REAL,  -- std dev of multi-point quality sampling (0 = uniform, >15 = mixed quality)
     font_inventory TEXT,  -- JSON: unique font names and encodings found during extraction
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -350,6 +351,8 @@ def _migrate(conn):
         ("conversions", "encoding_distribution", "TEXT"),
         # DE-6: Extraction completeness
         ("conversions", "extraction_completeness", "TEXT"),
+        # SCRUM-160: Quality variance
+        ("conversions", "quality_variance", "REAL"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -555,7 +558,7 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                    duration_seconds=None, output_file_path=None,
                    output_file_size=None, conversion_flags=None,
                    category_scores=None, duration_breakdown=None,
-                   db_path=None):
+                   quality_variance=None, db_path=None):
     """Record a conversion attempt. Returns conversion ID."""
     if isinstance(conversion_flags, dict):
         conversion_flags = json.dumps(conversion_flags)
@@ -572,14 +575,14 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                 fixes_failed, api_input_tokens, api_output_tokens,
                 cost_usd, duration_seconds, output_file_path,
                 output_file_size, conversion_flags, category_scores,
-                duration_breakdown)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                duration_breakdown, quality_variance)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, iteration, extraction_path, vqa_score,
              vqa_report_path, text_quality_score, fixes_applied,
              fixes_failed, api_input_tokens, api_output_tokens,
              cost_usd, duration_seconds, output_file_path,
              output_file_size, conversion_flags, category_scores,
-             duration_breakdown)
+             duration_breakdown, quality_variance)
         )
         conn.commit()
         return cursor.lastrowid

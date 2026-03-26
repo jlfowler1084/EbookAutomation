@@ -408,6 +408,83 @@ FAILURE_PATTERNS = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Per-segment quality scoring (SCRUM-160)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def score_segment_quality(text):
+    """Lightweight quality score for a text segment. No API calls.
+
+    Returns dict with score (0-100), character count, and per-metric rates
+    normalized per 1000 characters for cross-segment comparability.
+    """
+    chars = len(text)
+    if chars == 0:
+        return {"score": 0, "chars": 0, "metrics": {}}
+
+    replacement_chars = text.count('\ufffd')
+    ligature_splits = len(LIGATURE_SPLIT_RE.findall(text)) if HAS_TEST_PIPELINE else 0
+    double_spaces = len(re.findall(r'  ', text))
+    control_chars = sum(1 for c in text if ord(c) < 32 and c not in '\n\r\t')
+
+    per_k = 1000 / max(chars, 1)
+    metrics = {
+        "replacement_chars_per_k": round(replacement_chars * per_k, 2),
+        "ligature_splits_per_k": round(ligature_splits * per_k, 2),
+        "double_spaces_per_k": round(double_spaces * per_k, 2),
+        "control_chars_per_k": round(control_chars * per_k, 2),
+    }
+
+    score = 100.0
+    score -= min(40, replacement_chars * per_k * 5)
+    score -= min(20, ligature_splits * per_k * 2)
+    score -= min(10, double_spaces * per_k * 1)
+    score -= min(10, control_chars * per_k * 3)
+
+    return {"score": max(0, round(score)), "chars": chars, "metrics": metrics}
+
+
+def compute_quality_variance(full_text):
+    """Sample 5 positions across the text and compute quality variance.
+
+    Returns dict with per-segment scores, mean, std deviation, and a
+    flag indicating whether variance is high enough to warrant targeted
+    re-extraction of specific sections.
+
+    Returns None if text is too short to meaningfully sample.
+    """
+    n = len(full_text)
+    if n < 2500:  # need at least 500 chars per sample
+        return None
+
+    window = min(2000, n // 6)
+    positions = [0.10, 0.25, 0.50, 0.75, 0.90]
+
+    segments = []
+    for pct in positions:
+        start = max(0, int(n * pct) - window // 2)
+        end = min(n, start + window)
+        segment = full_text[start:end]
+        segments.append(score_segment_quality(segment))
+
+    scores = [s["score"] for s in segments]
+    mean_score = sum(scores) / len(scores)
+    std_dev = (sum((s - mean_score) ** 2 for s in scores) / len(scores)) ** 0.5
+    worst_idx = scores.index(min(scores))
+
+    return {
+        "mean": round(mean_score, 1),
+        "std_dev": round(std_dev, 1),
+        "segment_scores": scores,
+        "positions": positions,
+        "high_variance": std_dev > 15.0,
+        "worst_position": positions[worst_idx],
+        "worst_score": scores[worst_idx],
+        "best_score": max(scores),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Font inventory (SCRUM-148)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -672,6 +749,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "text_layer_score": None,
             "tier_suggestion": None,
             "recommendation": None,
+            "quality_variance": None,
         },
         "kindle_conversion": {
             "attempted": False,
@@ -1070,6 +1148,14 @@ def _analyze_html_structure(diag, html_content):
     # Encoding error heuristic: count replacement characters
     diag["text_quality"]["encoding_errors"] = body_text.count('\ufffd')
 
+    # Quality variance — multi-point sampling (SCRUM-160)
+    # body_text is already computed above (HTML tags stripped)
+    variance = compute_quality_variance(body_text)
+    if variance:
+        diag["text_quality"]["quality_variance"] = variance
+    else:
+        diag["text_quality"]["quality_variance"] = None
+
     # Text layer quality scoring (FU-1: multi-sample for variance)
     if HAS_TEXT_SCORER and diag["structure"]["word_count"] > 100:
         try:
@@ -1463,6 +1549,36 @@ def generate_md_report(run_id, diagnostics_list, clusters, observations,
 
     lines.append("")
 
+    # ── Quality variance flags ─────────────────────────────────
+    high_var_books = []
+    for diag in diagnostics_list:
+        qv = diag["text_quality"].get("quality_variance")
+        if qv and isinstance(qv, dict):
+            if qv.get("high_variance"):
+                high_var_books.append((diag["filename"], qv))
+    if high_var_books:
+        lines.append("---")
+        lines.append("")
+        lines.append("## High quality variance")
+        lines.append("")
+        lines.append(
+            "Books with uneven text quality across sections "
+            "(std_dev > 15). May benefit from targeted re-extraction."
+        )
+        lines.append("")
+        for fname, qv in high_var_books:
+            name = fname if len(fname) <= 45 else fname[:42] + "..."
+            lines.append(
+                f"- **{name}**: std_dev={qv['std_dev']}, "
+                f"mean={qv['mean']}, "
+                f"range={qv['worst_score']}-{qv['best_score']}"
+            )
+            lines.append(
+                f"  - Worst section at {int(qv['worst_position'] * 100)}% "
+                f"position (score {qv['worst_score']})"
+            )
+        lines.append("")
+
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     md_path = REPORTS_DIR / f"{run_id}.md"
     with open(md_path, 'w', encoding='utf-8') as f:
@@ -1535,6 +1651,8 @@ def record_batch_to_db(run_id, diagnostics_list, duration, flags,
             conversion_id = None
             if book_id and diag["extraction"]["success"]:
                 try:
+                    qv = diag["text_quality"].get("quality_variance")
+                    qv_std = qv.get("std_dev") if isinstance(qv, dict) else None
                     conversion_id = add_conversion(
                         book_id=book_id,
                         extraction_path=diag["extraction"]["extraction_path"],
@@ -1550,6 +1668,7 @@ def record_batch_to_db(run_id, diagnostics_list, duration, flags,
                             "category_scores"
                         ),
                         duration_breakdown=diag.get("duration_breakdown"),
+                        quality_variance=qv_std,
                         db_path=db_path,
                     )
                 except Exception as e:
@@ -1882,7 +2001,8 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
                                  "footnotes_unlinked": 0,
                                  "text_layer_score": None,
                                  "tier_suggestion": None,
-                                 "recommendation": None},
+                                 "recommendation": None,
+                                 "quality_variance": None},
                 "kindle_conversion": {"attempted": False, "success": False,
                                       "kfx_size_bytes": 0, "duration_seconds": 0},
                 "visual_qa": {"attempted": False, "score": None, "pass_threshold": 70,
