@@ -4350,7 +4350,16 @@ function Invoke-ConvergeLoop {
         [switch]$NoFrontMatter,
         [switch]$NoBackMatter,
         [switch]$NoImages,
-        [switch]$NoBlockQuotes
+        [switch]$NoBlockQuotes,
+
+        [Parameter(HelpMessage = 'Allow Gemini Flash extraction (Tier 2.5) in strategy rotation. Cost: ~$0.005/page. Requires GEMINI_API_KEY.')]
+        [switch]$UseGemini,
+
+        [Parameter(HelpMessage = 'Allow Claude Vision extraction (Tier 3) in strategy rotation. Cost: ~$0.02-0.04/page. Requires ANTHROPIC_API_KEY.')]
+        [switch]$UseVision,
+
+        [Parameter(HelpMessage = 'Allow any paid extraction tier without per-strategy flags. Use for batch processing where cost is pre-approved.')]
+        [switch]$AllowPaidExtraction
     )
 
     # ── Step 1: Setup ────────────────────────────────────────────────────────
@@ -4531,14 +4540,16 @@ print(json.dumps(result))
                 return @{
                     Name        = "Gemini Flash extraction (Tier 2.5)"
                     Flags       = @{ UseGemini = $true }
-                    Description = "Gemini Flash page-by-page transcription (Tier 2.5)"
+                    Description = "Gemini 2.5 Flash transcription for image-based PDFs (~`$0.005/page)"
+                    PaidTier    = $true
                 }
             }
             'vision' {
                 return @{
                     Name        = "Claude Vision extraction (Tier 3)"
                     Flags       = @{ UseVision = $true }
-                    Description = "Claude Vision page-by-page transcription (Tier 3)"
+                    Description = "Claude Vision premium OCR for complex layouts (~`$0.02/page)"
+                    PaidTier    = $true
                 }
             }
         }
@@ -4659,8 +4670,8 @@ print(json.dumps(result))
         if ($NoImages)      { $convertParams['NoImages']      = $true }
         if ($NoBlockQuotes) { $convertParams['NoBlockQuotes'] = $true }
 
-        # Guard: skip Gemini strategy unless explicitly requested
-        if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini) {
+        # Guard: skip Gemini strategy unless explicitly requested or batch-approved
+        if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini -and -not $AllowPaidExtraction) {
             if ($classification -and $classification.flags.needs_paid_tier -and
                 $classification.flags.recommended_paid_tier -eq 'gemini') {
                 $pgCount = if ($classification.signals.total_pages) { $classification.signals.total_pages } else { 0 }
@@ -4678,8 +4689,8 @@ print(json.dumps(result))
             continue
         }
 
-        # Guard: skip Vision strategy unless explicitly requested
-        if ($convertParams.ContainsKey('UseVision') -and $convertParams['UseVision'] -and -not $UseVision) {
+        # Guard: skip Vision strategy unless explicitly requested or batch-approved
+        if ($convertParams.ContainsKey('UseVision') -and $convertParams['UseVision'] -and -not $UseVision -and -not $AllowPaidExtraction) {
             if ($classification -and $classification.flags.needs_paid_tier -and
                 $classification.flags.recommended_paid_tier -eq 'vision') {
                 Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
@@ -4745,6 +4756,28 @@ print(json.dumps(result))
                 Error     = "Output file not found"
             }
             continue
+        }
+
+        # --- Zero-text detection: catch empty extractions before wasting time on VQA ---
+        if ($classification -and $classification.signals.total_pages) {
+            $pgCount = [int]$classification.signals.total_pages
+            $outFileSize = (Get-Item $outFile).Length
+            # Rule: if KFX is under 20KB for a 50+ page book, extraction produced nothing useful
+            # (a valid KFX with content for 50 pages would be at minimum ~50-100KB)
+            if ($pgCount -gt 50 -and $outFileSize -lt 20480) {
+                Write-EbookLog "  ZERO-TEXT DETECTED: $([math]::Round($outFileSize/1024, 1))KB output for $pgCount-page book" -Level WARN
+                Write-EbookLog "  This strategy cannot extract text from this source — advancing to next strategy" -Level WARN
+                $iterations += @{
+                    Iteration = $iter
+                    Strategy  = $strategy.Name
+                    Score     = 0
+                    Pass      = $false
+                    Cost      = 0
+                    Duration  = [math]::Round(((Get-Date) - $iterStart).TotalSeconds, 1)
+                    Error     = "Zero-text: ${outFileSize}B output for ${pgCount}-page book"
+                }
+                continue
+            }
         }
 
         # --- Evaluate via VQA (always quick — full adds cost without diagnostic value) ---
@@ -4851,6 +4884,33 @@ print(json.dumps(result))
     # Clean up cached chapter hints
     if ($cachedChapterHints -and (Test-Path $cachedChapterHints)) {
         Remove-Item $cachedChapterHints -Force -ErrorAction SilentlyContinue
+    }
+
+    # ── Recommend paid tier if all free strategies failed ─────────────────────
+    $bestPass = $iterations | Where-Object { $_.Pass } | Select-Object -First 1
+    if (-not $bestPass -and $classification -and $classification.flags.needs_paid_tier) {
+        $recTier  = $classification.flags.recommended_paid_tier
+        $pgCount  = if ($classification.signals.total_pages) { [int]$classification.signals.total_pages } else { 0 }
+        $producer = if ($classification.signals.pdf_producer) { $classification.signals.pdf_producer } else { 'unknown' }
+
+        if ($recTier -eq 'gemini') {
+            $estCost = '{0:F2}' -f ($pgCount * 0.005)
+            $flag    = '-UseGemini'
+        } elseif ($recTier -eq 'vision') {
+            $estCost = '{0:F2}' -f ($pgCount * 0.02)
+            $flag    = '-UseVision'
+        } else {
+            $estCost = '?.??'
+            $flag    = '-AllowPaidExtraction'
+        }
+
+        Write-EbookLog "" -Level INFO
+        Write-EbookLog "═══════════════════════════════════════════════════════════" -Level WARN
+        Write-EbookLog " ALL FREE STRATEGIES EXHAUSTED — PAID EXTRACTION AVAILABLE" -Level WARN
+        Write-EbookLog " This book's producer ($producer) is" -Level WARN
+        Write-EbookLog " known to require $recTier for successful extraction." -Level WARN
+        Write-EbookLog " Re-run with $flag to extract (~`$$estCost)" -Level WARN
+        Write-EbookLog "═══════════════════════════════════════════════════════════" -Level WARN
     }
 
     # ── Record path switches to pattern database ─────────────────────────────
