@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS path_switches (
     issue_categories TEXT,
     score_before INTEGER,
     score_after INTEGER,
+    escalation_details TEXT,  -- JSON: category_scores_before/after, cost, duration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -353,6 +354,8 @@ def _migrate(conn):
         ("conversions", "extraction_completeness", "TEXT"),
         # SCRUM-160: Quality variance
         ("conversions", "quality_variance", "REAL"),
+        # SCRUM-161: Path switch escalation details
+        ("path_switches", "escalation_details", "TEXT"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -816,22 +819,65 @@ def promote_fixes(min_successes=3, min_success_rate=0.7, db_path=None):
 
 def record_path_switch(book_id, from_path, to_path, source_format=None,
                        issue_categories=None, score_before=None,
-                       score_after=None, db_path=None):
+                       score_after=None, escalation_details=None,
+                       db_path=None):
     """Record an extraction path switch and its outcome."""
+    if isinstance(escalation_details, dict):
+        escalation_details = json.dumps(escalation_details)
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
             """INSERT INTO path_switches
                (book_id, from_path, to_path, source_format,
-                issue_categories, score_before, score_after)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                issue_categories, score_before, score_after,
+                escalation_details)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, from_path, to_path, source_format,
-             issue_categories, score_before, score_after)
+             issue_categories, score_before, score_after,
+             escalation_details)
         )
         conn.commit()
         return cursor.lastrowid
     finally:
         conn.close()
+
+
+def record_path_switch_by_filename(filename, from_path, to_path,
+                                   source_format=None, score_before=None,
+                                   score_after=None, escalation_details=None,
+                                   db_path=None):
+    """Record a path switch using filename to resolve book_id.
+
+    Returns the path_switch ID, or None if book not found.
+    """
+    book = get_book_by_filename(filename, db_path=db_path)
+    if not book:
+        # Try partial match
+        conn = get_db(db_path)
+        try:
+            cursor = conn.execute(
+                "SELECT id FROM books WHERE filename LIKE ? ORDER BY id DESC LIMIT 1",
+                (f"%{filename}%",)
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        book_id = row["id"]
+    else:
+        book_id = book["id"]
+
+    return record_path_switch(
+        book_id=book_id,
+        from_path=from_path,
+        to_path=to_path,
+        source_format=source_format,
+        score_before=score_before,
+        score_after=score_after,
+        escalation_details=escalation_details,
+        db_path=db_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1915,6 +1961,65 @@ def _cmd_history(args):
                       f"{(issue.get('description') or '')[:80]}{fix}")
         print()
 
+    # Display path switches
+    if history.get("path_switches"):
+        print("  Path Switches:")
+        for sw in history["path_switches"]:
+            delta = ""
+            if sw["score_before"] is not None and sw["score_after"] is not None:
+                d = sw["score_after"] - sw["score_before"]
+                delta = f" ({'+' if d >= 0 else ''}{d})"
+            print(f"    {sw['from_path']} -> {sw['to_path']}: "
+                  f"{sw.get('score_before', '?')} -> {sw.get('score_after', '?')}{delta}")
+
+            if sw.get("escalation_details"):
+                try:
+                    details = json.loads(sw["escalation_details"]) if isinstance(
+                        sw["escalation_details"], str
+                    ) else sw["escalation_details"]
+                    if details.get("cost_of_switch"):
+                        print(f"      Cost: ${details['cost_of_switch']:.4f}")
+                    if details.get("duration_before") and details.get("duration_after"):
+                        print(f"      Duration: {details['duration_before']}s -> "
+                              f"{details['duration_after']}s")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            print(f"    Date: {sw['created_at']}")
+        print()
+
+
+def _cmd_switches(args):
+    """Show all recorded path switches with outcomes."""
+    conn = get_db(args.db_path)
+    try:
+        cursor = conn.execute(
+            """SELECT ps.*, b.filename
+               FROM path_switches ps
+               JOIN books b ON b.id = ps.book_id
+               ORDER BY ps.created_at DESC"""
+        )
+        switches = cursor.fetchall()
+    finally:
+        conn.close()
+
+    if not switches:
+        print("No path switches recorded yet.")
+        print("Path switches are recorded when the converge loop tries multiple strategies.")
+        return
+
+    print(f"{'Book':<30} {'From':<25} {'To':<25} {'Before':>6} {'After':>5} {'Delta':>6}")
+    print("-" * 100)
+    for sw in switches:
+        fname = (sw['filename'] or '?')[:29]
+        before = str(sw['score_before']) if sw['score_before'] is not None else '?'
+        after = str(sw['score_after']) if sw['score_after'] is not None else '?'
+        delta = ''
+        if sw['score_before'] is not None and sw['score_after'] is not None:
+            d = sw['score_after'] - sw['score_before']
+            delta = f"{'+' if d >= 0 else ''}{d}"
+        print(f"{fname:<30} {sw['from_path']:<25} {sw['to_path']:<25} "
+              f"{before:>6} {after:>5} {delta:>6}")
+
 
 def _cmd_fixes(args):
     conn = get_db(args.db_path)
@@ -2949,6 +3054,7 @@ def main():
     )
 
     subparsers.add_parser('cost', help='Show cost summary')
+    subparsers.add_parser('switches', help='Show all recorded path switches')
 
     classify_parser = subparsers.add_parser(
         'classify', help='Classify a PDF source (digital_native, scan, etc.)'
@@ -3106,6 +3212,7 @@ def main():
         'fixes': _cmd_fixes,
         'trend': _cmd_trend,
         'cost': _cmd_cost,
+        'switches': _cmd_switches,
         'cache': _cmd_cache,
         'cache-stats': _cmd_cache_stats,
         'cache-invalidate': _cmd_cache_invalidate,

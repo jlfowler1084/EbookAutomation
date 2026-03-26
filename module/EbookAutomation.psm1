@@ -4805,6 +4805,68 @@ print(json.dumps(result))
         Remove-Item $cachedChapterHints -Force -ErrorAction SilentlyContinue
     }
 
+    # ── Record path switches to pattern database ─────────────────────────────
+    if ($iterations.Count -gt 1) {
+        $dbToolsPath = Join-Path $script:ModuleRoot "tools"
+        $dbPython = 'python'
+
+        for ($swIdx = 1; $swIdx -lt $iterations.Count; $swIdx++) {
+            $prevIter = $iterations[$swIdx - 1]
+            $currIter = $iterations[$swIdx]
+
+            # Skip recording if either iteration had an error (no meaningful score)
+            if ($prevIter.Error -or $currIter.Error) { continue }
+
+            # Build escalation_details JSON
+            $escDetails = @{
+                score_delta       = $currIter.Score - $prevIter.Score
+                cost_of_switch    = [math]::Round($currIter.Cost, 4)
+                duration_before   = $prevIter.Duration
+                duration_after    = $currIter.Duration
+            }
+
+            # Include category scores if available
+            if ($prevIter.CategoryScores) {
+                $escDetails['category_scores_before'] = $prevIter.CategoryScores
+            }
+            if ($currIter.CategoryScores) {
+                $escDetails['category_scores_after'] = $currIter.CategoryScores
+            }
+
+            $escDetailsJson = ($escDetails | ConvertTo-Json -Compress -Depth 3) -replace "'", "''"
+            $dbFromPath = ($prevIter.Strategy -replace "'", "''")
+            $dbToPath   = ($currIter.Strategy -replace "'", "''")
+
+            $switchScript = @"
+import sys, json
+sys.path.insert(0, r'$dbToolsPath')
+from pattern_db import record_path_switch_by_filename
+sid = record_path_switch_by_filename(
+    filename=r'$fileName',
+    from_path='$dbFromPath',
+    to_path='$dbToPath',
+    source_format='$ext',
+    score_before=$($prevIter.Score),
+    score_after=$($currIter.Score),
+    escalation_details='$escDetailsJson',
+)
+print(json.dumps({'switch_id': sid}))
+"@
+
+            try {
+                $switchResult = & $dbPython -c $switchScript 2>$null
+                if ($switchResult) {
+                    $swParsed = $switchResult | ConvertFrom-Json
+                    if ($swParsed.switch_id) {
+                        Write-EbookLog "  Path switch recorded: $($prevIter.Strategy) -> $($currIter.Strategy) ($($prevIter.Score) -> $($currIter.Score))"
+                    }
+                }
+            } catch {
+                Write-EbookLog "  Failed to record path switch: $_" -Level WARN
+            }
+        }
+    }
+
     # ── Step 4: Final Report ─────────────────────────────────────────────────
     $totalDuration = [math]::Round(((Get-Date) - $loopStart).TotalSeconds, 1)
 
