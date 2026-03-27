@@ -653,6 +653,17 @@ function Convert-ToKindle {
     $overallSw  = [System.Diagnostics.Stopwatch]::StartNew()
     $stepTimings = [ordered]@{}
 
+    # Quality gate variables (declared at function scope for return object)
+    $vqaResult        = $null
+    $textQualityScore = $null
+    $dbVqaReportPath  = $null
+
+    # Helper: build failure result object
+    $failResult = @{
+        Success = $false; OutputPath = $null; QualityScore = 0
+        QualityStatus = 'FAILED'; CategoryScores = $null; VqaReportPath = $null
+    }
+
     # Resolve glob patterns in InputFile (e.g. "Burge*.pdf" -> actual path)
     if ($InputFile -match '[*?]') {
         $resolved = Get-ChildItem -Path $InputFile -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -663,7 +674,7 @@ function Convert-ToKindle {
             $InputFile = $resolved.FullName
         } else {
             Write-EbookLog "Kindle: no files match pattern: $InputFile" -Level ERROR
-            return $false
+            return $failResult
         }
     }
 
@@ -688,16 +699,18 @@ function Convert-ToKindle {
         'legacy'
     }
 
-    if (-not $cfg.kindle.enabled) { return $true }   # silently skip if disabled
+    if (-not $cfg.kindle.enabled) {
+        return @{ Success = $true; OutputPath = $null; QualityScore = 0; QualityStatus = 'UNKNOWN'; CategoryScores = $null; VqaReportPath = $null }
+    }
 
     if ($ext -notin $cfg.kindle.input_formats) {
         Write-EbookLog "Kindle: skipping unsupported format .$ext  [$InputFile]" -Level WARN
-        return $false
+        return $failResult
     }
 
     if (-not (Test-Path $calibre)) {
         Write-EbookLog "Calibre not found at: $calibre -- skipping Kindle conversion" -Level WARN
-        return $false
+        return $failResult
     }
 
     # Tesseract pre-check when OCR is requested
@@ -709,7 +722,7 @@ function Convert-ToKindle {
             $null = & $tesseractCmd --version 2>&1
         } catch {
             Write-EbookLog "Kindle: Tesseract OCR not found. Install from github.com/UB-Mannheim/tesseract/wiki or set paths.tesseract in settings.json" -Level ERROR
-            return $false
+            return $failResult
         }
     }
 
@@ -758,7 +771,8 @@ print(json.dumps(output))
                     Write-EbookLog "Kindle: cache HIT -- '$fileName' was previously converted (score: $($cached.score)/100)" -Level SUCCESS
                     Write-EbookLog "Kindle: cached output at: $($cached.output_path)"
                     Write-EbookLog "Kindle: use -NoCache to force re-conversion"
-                    return $true
+                    $cachedScore = if ($cached.score) { [int]$cached.score } else { 0 }
+                    return @{ Success = $true; OutputPath = $cached.output_path; QualityScore = $cachedScore; QualityStatus = 'UNKNOWN'; CategoryScores = $null; VqaReportPath = $null }
                 } elseif ($cached.exists) {
                     if ($null -ne $cached.best_score -and $cached.best_score -gt 0) {
                         Write-EbookLog "Kindle: cache miss -- best prior score $($cached.best_score)/100 is below threshold $cacheThreshold for '$fileName'"
@@ -954,7 +968,7 @@ print(json.dumps(output))
                     Write-EbookLog "Kindle: Vision extraction (Tier 3) ENABLED — cost limit `$$VisionCostLimit" -Level WARN
                     if (-not $env:ANTHROPIC_API_KEY) {
                         Write-EbookLog "Kindle: ANTHROPIC_API_KEY not set — Vision extraction requires API key" -Level ERROR
-                        return $false
+                        return $failResult
                     }
                 }
                 if ($UseGemini) {
@@ -962,7 +976,7 @@ print(json.dumps(output))
                     Write-EbookLog "Kindle: Gemini Flash extraction (Tier 2.5) ENABLED — cost limit `$$GeminiCostLimit" -Level INFO
                     if (-not $env:GEMINI_API_KEY) {
                         Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
-                        return $false
+                        return $failResult
                     }
                 }
                 if ($GeminiRemediate) {
@@ -970,7 +984,7 @@ print(json.dumps(output))
                     Write-EbookLog "Kindle: Gemini page remediation ENABLED" -Level INFO
                     if (-not $env:GEMINI_API_KEY) {
                         Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
-                        return $false
+                        return $failResult
                     }
                 }
 
@@ -1842,7 +1856,7 @@ else:
                         $kfxFailed = $true
                     } else {
                         Write-EbookLog "Kindle: Calibre exited OK but output file not found: $outFile" -Level ERROR
-                        return $false
+                        return $failResult
                     }
                 }
             }
@@ -1858,7 +1872,7 @@ else:
                 Write-EbookLog "Kindle: KFX conversion failed — trying AZW3 fallback" -Level WARN
                 $kfxFailed = $true
             } else {
-                return $false
+                return $failResult
             }
         }
 
@@ -1920,7 +1934,7 @@ else:
                         if ($line.Trim()) { Write-EbookLog "Kindle:   $line" -Level ERROR }
                     }
                 }
-                return $false
+                return $failResult
             }
         }
 
@@ -1936,6 +1950,7 @@ else:
                     $qr = Get-Content $qualityReport.FullName -Raw -Encoding utf8 | ConvertFrom-Json
                     $qOrigScore = if ($qr.original_score) { $qr.original_score } else { $qr.quality_score }
                     $qFinalScore = if ($qr.final_score) { $qr.final_score } else { $qr.quality_score }
+                    $textQualityScore = $qFinalScore
                     $qIssues = @($qr.issues).Count
                     $qSampleFixes = if ($qr.sample_fixes) { $qr.sample_fixes } else { 0 }
                     $qGlobalFixes = if ($qr.global_fixes) { $qr.global_fixes } else { 0 }
@@ -2028,6 +2043,26 @@ else:
                 if (Test-Path $coverDest) { $dbCoverPath = $coverDest }
             }
 
+            # Compute quality classification early (needed by db-write and return)
+            $qualityScore = 0
+            $qualityStatus = 'UNKNOWN'
+            $categoryScores = $null
+            if ($vqaResult) {
+                $qualityScore   = [int]$vqaResult.overall_score
+                $categoryScores = $vqaResult.category_scores
+            } elseif ($textQualityScore) {
+                $qualityScore = [int]$textQualityScore
+            }
+            $qCfg = (Get-EbookConfig).quality_gate
+            $cleanThreshold  = if ($qCfg -and $qCfg.thresholds.clean)       { $qCfg.thresholds.clean }       else { 90 }
+            $acceptThreshold = if ($qCfg -and $qCfg.thresholds.acceptable)  { $qCfg.thresholds.acceptable }  else { 80 }
+            $reviewThreshold = if ($qCfg -and $qCfg.thresholds.needs_review) { $qCfg.thresholds.needs_review } else { 60 }
+            $qualityStatus = if ($qualityScore -ge $cleanThreshold)  { 'CLEAN' }
+                             elseif ($qualityScore -ge $acceptThreshold) { 'ACCEPTABLE' }
+                             elseif ($qualityScore -ge $reviewThreshold) { 'NEEDS_REVIEW' }
+                             elseif ($qualityScore -gt 0)                { 'POOR' }
+                             else                                         { 'UNKNOWN' }
+
             # Escape single quotes for Python string literals
             $dbOutLeaf = ($outFile | Split-Path -Leaf) -replace "'", "''"
             $dbTitle = if ($meta.Title) { $meta.Title -replace "'", "''" } else { "" }
@@ -2091,6 +2126,11 @@ if _db_breakdown:
         conv_kwargs['duration_breakdown'] = json.loads(_db_breakdown)
     except (json.JSONDecodeError, ValueError):
         pass
+
+# SCRUM-16: Quality gate status
+_qs = '$qualityStatus'
+if _qs and _qs not in ('', 'UNKNOWN'):
+    conv_kwargs['quality_status'] = _qs
 
 vqa_report_path = r'$dbVqaPathEsc'
 if vqa_report_path and os.path.isfile(vqa_report_path):
@@ -2196,11 +2236,19 @@ print(json.dumps(result))
             }
         }
 
-        return $true
+        # Return quality result object (classification computed before db-write)
+        return @{
+            Success        = $true
+            OutputPath     = $outFile
+            QualityScore   = $qualityScore
+            QualityStatus  = $qualityStatus
+            CategoryScores = $categoryScores
+            VqaReportPath  = if ($dbVqaReportPath) { $dbVqaReportPath } else { $null }
+        }
     }
     catch {
         Write-EbookLog "Kindle: EXCEPTION launching Calibre -- $_" -Level ERROR
-        return $false
+        return $failResult
     }
     finally {
         # Clean up temp text extraction folder and log files
@@ -3028,12 +3076,16 @@ function Invoke-EbookPipeline {
                 }
                 $kindleStart = Get-Date
                 try {
-                    $kindleOk = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$useOcrAuto -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
+                    $kindleResult = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$useOcrAuto -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
                     $kindleDuration = (Get-Date) - $kindleStart
+                    $kindleOk = $kindleResult -and $kindleResult.Success
+
+                    $kindleQualityScore  = if ($kindleResult) { $kindleResult.QualityScore }  else { 0 }
+                    $kindleQualityStatus = if ($kindleResult) { $kindleResult.QualityStatus } else { 'FAILED' }
 
                     if ($kindleOk) {
-                        Write-EbookLog "  Kindle: SUCCESS ($([math]::Round($kindleDuration.TotalSeconds, 1))s)" -Level SUCCESS
-                        $kindleMsg = "OK ($([math]::Round($kindleDuration.TotalSeconds, 1))s)"
+                        Write-EbookLog "  Kindle: SUCCESS ($kindleQualityStatus, $kindleQualityScore/100, $([math]::Round($kindleDuration.TotalSeconds, 1))s)" -Level SUCCESS
+                        $kindleMsg = "OK ($kindleQualityStatus, $kindleQualityScore/100, $([math]::Round($kindleDuration.TotalSeconds, 1))s)"
                     } else {
                         Write-EbookLog "  Kindle: converter returned failure" -Level ERROR
                         $kindleMsg = 'FAILED'
@@ -3044,13 +3096,37 @@ function Invoke-EbookPipeline {
                     Write-EbookLog "  Kindle: EXCEPTION after $([math]::Round($kindleDuration.TotalSeconds, 1))s -- $_" -Level ERROR
                     Write-EbookLog "  Kindle: $($_.ScriptStackTrace)" -Level ERROR
                     $kindleMsg = 'EXCEPTION'
+                    $kindleQualityStatus = 'FAILED'
+                    $kindleQualityScore = 0
                 }
+            }
+        }
+
+        # Quality gate: review folder routing
+        if ($kindleOk -and $kindleQualityStatus -in @('NEEDS_REVIEW', 'POOR')) {
+            $qGateCfg = (Get-EbookConfig).quality_gate
+            if ($qGateCfg -and $qGateCfg.review_folder -and $kindleResult.OutputPath) {
+                $reviewDir = Join-Path $kindleDir 'review'
+                if (-not (Test-Path $reviewDir)) { New-Item $reviewDir -ItemType Directory -Force | Out-Null }
+                $reviewDest = Join-Path $reviewDir (Split-Path $kindleResult.OutputPath -Leaf)
+                Copy-Item $kindleResult.OutputPath $reviewDest -Force -ErrorAction SilentlyContinue
+                Write-EbookLog "  Kindle: quality $kindleQualityStatus — copy placed in review/ folder" -Level WARN
+            }
+        }
+
+        # Quality gate: block poor-quality delivery
+        $deliveryBlocked = $false
+        if ($kindleOk -and $kindleQualityStatus -eq 'POOR') {
+            $qGateCfg = (Get-EbookConfig).quality_gate
+            if ($qGateCfg -and $qGateCfg.block_poor_delivery) {
+                Write-EbookLog "  Kindle: delivery BLOCKED — quality $kindleQualityStatus ($kindleQualityScore/100) below acceptable threshold" -Level WARN
+                $deliveryBlocked = $true
             }
         }
 
         # Send to Kindle device
         $sentToKindle = $false
-        if ($kindleOk -and $sendActive) {
+        if ($kindleOk -and $sendActive -and (-not $deliveryBlocked)) {
             $stem = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
             $kindleOutputFile = Get-ChildItem -Path $kindleDir -Filter "$stem*" -File |
                                 Sort-Object LastWriteTime -Descending |
@@ -3069,7 +3145,7 @@ function Invoke-EbookPipeline {
 
         # Email to Kindle
         $emailedToKindle = $false
-        if ($kindleOk -and $emailActive) {
+        if ($kindleOk -and $emailActive -and (-not $deliveryBlocked)) {
             $stem = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
             # Try stem match first; fall back to most-recent EPUB created during this book's conversion
             $epubFile = Get-ChildItem -Path $kindleDir -Filter "$stem*.epub" -File -ErrorAction SilentlyContinue |
@@ -3119,9 +3195,15 @@ function Invoke-EbookPipeline {
             }
 
             $processed++
-            $bookStatus = if ($ttsOk -and $kindleOk) { 'OK' }
-                          elseif ($ttsOk)              { 'TTS only' }
-                          else                         { 'Kindle only' }
+            $bookStatus = if ($ttsOk -and $kindleOk) {
+                if ($kindleQualityStatus -eq 'CLEAN')       { 'OK' }
+                elseif ($kindleQualityStatus -eq 'ACCEPTABLE') { 'OK' }
+                elseif ($kindleQualityStatus -eq 'NEEDS_REVIEW') { 'REVIEW' }
+                elseif ($kindleQualityStatus -eq 'POOR')    { 'POOR' }
+                else { 'OK' }
+            }
+            elseif ($ttsOk)    { 'TTS only' }
+            else               { 'Kindle only' }
 
             Write-EbookLog "  Result: $bookStatus  ($bookTime)" -Level SUCCESS
         } else {
@@ -3133,7 +3215,7 @@ function Invoke-EbookPipeline {
         $devSendStatus  = if ($sendActive -and $kindleOk) { if ($sentToKindle) { 'OK' } else { 'FAILED' } } elseif ($sendActive) { 'skipped' } else { 'n/a' }
         $emailSendStatus = if ($emailActive -and $kindleOk) { if ($emailedToKindle) { 'OK' } else { 'FAILED' } } elseif ($emailActive) { 'skipped' } else { 'n/a' }
         $resultLog += [PSCustomObject]@{
-            File = $file.Name; TTS = $ttsMsg; Kindle = $kindleMsg; MP3 = $mp3Msg; DeviceSend = $devSendStatus; EmailSend = $emailSendStatus; Status = $bookStatus; Time = $bookTime
+            File = $file.Name; TTS = $ttsMsg; Kindle = $kindleMsg; MP3 = $mp3Msg; DeviceSend = $devSendStatus; EmailSend = $emailSendStatus; Status = $bookStatus; Time = $bookTime; Quality = $kindleQualityStatus
         }
 
         # Cleanup processing copy
@@ -3157,6 +3239,8 @@ function Invoke-EbookPipeline {
     foreach ($entry in $resultLog) {
         $icon = switch ($entry.Status) {
             'OK'          { '+' }
+            'REVIEW'      { '?' }
+            'POOR'        { '!' }
             'TTS only'    { '~' }
             'Kindle only' { '~' }
             'skipped'     { '-' }
@@ -3165,6 +3249,7 @@ function Invoke-EbookPipeline {
         }
         $level = if ($entry.Status -like 'FAIL*') { 'ERROR' }
                  elseif ($entry.Status -eq 'OK')  { 'SUCCESS' }
+                 elseif ($entry.Status -in @('REVIEW', 'POOR')) { 'WARN' }
                  else                              { 'INFO' }
 
         $shortName = if ($entry.File.Length -gt 55) { $entry.File.Substring(0, 52) + '...' } else { $entry.File }
@@ -3172,6 +3257,14 @@ function Invoke-EbookPipeline {
         if ($sendActive)  { $deliveryInfo += "  |  USB: $($entry.DeviceSend)" }
         if ($emailActive) { $deliveryInfo += "  |  Email: $($entry.EmailSend)" }
         Write-EbookLog "  $icon $shortName  |  TTS: $($entry.TTS)  |  Kindle: $($entry.Kindle)  |  MP3: $($entry.MP3)$deliveryInfo" -Level $level
+    }
+
+    # Quality summary
+    $qualityEntries = $resultLog | Where-Object { $_.Quality -and $_.Quality -ne 'FAILED' }
+    if ($qualityEntries) {
+        $qualityCounts = $qualityEntries | Group-Object -Property Quality
+        $qualitySummary = ($qualityCounts | ForEach-Object { "$($_.Count) $($_.Name)" }) -join ', '
+        Write-EbookLog "  Quality breakdown: $qualitySummary"
     }
 
     Write-EbookLog "--------------------------------------------------------"

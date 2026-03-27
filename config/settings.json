@@ -95,6 +95,15 @@
     "bookmark_readability_threshold": 0.80,
     "min_bookmarks_for_viable": 3
   },
+  "quality_gate": {
+    "thresholds": {
+      "clean": 90,
+      "acceptable": 80,
+      "needs_review": 60
+    },
+    "review_folder": true,
+    "block_poor_delivery": true
+  },
   "archive_originals":  true,
   "log_level":          "INFO"
 }

@@ -356,6 +356,8 @@ def _migrate(conn):
         ("conversions", "quality_variance", "REAL"),
         # SCRUM-161: Path switch escalation details
         ("path_switches", "escalation_details", "TEXT"),
+        # SCRUM-16: Quality gate status
+        ("conversions", "quality_status", "TEXT"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -561,7 +563,8 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                    duration_seconds=None, output_file_path=None,
                    output_file_size=None, conversion_flags=None,
                    category_scores=None, duration_breakdown=None,
-                   quality_variance=None, db_path=None):
+                   quality_variance=None, quality_status=None,
+                   db_path=None):
     """Record a conversion attempt. Returns conversion ID."""
     if isinstance(conversion_flags, dict):
         conversion_flags = json.dumps(conversion_flags)
@@ -578,14 +581,14 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                 fixes_failed, api_input_tokens, api_output_tokens,
                 cost_usd, duration_seconds, output_file_path,
                 output_file_size, conversion_flags, category_scores,
-                duration_breakdown, quality_variance)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                duration_breakdown, quality_variance, quality_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, iteration, extraction_path, vqa_score,
              vqa_report_path, text_quality_score, fixes_applied,
              fixes_failed, api_input_tokens, api_output_tokens,
              cost_usd, duration_seconds, output_file_path,
              output_file_size, conversion_flags, category_scores,
-             duration_breakdown, quality_variance)
+             duration_breakdown, quality_variance, quality_status)
         )
         conn.commit()
         return cursor.lastrowid
@@ -1831,6 +1834,22 @@ def _cmd_stats(args):
                                     f"/{s['fixes_attempted']}"
                                     f" = {s['fix_rate_pct']}%)")
                     print(f"  {s['category']}: {s['total_issues']}{fix_info}")
+
+        # Quality gate breakdown
+        try:
+            quality_rows = conn.execute("""
+                SELECT quality_status, COUNT(*) as cnt
+                FROM conversions
+                WHERE quality_status IS NOT NULL AND quality_status != ''
+                GROUP BY quality_status
+                ORDER BY cnt DESC
+            """).fetchall()
+            if quality_rows:
+                print("\nQuality Gate Breakdown:")
+                for r in quality_rows:
+                    print(f"  {r['quality_status']:<15} {r['cnt']:>5}")
+        except Exception:
+            pass  # column may not exist in older DBs
 
         # Extraction cache summary
         cache_stats = get_cache_stats(args.db_path)
