@@ -245,6 +245,7 @@ F:\Projects\EbookAutomation\
 | `Get-ChapterStructure` | Claude-assisted chapter/part detection from book text |
 | `Test-EbookPipeline` | Run pdfminer HTML extraction regression test suite |
 | `Test-ConversionQuality` | Visual QA on converted ebooks via Claude Vision API |
+| `Invoke-StructureAgent` | Standalone Structure Analysis Agent for chapter detection diagnostics |
 
 ### pdf_to_balabolka.py — Modes
 
@@ -746,6 +747,16 @@ Ask yourself: "Does this task require Claude to THINK, or just DO?"
 - Just DO → Haiku
 - Think then do → Sonnet
 - Think deeply about many things, then plan, then do → Opus
+
+---
+
+## Agent Framework
+
+Agent system prompts live in `agents/<agent-name>/system-prompt.md`. Each agent also has a `contract.md` defining its input/output interface. See `agents/README.md` for the full framework documentation.
+
+| Agent | Directory | Called By | Purpose |
+|-------|-----------|-----------|---------|
+| Structure Analysis | `agents/structure-analysis/` | `Get-ChapterStructure`, `Invoke-StructureAgent` | Chapter/heading detection from book text |
 
 ---
 

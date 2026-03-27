@@ -633,6 +633,7 @@ function Convert-ToKindle {
 
         [switch]$NoFootnotes,
         [switch]$NoIndex,
+        [switch]$NoBibliography,
         [switch]$NoHyperlinks,
         [switch]$NoFrontMatter,
         [switch]$NoBackMatter,
@@ -1511,7 +1512,7 @@ else:
     }
 
     # ── Apply content profile filter ──────────────────────────────────────────
-    $needsFilter = ($Profile -ne 'full') -or $NoFootnotes -or $NoIndex -or $NoHyperlinks -or $NoFrontMatter -or $NoBackMatter -or $NoImages -or $NoBlockQuotes
+    $needsFilter = ($Profile -ne 'full') -or $NoFootnotes -or $NoIndex -or $NoBibliography -or $NoHyperlinks -or $NoFrontMatter -or $NoBackMatter -or $NoImages -or $NoBlockQuotes
     # Only filter intermediate files (HTML/TXT), not the original source ebook
     if ($needsFilter -and $convertInput -and ($convertInput -ne $InputFile) -and (Test-Path $convertInput)) {
         try {
@@ -1525,6 +1526,7 @@ else:
                 if ($Profile -ne 'full') { $filterArgs += " --profile $Profile" }
                 if ($NoFootnotes)   { $filterArgs += " --no-footnotes" }
                 if ($NoIndex)       { $filterArgs += " --no-index" }
+                if ($NoBibliography) { $filterArgs += " --no-bibliography" }
                 if ($NoHyperlinks)  { $filterArgs += " --no-hyperlinks" }
                 if ($NoFrontMatter) { $filterArgs += " --no-front-matter" }
                 if ($NoBackMatter)  { $filterArgs += " --no-back-matter" }
@@ -2776,6 +2778,7 @@ function Invoke-EbookPipeline {
 
         [switch]$NoFootnotes,
         [switch]$NoIndex,
+        [switch]$NoBibliography,
         [switch]$NoHyperlinks,
         [switch]$NoFrontMatter,
         [switch]$NoBackMatter,
@@ -3961,37 +3964,19 @@ function Get-ChapterStructure {
         Write-EbookLog "Chapter detection: three-zone sampling ($totalWords words total) -- sending ~9000 words to Claude"
     }
 
-    # -- Step 3: Build Claude prompt
-    $systemPrompt = @"
+    # -- Step 3: Build Claude prompt (load from agent file)
+    $agentPromptFile = Join-Path $script:ModuleRoot 'agents\structure-analysis\system-prompt.md'
+    if (Test-Path $agentPromptFile) {
+        $systemPrompt = Get-Content $agentPromptFile -Raw -Encoding UTF8
+        Write-EbookLog "Chapter detection: loaded agent prompt from $agentPromptFile"
+    } else {
+        Write-EbookLog "Chapter detection: agent prompt file not found at $agentPromptFile -- using inline fallback" -Level WARN
+        $systemPrompt = @"
 You are analyzing an ebook to build its table of contents. Identify the CHAPTER STRUCTURE.
-
-PRIORITY ORDER:
-1. MAIN CHAPTERS - numbered or titled divisions of core content
-2. MAJOR SECTIONS - Parts containing chapters
-3. FRONT MATTER - Preface, Foreword, Introduction, Acknowledgments
-4. BACK MATTER - Notes, Bibliography, Index, Appendix (mark is_back_matter: true)
-
-DO NOT treat as chapter headings:
-- Running headers/footers repeated on every page
-- Section sub-headings within a chapter
-- Decorative text, epigraphs, pull quotes
-- List items or numbered points within body text
-
-Respond with a raw JSON array (no markdown fences). Each entry:
-{"title": "exact heading text", "level": 1, "is_back_matter": false, "page_estimate": 45, "confidence": 0.95, "notes": "optional"}
-
-Rules:
-- level 1 = Part, Book, or Volume headings (top-level divisions containing chapters)
-- level 2 = Chapters, Prologue, Epilogue, Introduction, Foreword, Preface, Afterword, Conclusion, Appendix
-- level 3 = Sub-sections within a chapter (only include if clearly structured)
-- Most books have 0-5 level-1 entries and 5-30 level-2 entries
-- A book with 10 chapters should have >= 10 level-2 entries
-- If the book has no Parts/Volumes, use level 2 for all chapter headings (no level 1)
-- Preserve exact capitalization and numbering from the source
-- If font candidates are provided below, use them as the primary guide and ADD any chapters you find in the text that the font analysis missed
-- If no font candidates are provided, identify headings from the text samples only
-- Mark back matter sections (Notes, Bibliography, Index, Appendix) with is_back_matter: true
+Respond with a raw JSON array. Each entry: {"title": "...", "level": 1, "is_back_matter": false, "page_estimate": 0, "confidence": 0.9, "notes": ""}
+level 1 = Part/Book/Volume, level 2 = Chapter, level 3 = Sub-section.
 "@
+    }
 
     $userContent = ""
     if ($fontCandidatesSection) {
@@ -4024,6 +4009,110 @@ Rules:
         Write-EbookLog "Chapter detection: raw response was: $($json.Substring(0, [Math]::Min(200, $json.Length)))" -Level ERROR
         return $null
     }
+}
+
+function Invoke-StructureAgent {
+    <#
+    .SYNOPSIS  Run the Structure Analysis Agent standalone for diagnostics.
+    .DESCRIPTION
+        Convenience wrapper for testing chapter detection on a single file
+        without running the full conversion pipeline. Loads the agent prompt
+        from agents/structure-analysis/system-prompt.md, runs font-based
+        detection + Claude API analysis, and outputs results to console and
+        optionally to a JSON file.
+    .PARAMETER InputFile
+        Path to the source PDF or EPUB file.
+    .PARAMETER OutputJson
+        Optional path to write the chapter map JSON. If omitted, results are
+        displayed to console only.
+    .PARAMETER Model
+        Claude model to use. Defaults to claude-sonnet-4-6. Use claude-opus-4-6
+        for complex books.
+    .EXAMPLE
+        Invoke-StructureAgent -InputFile "C:\Books\MyBook.pdf"
+    .EXAMPLE
+        Invoke-StructureAgent -InputFile "C:\Books\MyBook.pdf" -OutputJson "chapters.json" -Model claude-opus-4-6
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$InputFile,
+        [string]$OutputJson,
+        [string]$Model = 'claude-sonnet-4-6'
+    )
+
+    if (-not (Test-Path $InputFile)) {
+        Write-EbookLog "Structure Agent: file not found -- $InputFile" -Level ERROR
+        return $null
+    }
+
+    Write-EbookLog "=========================================="
+    Write-EbookLog "Structure Analysis Agent — Standalone Run"
+    Write-EbookLog "  Input:  $InputFile"
+    Write-EbookLog "  Model:  $Model"
+    Write-EbookLog "=========================================="
+
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+    # Extract text for analysis
+    $cfg    = Get-EbookConfig
+    $python = $cfg.paths.python
+    $ext    = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
+
+    # Use pypdf for quick raw text extraction
+    $tempText = Join-Path $env:TEMP ('struct_agent_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
+    $extractCmd = @"
+from pypdf import PdfReader
+import sys
+try:
+    r = PdfReader(r'$InputFile')
+    text = '\n'.join(p.extract_text() or '' for p in r.pages)
+    with open(r'$tempText', 'w', encoding='utf-8') as f:
+        f.write(text)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
+"@
+    & $python -c $extractCmd 2>$null
+
+    if (-not (Test-Path $tempText)) {
+        Write-EbookLog "Structure Agent: text extraction failed" -Level ERROR
+        return $null
+    }
+
+    $textContent = Get-Content $tempText -Raw -Encoding UTF8
+    Remove-Item $tempText -Force -ErrorAction SilentlyContinue
+    $wordCount = ($textContent -split '\s+').Count
+    Write-EbookLog "Structure Agent: extracted $wordCount words from source"
+
+    # Run chapter detection (reuses existing Get-ChapterStructure)
+    $chapters = Get-ChapterStructure -TextContent $textContent -InputFile $InputFile
+
+    $sw.Stop()
+    $elapsed = [math]::Round($sw.Elapsed.TotalSeconds, 1)
+
+    if ($chapters -and $chapters.Count -gt 0) {
+        Write-EbookLog "Structure Agent: detected $($chapters.Count) headings in ${elapsed}s" -Level SUCCESS
+
+        # Display results
+        Write-Host "`n--- Chapter Map ---" -ForegroundColor Cyan
+        foreach ($ch in $chapters) {
+            $indent = '  ' * ($ch.level - 1)
+            $bm = if ($ch.is_back_matter) { ' [back matter]' } else { '' }
+            $conf = if ($ch.confidence) { " ($([math]::Round($ch.confidence * 100))%)" } else { '' }
+            Write-Host "  ${indent}L$($ch.level)  $($ch.title)${bm}${conf}" -ForegroundColor White
+        }
+        Write-Host ""
+
+        # Write JSON if requested
+        if ($OutputJson) {
+            $chapters | ConvertTo-Json -Depth 4 | Set-Content $OutputJson -Encoding UTF8
+            Write-EbookLog "Structure Agent: chapter map written to $OutputJson"
+        }
+    } else {
+        Write-EbookLog "Structure Agent: no chapters detected (${elapsed}s)" -Level WARN
+    }
+
+    return $chapters
 }
 
 #endregion
@@ -4412,6 +4501,7 @@ function Invoke-ConvergeLoop {
 
         [switch]$NoFootnotes,
         [switch]$NoIndex,
+        [switch]$NoBibliography,
         [switch]$NoHyperlinks,
         [switch]$NoFrontMatter,
         [switch]$NoBackMatter,
@@ -4628,8 +4718,9 @@ function Invoke-ConvergeLoop {
         # Apply content filter flags from recipe (only if user didn't explicitly set them)
         $flagMap = @{
             'NoFootnotes'  = 'NoFootnotes'
-            'NoIndex'      = 'NoIndex'
-            'NoHyperlinks' = 'NoHyperlinks'
+            'NoIndex'         = 'NoIndex'
+            'NoBibliography'  = 'NoBibliography'
+            'NoHyperlinks'    = 'NoHyperlinks'
         }
         foreach ($entry in $flagMap.GetEnumerator()) {
             $recFlag = $entry.Key
@@ -4750,6 +4841,7 @@ function Invoke-ConvergeLoop {
         if ($Profile -ne 'full') { $convertParams['Profile'] = $Profile }
         if ($NoFootnotes)   { $convertParams['NoFootnotes']   = $true }
         if ($NoIndex)       { $convertParams['NoIndex']       = $true }
+        if ($NoBibliography) { $convertParams['NoBibliography'] = $true }
         if ($NoHyperlinks)  { $convertParams['NoHyperlinks']  = $true }
         if ($NoFrontMatter) { $convertParams['NoFrontMatter'] = $true }
         if ($NoBackMatter)  { $convertParams['NoBackMatter']  = $true }
@@ -5150,6 +5242,7 @@ Export-ModuleMember -Function @(
     'Invoke-Balabolka'
     'Send-ToClaudeAPI'
     'Get-ChapterStructure'
+    'Invoke-StructureAgent'
     'Test-EbookPipeline'
     'Test-ConversionQuality'
     'Invoke-BatchQA'

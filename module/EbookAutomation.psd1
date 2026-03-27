@@ -19,6 +19,7 @@
         'Invoke-Balabolka'
         'Send-ToClaudeAPI'
         'Get-ChapterStructure'
+        'Invoke-StructureAgent'
         'Test-EbookPipeline'
         'Test-ConversionQuality'
         'Invoke-BatchQA'
