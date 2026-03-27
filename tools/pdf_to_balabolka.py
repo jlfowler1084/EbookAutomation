@@ -1824,7 +1824,7 @@ def vision_text_to_para_dicts(vision_text, log):
     return para_dicts, body_size
 
 
-def extract_text(pdf_path, log, force_columns=False):
+def extract_text(pdf_path, log, force_columns=False, compare_extractors_enabled=False):
     """Extract raw text from all pages, auto-selecting the best extraction backend.
 
     Tries pypdf first (faster). Samples a few pages and checks for word-merging
@@ -1904,6 +1904,20 @@ def extract_text(pdf_path, log, force_columns=False):
         for check, detail in quality['details'].items():
             if isinstance(detail, dict) and 'score' in detail:
                 log(f"    {check}: {detail['score']}/100")
+
+    # Multi-extractor comparison for borderline quality
+    if compare_extractors_enabled and 60 <= quality['score'] <= 80:
+        log(f"  Borderline quality ({quality['score']}/100) — comparing extractors")
+        comparison = compare_extractors(
+            pdf_path, log,
+            current_text=full_text,
+            current_score=quality['score'],
+            current_extractor='pypdf',
+        )
+        if comparison['improved']:
+            log(f"  Switching to {comparison['winner']} "
+                f"(score: {quality['score']} -> {comparison['score']})")
+            full_text = comparison['text']
 
     return full_text
 
@@ -2206,6 +2220,203 @@ def extract_text_via_calibre(input_path, log, calibre_path=None):
         # Clean up temp directory
         import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def compare_extractors(pdf_path, log, current_text=None, current_score=None,
+                       current_extractor=None, force_columns=False):
+    """Run all available Tier 1 extractors and pick the best result.
+
+    Tries up to 3 extractors (pypdf, pdfminer, PyMuPDF), scores each with
+    score_text_layer_quality(), and returns the winner.
+
+    Returns:
+        dict with keys: winner, text, score, comparison, improved
+    """
+    import time as _t
+
+    results = {}
+
+    if current_text and current_extractor:
+        results[current_extractor] = {
+            'text': current_text,
+            'score': current_score or 0,
+            'word_count': len(current_text.split()),
+            'time_seconds': 0,
+        }
+
+    extractors = []
+
+    if current_extractor != 'pypdf':
+        def _extract_pypdf():
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                return None
+            reader = PdfReader(pdf_path)
+            pages = []
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text()
+                if text:
+                    pages.append(f"<<PAGE:{i+1}>>\n{text}")
+            return "\n".join(pages) if pages else None
+        extractors.append(('pypdf', _extract_pypdf))
+
+    if current_extractor != 'pdfminer':
+        def _extract_pdfminer():
+            try:
+                from pdfminer.layout import LAParams
+                from pdfminer.pdfpage import PDFPage
+                from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+                from pdfminer.converter import TextConverter
+            except ImportError:
+                return None
+            import io
+            laparams = LAParams()
+            all_pages = []
+            with open(pdf_path, 'rb') as f:
+                for i, page in enumerate(PDFPage.get_pages(f)):
+                    rsrcmgr = PDFResourceManager()
+                    output = io.StringIO()
+                    device = TextConverter(rsrcmgr, output, laparams=laparams)
+                    interpreter = PDFPageInterpreter(rsrcmgr, device)
+                    try:
+                        interpreter.process_page(page)
+                        text = output.getvalue()
+                        if text and text.strip():
+                            all_pages.append(f"<<PAGE:{i+1}>>\n{text}")
+                    except Exception:
+                        pass
+                    device.close()
+                    output.close()
+            return "\n".join(all_pages) if all_pages else None
+        extractors.append(('pdfminer', _extract_pdfminer))
+
+    if current_extractor != 'pymupdf':
+        def _extract_pymupdf():
+            try:
+                import pymupdf
+            except ImportError:
+                return None
+            doc = pymupdf.open(pdf_path)
+            pages = []
+            for pg_idx in range(len(doc)):
+                page = doc[pg_idx]
+                text = page.get_text("text")
+                if text and text.strip():
+                    pages.append(f"<<PAGE:{pg_idx+1}>>\n{text}")
+            doc.close()
+            return "\n".join(pages) if pages else None
+        extractors.append(('pymupdf', _extract_pymupdf))
+
+    log(f"  Multi-extractor comparison: testing {len(extractors)} additional extractor(s)...")
+
+    for name, func in extractors:
+        start = _t.time()
+        try:
+            text = func()
+            elapsed = round(_t.time() - start, 1)
+            if text and len(text.strip()) >= 100:
+                quality = score_text_layer_quality(text)
+                score = quality.get('score', 0) if quality else 0
+                word_count = len(text.split())
+                results[name] = {
+                    'text': text,
+                    'score': score,
+                    'word_count': word_count,
+                    'time_seconds': elapsed,
+                }
+                log(f"    {name}: score={score}/100, words={word_count}, time={elapsed}s")
+            else:
+                log(f"    {name}: insufficient text output ({elapsed}s)")
+        except Exception as e:
+            elapsed = round(_t.time() - start, 1)
+            log(f"    {name}: failed ({e}) ({elapsed}s)")
+
+    if not results:
+        log(f"  No extractors produced usable output")
+        return {
+            'winner': current_extractor or 'none',
+            'text': current_text or '',
+            'score': current_score or 0,
+            'comparison': {},
+            'improved': False,
+        }
+
+    winner_name = max(results.keys(),
+                      key=lambda k: (results[k]['score'], results[k]['word_count']))
+    winner = results[winner_name]
+
+    improved = (winner_name != current_extractor) if current_extractor else False
+    improvement = winner['score'] - (current_score or 0)
+
+    if improved:
+        log(f"  Winner: {winner_name} (score={winner['score']}/100, "
+            f"+{improvement} over {current_extractor})")
+    else:
+        log(f"  Original extractor wins: {winner_name} (score={winner['score']}/100)")
+
+    comparison = {
+        name: {
+            'score': r['score'],
+            'word_count': r['word_count'],
+            'time_seconds': r['time_seconds'],
+        }
+        for name, r in results.items()
+    }
+
+    return {
+        'winner': winner_name,
+        'text': winner['text'],
+        'score': winner['score'],
+        'comparison': comparison,
+        'improved': improved,
+    }
+
+
+def _plain_text_to_para_dicts(text, log):
+    """Convert plain text (with <<PAGE:N>> markers) to para_dicts format.
+
+    Used when multi-extractor comparison switches to a non-pdfminer extractor.
+    Font metadata is unavailable, so all paragraphs get default styling.
+    """
+    para_dicts = []
+    current_page = 1
+
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+
+        page_match = re.match(r'<<PAGE:(\d+)>>', line)
+        if page_match:
+            current_page = int(page_match.group(1))
+            para_dicts.append({
+                'text': line,
+                'font_size': 0,
+                'is_bold': False,
+                'is_italic': False,
+                'page_number': current_page,
+                'is_page_marker': True,
+            })
+            continue
+
+        is_heading = (line == line.upper() and len(line) < 80
+                      and len(line.split()) <= 8 and len(line) > 0
+                      and line[0].isalpha())
+
+        para_dicts.append({
+            'text': line,
+            'font_size': 14 if is_heading else 10,
+            'is_bold': is_heading,
+            'is_italic': False,
+            'page_number': current_page,
+            'is_page_marker': False,
+            'char_count': len(line),
+        })
+
+    log(f"  Converted {len(para_dicts)} paragraphs from plain text (no font metadata)")
+    body_size = 10
+    return para_dicts, body_size
 
 
 def extract_text_auto(input_path, log, calibre_path=None, force_columns=False):
@@ -9806,7 +10017,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         tesseract_path=None, poppler_path=None, ocr_dpi=300,
                         no_cache=False, use_vision=False, vision_cost_limit=15.0,
                         use_gemini=False, gemini_remediate=False,
-                        gemini_cost_limit=5.0, gemini_model=None):
+                        gemini_cost_limit=5.0, gemini_model=None,
+                        compare_extractors_enabled=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -10034,6 +10246,38 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 log(f"  Continuing with Tier 1 output (may be empty)")
             except Exception as e:
                 log(f"  OCR escalation error (non-blocking): {e}")
+
+        # ── STEP 1d2: Multi-extractor comparison for borderline quality ──
+        _extractor_comparison = None
+        if (tier_used == 1 and compare_extractors_enabled
+                and quality and 60 <= quality.get('score', 0) <= 80):
+            _tier1_pre = quality.get('score', 0)
+            log(f"\n-- STEP 1d2: Multi-extractor comparison ----------------")
+            log(f"  Borderline score ({_tier1_pre}/100) — comparing extractors")
+
+            current_plain = '\n'.join(d.get('text', '') for d in para_dicts)
+
+            _cmp = compare_extractors(
+                pdf_path, log,
+                current_text=current_plain,
+                current_score=_tier1_pre,
+                current_extractor='pdfminer',
+            )
+            _extractor_comparison = _cmp.get('comparison')
+
+            if _cmp['improved'] and _cmp['score'] > _tier1_pre:
+                _winner = _cmp['winner']
+                log(f"  Switching to {_winner} (score: {_tier1_pre} -> {_cmp['score']})")
+
+                if _winner in ('pypdf', 'pymupdf'):
+                    plain_text = _cmp['text']
+                    plain_text, _ = normalize_encoding(plain_text, log=log)
+                    para_dicts, body_size = _plain_text_to_para_dicts(plain_text, log)
+                    extraction_method = f'{_winner}_comparison_winner'
+
+                quality = score_text_layer_quality(_cmp['text'], log=log)
+            else:
+                log(f"  Original pdfminer extraction wins — no change")
 
         # ── STEP 1e: Auto-escalation to Tier 2 (Re-OCR) if quality is poor ──
         tier1_score = quality.get('score', 0) if quality else 0
@@ -10302,6 +10546,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             _result["escalation_details"] = json.loads(_escalation_info)
         except (json.JSONDecodeError, TypeError):
             _result["escalation_details"] = _escalation_info
+    if '_extractor_comparison' in dir() and _extractor_comparison:
+        _result["extractor_comparison"] = _extractor_comparison
     return _result
 
 
@@ -10923,6 +11169,8 @@ Examples:
     ap.add_argument("--tag-syntax", choices=["sapi", "universal"], default="sapi",
                     help="Tag format: 'sapi' for <voice>/<silence> XML tags, "
                          "'universal' for {{Voice=}}/{{Pause=}} tags (default: sapi)")
+    ap.add_argument("--compare-extractors", action="store_true", default=False,
+                    help="For borderline PDFs (score 60-80), try all 3 extractors and pick the best")
     ap.add_argument("--ocr-table", default=None,
                     help="Path to custom OCR substitution JSON (merged on top of config/ocr_substitutions.json)")
     ap.add_argument("--dump-ocr-table", action="store_true",
@@ -11078,7 +11326,8 @@ Examples:
                                     use_gemini=args.use_gemini,
                                     gemini_remediate=args.gemini_remediate,
                                     gemini_cost_limit=args.gemini_cost_limit,
-                                    gemini_model=args.gemini_model)
+                                    gemini_model=args.gemini_model,
+                                    compare_extractors_enabled=args.compare_extractors)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}

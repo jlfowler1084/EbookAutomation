@@ -358,6 +358,8 @@ def _migrate(conn):
         ("path_switches", "escalation_details", "TEXT"),
         # SCRUM-16: Quality gate status
         ("conversions", "quality_status", "TEXT"),
+        # SCRUM-125: Multi-extractor comparison results
+        ("conversions", "extractor_comparison", "TEXT"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -564,7 +566,7 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                    output_file_size=None, conversion_flags=None,
                    category_scores=None, duration_breakdown=None,
                    quality_variance=None, quality_status=None,
-                   db_path=None):
+                   extractor_comparison=None, db_path=None):
     """Record a conversion attempt. Returns conversion ID."""
     if isinstance(conversion_flags, dict):
         conversion_flags = json.dumps(conversion_flags)
@@ -572,6 +574,8 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
         category_scores = json.dumps(category_scores)
     if isinstance(duration_breakdown, dict):
         duration_breakdown = json.dumps(duration_breakdown)
+    if isinstance(extractor_comparison, dict):
+        extractor_comparison = json.dumps(extractor_comparison)
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
@@ -581,14 +585,16 @@ def add_conversion(book_id, iteration=1, extraction_path='legacy',
                 fixes_failed, api_input_tokens, api_output_tokens,
                 cost_usd, duration_seconds, output_file_path,
                 output_file_size, conversion_flags, category_scores,
-                duration_breakdown, quality_variance, quality_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                duration_breakdown, quality_variance, quality_status,
+                extractor_comparison)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, iteration, extraction_path, vqa_score,
              vqa_report_path, text_quality_score, fixes_applied,
              fixes_failed, api_input_tokens, api_output_tokens,
              cost_usd, duration_seconds, output_file_path,
              output_file_size, conversion_flags, category_scores,
-             duration_breakdown, quality_variance, quality_status)
+             duration_breakdown, quality_variance, quality_status,
+             extractor_comparison)
         )
         conn.commit()
         return cursor.lastrowid
@@ -2367,6 +2373,45 @@ def _cmd_cache_roi(args):
         print(f"Total cost across all books: ${total_all_cost:.4f}")
 
 
+def _cmd_extractor_stats(args):
+    """Show which extractors win in multi-extractor comparisons."""
+    conn = get_db(getattr(args, 'db_path', None))
+    try:
+        cursor = conn.execute("""
+            SELECT extractor_comparison
+            FROM conversions
+            WHERE extractor_comparison IS NOT NULL
+              AND extractor_comparison != ''
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print("No extractor comparison data recorded yet.")
+            print("Run conversions with --compare-extractors to start collecting data.")
+            return
+
+        from collections import Counter
+        wins = Counter()
+        total = 0
+        for r in rows:
+            try:
+                data = json.loads(r['extractor_comparison'])
+                if isinstance(data, dict):
+                    best = max(data.items(), key=lambda x: x[1].get('score', 0))
+                    wins[best[0]] += 1
+                    total += 1
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        print(f"Extractor Comparison Results ({total} comparisons)")
+        print(f"{'Extractor':<20} {'Wins':>6} {'Win %':>7}")
+        print("-" * 35)
+        for name, count in wins.most_common():
+            pct = (count / total * 100) if total else 0
+            print(f"{name:<20} {count:>6} {pct:>6.1f}%")
+    finally:
+        conn.close()
+
+
 def _cmd_ocr_stats(args):
     """Show OCR substitution statistics across all conversions."""
     conn = get_db(getattr(args, 'db_path', None))
@@ -3263,6 +3308,11 @@ def main():
                                   help='Only show books above this total cost')
     cache_roi_parser.add_argument('--db-path', default=None)
 
+    # ── Extractor stats (SCRUM-125) ─────────────────────────────
+    ext_stats_parser = subparsers.add_parser(
+        'extractor-stats', help='Show extractor comparison win rates')
+    ext_stats_parser.add_argument('--db-path', default=None)
+
     # ── OCR stats (SCRUM-39) ────────────────────────────────────
     ocr_stats_parser = subparsers.add_parser(
         'ocr-stats', help='Show OCR substitution fix statistics')
@@ -3320,6 +3370,7 @@ def main():
         'publisher-report': _cmd_publisher_report,
         'cache-roi': _cmd_cache_roi,
         'ocr-stats': _cmd_ocr_stats,
+        'extractor-stats': _cmd_extractor_stats,
     }
 
     commands[args.command](args)

@@ -95,6 +95,11 @@
     "bookmark_readability_threshold": 0.80,
     "min_bookmarks_for_viable": 3
   },
+  "extraction": {
+    "compare_extractors": false,
+    "comparison_low_threshold": 60,
+    "comparison_high_threshold": 80
+  },
   "quality_gate": {
     "thresholds": {
       "clean": 90,

@@ -646,6 +646,9 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Path to custom OCR substitution JSON (merged on top of config/ocr_substitutions.json)')]
         [string]$OCRTable,
 
+        [Parameter(HelpMessage = 'For borderline PDFs (score 60-80), try all 3 extractors and pick the best')]
+        [switch]$CompareExtractors,
+
         # Reserved — active on Invoke-ConvergeLoop
         [switch]$SkipPreflight,
         [switch]$IgnoreRecommendation,
@@ -992,6 +995,10 @@ print(json.dumps(output))
                 }
                 if ($OCRTable -and (Test-Path $OCRTable)) {
                     $pyArgs += " --ocr-table `"$OCRTable`""
+                }
+                if ($CompareExtractors) {
+                    $pyArgs += " --compare-extractors"
+                    Write-EbookLog "Kindle: multi-extractor comparison ENABLED"
                 }
 
                 $pyProc = Start-Process -FilePath $python `
@@ -4931,8 +4938,9 @@ function Invoke-ConvergeLoop {
 
         # --- Convert ---
         $convertParams = @{
-            InputFile = $InputFile
-            NoCache   = $true   # Always fresh conversion in converge loop
+            InputFile          = $InputFile
+            NoCache            = $true   # Always fresh conversion in converge loop
+            CompareExtractors  = $true   # Always compare extractors for borderline results
         }
         if ($OutputDir) { $convertParams['OutputDir'] = $OutputDir }
 
