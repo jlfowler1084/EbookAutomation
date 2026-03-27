@@ -34,6 +34,7 @@ PROFILES = {
         'no_index': True,
         'no_hyperlinks': True,
         'no_front_matter': True,
+        'no_bibliography': True,
     },
     'text-only': {
         'no_footnotes': True,
@@ -73,6 +74,14 @@ INDEX_HEADINGS = re.compile(
     r'^(index|indices|scripture\s+index|subject\s+index|author\s+index|'
     r'name\s+index|search\s+items?\s+of\s+biblical\s+and\s+ancient\s+sources|'
     r'index\s+of\s+.+)$',
+    re.IGNORECASE
+)
+
+BIBLIOGRAPHY_HEADINGS = re.compile(
+    r'^(bibliography|references?|works?\s+cited|sources?\s+cited|'
+    r'selected\s+bibliography|annotated\s+bibliography|'
+    r'further\s+reading|suggested\s+reading|recommended\s+reading|'
+    r'list\s+of\s+(?:works|references|sources)\s+cited)$',
     re.IGNORECASE
 )
 
@@ -139,6 +148,11 @@ def _strip_footnotes(soup):
 def _strip_index(soup):
     """Remove Index sections. Returns count."""
     return _remove_section_by_heading(soup, INDEX_HEADINGS)
+
+
+def _strip_bibliography(soup):
+    """Remove Bibliography/References sections. Returns count."""
+    return _remove_section_by_heading(soup, BIBLIOGRAPHY_HEADINGS)
 
 
 def _strip_hyperlinks(soup):
@@ -277,8 +291,8 @@ def _filter_txt(text, flags):
 def _resolve_flags(profile='full', **kwargs):
     """Merge profile preset with individual flag overrides."""
     flags = dict(PROFILES.get(profile, {}))
-    for key in ('no_footnotes', 'no_index', 'no_hyperlinks', 'no_front_matter',
-                'no_back_matter', 'no_images', 'no_block_quotes'):
+    for key in ('no_footnotes', 'no_index', 'no_bibliography', 'no_hyperlinks',
+                'no_front_matter', 'no_back_matter', 'no_images', 'no_block_quotes'):
         if kwargs.get(key):
             flags[key] = True
     return flags
@@ -309,6 +323,10 @@ def filter_html_with_report(html_str, profile='full', **kwargs):
     if flags.get('no_index'):
         n = _strip_index(soup)
         if n: removed['index_sections'] = n
+
+    if flags.get('no_bibliography'):
+        n = _strip_bibliography(soup)
+        if n: removed['bibliography_sections'] = n
 
     if flags.get('no_hyperlinks'):
         n = _strip_hyperlinks(soup)
@@ -354,6 +372,7 @@ def main():
                     help='Conversion profile preset (default: full)')
     ap.add_argument('--no-footnotes', action='store_true')
     ap.add_argument('--no-index', action='store_true')
+    ap.add_argument('--no-bibliography', action='store_true')
     ap.add_argument('--no-hyperlinks', action='store_true')
     ap.add_argument('--no-front-matter', action='store_true')
     ap.add_argument('--no-back-matter', action='store_true')
@@ -373,6 +392,7 @@ def main():
     flag_kwargs = {
         'no_footnotes': args.no_footnotes,
         'no_index': args.no_index,
+        'no_bibliography': args.no_bibliography,
         'no_hyperlinks': args.no_hyperlinks,
         'no_front_matter': args.no_front_matter,
         'no_back_matter': args.no_back_matter,

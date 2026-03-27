@@ -918,7 +918,7 @@ def run_filter_tests(quick=False):
         (P if 'a hyperlink' in result else F).append("clean-read: link text preserved")
         (P if '<sup>' not in result else F).append("clean-read: footnote <sup> stripped")
         (P if 'Abraham' not in result else F).append("clean-read: index entries stripped")
-        (P if 'Bibliography' in result else F).append("clean-read: Bibliography preserved (not back matter)")
+        (P if 'Bibliography' not in result else F).append("clean-read: Bibliography stripped")
         (P if '<blockquote' in result else F).append("clean-read: blockquotes preserved")
         (P if '<img' in result else F).append("clean-read: images preserved")
         (P if report['size_reduction_percent'] > 0 else F).append(
@@ -990,6 +990,24 @@ def run_filter_tests(quick=False):
         (P if report['removed'].get('block_quotes', 0) > 0 else F).append(
             "no_block_quotes: report shows quotes removed")
 
+    def test_no_bibliography(P, F):
+        result, report = filter_html_with_report(TEST_FILTER_HTML, no_bibliography=True)
+        (P if 'Book Title' not in result else F).append("no_bibliography: bibliography content removed")
+        (P if 'Chapter 1' in result else F).append("no_bibliography: chapters preserved")
+        (P if report['removed'].get('bibliography_sections', 0) > 0 else F).append(
+            "no_bibliography: report shows sections removed")
+
+    def test_works_cited_variant(P, F):
+        html = (
+            '<html><body>'
+            '<h1>Chapter 1</h1><p>Body text.</p>'
+            '<h2>Works Cited</h2><p>Smith, J. (2020). Title.</p>'
+            '</body></html>'
+        )
+        result, report = filter_html_with_report(html, no_bibliography=True)
+        (P if 'Smith' not in result else F).append("works_cited: Works Cited heading matched")
+        (P if 'Chapter 1' in result else F).append("works_cited: chapters preserved")
+
     # ── Edge case tests ─────────────────────────────────────────────────
 
     def test_profile_plus_override(P, F):
@@ -1051,6 +1069,8 @@ def run_filter_tests(quick=False):
     _run("filter: --no-back-matter", test_no_back_matter)
     _run("filter: --no-images", test_no_images)
     _run("filter: --no-block-quotes", test_no_block_quotes)
+    _run("filter: --no-bibliography", test_no_bibliography)
+    _run("filter: --no-bibliography (Works Cited)", test_works_cited_variant)
     _run("filter: full + --no-index override", test_profile_plus_override)
     _run("filter: empty input", test_empty_input)
     _run("filter: no-match input", test_no_match_input)
@@ -1397,7 +1417,7 @@ def main():
         if not hc_matches and not cap_matches and not corpus_matches and not run_filters and not run_spaced:
             print(f"No test case matching '{args.test_name}'")
             all_names = list(TEST_CASES.keys()) + list(extra_captured.keys()) + [b.stem for b in corpus_books]
-            all_names.append("filter (14 unit + integration tests)")
+            all_names.append("filter (16 unit + integration tests)")
             all_names.append("spaced (11 character spacing collapse tests)")
             print(f"Available: {', '.join(all_names)}")
             sys.exit(1)
@@ -1408,7 +1428,7 @@ def main():
         run_filters = True
         run_spaced = True
 
-    n_filter = 14 if run_filters else 0
+    n_filter = 16 if run_filters else 0
     n_spaced = 11 if run_spaced else 0
     total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter + n_spaced
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"

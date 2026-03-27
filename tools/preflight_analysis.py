@@ -646,6 +646,7 @@ def _generate_recipe(classification, text_quality, chapter_structure,
                 "ForceColumns": False,
                 "NoFootnotes": False,
                 "NoIndex": False,
+                "NoBibliography": False,
                 "NoHyperlinks": False,
             },
             "confidence": 0.90,
@@ -664,6 +665,7 @@ def _generate_recipe(classification, text_quality, chapter_structure,
                 "ForceColumns": False,
                 "NoFootnotes": False,
                 "NoIndex": False,
+                "NoBibliography": False,
                 "NoHyperlinks": False,
             },
             "confidence": 0.85,
@@ -718,6 +720,7 @@ def _generate_recipe(classification, text_quality, chapter_structure,
             flags = _default_flags()
             flags["NoFootnotes"] = True
             flags["NoIndex"] = True
+            flags["NoBibliography"] = True
             claude_chap_flag = False
             reasoning.append(
                 "Poor quality scan — text-only profile, "
@@ -795,6 +798,7 @@ def _generate_recipe(classification, text_quality, chapter_structure,
         ix_viab = ix.get("viability", "none")
         if ix_viab in ("unusable", "degraded", "none"):
             flags["NoIndex"] = True
+            flags["NoBibliography"] = True
             reasoning.append(f"Index: {ix_viab} — {ix.get('detail', 'no data')}")
         else:
             flags["NoIndex"] = False
@@ -880,6 +884,7 @@ def _default_flags():
         "ForceColumns": False,
         "NoFootnotes": False,
         "NoIndex": False,
+        "NoBibliography": False,
         "NoHyperlinks": False,
     }
 
@@ -893,6 +898,7 @@ def _no_structural_flags():
         "ForceColumns": False,
         "NoFootnotes": True,
         "NoIndex": True,
+        "NoBibliography": True,
         "NoHyperlinks": True,
     }
 

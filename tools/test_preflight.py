@@ -291,6 +291,18 @@ class TestPreflightRecipe(unittest.TestCase):
         self.assertGreaterEqual(recipe['confidence'], 0.80)
         self.assertLessEqual(recipe['confidence'], 0.95)
 
+    # 13. NoBibliography recommended alongside NoIndex
+    def test_no_bibliography_with_no_index(self):
+        """When NoIndex is recommended, NoBibliography should also be set."""
+        cls = _mock_classification('scan_with_text', confidence=0.85,
+                                   density=300, kb_page=45.0)
+        tq = _mock_text_quality('poor', score=35, hit_rate=0.25)
+        cs = _mock_chapters(bm_count=5, readable=True)
+        hist = _mock_historical()
+        recipe = _generate_recipe(cls, tq, cs, None, hist, None, 'pdf')
+        self.assertTrue(recipe['flags']['NoIndex'])
+        self.assertTrue(recipe['flags']['NoBibliography'])
+
 
 class TestBookmarkHelpers(unittest.TestCase):
     """Test bookmark readability and flattening helpers."""

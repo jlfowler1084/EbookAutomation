@@ -4279,10 +4279,18 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
             ordered = (top_wide + left_col_body + right_col_body
                        + left_col_fnotes + right_col_fnotes + bottom_wide)
             footnote_blocks = set(id(b) for b in left_col_fnotes + right_col_fnotes)
+            # Running header candidates: column blocks in the top 15% of the page
+            # (not wide blocks — those are title-page or index content)
+            _header_y_threshold = page_h * 0.15
+            header_candidate_blocks = set(
+                id(b) for b in (left_col_body + right_col_body)
+                if b["bbox"][1] < _header_y_threshold
+            )
 
             for block in ordered:
                 x0, y0, x1, y1 = block["bbox"]
                 _is_footnote_block = id(block) in footnote_blocks
+                _is_header_candidate = id(block) in header_candidate_blocks
 
                 # Step 1: compute dominant font properties (weighted by character count)
                 size_weight  = defaultdict(int)
@@ -4395,6 +4403,7 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
                     'line_count':  len(block["lines"]),
                     'char_count':  len(text),
                     '_is_footnote': _is_footnote_block,
+                    '_is_running_header_candidate': _is_header_candidate,
                 })
 
             if (pg_idx + 1) % 50 == 0:
@@ -4419,6 +4428,7 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
 
     for p in all_paras:
         p.pop('_is_footnote', None)
+        # Keep _is_running_header_candidate — consumed by format_paragraphs_as_html()
 
     log(f"  PyMuPDF HTML extraction: {total_pages} pages, {len(all_paras)} paragraphs")
     log(f"  Body font detected: {body_size}pt")
@@ -5325,6 +5335,42 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     toc_skipped = 0
     running_header_skipped = 0
 
+    # Pre-scan: detect running headers from column extractor's top_wide candidates.
+    # Normalize text (strip verse ranges, leading numbers), group by normalized form,
+    # and mark as running headers if the same form appears on 3+ distinct pages.
+    _rh_strip_indices = set()  # indices of para_dicts to skip as running headers
+    _rh_candidates = {}  # normalized → [(index, page_number), ...]
+    for idx, p in enumerate(para_dicts):
+        if not p.get('_is_running_header_candidate'):
+            continue
+        text = p.get('text', '').strip()
+        if not text:
+            continue
+        # Normalize: strip leading "5. " etc, trailing verse refs "25:1-32:32"
+        norm = re.sub(r'^\d+[.\s]+', '', text)
+        norm = re.sub(r'[\d:,\-\u2013]+\s*$', '', norm)
+        norm = norm.strip().lower()
+        if len(norm) < 3:
+            continue
+        if norm not in _rh_candidates:
+            _rh_candidates[norm] = []
+        _rh_candidates[norm].append((idx, p.get('page_number', 0)))
+    # Mark repeated candidates for stripping (keep first occurrence)
+    for norm, occurrences in _rh_candidates.items():
+        distinct_pages = set(pg for _, pg in occurrences)
+        if len(distinct_pages) >= 3:
+            # Skip all after the first occurrence
+            for idx, _ in occurrences[1:]:
+                _rh_strip_indices.add(idx)
+
+    if _rh_strip_indices:
+        log(f"  Column-path running headers: {len(_rh_strip_indices)} repeats to strip "
+            f"({len(_rh_candidates)} normalized patterns)")
+
+    # Clean up _is_running_header_candidate flags
+    for p in para_dicts:
+        p.pop('_is_running_header_candidate', None)
+
     html_parts = []
     html_parts.append(f'''<!DOCTYPE html>
 <html><head>
@@ -5390,6 +5436,11 @@ blockquote p {{ text-indent: 0; }}
             in_toc_region = current_page in toc_skip_pages
             continue
         if not text:
+            continue
+
+        # Skip running header candidates identified by pre-scan
+        if i in _rh_strip_indices:
+            running_header_skipped += 1
             continue
 
         size = p.get('font_size', body_size)
