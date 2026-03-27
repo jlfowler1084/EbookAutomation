@@ -459,6 +459,42 @@ Invoke-EbookPipeline -ValidateVisual
 
 ---
 
+## Chapter Alignment Verification
+
+Post-conversion verification that compares output HTML headings against source PDF bookmarks using fuzzy matching. Answers: "Did each chapter land in the right place?"
+
+### How It Works
+
+1. Extracts bookmarks from source PDF (title + page number)
+2. Extracts raw text from each bookmark's page
+3. Parses output HTML headings + body text after each
+4. Fuzzy-matches bookmarks to output headings (title similarity)
+5. Compares body text snippets (content verification)
+6. Reports alignment score and per-chapter details
+
+### Usage
+
+```bash
+# Standalone
+python tools/chapter_alignment.py --source "book.pdf" --output "book_kindle.html"
+
+# During test suite (automatic for books with source PDFs)
+python tools/test_pipeline.py
+
+# During conversion
+Invoke-ConvergeLoop -InputFile "book.pdf" -ValidateAlignment
+```
+
+### Scoring
+
+- **aligned**: Title matches (>50% similarity) AND body text matches (combined score >= threshold)
+- **title_only**: Heading found but body text doesn't match (may be positioned wrong)
+- **misaligned**: Neither title nor body match well
+- **unmatched**: No corresponding heading in output
+- Overall alignment score = (aligned / total_bookmarks) x 100. Pass threshold: 70%.
+
+---
+
 ## Claude API Integration
 
 The project uses the Anthropic Messages API for several AI-assisted features. The API key is stored as a permanent user environment variable (`ANTHROPIC_API_KEY`).

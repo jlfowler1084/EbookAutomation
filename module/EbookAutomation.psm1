@@ -645,7 +645,8 @@ function Convert-ToKindle {
 
         # Reserved — active on Invoke-ConvergeLoop
         [switch]$SkipPreflight,
-        [switch]$IgnoreRecommendation
+        [switch]$IgnoreRecommendation,
+        [switch]$ValidateAlignment
     )
 
     $cfg        = Get-EbookConfig
@@ -2789,7 +2790,8 @@ function Invoke-EbookPipeline {
 
         # Reserved — active on Invoke-ConvergeLoop
         [switch]$SkipPreflight,
-        [switch]$IgnoreRecommendation
+        [switch]$IgnoreRecommendation,
+        [switch]$ValidateAlignment
     )
 
     $pipelineStart  = Get-Date
@@ -4521,7 +4523,10 @@ function Invoke-ConvergeLoop {
         [switch]$SkipPreflight,
 
         [Parameter(HelpMessage = 'Run pre-flight analysis (logged) but do not apply recipe as defaults.')]
-        [switch]$IgnoreRecommendation
+        [switch]$IgnoreRecommendation,
+
+        [Parameter(HelpMessage = 'Run chapter alignment verification after conversion (warn-only, non-blocking).')]
+        [switch]$ValidateAlignment
     )
 
     # ── Step 1: Setup ────────────────────────────────────────────────────────
@@ -5021,6 +5026,56 @@ function Invoke-ConvergeLoop {
 
         $resultLevel = if ($iterPass) { 'SUCCESS' } else { 'INFO' }
         Write-EbookLog "  Result: $iterScore/100 $(if ($iterPass) {'(PASS)'} else {'(FAIL)'}) | Cost: `$$([math]::Round($iterCost, 2)) | Time: ${iterDuration}s" -Level $resultLevel
+
+        # --- Optional: Chapter Alignment Verification ---
+        if ($ValidateAlignment -and $ext -eq 'pdf' -and $outFile -and (Test-Path $outFile)) {
+            Write-EbookLog "  Running chapter alignment verification..." -Level INFO
+            try {
+                $alignScript = Join-Path $script:ModuleRoot "tools" "chapter_alignment.py"
+                $python = if ($cfg.paths.python) { $cfg.paths.python } else { "python" }
+
+                # Find the intermediate HTML
+                $intermediateDir = Join-Path (Split-Path $outFile) '.intermediates'
+                $stem = [System.IO.Path]::GetFileNameWithoutExtension($outFile)
+                $htmlPath = Join-Path $intermediateDir "${stem}_kindle.html"
+                # Fallback: try without _kindle suffix
+                if (-not (Test-Path $htmlPath)) {
+                    $htmlCandidates = Get-ChildItem -Path $intermediateDir -Filter "*_kindle.html" -File -ErrorAction SilentlyContinue
+                    if ($htmlCandidates) {
+                        $htmlPath = $htmlCandidates[0].FullName
+                    }
+                }
+
+                if (Test-Path $htmlPath) {
+                    $alignResult = & $python "$alignScript" --source "$InputFile" --output "$htmlPath" 2>$null
+                    if ($alignResult) {
+                        $alignJson = ($alignResult -join "`n") | ConvertFrom-Json
+                        $alignScore = $alignJson.alignment_score
+                        $aligned = $alignJson.summary.aligned
+                        $total = $alignJson.total_bookmarks
+
+                        if ($null -ne $alignScore) {
+                            if ($alignScore -ge 70) {
+                                Write-EbookLog "  Chapter alignment: $alignScore% ($aligned/$total chapters aligned)" -Level SUCCESS
+                            } else {
+                                Write-EbookLog "  Chapter alignment: $alignScore% ($aligned/$total) — review misaligned chapters" -Level WARN
+                                foreach ($ch in $alignJson.chapters) {
+                                    if ($ch.status -ne 'aligned') {
+                                        Write-EbookLog "    $($ch.status): '$($ch.bookmark_title)' (page $($ch.bookmark_page))" -Level WARN
+                                    }
+                                }
+                            }
+                        } else {
+                            Write-EbookLog "  Chapter alignment: skipped (no bookmarks or not applicable)" -Level INFO
+                        }
+                    }
+                } else {
+                    Write-EbookLog "  Chapter alignment: skipped (no intermediate HTML found)" -Level INFO
+                }
+            } catch {
+                Write-EbookLog "  Chapter alignment: failed (non-blocking) -- $_" -Level WARN
+            }
+        }
 
         # --- Check exit conditions ---
 

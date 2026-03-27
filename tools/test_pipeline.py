@@ -40,6 +40,13 @@ if sys.platform == 'win32':
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 ARCHIVE_DIR = PROJECT_ROOT / "archive"
+
+# Import chapter alignment (non-fatal if unavailable)
+try:
+    from chapter_alignment import verify_chapter_alignment
+    HAS_CHAPTER_ALIGNMENT = True
+except ImportError:
+    HAS_CHAPTER_ALIGNMENT = False
 OUTPUT_DIR = PROJECT_ROOT / "output" / "kindle"
 TEST_CASES_JSON = SCRIPT_DIR / "test_cases.json"
 CORPUS_DIR = PROJECT_ROOT / "test-corpus"
@@ -236,10 +243,23 @@ def save_captured_cases(cases):
         json.dump(cases, f, indent=2, ensure_ascii=False)
 
 
-def capture_baseline(name, pdf_pattern, html, kfx_path=None):
+def capture_baseline(name, pdf_pattern, html, kfx_path=None, pdf_path=None, html_path=None):
     """Capture a baseline for a book and save to test_cases.json."""
     cases = load_captured_cases()
     baseline = extract_baseline_from_html(html, kfx_path)
+
+    # Capture alignment data if source PDF is available
+    if HAS_CHAPTER_ALIGNMENT and pdf_path and html_path:
+        try:
+            alignment = verify_chapter_alignment(
+                pdf_path, html_path, log=lambda msg: None
+            )
+            if alignment.get('alignment_score') is not None:
+                baseline['alignment_score'] = alignment['alignment_score']
+                baseline['aligned_chapters'] = alignment['summary']['aligned']
+                baseline['total_bookmarks'] = alignment['total_bookmarks']
+        except Exception:
+            pass
 
     cases[name] = {
         "pdf_pattern": pdf_pattern,
@@ -737,6 +757,54 @@ def validate_html(html, expected, pipeline_stdout=""):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Chapter alignment check (appends to existing passes/failures)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_alignment_check(pdf_path, html_path, passes, failures):
+    """Run chapter alignment verification if available. Appends to passes/failures.
+
+    Alignment is warn-only (never causes a test failure) because many books have
+    deeply nested bookmarks that don't map to output headings. The data is
+    informational — regressions are caught by the baseline's chapter_openings check.
+    """
+    if not HAS_CHAPTER_ALIGNMENT:
+        return
+    if not pdf_path or not html_path:
+        return
+    try:
+        alignment = verify_chapter_alignment(
+            pdf_path, html_path,
+            log=lambda msg: None,  # silent
+        )
+        if alignment.get('skipped') or alignment.get('error'):
+            reason = alignment.get('reason') or alignment.get('error', 'unknown')
+            passes.append(f"chapter_alignment: skipped ({reason})")
+            return
+        score = alignment.get('alignment_score')
+        if score is None:
+            passes.append(f"chapter_alignment: skipped (no bookmarks)")
+            return
+        summary = alignment.get('summary', {})
+        aligned = summary.get('aligned', 0)
+        total = alignment.get('total_bookmarks', 0)
+        if score >= 70:
+            passes.append(f"chapter_alignment: {score}% ({aligned}/{total} aligned)")
+        else:
+            detail_parts = []
+            if summary.get('misaligned'):
+                detail_parts.append(f"{summary['misaligned']} misaligned")
+            if summary.get('unmatched'):
+                detail_parts.append(f"{summary['unmatched']} unmatched")
+            # Warn-only: low alignment is informational, not a test failure
+            passes.append(
+                f"chapter_alignment: {score}% ({aligned}/{total}) — "
+                f"warn: {', '.join(detail_parts)}"
+            )
+    except Exception as e:
+        passes.append(f"chapter_alignment: skipped ({e})")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Test runner
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -790,6 +858,9 @@ def run_test(name, case, quick=False):
             else:
                 failures.append("kfx_produced -- no SUCCESS in pipeline output")
 
+    # Chapter alignment check (non-blocking)
+    run_alignment_check(pdf_path, html_path, passes, failures)
+
     elapsed = time.time() - t0
     passed = len(failures) == 0
     return passed, passes, failures, elapsed
@@ -817,6 +888,9 @@ def run_baseline_test(name, captured_case, quick=False):
             kfx_path = kfx_match.group(1)
 
     passes, failures = validate_against_baseline(html, captured_case["baseline"], kfx_path)
+
+    # Chapter alignment check (non-blocking)
+    run_alignment_check(pdf_path, html_path, passes, failures)
 
     elapsed = time.time() - t0
     passed = len(failures) == 0
@@ -847,7 +921,8 @@ def do_capture(name, pdf_pattern, quick=False):
             kfx_path = kfx_match.group(1)
 
     print(f"\r  Capturing baseline for {name}...")
-    baseline = capture_baseline(name, pdf_pattern, html, kfx_path)
+    baseline = capture_baseline(name, pdf_pattern, html, kfx_path,
+                                pdf_path=pdf_path, html_path=html_path)
     return baseline
 
 
