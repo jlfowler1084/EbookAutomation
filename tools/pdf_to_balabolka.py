@@ -7319,10 +7319,136 @@ def _rate_wrap(text, speed, syntax):
     return f'<rate speed="{speed}">{text}</rate>'
 
 
+def _voice_wrap(text, voice_name, syntax):
+    """Wrap text in a voice tag for Balabolka/SAPI TTS."""
+    if syntax == 'universal':
+        return text  # Universal syntax doesn't support voice switching
+    return f'<voice required="Name={voice_name}">{text}</voice>'
+
+
+def detect_dialogue_spans(paragraph):
+    """Detect quoted speech spans in a paragraph.
+
+    Returns a list of (start, end, quote_text) tuples for each dialogue span.
+    Handles double-quoted, smart-quoted dialogue. Filters out short quotes
+    (< 3 words), number-only quotes, and citations in parentheses.
+    """
+    spans = []
+
+    patterns = [
+        re.compile(r'"([^"]{10,})"'),
+        re.compile(r'\u201c([^\u201d]{10,})\u201d'),
+    ]
+
+    for pattern in patterns:
+        for m in pattern.finditer(paragraph):
+            quote_text = m.group(1).strip()
+            if len(quote_text.split()) < 3:
+                continue
+            if re.match(r'^[\d\s.,]+$', quote_text):
+                continue
+            spans.append((m.start(), m.end(), quote_text))
+
+    if len(spans) > 1:
+        spans.sort(key=lambda s: s[0])
+        deduped = [spans[0]]
+        for s in spans[1:]:
+            if s[0] >= deduped[-1][1]:
+                deduped.append(s)
+            elif (s[1] - s[0]) > (deduped[-1][1] - deduped[-1][0]):
+                deduped[-1] = s
+        spans = deduped
+
+    return spans
+
+
+def _build_voiced_paragraph(paragraph, spans, voice_name, silence_before, silence_after, tag_syntax):
+    """Reconstruct a paragraph with voice tags wrapped around dialogue spans."""
+    parts = []
+    last_end = 0
+
+    for start, end, _ in spans:
+        if start > last_end:
+            parts.append(paragraph[last_end:start])
+
+        quote_with_marks = paragraph[start:end]
+        parts.append(_silence_tag(silence_before, tag_syntax))
+        parts.append(_voice_wrap(quote_with_marks, voice_name, tag_syntax))
+        parts.append(_silence_tag(silence_after, tag_syntax))
+
+        last_end = end
+
+    if last_end < len(paragraph):
+        parts.append(paragraph[last_end:])
+
+    return ''.join(parts)
+
+
+def _apply_dialogue_voices(paragraphs, tag_syntax, options, log):
+    """Apply voice tags to detected dialogue and blockquote paragraphs.
+
+    Narrator text (Steffan) is untagged. Dialogue gets Guy Online.
+    Blockquotes (lines starting with >) get Aria Online.
+    """
+    try:
+        _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+        if _cfg_path.exists():
+            with open(_cfg_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f).get('voice_tags', {})
+        else:
+            cfg = {}
+    except Exception:
+        cfg = {}
+
+    dialogue_voice = cfg.get('dialogue_voice', 'Microsoft Guy Online')
+    blockquote_voice = cfg.get('blockquote_voice', 'Microsoft Aria Online')
+    dlg_silence_before = cfg.get('dialogue_silence_before_ms', 150)
+    dlg_silence_after = cfg.get('dialogue_silence_after_ms', 200)
+    bq_silence_before = cfg.get('blockquote_silence_before_ms', 200)
+    bq_silence_after = cfg.get('blockquote_silence_after_ms', 300)
+
+    tagged_count = 0
+    blockquote_count = 0
+    result = []
+
+    for p in paragraphs:
+        if not p or p.startswith('<silence') or p.startswith('{{Pause'):
+            result.append(p)
+            continue
+
+        stripped = p.strip()
+        if stripped.startswith('>') or stripped.startswith('\t>'):
+            bq_text = re.sub(r'^>\s*', '', stripped)
+            tagged = (_silence_tag(bq_silence_before, tag_syntax) +
+                      _voice_wrap(bq_text, blockquote_voice, tag_syntax) +
+                      _silence_tag(bq_silence_after, tag_syntax))
+            result.append(tagged)
+            blockquote_count += 1
+            continue
+
+        spans = detect_dialogue_spans(p)
+        if not spans:
+            result.append(p)
+            continue
+
+        tagged_para = _build_voiced_paragraph(
+            p, spans, dialogue_voice, dlg_silence_before, dlg_silence_after,
+            tag_syntax
+        )
+        result.append(tagged_para)
+        tagged_count += len(spans)
+
+    if tagged_count or blockquote_count:
+        log(f"  Voice tags: {tagged_count} dialogue spans, {blockquote_count} blockquotes")
+
+    return result
+
+
 def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=None, log=lambda m: None):
-    """Apply Tier 1 structural voice tags to paragraphs."""
+    """Apply structural (Tier 1) and dialogue (Tier 2) voice tags to paragraphs."""
     if options is None:
-        options = {'chapter_silence': True, 'scene_break_silence': True, 'emphatic_closers': True}
+        options = {'chapter_silence': True, 'scene_break_silence': True, 'emphatic_closers': True,
+                   'dialogue_voices': False}
 
     part_set = set(chapter_structure.get('parts', []))
     chapter_set = set(chapter_structure.get('chapters', []))
@@ -7365,13 +7491,25 @@ def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=N
         else:
             output.append(p)
 
+    # ── Tier 2: Dialogue voice tags ──────────────────────────────────
+    if options.get('dialogue_voices', False):
+        output = _apply_dialogue_voices(output, tag_syntax, options, log)
+
     return output
 
 
-def format_output(paragraphs, chapter_structure, log, tts_enhance=False, tag_syntax='sapi'):
+def format_output(paragraphs, chapter_structure, log, tts_enhance=False, tag_syntax='sapi',
+                  dialogue_voices=False):
     """Build the final text with ALL-CAPS headings and optional TTS voice tags."""
     if tts_enhance:
-        tagged = apply_voice_tags(paragraphs, chapter_structure, tag_syntax=tag_syntax, log=log)
+        options = {
+            'chapter_silence': True,
+            'scene_break_silence': True,
+            'emphatic_closers': True,
+            'dialogue_voices': dialogue_voices,
+        }
+        tagged = apply_voice_tags(paragraphs, chapter_structure, tag_syntax=tag_syntax,
+                                  options=options, log=log)
         return "\n\n".join(tagged)
 
     heading_set = set(chapter_structure.get('parts', []) + chapter_structure.get('chapters', []))
@@ -9293,7 +9431,7 @@ def strip_footnotes_from_paragraphs(paragraphs, log):
 def process_pdf(input_path, output_path, log, chapter_hints_path=None,
                 use_ocr=None, tesseract_path=None, poppler_path=None, ocr_dpi=300,
                 calibre_path=None, force_columns=False,
-                tts_enhance=False, tag_syntax='sapi'):
+                tts_enhance=False, tag_syntax='sapi', dialogue_voices=False):
     """Full pipeline: ebook -> clean text -> chapter-formatted Balabolka file.
 
     use_ocr: True = force OCR, False = force standard, None = auto-detect (PDF only)
@@ -9435,7 +9573,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         else:
             log("\n-- STEP 6: Formatting and saving ---------------------")
         _cs = {'parts': [], 'chapters': heading_indices}
-        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax)
+        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices)
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(final_text)
@@ -9538,7 +9676,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         final_text = format_output_with_levels(body, heading_dict)
     else:
         _cs = heading_dict if heading_dict else {'parts': [], 'chapters': heading_indices}
-        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax)
+        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices)
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_text)
@@ -11169,6 +11307,8 @@ Examples:
     ap.add_argument("--tag-syntax", choices=["sapi", "universal"], default="sapi",
                     help="Tag format: 'sapi' for <voice>/<silence> XML tags, "
                          "'universal' for {{Voice=}}/{{Pause=}} tags (default: sapi)")
+    ap.add_argument("--dialogue-voices", action="store_true", default=False,
+                    help="Tag detected dialogue with alternate TTS voice (Guy Online)")
     ap.add_argument("--compare-extractors", action="store_true", default=False,
                     help="For borderline PDFs (score 60-80), try all 3 extractors and pick the best")
     ap.add_argument("--ocr-table", default=None,
@@ -11177,6 +11317,10 @@ Examples:
                     help="Print the effective OCR substitution table and exit")
 
     args = ap.parse_args()
+
+    # --dialogue-voices implies --tts-enhance
+    if args.dialogue_voices and not args.tts_enhance:
+        args.tts_enhance = True
 
     # Handle --dump-ocr-table diagnostic flag
     if args.dump_ocr_table:
@@ -11362,7 +11506,8 @@ Examples:
                         calibre_path=args.calibre_path,
                         force_columns=args.force_columns,
                         tts_enhance=args.tts_enhance,
-                        tag_syntax=args.tag_syntax)
+                        tag_syntax=args.tag_syntax,
+                        dialogue_voices=args.dialogue_voices)
         sys.exit(0)
     except Exception as exc:
         print(f"[error] Conversion failed: {exc}", file=sys.stderr)

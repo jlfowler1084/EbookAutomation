@@ -109,6 +109,16 @@
     "review_folder": true,
     "block_poor_delivery": true
   },
+  "voice_tags": {
+    "enabled": true,
+    "dialogue_voice": "Microsoft Guy Online",
+    "blockquote_voice": "Microsoft Aria Online",
+    "narrator_voice": "Microsoft Steffan Online",
+    "dialogue_silence_before_ms": 150,
+    "dialogue_silence_after_ms": 200,
+    "blockquote_silence_before_ms": 200,
+    "blockquote_silence_after_ms": 300
+  },
   "archive_originals":  true,
   "log_level":          "INFO"
 }

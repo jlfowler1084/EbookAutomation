@@ -18,6 +18,9 @@ from pdf_to_balabolka import (
     apply_voice_tags,
     detect_chapters,
     detect_chapters_flat,
+    detect_dialogue_spans,
+    _build_voiced_paragraph,
+    _voice_wrap,
     CHAPTER_SILENCE_MS,
     PART_SILENCE_MS,
     SCENE_BREAK_SILENCE_MS,
@@ -338,6 +341,87 @@ class TestDetectChaptersFlat:
         structured = detect_chapters(paras, nolog)
         expected = sorted(structured['parts'] + structured['chapters'])
         assert flat == expected
+
+
+class TestDetectDialogueSpans:
+    def test_detect_dialogue_basic(self):
+        spans = detect_dialogue_spans('He said, "I never meant for this to happen." She nodded.')
+        assert len(spans) == 1
+        assert spans[0][2] == 'I never meant for this to happen.'
+
+    def test_detect_dialogue_multiple(self):
+        text = '"Where are you going?" she asked. "To the store for some groceries," he replied.'
+        spans = detect_dialogue_spans(text)
+        assert len(spans) == 2
+
+    def test_detect_dialogue_short_ignored(self):
+        """Quotes under 3 words are not dialogue — likely emphasis."""
+        spans = detect_dialogue_spans('She said "no" firmly.')
+        assert len(spans) == 0
+
+    def test_detect_dialogue_smart_quotes(self):
+        spans = detect_dialogue_spans('He whispered, \u201cThis changes everything between us.\u201d')
+        assert len(spans) == 1
+
+    def test_detect_dialogue_number_only_ignored(self):
+        spans = detect_dialogue_spans('The sign read "1234, 5678, 9012."')
+        assert len(spans) == 0
+
+
+class TestBuildVoicedParagraph:
+    def test_build_voiced_simple(self):
+        para = 'He said, "I never meant for this to happen." She nodded.'
+        spans = detect_dialogue_spans(para)
+        result = _build_voiced_paragraph(para, spans, 'Microsoft Guy Online', 150, 200, 'sapi')
+        assert '<voice required="Name=Microsoft Guy Online">' in result
+        assert '<silence msec="150"/>' in result
+        assert '<silence msec="200"/>' in result
+        assert 'She nodded.' in result
+
+    def test_voice_wrap_sapi(self):
+        result = _voice_wrap('hello', 'Microsoft Guy Online', 'sapi')
+        assert result == '<voice required="Name=Microsoft Guy Online">hello</voice>'
+
+    def test_voice_wrap_universal_passthrough(self):
+        result = _voice_wrap('hello', 'Microsoft Guy Online', 'universal')
+        assert result == 'hello'
+
+
+class TestApplyVoiceTagsDialogue:
+    @staticmethod
+    def _cs(parts=None, chapters=None):
+        return {'parts': parts or [], 'chapters': chapters or []}
+
+    def test_dialogue_tagged_when_enabled(self):
+        paras = [
+            '# Chapter One',
+            'He walked into the room.',
+            '"I have been waiting for you," she said quietly.',
+            'The door closed behind him.',
+        ]
+        cs = self._cs(chapters=[0])
+        options = {'chapter_silence': True, 'scene_break_silence': True,
+                   'emphatic_closers': True, 'dialogue_voices': True}
+        out = apply_voice_tags(paras, cs, tag_syntax='sapi', options=options, log=nolog)
+        assert out[0] == '# CHAPTER ONE'
+        tagged_para = [p for p in out if 'Microsoft Guy Online' in p]
+        assert len(tagged_para) == 1
+
+    def test_no_dialogue_by_default(self):
+        """Dialogue voices off by default — no <voice> tags appear."""
+        paras = ['"Hello there my good friend," he said warmly.']
+        cs = self._cs()
+        out = apply_voice_tags(paras, cs, tag_syntax='sapi', log=nolog)
+        assert '<voice' not in out[0]
+
+    def test_blockquote_gets_aria_voice(self):
+        paras = ['> This is a formal citation from another source entirely.']
+        cs = self._cs()
+        options = {'chapter_silence': True, 'scene_break_silence': True,
+                   'emphatic_closers': True, 'dialogue_voices': True}
+        out = apply_voice_tags(paras, cs, tag_syntax='sapi', options=options, log=nolog)
+        tagged = [p for p in out if 'Microsoft Aria Online' in p]
+        assert len(tagged) == 1
 
 
 if __name__ == "__main__":

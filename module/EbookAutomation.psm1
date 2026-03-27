@@ -257,7 +257,8 @@ function Convert-ToTTS {
         [string]$OutputDir,
         [switch]$UseClaudeChapters,
         [switch]$UseOCR,
-        [switch]$ForceColumns
+        [switch]$ForceColumns,
+        [switch]$DialogueVoices
     )
 
     $cfg       = Get-EbookConfig
@@ -371,6 +372,11 @@ function Convert-ToTTS {
         if ($ForceColumns -and $ext -eq 'pdf') {
             $ocrArgs += " --force-columns"
             Write-EbookLog "TTS: column-aware extraction forced by -ForceColumns switch"
+        }
+
+        if ($DialogueVoices) {
+            $ocrArgs += " --dialogue-voices"
+            Write-EbookLog "TTS: dialogue voice tags ENABLED"
         }
 
         # Pass 1: normal regex-based extraction
