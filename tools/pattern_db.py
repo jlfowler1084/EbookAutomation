@@ -2243,9 +2243,50 @@ def _cmd_publisher_report(args):
 
 
 def _cmd_cache_roi(args):
-    """Print cost-per-serve amortization for all books (FU-5)."""
+    """Print cost-per-serve amortization for cached extractions and conversions (FU-5)."""
     conn = get_db(getattr(args, 'db_path', None))
     try:
+        # Check if extraction_cache table has data
+        _has_cache = False
+        try:
+            cache_rows = conn.execute("""
+                SELECT
+                    ec.source_file_hash,
+                    ec.extraction_tier,
+                    ec.extraction_method,
+                    ec.extraction_cost_usd,
+                    ec.times_served,
+                    ec.quality_score,
+                    CASE WHEN ec.times_served > 0
+                         THEN ROUND(ec.extraction_cost_usd / ec.times_served, 4)
+                         ELSE ec.extraction_cost_usd END as cost_per_serve,
+                    COALESCE(b.title, b.filename, ec.source_file_hash) as name
+                FROM extraction_cache ec
+                LEFT JOIN books b ON b.source_file_hash = ec.source_file_hash
+                ORDER BY ec.times_served DESC, ec.extraction_cost_usd DESC
+            """).fetchall()
+            if cache_rows:
+                _has_cache = True
+                total_cache_cost = sum(r['extraction_cost_usd'] or 0 for r in cache_rows)
+                total_serves = sum(r['times_served'] or 0 for r in cache_rows)
+                print(f"=== Extraction Cache ({len(cache_rows)} entries, "
+                      f"${total_cache_cost:.2f} total cost, {total_serves} total serves) ===")
+                print(f"{'Title/File':<35} {'Tier':>4} {'Method':<14} {'Cost':>7} "
+                      f"{'Serves':>6} {'$/Serve':>8} {'Score':>5}")
+                print("-" * 85)
+                for r in cache_rows:
+                    name = (r['name'] or '?')[:34]
+                    method = (r['extraction_method'] or '?')[:13]
+                    cost = r['extraction_cost_usd'] or 0
+                    cps = r['cost_per_serve'] or 0
+                    score_s = str(r['quality_score']) if r['quality_score'] else "-"
+                    print(f"{name:<35} {r['extraction_tier'] or '?':>4} {method:<14} "
+                          f"${cost:>6.2f} {r['times_served'] or 0:>6} ${cps:>7.4f} {score_s:>5}")
+                print()
+        except Exception:
+            pass  # extraction_cache may not exist in older DBs
+
+        # Also show conversion-level cost amortization
         min_cost_clause = ""
         params = []
         if getattr(args, 'min_cost', None):
@@ -2273,36 +2314,38 @@ def _cmd_cache_roi(args):
     finally:
         conn.close()
 
-    if not rows:
-        print("No conversion data found.")
+    if not rows and not _has_cache:
+        print("No conversion or cache data found.")
         return
 
-    print(f"{'Title':<35} {'Runs':>4} {'Cost':>8} {'$/Serve':>8} "
-          f"{'Best':>5} {'Status':<12}")
-    print("-" * 80)
+    if rows:
+        print(f"=== Conversion Cost Amortization ({len(rows)} books) ===")
+        print(f"{'Title':<35} {'Runs':>4} {'Cost':>8} {'$/Serve':>8} "
+              f"{'Best':>5} {'Status':<12}")
+        print("-" * 80)
 
-    total_all_cost = 0
-    for r in rows:
-        cost = r['total_cost'] or 0
-        cps = r['cost_per_serve'] or 0
-        total_all_cost += cost
-        score_s = str(r['best_score']) if r['best_score'] else "-"
+        total_all_cost = 0
+        for r in rows:
+            cost = r['total_cost'] or 0
+            cps = r['cost_per_serve'] or 0
+            total_all_cost += cost
+            score_s = str(r['best_score']) if r['best_score'] else "-"
 
-        if cps == 0:
-            status = "free"
-        elif cps < 0.50:
-            status = "amortized"
-        elif cps < 2.00:
-            status = "recovering"
-        else:
-            status = "sunk"
+            if cps == 0:
+                status = "free"
+            elif cps < 0.50:
+                status = "amortized"
+            elif cps < 2.00:
+                status = "recovering"
+            else:
+                status = "sunk"
 
-        title = (r['title'] or r['filename'])[:34]
-        print(f"{title:<35} {r['conversions']:>4} ${cost:>7.2f} ${cps:>7.4f} "
-              f"{score_s:>5} {status:<12}")
+            title = (r['title'] or r['filename'])[:34]
+            print(f"{title:<35} {r['conversions']:>4} ${cost:>7.2f} ${cps:>7.4f} "
+                  f"{score_s:>5} {status:<12}")
 
-    print("-" * 80)
-    print(f"Total cost across all books: ${total_all_cost:.4f}")
+        print("-" * 80)
+        print(f"Total cost across all books: ${total_all_cost:.4f}")
 
 
 def _cmd_classify(args):

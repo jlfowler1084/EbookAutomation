@@ -10209,7 +10209,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         except Exception as _ce:
             log(f"Extraction cache write failed (non-blocking): {_ce}")
 
-    return html_path
+    # Build result dict with extraction metadata for CLI JSON output
+    _result = {"html_path": html_path}
+    if '_escalation_info' in dir() and _escalation_info:
+        try:
+            _result["escalation_details"] = json.loads(_escalation_info)
+        except (json.JSONDecodeError, TypeError):
+            _result["escalation_details"] = _escalation_info
+    return _result
 
 
 def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_key=None,
@@ -10962,7 +10969,7 @@ Examples:
                 log_fn("Extraction cache bypassed (--no-cache)")
 
             if not _cache_hit:
-                process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
+                _html_result = process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
                                     force_columns=args.force_columns,
                                     skip_footnotes=args.skip_footnotes,
                                     apply_ai_fixes=args.apply_ai_fixes,
@@ -10976,6 +10983,17 @@ Examples:
                                     gemini_remediate=args.gemini_remediate,
                                     gemini_cost_limit=args.gemini_cost_limit,
                                     gemini_model=args.gemini_model)
+                # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
+                if isinstance(_html_result, dict):
+                    _cli_json = {"html_path": _html_result.get("html_path", html_output)}
+                    if _html_result.get("escalation_details"):
+                        _cli_json["escalation_details"] = _html_result["escalation_details"]
+                    _html_size = 0
+                    _hp = _cli_json["html_path"]
+                    if _hp and os.path.isfile(_hp):
+                        _html_size = os.path.getsize(_hp)
+                    _cli_json["size"] = _html_size
+                    print(json.dumps(_cli_json))
         elif args.mode == "kindle":
             process_kindle(input_path, output_path, log_fn, chapter_hints_path=hints_path,
                            api_key=args.api_key, calibre_path=args.calibre_path,

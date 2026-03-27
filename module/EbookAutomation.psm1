@@ -2039,6 +2039,16 @@ else:
             $dbOutExt = [System.IO.Path]::GetExtension($outFile).TrimStart('.').ToLower()
             $dbDuration = [math]::Round($overallSw.Elapsed.TotalSeconds, 1)
 
+            # FU-3: Build duration breakdown from step timings (numeric values only)
+            $dbBreakdownHash = @{}
+            foreach ($k in $stepTimings.Keys) {
+                $v = $stepTimings[$k]
+                if ($v -is [double] -or $v -is [int] -or $v -is [decimal] -or $v -is [float]) {
+                    $dbBreakdownHash[$k] = $v
+                }
+            }
+            $dbDurationBreakdown = if ($dbBreakdownHash.Count -gt 0) { ($dbBreakdownHash | ConvertTo-Json -Compress) -replace "'", "''" } else { "" }
+
             # Paths passed via r'...' raw strings — no escaping needed
             $dbInputPathEsc = $InputFile
             $dbOutPathEsc = $outFile
@@ -2073,6 +2083,14 @@ conv_kwargs = dict(
     output_file_size=$dbOutputSize,
     conversion_flags='$($flagsJson -replace "'", "''")',
 )
+
+# FU-3: Duration breakdown from step timings
+_db_breakdown = '$dbDurationBreakdown'
+if _db_breakdown:
+    try:
+        conv_kwargs['duration_breakdown'] = json.loads(_db_breakdown)
+    except (json.JSONDecodeError, ValueError):
+        pass
 
 vqa_report_path = r'$dbVqaPathEsc'
 if vqa_report_path and os.path.isfile(vqa_report_path):

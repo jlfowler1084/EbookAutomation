@@ -98,9 +98,12 @@ def _classify_source(pdf_path, log_fn):
 def _assess_text_quality(pdf_path, page_count, log_fn):
     """Sample 5 pages from body content (10%-90%) and score text quality.
 
-    Returns dict with quality_tier, ocr_artifact_rate, unicode_printable_ratio,
-    common_word_hit_rate, sample_pages, score.
+    Each page is scored individually. Returns median score as the overall
+    score (backward compatible), plus quality_scores (per-page list) and
+    quality_variance (stdev across pages).
     """
+    import statistics as _stats
+
     default = {
         "quality_tier": "unknown",
         "ocr_artifact_rate": 0.0,
@@ -108,6 +111,8 @@ def _assess_text_quality(pdf_path, page_count, log_fn):
         "common_word_hit_rate": 0.0,
         "sample_pages": 0,
         "score": 0,
+        "quality_scores": [],
+        "quality_variance": 0,
     }
     try:
         from pypdf import PdfReader
@@ -135,31 +140,32 @@ def _assess_text_quality(pdf_path, page_count, log_fn):
                 step = span / 4  # 5 samples: start, +step, +2step, +3step, end
                 sample_indices = [int(start + i * step) for i in range(5)]
 
-        # Extract text from sampled pages
-        texts = []
+        # Extract text from sampled pages and score each independently
+        page_scores = []
+        page_hit_rates = []
+        page_unicode_ratios = []
         for idx in sample_indices:
             try:
                 page_text = reader.pages[idx].extract_text() or ""
-                texts.append(page_text)
+                if len(page_text) < 50:
+                    continue  # skip pages with too little text for reliable scoring
+                quality = score_text_layer_quality(page_text)
+                page_scores.append(quality['score'])
+                details = quality.get('details', {})
+                page_hit_rates.append(details.get('common_word_rate', {}).get('hit_rate', 0.0))
+                page_unicode_ratios.append(details.get('unicode_printable', {}).get('ratio', 0.0))
             except Exception:
                 pass
 
-        if not texts:
-            log_fn("  Text quality: no text extracted from sampled pages")
+        if not page_scores:
+            log_fn("  Text quality: no scorable pages from samples")
             return default
 
-        combined = "\n".join(texts)
-        if len(combined) < 100:
-            log_fn(f"  Text quality: insufficient text ({len(combined)} chars)")
-            return {**default, "sample_pages": len(texts), "quality_tier": "poor"}
-
-        # Score using existing quality scorer
-        quality = score_text_layer_quality(combined)
-        score = quality['score']
-        details = quality['details']
-
-        hit_rate = details.get('common_word_rate', {}).get('hit_rate', 0.0)
-        unicode_ratio = details.get('unicode_printable', {}).get('ratio', 0.0)
+        # Use median as overall score (robust to outlier pages)
+        score = int(_stats.median(page_scores))
+        variance = round(_stats.stdev(page_scores), 2) if len(page_scores) >= 2 else 0
+        hit_rate = _stats.median(page_hit_rates) if page_hit_rates else 0.0
+        unicode_ratio = _stats.median(page_unicode_ratios) if page_unicode_ratios else 0.0
         ocr_artifact_rate = round(1.0 - hit_rate, 4)
 
         # Tier mapping
@@ -175,10 +181,13 @@ def _assess_text_quality(pdf_path, page_count, log_fn):
             "ocr_artifact_rate": ocr_artifact_rate,
             "unicode_printable_ratio": round(unicode_ratio, 4),
             "common_word_hit_rate": round(hit_rate, 4),
-            "sample_pages": len(texts),
+            "sample_pages": len(page_scores),
             "score": score,
+            "quality_scores": page_scores,
+            "quality_variance": variance,
         }
         log_fn(f"  Text quality: {tier} (score {score}/100, "
+               f"variance {variance:.1f}, "
                f"artifact rate {ocr_artifact_rate:.0%})")
         return result
 
