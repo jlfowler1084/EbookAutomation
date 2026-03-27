@@ -643,6 +643,9 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Enable AI Quality Pass fix application. Without this, the quality pass only detects and scores issues without modifying text.')]
         [switch]$ApplyAIFixes,
 
+        [Parameter(HelpMessage = 'Path to custom OCR substitution JSON (merged on top of config/ocr_substitutions.json)')]
+        [string]$OCRTable,
+
         # Reserved — active on Invoke-ConvergeLoop
         [switch]$SkipPreflight,
         [switch]$IgnoreRecommendation,
@@ -986,6 +989,9 @@ print(json.dumps(output))
                         Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
                         return $failResult
                     }
+                }
+                if ($OCRTable -and (Test-Path $OCRTable)) {
+                    $pyArgs += " --ocr-table `"$OCRTable`""
                 }
 
                 $pyProc = Start-Process -FilePath $python `

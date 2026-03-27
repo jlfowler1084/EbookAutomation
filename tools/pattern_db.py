@@ -2367,6 +2367,34 @@ def _cmd_cache_roi(args):
         print(f"Total cost across all books: ${total_all_cost:.4f}")
 
 
+def _cmd_ocr_stats(args):
+    """Show OCR substitution statistics across all conversions."""
+    conn = get_db(getattr(args, 'db_path', None))
+    try:
+        cursor = conn.execute("""
+            SELECT fix_type, SUM(times_applied) as total_applied,
+                   SUM(times_succeeded) as total_succeeded,
+                   ROUND(AVG(success_rate), 1) as avg_success_rate,
+                   ROUND(AVG(avg_score_improvement), 1) as avg_improvement
+            FROM fix_patterns
+            GROUP BY fix_type
+            ORDER BY total_applied DESC
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print("No OCR fix statistics recorded yet.")
+            print("Run conversions with VQA enabled to start collecting fix data.")
+            return
+        print(f"{'Fix Type':<30} {'Applied':>8} {'Succeeded':>10} {'Rate':>6} {'\u0394 Score':>8}")
+        print("-" * 70)
+        for r in rows:
+            print(f"{r['fix_type']:<30} {r['total_applied']:>8} "
+                  f"{r['total_succeeded']:>10} {r['avg_success_rate'] or 0:>5.1f}% "
+                  f"{r['avg_improvement'] or 0:>+7.1f}")
+    finally:
+        conn.close()
+
+
 def _cmd_classify(args):
     """Classify a PDF source and print the result."""
     pdf_path = args.pdf_path
@@ -3235,6 +3263,11 @@ def main():
                                   help='Only show books above this total cost')
     cache_roi_parser.add_argument('--db-path', default=None)
 
+    # ── OCR stats (SCRUM-39) ────────────────────────────────────
+    ocr_stats_parser = subparsers.add_parser(
+        'ocr-stats', help='Show OCR substitution fix statistics')
+    ocr_stats_parser.add_argument('--db-path', default=None)
+
     # ── Extraction cache subcommands ─────────────────────────────
     subparsers.add_parser('cache-stats', help='Show extraction cache statistics')
 
@@ -3286,6 +3319,7 @@ def main():
         'store-metadata': _cmd_store_metadata,
         'publisher-report': _cmd_publisher_report,
         'cache-roi': _cmd_cache_roi,
+        'ocr-stats': _cmd_ocr_stats,
     }
 
     commands[args.command](args)

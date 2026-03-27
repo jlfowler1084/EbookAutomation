@@ -56,6 +56,139 @@ def _load_api_model(tier="haiku"):
         pass
     return _defaults.get(tier, _defaults["haiku"])
 
+# ── OCR Substitution Table Loader ──────────────────────────────────────
+
+_OCR_SUBSTITUTIONS_CACHE = None
+
+
+def load_ocr_substitutions(custom_path=None):
+    """Load OCR substitution table from config/ocr_substitutions.json.
+
+    Falls back to hardcoded defaults if file is missing.
+    Caches the loaded table for subsequent calls.
+
+    Args:
+        custom_path: Optional path to a custom substitution JSON file.
+                     Merged on top of the base config (custom entries win).
+    Returns:
+        dict with keys: mojibake_map, unicode_normalization, backtick_replacements,
+                        merged_word_splits, ligature_map, chapter_keywords
+    """
+    global _OCR_SUBSTITUTIONS_CACHE
+
+    if _OCR_SUBSTITUTIONS_CACHE is not None and custom_path is None:
+        return _OCR_SUBSTITUTIONS_CACHE
+
+    result = _get_hardcoded_defaults()
+
+    # Default path: config/ocr_substitutions.json relative to project root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_path = os.path.join(os.path.dirname(script_dir), 'config', 'ocr_substitutions.json')
+
+    if os.path.isfile(default_path):
+        try:
+            with open(default_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            result = _merge_substitution_data(result, data)
+        except (json.JSONDecodeError, IOError):
+            pass  # fall back to hardcoded defaults silently
+
+    if custom_path and os.path.isfile(custom_path):
+        try:
+            with open(custom_path, 'r', encoding='utf-8') as f:
+                custom_data = json.load(f)
+            result = _merge_substitution_data(result, custom_data)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    if custom_path is None:
+        _OCR_SUBSTITUTIONS_CACHE = result
+
+    return result
+
+
+def _get_hardcoded_defaults():
+    """Return hardcoded defaults as fallback if JSON file is missing."""
+    return {
+        'mojibake_map': {
+            '\xe2\x80\x99': '\u2019', '\xe2\x80\x98': '\u2018',
+            '\xe2\x80\x9c': '\u201C', '\xe2\x80\x9d': '\u201D',
+            '\xe2\x80\x93': '\u2013', '\xe2\x80\x94': '\u2014',
+            '\xe2\x80\xa6': '\u2026', '\xe2\x80\xa2': '\u2022',
+            '\xe2\x80\xb2': '\u2032', '\xe2\x80\xb3': '\u2033',
+            '\xe2\x84\xa2': '\u2122',
+            '\xc3\xa9': 'é', '\xc3\xa8': 'è', '\xc3\xaa': 'ê', '\xc3\xab': 'ë',
+            '\xc3\xa0': 'à', '\xc3\xa1': 'á', '\xc3\xa2': 'â', '\xc3\xa4': 'ä',
+            '\xc3\xa7': 'ç', '\xc3\xad': 'í', '\xc3\xaf': 'ï', '\xc3\xb1': 'ñ',
+            '\xc3\xb3': 'ó', '\xc3\xb6': 'ö', '\xc3\xba': 'ú', '\xc3\xbc': 'ü',
+            '\xc3\x9f': 'ß', '\xc3\x86': 'Æ', '\xc3\xa6': 'æ',
+            '\xc3\x98': 'Ø', '\xc3\xb8': 'ø',
+            '\xc2\xa3': '£', '\xc2\xa9': '©', '\xc2\xae': '®',
+            '\xc2\xb0': '°', '\xc2\xb7': '·',
+            '\xc2\xbd': '½', '\xc2\xbc': '¼', '\xc2\xbe': '¾',
+        },
+        'unicode_normalization': {
+            '\u2018': "'", '\u2019': "'",
+            '\u201c': '"', '\u201d': '"',
+            '\u2013': '-', '\u2014': '--',
+            '\u2026': '...',
+        },
+        'backtick_replacements': ['bl', 'dd', 'ff', 'fi', 'fl', 'tt', 'll', 'ft', 'fb', 'ffi', 'ffl'],
+        'merged_word_splits': {
+            'ofthe': 'of the', 'ofthis': 'of this', 'ofthat': 'of that',
+            'oftheir': 'of their', 'inthe': 'in the', 'inthis': 'in this',
+            'inthat': 'in that', 'tothe': 'to the', 'forthe': 'for the',
+            'onthe': 'on the', 'atthe': 'at the', 'bythe': 'by the',
+            'isthe': 'is the', 'andthe': 'and the', 'fromthe': 'from the',
+            'withthe': 'with the', 'asthe': 'as the', 'butthe': 'but the',
+        },
+        'ligature_map': {
+            '\ufb01': 'fi', '\ufb02': 'fl', '\ufb00': 'ff',
+            '\ufb03': 'ffi', '\ufb04': 'ffl',
+        },
+        'chapter_keywords': [
+            'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+            'Chapter', 'Chapters', 'chapter', 'chapters',
+            'Samuel', 'Kings', 'Chronicles', 'Corinthians',
+            'Thessalonians', 'Timothy', 'Peter', 'John',
+            'Psalm', 'Isaiah', 'Jeremiah', 'Ezekiel', 'Daniel',
+            'verse', 'verses', 'Verse', 'Verses',
+        ],
+    }
+
+
+def _merge_substitution_data(base, overlay):
+    """Deep-merge overlay onto base. Overlay values win for conflicts."""
+    result = dict(base)
+    for key in overlay:
+        if key.startswith('_'):
+            continue  # skip _comment, _version
+        if key not in result:
+            result[key] = overlay[key]
+            continue
+        ov = overlay[key]
+        bv = result[key]
+        # Handle JSON wrapper structure: {entries: {...}}, {candidates: [...]}, {words: [...]}
+        if isinstance(ov, dict):
+            if 'entries' in ov and isinstance(bv, dict):
+                result[key] = dict(bv)
+                result[key].update(ov['entries'])
+            elif 'candidates' in ov and isinstance(bv, list):
+                result[key] = ov['candidates']
+            elif 'words' in ov and isinstance(bv, list):
+                result[key] = ov['words']
+            elif isinstance(bv, dict):
+                result[key] = dict(bv)
+                result[key].update(ov)
+            else:
+                result[key] = ov
+        elif isinstance(ov, list) and isinstance(bv, list):
+            result[key] = ov
+        else:
+            result[key] = ov
+    return result
+
+
 # Module-level storage for font inventory (set by extract_with_pdfminer_html)
 _last_font_inventory = []
 
@@ -1101,51 +1234,9 @@ def normalize_encoding(text, log=None):
     }
 
     # ── Pattern 1: UTF-8 mojibake from Windows-1252 / Latin-1 ──────────
-    # These are the most common: Windows-1252 smart quotes and special chars
-    # that got double-encoded (interpreted as Latin-1 bytes, then encoded as UTF-8)
-    mojibake_map = {
-        # Smart quotes (Windows-1252 -> UTF-8 double-encoding)
-        '\xe2\x80\x99': '\u2019',   # right single quote '
-        '\xe2\x80\x98': '\u2018',   # left single quote '
-        '\xe2\x80\x9c': '\u201C',   # left double quote "
-        '\xe2\x80\x9d': '\u201D',   # right double quote "
-        '\xe2\x80\x93': '\u2013',   # en dash –
-        '\xe2\x80\x94': '\u2014',   # em dash —
-        '\xe2\x80\xa6': '\u2026',   # ellipsis …
-        '\xe2\x80\xa2': '\u2022',   # bullet •
-        '\xe2\x80\xb2': '\u2032',   # prime ′
-        '\xe2\x80\xb3': '\u2033',   # double prime ″
-        '\xe2\x84\xa2': '\u2122',   # trademark ™
-        '\xc3\xa9': 'é',            # e-acute
-        '\xc3\xa8': 'è',            # e-grave
-        '\xc3\xaa': 'ê',            # e-circumflex
-        '\xc3\xab': 'ë',            # e-diaeresis
-        '\xc3\xa0': 'à',            # a-grave
-        '\xc3\xa1': 'á',            # a-acute
-        '\xc3\xa2': 'â',            # a-circumflex
-        '\xc3\xa4': 'ä',            # a-diaeresis
-        '\xc3\xa7': 'ç',            # c-cedilla
-        '\xc3\xad': 'í',            # i-acute
-        '\xc3\xaf': 'ï',            # i-diaeresis
-        '\xc3\xb1': 'ñ',            # n-tilde
-        '\xc3\xb3': 'ó',            # o-acute
-        '\xc3\xb6': 'ö',            # o-diaeresis
-        '\xc3\xba': 'ú',            # u-acute
-        '\xc3\xbc': 'ü',            # u-diaeresis
-        '\xc3\x9f': 'ß',            # sharp s (German)
-        '\xc3\x86': 'Æ',            # AE ligature
-        '\xc3\xa6': 'æ',            # ae ligature
-        '\xc3\x98': 'Ø',            # O-stroke
-        '\xc3\xb8': 'ø',            # o-stroke
-        '\xc2\xa3': '£',            # pound sign
-        '\xc2\xa9': '©',            # copyright
-        '\xc2\xae': '®',            # registered
-        '\xc2\xb0': '°',            # degree
-        '\xc2\xb7': '·',            # middle dot
-        '\xc2\xbd': '½',            # one-half
-        '\xc2\xbc': '¼',            # one-quarter
-        '\xc2\xbe': '¾',            # three-quarters
-    }
+    # Loaded from substitution table (config/ocr_substitutions.json)
+    _subs_for_mojibake = load_ocr_substitutions()
+    mojibake_map = _subs_for_mojibake.get('mojibake_map', {})
 
     for bad, good in mojibake_map.items():
         if bad in text:
@@ -2360,7 +2451,7 @@ def _looks_like_heading(line):
     return False
 
 
-def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=None):
+def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=None, ocr_table_path=None):
     """
     Fix common pypdf text extraction artifacts using dictionary-based validation.
 
@@ -2375,9 +2466,12 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
         from spellchecker import SpellChecker
     except ImportError:
         log("  pyspellchecker not installed -- skipping OCR cleanup (pip install pyspellchecker)")
-        return paragraphs
+        return paragraphs, {}
 
     spell = SpellChecker()
+
+    # Load OCR substitution tables (from JSON config, with hardcoded fallback)
+    subs = load_ocr_substitutions(custom_path=ocr_table_path)
 
     # Pre-scan: Detect repeated short paragraphs (running headers) before any phase
     # modifies them. Save these fragments for use in Phase 9 embedded stripping.
@@ -3015,18 +3109,14 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     words_checked = 0
     fix_log = {}  # track unique corrections for logging
 
-    # Phase 1: Normalize Unicode characters
+    # Phase 1: Normalize Unicode characters (from substitution table)
+    unicode_map = subs.get('unicode_normalization', {})
     normalized = 0
     for i in range(len(paragraphs)):
         original = paragraphs[i]
         text = paragraphs[i]
-        # Normalize smart quotes
-        text = text.replace('\u2018', "'").replace('\u2019', "'")  # single quotes
-        text = text.replace('\u201c', '"').replace('\u201d', '"')  # double quotes
-        # Normalize dashes
-        text = text.replace('\u2013', '-').replace('\u2014', '--')  # en-dash, em-dash
-        # Normalize ellipsis
-        text = text.replace('\u2026', '...')
+        for src, tgt in unicode_map.items():
+            text = text.replace(src, tgt)
         if text != original:
             paragraphs[i] = text
             normalized += 1
@@ -3047,9 +3137,8 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
 
         original = paragraphs[i]
 
-        # Common backtick -> letter substitutions found in PDF extraction
-        # The backtick often replaces: 'bl', 'dd', 'ff', 'fi', 'fl', 'tt', 'll'
-        replacements = ['bl', 'dd', 'ff', 'fi', 'fl', 'tt', 'll', 'ft', 'fb', 'ffi', 'ffl']
+        # Common backtick -> letter substitutions (from substitution table)
+        replacements = subs.get('backtick_replacements', ['bl', 'dd', 'ff', 'fi', 'fl', 'tt', 'll', 'ft', 'fb', 'ffi', 'ffl'])
 
         def fix_backtick(m):
             nonlocal backtick_fixes
@@ -3148,14 +3237,20 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
 
     # Fix standalone "i" -> "1" after book/chapter keywords
     # "Genesis i" -> "Genesis 1", "Chapter i" -> "Chapter 1"
-    standalone_i_pattern = re.compile(
-        r'\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|'
-        r'Chapter|Chapters|chapter|chapters|'
-        r'Samuel|Kings|Chronicles|Corinthians|'
-        r'Thessalonians|Timothy|Peter|John|'
-        r'Psalm|Isaiah|Jeremiah|Ezekiel|Daniel|'
-        r'verse|verses|Verse|Verses)\s+i\b'
-    )
+    # Build keyword pattern from substitution table
+    chapter_kw = subs.get('chapter_keywords', [])
+    if chapter_kw:
+        kw_pattern = '|'.join(re.escape(kw) for kw in chapter_kw)
+        standalone_i_pattern = re.compile(r'\b(' + kw_pattern + r')\s+i\b')
+    else:
+        standalone_i_pattern = re.compile(
+            r'\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|'
+            r'Chapter|Chapters|chapter|chapters|'
+            r'Samuel|Kings|Chronicles|Corinthians|'
+            r'Thessalonians|Timothy|Peter|John|'
+            r'Psalm|Isaiah|Jeremiah|Ezekiel|Daniel|'
+            r'verse|verses|Verse|Verses)\s+i\b'
+        )
 
     standalone_i_fixes = 0
     for i in range(len(paragraphs)):
@@ -3224,26 +3319,7 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     # Phase 2d: Fix merged word pairs from pypdf line-break artifacts
     # pypdf sometimes drops the space at line boundaries, joining "of the" -> "ofthe".
     # These are NOT OCR errors -- they're text extraction artifacts.
-    _merged_word_fixes = {
-        'ofthe': 'of the',
-        'ofthis': 'of this',
-        'ofthat': 'of that',
-        'oftheir': 'of their',
-        'inthe': 'in the',
-        'inthis': 'in this',
-        'inthat': 'in that',
-        'tothe': 'to the',
-        'forthe': 'for the',
-        'onthe': 'on the',
-        'atthe': 'at the',
-        'bythe': 'by the',
-        'isthe': 'is the',
-        'andthe': 'and the',
-        'fromthe': 'from the',
-        'withthe': 'with the',
-        'asthe': 'as the',
-        'butthe': 'but the',
-    }
+    _merged_word_fixes = subs.get('merged_word_splits', {})
     _merged_word_patterns = [
         (re.compile(r'\b' + pat + r'\b'), repl)
         for pat, repl in _merged_word_fixes.items()
@@ -3262,14 +3338,14 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     if merged_word_count:
         log(f"  Fixed {merged_word_count} merged word pairs (pypdf line-break artifacts)")
 
-    # Phase 3: Fix common ligature issues
+    # Phase 3: Fix common ligature issues (from substitution table)
+    lig_map = subs.get('ligature_map', {})
     ligature_fixes = 0
     for i in range(len(paragraphs)):
         original = paragraphs[i]
-        # Common ligature artifacts: 'ﬁ' -> 'fi', 'ﬂ' -> 'fl', 'ﬀ' -> 'ff', 'ﬃ' -> 'ffi', 'ﬄ' -> 'ffl'
         text = paragraphs[i]
-        text = text.replace('\ufb01', 'fi').replace('\ufb02', 'fl')
-        text = text.replace('\ufb00', 'ff').replace('\ufb03', 'ffi').replace('\ufb04', 'ffl')
+        for src, tgt in lig_map.items():
+            text = text.replace(src, tgt)
         if text != original:
             paragraphs[i] = text
             ligature_fixes += 1
@@ -4137,7 +4213,17 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     if phase10_merged:
         log(f"  Phase 10: merged {phase10_merged} page-boundary sentence splits")
 
-    return paragraphs
+    fix_stats = {
+        'unicode_normalized': normalized,
+        'backtick_fixes': backtick_fixes,
+        'rn_m_fixes': fixes_made,
+        'i_to_1_fixes': i_to_1_fixes + standalone_i_fixes,
+        'o_to_0_fixes': o_to_0_fixes,
+        'merged_word_fixes': merged_word_count,
+        'ligature_fixes': ligature_fixes,
+        'dehyphenation_fixes': dehyphen_count,
+    }
+    return paragraphs, fix_stats
 
 
 def _extract_html_with_pymupdf_columns(pdf_path, log):
@@ -9094,7 +9180,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         log("\n-- STEP 2c: Fixing OCR artifacts ---------------------")
         bm_titles = [bm['title'] for bm in bookmarks] if bookmarks else []
         h_indices = set(heading_dict.get('parts', []) + heading_dict.get('chapters', []))
-        paragraphs = fix_ocr_artifacts(paragraphs, log, bookmark_titles=bm_titles, heading_indices=h_indices)
+        paragraphs, _fix_stats = fix_ocr_artifacts(paragraphs, log, bookmark_titles=bm_titles, heading_indices=h_indices)
 
         log("\n-- STEP 2d: Stripping trailing footnotes ---------------")
         paragraphs = strip_footnotes_from_paragraphs(paragraphs, log)
@@ -9157,7 +9243,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         return  # Skip the rest of process_pdf
 
     log("\n-- STEP 2c: Fixing OCR artifacts ---------------------")
-    paragraphs = fix_ocr_artifacts(paragraphs, log)
+    paragraphs, _fix_stats = fix_ocr_artifacts(paragraphs, log)
 
     log("\n-- STEP 2d: Stripping trailing footnotes ---------------")
     paragraphs = strip_footnotes_from_paragraphs(paragraphs, log)
@@ -10259,7 +10345,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
         log("\n-- STEP 2b: Fixing OCR artifacts ---------------------")
         bm_titles = [bm['title'] for bm in bookmarks]
         # No heading_indices yet — bookmarks haven't been placed
-        paragraphs = fix_ocr_artifacts(paragraphs, log, bookmark_titles=bm_titles)
+        paragraphs, _fix_stats = fix_ocr_artifacts(paragraphs, log, bookmark_titles=bm_titles)
 
         log("\n-- STEP 2b2: Stripping trailing footnotes ------------")
         paragraphs = strip_footnotes_from_paragraphs(paragraphs, log)
@@ -10530,7 +10616,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
         return  # Skip regex/hints path
 
     log("\n-- STEP 2c: Fixing OCR artifacts ---------------------")
-    paragraphs = fix_ocr_artifacts(paragraphs, log)
+    paragraphs, _fix_stats = fix_ocr_artifacts(paragraphs, log)
 
     log("\n-- STEP 2c2: Stripping trailing footnotes ------------")
     paragraphs = strip_footnotes_from_paragraphs(paragraphs, log)
@@ -10837,8 +10923,18 @@ Examples:
     ap.add_argument("--tag-syntax", choices=["sapi", "universal"], default="sapi",
                     help="Tag format: 'sapi' for <voice>/<silence> XML tags, "
                          "'universal' for {{Voice=}}/{{Pause=}} tags (default: sapi)")
+    ap.add_argument("--ocr-table", default=None,
+                    help="Path to custom OCR substitution JSON (merged on top of config/ocr_substitutions.json)")
+    ap.add_argument("--dump-ocr-table", action="store_true",
+                    help="Print the effective OCR substitution table and exit")
 
     args = ap.parse_args()
+
+    # Handle --dump-ocr-table diagnostic flag
+    if args.dump_ocr_table:
+        _subs = load_ocr_substitutions(custom_path=args.ocr_table if args.ocr_table else None)
+        print(json.dumps(_subs, indent=2, ensure_ascii=False))
+        sys.exit(0)
 
     # Fallback to settings.json for tool paths if not provided via CLI
     if not args.tesseract_path or not args.poppler_path:
