@@ -23,9 +23,10 @@ agents/
 ├── document-intake/                   ← (future) Source classification + text extraction
 │   ├── system-prompt.md
 │   └── contract.md
-├── qa-evaluation/                     ← (future) Quality assessment specialist
-│   ├── system-prompt.md
-│   └── contract.md
+├── qa-evaluation/                     ← Visual quality evaluation specialist
+│   ├── system-prompt.md              ← The agent's system prompt (enhanced rubric)
+│   ├── contract.md                   ← Input/output contract + boundaries
+│   └── examples/                     ← Known-good evaluation examples
 └── foh-brief/                         ← (future) FOH daily brief generation specialist
     ├── system-prompt.md
     └── contract.md

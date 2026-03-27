@@ -520,11 +520,22 @@ def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
     logger.info("VQA mode: %s (%d pages, %d DPI)", mode_label, max_pages, dpi)
 
     # --- Load rubric ---
-    rubric_path = Path(rubric_path)
-    if not rubric_path.exists():
-        raise FileNotFoundError(f"Rubric file not found: {rubric_path}")
-    rubric_text = rubric_path.read_text(encoding='utf-8')
-    logger.info("Loaded rubric from %s", rubric_path)
+    # Prefer agent framework prompt, fall back to legacy rubric
+    agent_prompt_path = Path(__file__).resolve().parent.parent / 'agents' / 'qa-evaluation' / 'system-prompt.md'
+    legacy_rubric_path = Path(rubric_path)
+
+    if agent_prompt_path.exists():
+        rubric_text = agent_prompt_path.read_text(encoding='utf-8')
+        logger.info("Loaded QA agent prompt from %s", agent_prompt_path)
+    elif legacy_rubric_path.exists():
+        rubric_text = legacy_rubric_path.read_text(encoding='utf-8')
+        logger.info("Loaded legacy rubric from %s (agent prompt not found)", legacy_rubric_path)
+    else:
+        raise FileNotFoundError(
+            f"No QA rubric found. Checked:\n"
+            f"  Agent prompt: {agent_prompt_path}\n"
+            f"  Legacy rubric: {legacy_rubric_path}"
+        )
 
     # --- Convert to PDF ---
     input_ext = input_path.suffix.lower()
@@ -725,6 +736,8 @@ def main():
     default_dpi = vqa_settings.get("dpi", 100)
     default_max_pages = vqa_settings.get("max_pages", 8)
     default_threshold = vqa_settings.get("pass_threshold", 70)
+    # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
+    # This setting is used as a fallback only.
     default_rubric = vqa_settings.get("rubric_path", "")
     if not default_rubric:
         default_rubric = str(Path(__file__).resolve().parent / "visual_qa_rubric.md")

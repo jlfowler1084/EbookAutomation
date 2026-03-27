@@ -757,6 +757,7 @@ Agent system prompts live in `agents/<agent-name>/system-prompt.md`. Each agent 
 | Agent | Directory | Called By | Purpose |
 |-------|-----------|-----------|---------|
 | Structure Analysis | `agents/structure-analysis/` | `Get-ChapterStructure`, `Invoke-StructureAgent` | Chapter/heading detection from book text |
+| QA Evaluation | `agents/qa-evaluation/` | `Test-ConversionQuality`, `visual_qa.py` | Visual quality evaluation of rendered ebook pages |
 
 ---
 
