@@ -4772,11 +4772,14 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     all_paras = []
     fonts_seen = set()
     total_pages = 0
+    page_heights = {}  # {page_number: height} for footnote zone detection
 
     for page_num, page_layout in enumerate(extract_pages(pdf_path, laparams=laparams)):
         total_pages += 1
         pg = page_num + 1  # 1-indexed
         page_width = page_layout.width
+        page_height = page_layout.height
+        page_heights[pg] = page_height
 
         # Insert page marker
         all_paras.append({
@@ -4951,7 +4954,17 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
             is_heading_line = ln['bold'] and ln['size'] > 15
             align_ok = same_align or is_heading_line
 
-            if same_size and same_bold and same_italic and align_ok and not big_gap:
+            # Force paragraph break at footnote zone boundary
+            # pdfminer y-axis: y0=0 is bottom, page_height is top
+            # If previous line is in body zone and current crosses into footnote zone,
+            # break even if font properties match
+            footnote_threshold = page_height * 0.15
+            crossing_into_footnotes = (
+                prev['y0'] >= footnote_threshold and
+                ln['y0'] < footnote_threshold
+            )
+
+            if same_size and same_bold and same_italic and align_ok and not big_gap and not crossing_into_footnotes:
                 current_group.append(ln)
             else:
                 # Flush current group as a paragraph
@@ -5017,6 +5030,53 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                            'identity-v', 'wingdings'])]
     if risky_fonts:
         log(f"  WARNING: Risky fonts detected: {', '.join(risky_fonts)}")
+
+    # ── Footnote detection: classify small-font paragraphs at page bottoms ──
+    # Uses the same dual-threshold approach as the PyMuPDF column path:
+    # - Hard threshold: y0 in bottom 15% of page → always footnote (if small font)
+    # - Soft threshold: y0 in bottom 40% AND font < 85% of body → likely footnote
+    # pdfminer y-axis: y0=0 is page bottom, y0=page_height is page top.
+    footnote_count = 0
+    for p in all_paras:
+        if p.get('is_page_marker'):
+            continue
+
+        pg = p.get('page_number', 0)
+        ph = page_heights.get(pg, 0)
+        if ph <= 0:
+            continue
+
+        y0_min = p.get('y0_min')
+        if y0_min is None:
+            continue
+
+        font_sz = p.get('font_size', 0)
+        if font_sz <= 0 or body_size <= 0:
+            continue
+
+        # Relative vertical position (0 = page bottom, 1 = page top)
+        y_ratio = y0_min / ph
+
+        # Font size ratio relative to body
+        size_ratio = font_sz / body_size
+
+        is_footnote = False
+
+        # Hard threshold: bottom 15% of page AND font is smaller than body
+        if y_ratio <= 0.15 and size_ratio < 0.95:
+            is_footnote = True
+
+        # Soft threshold: bottom 40% of page AND font notably smaller (< 85% body)
+        elif y_ratio <= 0.40 and size_ratio < 0.85:
+            is_footnote = True
+
+        if is_footnote:
+            p['is_footnote'] = True
+            footnote_count += 1
+
+    if footnote_count:
+        log(f"  Footnote detection: {footnote_count} paragraphs classified as footnotes "
+            f"(font < {body_size:.1f}pt at page bottom)")
 
     return all_paras, body_size
 
@@ -5119,6 +5179,8 @@ def _flush_line_group(lines, all_paras):
         'page_number': first['page'],
         'line_count': len(lines),
         'char_count': len(text),
+        'y0_min': min(ln['y0'] for ln in lines),   # lowest y0 in group (closest to page bottom)
+        'y0_max': max(ln['y0'] for ln in lines),   # highest y0 in group
     })
 
 
@@ -5271,7 +5333,8 @@ def rejoin_html_fragments(para_dicts, body_size, log):
     return para_dicts
 
 
-def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Untitled'):
+def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Untitled',
+                              skip_footnotes=False):
     """
     Convert paragraph dicts with font metadata into semantic HTML.
     Uses font size clusters + bookmark cross-reference for heading levels.
@@ -5683,6 +5746,9 @@ blockquote {{ margin: 1em 2em; }}
 blockquote p {{ text-indent: 0; }}
 .attribution {{ font-style: italic; text-align: right; margin-bottom: 1.5em; }}
 .section-break {{ font-weight: bold; font-size: 1.1em; margin-top: 2em; }}
+hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; margin: 1.5em 0 0.5em 0; }}
+.footnotes {{ font-size: 0.85em; line-height: 1.4; color: #555; }}
+.footnotes p {{ text-indent: 0; margin: 0.3em 0; }}
 </style>
 </head><body>
 ''')
@@ -5713,6 +5779,8 @@ blockquote p {{ text-indent: 0; }}
                     bm_page_best_para[pg] = idx
 
     in_blockquote = False
+    in_footnotes = False  # tracks whether we're inside a <div class="footnotes"> block
+    footnote_rendered = 0  # count of footnote paragraphs rendered
     prev_was_heading = False
     after_heading = False
     current_page = 0
@@ -5726,6 +5794,10 @@ blockquote p {{ text-indent: 0; }}
 
         # Track current page
         if p.get('is_page_marker'):
+            # Close footnotes block at page boundary
+            if in_footnotes:
+                html_parts.append('</div>\n')
+                in_footnotes = False
             current_page = p['page_number']
             # Still emit page anchors even in TOC pages
             html_parts.append(f'<a id="page_{current_page}"></a>\n')
@@ -5734,6 +5806,29 @@ blockquote p {{ text-indent: 0; }}
             continue
         if not text:
             continue
+
+        # Handle footnote paragraphs
+        if p.get('is_footnote'):
+            if skip_footnotes:
+                continue  # Drop footnote paragraphs entirely
+            # Close blockquote if transitioning into footnotes
+            if in_blockquote:
+                html_parts.append('</blockquote>\n')
+                in_blockquote = False
+            if not in_footnotes:
+                html_parts.append('<hr class="footnote-separator">\n')
+                html_parts.append('<div class="footnotes">\n')
+                in_footnotes = True
+            escaped_text = _html_escape(text)
+            html_parts.append(f'<p>{escaped_text}</p>\n')
+            footnote_rendered += 1
+            after_heading = False
+            continue
+
+        # Close footnotes block when transitioning back to body text
+        if in_footnotes:
+            html_parts.append('</div>\n')
+            in_footnotes = False
 
         # Skip running header candidates identified by pre-scan
         if i in _rh_strip_indices:
@@ -6044,11 +6139,15 @@ blockquote p {{ text-indent: 0; }}
     # Close any open blockquote
     if in_blockquote:
         html_parts.append('</blockquote>\n')
+    # Close any open footnotes block
+    if in_footnotes:
+        html_parts.append('</div>\n')
 
     html_parts.append('</body></html>\n')
 
     log(f"  HTML formatting: {h1_count} h1, {h2_count} h2, {h3_count} h3, "
-        f"{bq_count} blockquote, {attr_count} attribution, {p_count} p")
+        f"{bq_count} blockquote, {attr_count} attribution, {p_count} p"
+        + (f", {footnote_rendered} footnotes" if footnote_rendered else ""))
     if toc_skipped:
         log(f"  TOC entries skipped: {toc_skipped}")
     if running_header_skipped:
@@ -7631,6 +7730,21 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
                 display: block;
                 margin-top: 0.3em;
             }
+            hr.footnote-separator {
+                border: none;
+                border-top: 1px solid #999;
+                width: 30%;
+                margin: 1.5em 0 0.5em 0;
+            }
+            .footnotes {
+                font-size: 0.85em;
+                line-height: 1.4;
+                color: #555;
+            }
+            .footnotes p {
+                text-indent: 0;
+                margin: 0.3em 0;
+            }
         """,
         'modern': """
             body {
@@ -7694,6 +7808,9 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
             .half-title { text-align: center; page-break-after: always; padding-top: 30%; }
             .half-title h1 { page-break-before: auto; margin-top: 0; border: none; }
             .half-title .author { font-size: 1.1em; font-style: italic; margin-top: 1em; color: #666; }
+            hr.footnote-separator { border: none; border-top: 1px solid #ddd; width: 30%; margin: 1.5em 0 0.5em 0; }
+            .footnotes { font-size: 0.85em; line-height: 1.4; color: #666; }
+            .footnotes p { text-indent: 0; margin: 0.3em 0; }
         """,
         'minimal': """
             body {
@@ -7715,6 +7832,9 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
             .half-title { text-align: center; page-break-after: always; padding-top: 30%; }
             .half-title h1 { page-break-before: auto; margin-top: 0; }
             .half-title .author { font-style: italic; margin-top: 1em; }
+            hr.footnote-separator { border: none; border-top: 1px solid #999; width: 30%; margin: 1.5em 0 0.5em 0; }
+            .footnotes { font-size: 0.85em; line-height: 1.4; color: #555; }
+            .footnotes p { text-indent: 0; margin: 0.3em 0; }
         """,
     }
 
@@ -10486,7 +10606,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     else:
         title = stem[:80]
 
-    html = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title)
+    html = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title,
+                                     skip_footnotes=skip_footnotes)
 
     # ── Fix double spaces from inline tag boundaries ──────────────
     # pdfminer wraps individual italic/bold words in separate <em>/<strong>
@@ -10612,7 +10733,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
                         # Re-format HTML with remediated content
                         html = format_paragraphs_as_html(
-                            para_dicts, body_size, bookmarks, log, title=title)
+                            para_dicts, body_size, bookmarks, log, title=title,
+                            skip_footnotes=skip_footnotes)
                         html = re.sub(r'\s*</em>\s*<em>\s*', ' ', html)
                         html = re.sub(r'\s*</strong>\s*<strong>\s*', ' ', html)
                         html = re.sub(r'\s+(</em>)\s*', r'\1 ', html)
