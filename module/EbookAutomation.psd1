@@ -26,6 +26,8 @@
         'Invoke-ConvergeLoop'
         'Write-EbookLog'
         'Get-EbookConfig'
+        'Get-EbookDefaults'
+        'Set-EbookDefaults'
     )
     PrivateData = @{
         PSData = @{

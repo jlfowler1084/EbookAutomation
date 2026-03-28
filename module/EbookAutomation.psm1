@@ -14,12 +14,22 @@
 
 #region -- Module-level setup ------------------------------------------------
 
-$script:ModuleRoot = $PSScriptRoot | Split-Path   # project root (one level up from module\)
+$script:ModuleRoot = if ($env:EBOOK_AUTOMATION_ROOT) { $env:EBOOK_AUTOMATION_ROOT } else { $PSScriptRoot | Split-Path }   # project root (one level up from module\)
 $script:Config     = $null
 
 function Get-EbookConfig {
     <#
-    .SYNOPSIS  Load (and cache) settings.json from the project config folder.
+    .SYNOPSIS
+        Load (and cache) settings.json from the project config folder.
+    .DESCRIPTION
+        Reads config\settings.json from the project root, parses it, and caches
+        the result in a module-scoped variable for the session.  Subsequent calls
+        return the cached object without re-reading disk.  Re-import the module
+        (-Force) to clear the cache.
+    .EXAMPLE
+        PS> $cfg = Get-EbookConfig
+        PS> $cfg.paths.inbox
+        inbox
     #>
     if ($script:Config) { return $script:Config }
 
@@ -41,13 +51,30 @@ function Resolve-ProjectPath {
 
 function Get-EbookMetadataFromFilename {
     <#
-    .SYNOPSIS  Extract title and author from common ebook filename patterns.
+    .SYNOPSIS
+        Extract title and author from common ebook filename patterns.
     .DESCRIPTION
         Parses filenames from Anna's Archive, libgen, and common naming conventions:
           "Author - Title (Year, Publisher) - libgen.li.pdf"
           "Title -- Author -- Publisher -- Year -- ISBN -- hash -- Anna's Archive.pdf"
           "Author_-_Title_Year_Publisher_-_libgenli.pdf"
-        Returns a hashtable with Title and Authors keys (may be empty strings).
+        Returns a hashtable with Title, Authors, Publisher, Year, and ISBN keys
+        (any may be empty strings if not detected).
+    .PARAMETER FileName
+        The filename (or full path) of the ebook to parse. The extension is
+        stripped automatically before pattern matching.
+    .EXAMPLE
+        PS> Get-EbookMetadataFromFilename "Andrew Scott Cooper - The Oil Kings (2011, Simon & Schuster) - libgen.li.pdf"
+
+        Name      Value
+        ----      -----
+        Title     The Oil Kings
+        Authors   Andrew Scott Cooper
+        Publisher Simon & Schuster
+        Year      2011
+        ISBN
+    .EXAMPLE
+        PS> Get-EbookMetadataFromFilename "My Book Title -- John Doe -- Publisher -- 2020 -- Anna's Archive.epub"
     #>
     param([string]$FileName)
 
@@ -161,7 +188,22 @@ function Get-EbookMetadataFromFilename {
 
 function Write-EbookLog {
     <#
-    .SYNOPSIS  Write a timestamped entry to the daily log file and console.
+    .SYNOPSIS
+        Write a timestamped entry to the daily log file and console.
+    .DESCRIPTION
+        Appends a timestamped, level-tagged line to the daily log file
+        (logs\ebook-automation-YYYY-MM-DD.log) and writes the same line
+        to the console with colour coding.  All module functions use this
+        for consistent logging.
+    .PARAMETER Message
+        The log message text.
+    .PARAMETER Level
+        Severity level: INFO (cyan), WARN (yellow), ERROR (red), or
+        SUCCESS (green).  Defaults to INFO.
+    .EXAMPLE
+        PS> Write-EbookLog "Starting conversion..." -Level INFO
+    .EXAMPLE
+        PS> Write-EbookLog "Calibre not found" -Level ERROR
     #>
     param(
         [Parameter(Mandatory)][string]$Message,
@@ -226,14 +268,17 @@ function Send-EbookNotification {
 
 function Convert-ToTTS {
     <#
-    .SYNOPSIS  Convert an ebook (PDF/EPUB/MOBI/AZW/DJVU) to Balabolka TTS text.
+    .SYNOPSIS
+        Convert an ebook (PDF/EPUB/MOBI/AZW/DJVU) to Balabolka TTS text.
     .DESCRIPTION
         Extracts text from the input ebook using pdf_to_balabolka.py.
         PDF: native pypdf extraction. EPUB: native ebooklib extraction.
         MOBI/AZW/DJVU: converted via Calibre, then text extracted.
-    .PARAMETER InputFile   Full path to the source ebook file.
-    .PARAMETER OutputDir   Folder where the .txt file will be saved.
-                           Defaults to output\balabolka-txt from settings.json.
+    .PARAMETER InputFile
+        Full path to the source ebook file.
+    .PARAMETER OutputDir
+        Folder where the .txt file will be saved.
+        Defaults to output\balabolka-txt from settings.json.
     .PARAMETER UseClaudeChapters
         When set, runs a two-pass extraction:
           Pass 1 -- normal regex-based chapter detection (fast)
@@ -246,10 +291,21 @@ function Convert-ToTTS {
         Force Tesseract OCR extraction for scanned/image-only PDFs.
         When not specified, the Python script auto-detects whether OCR is needed.
         Use this switch to force OCR on a PDF that wasn't auto-detected.
+    .PARAMETER ForceColumns
+        Force PyMuPDF column-aware extraction regardless of auto-detection
+        confidence. Useful for known two-column PDFs (commentaries, academic papers).
+    .PARAMETER DialogueVoices
+        Enable Balabolka voice tags for dialogue in the output TXT, assigning
+        different TTS voices to quoted speech.
     .EXAMPLE
-        Convert-ToTTS -InputFile ".\book.pdf" -UseClaudeChapters
+        PS> Convert-ToTTS -InputFile "F:\Books\mybook.pdf"
+        Converts a PDF to Balabolka TTS text using default output directory.
     .EXAMPLE
-        Convert-ToTTS -InputFile ".\scanned_book.pdf" -UseOCR
+        PS> Convert-ToTTS -InputFile "F:\Books\mybook.pdf" -UseClaudeChapters
+        Converts with AI-assisted chapter detection for better ALL-CAPS headings.
+    .EXAMPLE
+        PS> Convert-ToTTS -InputFile "F:\Books\scanned_book.pdf" -UseOCR
+        Forces OCR extraction on a scanned PDF.
     #>
     [CmdletBinding()]
     param(
@@ -539,7 +595,8 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
 
 function Convert-ToKindle {
     <#
-    .SYNOPSIS  Convert an ebook to KFX or AZW3 via Calibre.
+    .SYNOPSIS
+        Convert an ebook to KFX or AZW3 via Calibre.
     .DESCRIPTION
         Multiple extraction paths for PDF input:
 
@@ -561,9 +618,11 @@ function Convert-ToKindle {
         KFX output requires the KFX Output plugin for Calibre:
         https://www.mobileread.com/forums/showthread.php?t=272407
 
-    .PARAMETER InputFile   Full path to the source file.
-    .PARAMETER OutputDir   Folder where the Kindle file will be saved.
-                           Defaults to output\kindle from settings.json.
+    .PARAMETER InputFile
+        Full path to the source file.
+    .PARAMETER OutputDir
+        Folder where the Kindle file will be saved.
+        Defaults to output\kindle from settings.json.
     .PARAMETER UseHtmlExtraction
         Use the pdfminer-based HTML extraction path.  Mutually exclusive with
         the Legacy switch (ValidateQuality).
@@ -584,6 +643,21 @@ function Convert-ToKindle {
         Enable AI Quality Pass fix application. Without this, the quality
         pass only detects and scores issues without modifying text. Use
         with caution — AI fixes can alter content.
+    .EXAMPLE
+        PS> Convert-ToKindle -InputFile "F:\Books\mybook.pdf" -UseHtmlExtraction
+        Converts a PDF to KFX using the pdfminer HTML extraction path (recommended).
+    .EXAMPLE
+        PS> Convert-ToKindle -InputFile "F:\Books\mybook.pdf" -UseHtmlExtraction -UseClaudeChapters
+        HTML extraction with AI-assisted chapter detection for accurate TOC.
+    .EXAMPLE
+        PS> Convert-ToKindle -InputFile "F:\Books\scanned.pdf" -UseOCR
+        Converts a scanned PDF using Tesseract OCR extraction.
+    .EXAMPLE
+        PS> Convert-ToKindle -InputFile "F:\Books\mybook.epub"
+        Converts an EPUB directly via Calibre (no text extraction needed).
+    .NOTES
+        Requires Calibre installed. KFX output requires the KFX Output plugin.
+        AI features (Claude chapters, quality pass) require ANTHROPIC_API_KEY.
     #>
     [CmdletBinding(DefaultParameterSetName = 'Legacy')]
     param(
@@ -2813,7 +2887,8 @@ function Test-AlreadyProcessed {
 
 function Invoke-EbookPipeline {
     <#
-    .SYNOPSIS  Scan the inbox, process any new files through TTS and Kindle converters.
+    .SYNOPSIS
+        Scan the inbox, process any new files through TTS and Kindle converters.
     .DESCRIPTION
         Picks up every supported file in the inbox folder, skips already-processed
         files, runs TTS and/or Kindle conversion, archives the original, and logs
@@ -2835,12 +2910,89 @@ function Invoke-EbookPipeline {
         Pass -UseOCR through to Convert-ToTTS and Convert-ToKindle to force
         Tesseract OCR extraction for scanned/image-only PDFs.
 
+    .PARAMETER ForceColumns
+        Force PyMuPDF column-aware extraction regardless of detection confidence.
+
+    .PARAMETER ValidateVisual
+        Run visual QA (Claude Vision) on each Kindle output after conversion.
+
+    .PARAMETER NoCache
+        Skip cache lookup and force fresh conversion even if a book has been
+        successfully converted before.
+
+    .PARAMETER UseVision
+        Use Claude Vision API for premium Tier 3 extraction.
+
+    .PARAMETER VisionCostLimit
+        Maximum allowed cost for Vision extraction in USD. Default: 15.00.
+
+    .PARAMETER UseGemini
+        Use Gemini Flash for full book transcription (Tier 2.5). Requires GEMINI_API_KEY.
+
+    .PARAMETER GeminiRemediate
+        Use Gemini Flash to remediate low-quality pages only. Requires GEMINI_API_KEY.
+
+    .PARAMETER GeminiCostLimit
+        Maximum cost for Gemini extraction in USD. Default: 5.00.
+
+    .PARAMETER SendToKindle
+        After conversion, send the KFX output to a USB-connected Kindle device.
+
+    .PARAMETER EmailToKindle
+        After conversion, email the EPUB output to the Kindle email address
+        configured in settings.json.
+
+    .PARAMETER Profile
+        Content profile: 'full' (default), 'clean-read', or 'text-only'.
+
+    .PARAMETER NoFootnotes
+        Strip footnotes from the output.
+
+    .PARAMETER NoIndex
+        Strip the index section from the output.
+
+    .PARAMETER NoBibliography
+        Strip bibliography/references from the output.
+
+    .PARAMETER NoHyperlinks
+        Remove hyperlinks from the output.
+
+    .PARAMETER NoFrontMatter
+        Strip front matter (title page, copyright, etc.) from the output.
+
+    .PARAMETER NoBackMatter
+        Strip back matter (appendices, etc.) from the output.
+
+    .PARAMETER NoImages
+        Strip image references from the output.
+
+    .PARAMETER NoBlockQuotes
+        Strip block quotes from the output.
+
+    .PARAMETER ApplyAIFixes
+        Enable AI Quality Pass fix application during Kindle conversion.
+
+    .PARAMETER SkipPreflight
+        Skip pre-flight analysis (passed through to Invoke-ConvergeLoop).
+
+    .PARAMETER IgnoreRecommendation
+        Run pre-flight analysis but do not apply its recipe as defaults.
+
+    .PARAMETER ValidateAlignment
+        Run chapter alignment verification after conversion.
+
     .EXAMPLE
-        Invoke-EbookPipeline
+        PS> Invoke-EbookPipeline
+        Processes all new ebooks in the inbox folder.
     .EXAMPLE
-        Invoke-EbookPipeline -DryRun
+        PS> Invoke-EbookPipeline -DryRun
+        Shows what would be processed without converting anything.
     .EXAMPLE
-        Invoke-EbookPipeline -GenerateMP3 -UseClaudeChapters
+        PS> Invoke-EbookPipeline -GenerateMP3 -UseClaudeChapters
+        Converts with MP3 generation and AI-assisted chapter detection.
+    .EXAMPLE
+        PS> Invoke-EbookPipeline -EmailToKindle
+        Converts and emails EPUB to Kindle after successful conversion.
     #>
     [CmdletBinding()]
     param(
@@ -3305,10 +3457,23 @@ function Invoke-EbookPipeline {
 
 function Install-EbookScheduledTask {
     <#
-    .SYNOPSIS  Register a Windows Scheduled Task that runs the pipeline automatically.
+    .SYNOPSIS
+        Register a Windows Scheduled Task that runs the pipeline automatically.
     .DESCRIPTION
-        Creates a task that fires every N minutes (from settings.json).
+        Creates a task that fires every N minutes (from settings.json
+        scheduler.interval_minutes).  Also creates the launcher script
+        (module\Run-Pipeline.ps1) that the task will execute.
         Requires running PowerShell as Administrator once to register.
+    .PARAMETER Force
+        Replace an existing scheduled task if one is already registered.
+    .EXAMPLE
+        PS> Install-EbookScheduledTask
+        Registers the scheduled task with settings from settings.json.
+    .EXAMPLE
+        PS> Install-EbookScheduledTask -Force
+        Re-registers the task, replacing the existing one.
+    .NOTES
+        Requires Administrator privileges to register Windows Scheduled Tasks.
     #>
     [CmdletBinding()]
     param(
@@ -3375,7 +3540,14 @@ Invoke-EbookPipeline
 
 function Uninstall-EbookScheduledTask {
     <#
-    .SYNOPSIS  Remove the Windows Scheduled Task created by Install-EbookScheduledTask.
+    .SYNOPSIS
+        Remove the Windows Scheduled Task created by Install-EbookScheduledTask.
+    .DESCRIPTION
+        Unregisters the scheduled task whose name is defined in settings.json
+        (scheduler.task_name).  No-ops with a warning if the task is not found.
+    .EXAMPLE
+        PS> Uninstall-EbookScheduledTask
+        Removes the EbookAutomation scheduled task.
     #>
     $cfg      = Get-EbookConfig
     $taskName = $cfg.scheduler.task_name
@@ -3390,7 +3562,20 @@ function Uninstall-EbookScheduledTask {
 
 function Get-EbookTaskStatus {
     <#
-    .SYNOPSIS  Show the current state of the scheduled task and last run info.
+    .SYNOPSIS
+        Show the current state of the scheduled task and last run info.
+    .DESCRIPTION
+        Queries the Windows Task Scheduler for the EbookAutomation task and
+        returns an object with TaskName, State, LastRunTime, LastResult, and
+        NextRunTime.  Returns nothing if the task is not installed.
+    .EXAMPLE
+        PS> Get-EbookTaskStatus
+
+        TaskName    : EbookAutomation
+        State       : Ready
+        LastRunTime : 2026-03-27 08:00:00
+        LastResult  : 0
+        NextRunTime : 2026-03-27 08:30:00
     #>
     $cfg      = Get-EbookConfig
     $taskName = $cfg.scheduler.task_name
@@ -3417,7 +3602,25 @@ function Get-EbookTaskStatus {
 
 function Initialize-EbookAutomation {
     <#
-    .SYNOPSIS  First-time setup: verify dependencies, create folders, optionally install task.
+    .SYNOPSIS
+        First-time setup: verify dependencies, create folders, optionally install task.
+    .DESCRIPTION
+        Runs a four-step setup wizard:
+          1. Checks Python (and pypdf, pytesseract)
+          2. Checks Calibre (and KFX Output plugin)
+          3. Checks Tesseract OCR (optional)
+          4. Creates all required directories from settings.json
+
+        Optionally registers a Windows Scheduled Task at the end.
+    .PARAMETER InstallTask
+        If specified, also calls Install-EbookScheduledTask after the setup
+        wizard completes successfully.
+    .EXAMPLE
+        PS> Initialize-EbookAutomation
+        Runs the full dependency check and folder creation wizard.
+    .EXAMPLE
+        PS> Initialize-EbookAutomation -InstallTask
+        Runs setup and registers the scheduled task in one step.
     #>
     [CmdletBinding()]
     param(
@@ -3797,21 +4000,40 @@ function Convert-BriefToYouTube {
 
 function Invoke-Balabolka {
     <#
-    .SYNOPSIS  Convert a TXT file to MP3 audio using balcon.exe and ffmpeg.
+    .SYNOPSIS
+        Convert a TXT file to MP3 audio using balcon.exe and ffmpeg.
     .DESCRIPTION
         Stage 1 -- balcon.exe synthesises speech to a temporary WAV file using -w,
         which suppresses speaker playback. Progress is monitored via WAV file growth.
 
         Stage 2 -- ffmpeg encodes the WAV to 128k MP3, then the temp WAV is deleted.
 
-    .PARAMETER InputFile       Path to the Balabolka-ready .txt file.
-    .PARAMETER OutputFile      Path for the output .mp3 file.
-    .PARAMETER Voice           TTS voice name. Default: 'Microsoft Steffan Online'.
-    .PARAMETER Speed           Speech speed (-10 to +10). Default: 0.
-    .PARAMETER Volume          Speech volume (0-100). Default: 100.
-    .PARAMETER DictionaryFile  Path to a .dic pronunciation file.
-                               Defaults to dictionaries\master_pronunciation.dic if present.
-    .PARAMETER Bitrate         MP3 bitrate for ffmpeg. Default: 128k.
+    .PARAMETER InputFile
+        Path to the Balabolka-ready .txt file.
+    .PARAMETER OutputFile
+        Path for the output .mp3 file.
+    .PARAMETER Voice
+        TTS voice name. Default: 'Microsoft Steffan Online'.
+    .PARAMETER Speed
+        Speech speed (-10 to +10). Default: 0.
+    .PARAMETER Volume
+        Speech volume (0-100). Default: 100.
+    .PARAMETER DictionaryFile
+        Path to a .dic pronunciation file.
+        Defaults to dictionaries\master_pronunciation.dic if present.
+    .PARAMETER Bitrate
+        MP3 bitrate for ffmpeg. Default: 128k.
+    .EXAMPLE
+        PS> Invoke-Balabolka -InputFile "F:\Projects\EbookAutomation\output\balabolka-txt\MyBook.txt" `
+                             -OutputFile "F:\Projects\EbookAutomation\output\audiobooks\MyBook.mp3"
+        Converts TTS text to MP3 using the default voice and settings.
+    .EXAMPLE
+        PS> Invoke-Balabolka -InputFile ".\output\balabolka-txt\Brief.txt" `
+                             -OutputFile ".\output\audiobooks\Brief.mp3" `
+                             -Voice "Microsoft Guy Online" -Speed 2
+        Converts with an alternate voice at slightly faster speed.
+    .NOTES
+        Requires balcon.exe (in tools\balcon) and ffmpeg on PATH or in settings.json.
     #>
     [CmdletBinding()]
     param(
@@ -3924,7 +4146,8 @@ function Invoke-Balabolka {
 
 function Send-ToClaudeAPI {
     <#
-    .SYNOPSIS  Send a single-turn message to the Anthropic Messages API.
+    .SYNOPSIS
+        Send a single-turn message to the Anthropic Messages API.
     .DESCRIPTION
         General-purpose wrapper around POST /v1/messages. Reads the API key from
         $env:ANTHROPIC_API_KEY -- never logs or exposes the key value.
@@ -3938,6 +4161,15 @@ function Send-ToClaudeAPI {
         Maximum tokens in the response. Defaults to 4096.
     .OUTPUTS
         The response text string, or $null on failure.
+    .EXAMPLE
+        PS> $response = Send-ToClaudeAPI -SystemPrompt "You are a helpful assistant." `
+                                          -UserMessage "Summarise this chapter."
+    .EXAMPLE
+        PS> Send-ToClaudeAPI -SystemPrompt "Classify this text." `
+                              -UserMessage $bookText `
+                              -MaxTokens 512
+    .NOTES
+        Requires ANTHROPIC_API_KEY environment variable. Each call incurs API costs.
     #>
     [CmdletBinding()]
     param(
@@ -4007,7 +4239,8 @@ function Send-ToClaudeAPI {
 
 function Get-ChapterStructure {
     <#
-    .SYNOPSIS  Use Claude to identify chapter/part titles with font-based pre-analysis.
+    .SYNOPSIS
+        Use Claude to identify chapter/part titles with font-based pre-analysis.
     .DESCRIPTION
         Runs font-based heading detection on the source file, then sends three-zone
         text samples + font candidates to Claude for chapter confirmation.
@@ -4017,6 +4250,15 @@ function Get-ChapterStructure {
         Path to the source PDF/EPUB. Required for font-based detection.
     .OUTPUTS
         An array of objects with 'level' and 'title' properties, or $null on failure.
+    .EXAMPLE
+        PS> $text = Get-Content "extracted_text.txt" -Raw
+        PS> $chapters = Get-ChapterStructure -TextContent $text -InputFile "F:\Books\mybook.pdf"
+        PS> $chapters | Format-Table level, title
+    .EXAMPLE
+        PS> Get-ChapterStructure -TextContent $text
+        Runs chapter detection without font analysis (text-only mode).
+    .NOTES
+        Requires ANTHROPIC_API_KEY environment variable. Incurs ~$0.05 per call.
     #>
     [CmdletBinding()]
     param(
@@ -4145,7 +4387,8 @@ level 1 = Part/Book/Volume, level 2 = Chapter, level 3 = Sub-section.
 
 function Invoke-StructureAgent {
     <#
-    .SYNOPSIS  Run the Structure Analysis Agent standalone for diagnostics.
+    .SYNOPSIS
+        Run the Structure Analysis Agent standalone for diagnostics.
     .DESCRIPTION
         Convenience wrapper for testing chapter detection on a single file
         without running the full conversion pipeline. Loads the agent prompt
@@ -4255,12 +4498,31 @@ function Test-EbookPipeline {
     <#
     .SYNOPSIS
         Run the pdfminer HTML extraction regression test suite.
+    .DESCRIPTION
+        Invokes tools\test_pipeline.py which runs the core test books through
+        the pdfminer HTML extraction path and checks heading counts, endnote
+        links, chapter detection, and PAGE marker survival.  Returns $true
+        if all tests pass, $false otherwise.
     .PARAMETER TestName
-        Name of a specific test to run (default: all).
+        Name of a specific test to run (e.g. "Oil Kings").  When omitted,
+        all test cases in test-corpus\ and tools\test_cases.json are run.
     .PARAMETER Quick
-        Skip KFX conversion, only validate HTML output.
+        Skip KFX conversion and only validate HTML output.  Much faster
+        (~30-60s vs several minutes).
     .PARAMETER List
-        List available test case names and exit.
+        List available test case names and exit without running any tests.
+    .EXAMPLE
+        PS> Test-EbookPipeline
+        Runs the full test suite (all books, including KFX conversion).
+    .EXAMPLE
+        PS> Test-EbookPipeline -Quick
+        Runs HTML-only checks for fast feedback after code changes.
+    .EXAMPLE
+        PS> Test-EbookPipeline -TestName "Oil Kings"
+        Runs tests for a single book by name.
+    .EXAMPLE
+        PS> Test-EbookPipeline -List
+        Lists all available test case names.
     #>
     [CmdletBinding()]
     param(
@@ -5413,6 +5675,139 @@ print(json.dumps({'switch_id': sid}))
 
 #endregion
 
+#region -- User defaults -----------------------------------------------------
+
+function Get-EbookDefaults {
+    <#
+    .SYNOPSIS
+        Read user preference defaults from config\user-defaults.json.
+    .DESCRIPTION
+        Reads config\user-defaults.json if it exists and returns the parsed
+        object.  If the file does not exist, returns a hashtable with the
+        built-in defaults (voice, speed, volume, folders, etc.).
+
+        User defaults are separate from settings.json — they store personal
+        preferences that may differ across machines or users.
+    .EXAMPLE
+        PS> Get-EbookDefaults
+
+        voice              : Microsoft Steffan Online
+        speed              : 0
+        volume             : 100
+        input_folder       : inbox
+        output_folder_tts  : output\balabolka-txt
+        output_folder_kindle : output\kindle
+        generate_mp3       : False
+    .EXAMPLE
+        PS> (Get-EbookDefaults).voice
+        Microsoft Steffan Online
+    #>
+    [CmdletBinding()]
+    param()
+
+    $defaultsPath = Join-Path $script:ModuleRoot 'config\user-defaults.json'
+
+    $defaults = @{
+        voice              = 'Microsoft Steffan Online'
+        speed              = 0
+        volume             = 100
+        input_folder       = 'inbox'
+        output_folder_tts  = 'output\balabolka-txt'
+        output_folder_kindle = 'output\kindle'
+        generate_mp3       = $false
+    }
+
+    if (Test-Path $defaultsPath) {
+        try {
+            $loaded = Get-Content $defaultsPath -Raw | ConvertFrom-Json
+            # Merge loaded values over defaults
+            foreach ($prop in $loaded.PSObject.Properties) {
+                $defaults[$prop.Name] = $prop.Value
+            }
+            Write-EbookLog "Loaded user defaults from $defaultsPath"
+        } catch {
+            Write-EbookLog "Failed to parse user-defaults.json -- using built-in defaults: $_" -Level WARN
+        }
+    }
+
+    return [PSCustomObject]$defaults
+}
+
+function Set-EbookDefaults {
+    <#
+    .SYNOPSIS
+        Save user preference defaults to config\user-defaults.json.
+    .DESCRIPTION
+        Reads the existing user-defaults.json (or starts from built-in defaults),
+        merges any provided parameter values, and writes the result back to
+        config\user-defaults.json.  Only the parameters you specify are updated;
+        all other values are preserved.
+    .PARAMETER Voice
+        TTS voice name (e.g. 'Microsoft Steffan Online', 'Microsoft Guy Online').
+    .PARAMETER Speed
+        Speech speed for Balabolka (-10 to +10).
+    .PARAMETER Volume
+        Speech volume for Balabolka (0 to 100).
+    .PARAMETER InputFolder
+        Default inbox folder (relative to project root or absolute).
+    .PARAMETER OutputFolderTTS
+        Default output folder for TTS text files.
+    .PARAMETER OutputFolderKindle
+        Default output folder for Kindle conversions.
+    .PARAMETER GenerateMP3
+        Whether to generate MP3 audio by default during pipeline runs.
+    .EXAMPLE
+        PS> Set-EbookDefaults -Voice "Microsoft Guy Online" -Speed 2
+        Updates the voice and speed defaults, preserving all other values.
+    .EXAMPLE
+        PS> Set-EbookDefaults -GenerateMP3
+        Enables MP3 generation by default.
+    .EXAMPLE
+        PS> Set-EbookDefaults -Volume 80 -OutputFolderKindle "D:\Kindle"
+        Sets volume and a custom Kindle output folder.
+    #>
+    [CmdletBinding()]
+    param(
+        [string]$Voice,
+        [int]$Speed,
+        [int]$Volume,
+        [string]$InputFolder,
+        [string]$OutputFolderTTS,
+        [string]$OutputFolderKindle,
+        [switch]$GenerateMP3
+    )
+
+    # Load current defaults as baseline
+    $current = Get-EbookDefaults
+
+    # Convert to hashtable for easy merging
+    $merged = @{}
+    foreach ($prop in $current.PSObject.Properties) {
+        $merged[$prop.Name] = $prop.Value
+    }
+
+    # Merge only the parameters that were explicitly provided
+    if ($PSBoundParameters.ContainsKey('Voice'))             { $merged['voice']               = $Voice }
+    if ($PSBoundParameters.ContainsKey('Speed'))             { $merged['speed']               = $Speed }
+    if ($PSBoundParameters.ContainsKey('Volume'))            { $merged['volume']              = $Volume }
+    if ($PSBoundParameters.ContainsKey('InputFolder'))       { $merged['input_folder']        = $InputFolder }
+    if ($PSBoundParameters.ContainsKey('OutputFolderTTS'))   { $merged['output_folder_tts']   = $OutputFolderTTS }
+    if ($PSBoundParameters.ContainsKey('OutputFolderKindle')){ $merged['output_folder_kindle']= $OutputFolderKindle }
+    if ($PSBoundParameters.ContainsKey('GenerateMP3'))       { $merged['generate_mp3']        = [bool]$GenerateMP3 }
+
+    # Write to file
+    $defaultsPath = Join-Path $script:ModuleRoot 'config\user-defaults.json'
+    $configDir    = Split-Path $defaultsPath -Parent
+    if (-not (Test-Path $configDir)) {
+        New-Item $configDir -ItemType Directory -Force | Out-Null
+    }
+
+    $merged | ConvertTo-Json -Depth 4 | Set-Content $defaultsPath -Encoding UTF8
+    Write-EbookLog "User defaults saved to $defaultsPath" -Level SUCCESS
+}
+
+#endregion
+
 #region -- Module exports ----------------------------------------------------
 
 Export-ModuleMember -Function @(
@@ -5435,6 +5830,8 @@ Export-ModuleMember -Function @(
     'Invoke-ConvergeLoop'
     'Write-EbookLog'
     'Get-EbookConfig'
+    'Get-EbookDefaults'
+    'Set-EbookDefaults'
 )
 
 #endregion
