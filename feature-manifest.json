@@ -129,6 +129,12 @@
       "file": "module/EbookAutomation.psm1",
       "description": "Save user preference defaults to user-defaults.json",
       "key_parameters": ["Voice", "Speed", "Volume", "InputFolder", "OutputFolderTTS", "OutputFolderKindle", "GenerateMP3"]
+    },
+    {
+      "name": "Test-EbookFile",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Validate an ebook file for format, size, and basic integrity",
+      "key_parameters": ["FilePath", "MaxSizeMB"]
     }
   ],
 

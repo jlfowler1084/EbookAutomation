@@ -28,6 +28,7 @@
         'Get-EbookConfig'
         'Get-EbookDefaults'
         'Set-EbookDefaults'
+        'Test-EbookFile'
     )
     PrivateData = @{
         PSData = @{

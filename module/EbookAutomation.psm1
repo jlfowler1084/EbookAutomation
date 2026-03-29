@@ -2883,6 +2883,155 @@ function Test-AlreadyProcessed {
 
 #endregion
 
+#region -- File validation ---------------------------------------------------
+
+function Test-EbookFile {
+    <#
+    .SYNOPSIS
+        Validate an ebook file for format, size, and basic integrity.
+    .DESCRIPTION
+        Checks file extension, size constraints, and attempts to open the file
+        with the appropriate library (pypdf for PDF, ebooklib for EPUB) to
+        detect corruption.  Returns a validation result hashtable.
+    .PARAMETER FilePath
+        Full path to the file to validate.
+    .PARAMETER MaxSizeMB
+        Maximum allowed file size in MB.  Default: 500.
+    .EXAMPLE
+        PS> Test-EbookFile -FilePath "inbox\mybook.pdf"
+
+        Valid  : True
+        File   : mybook.pdf
+        SizeMB : 12.3
+        Checks : {extension: ok, size: ok, ...}
+    .EXAMPLE
+        PS> Test-EbookFile -FilePath "inbox\corrupt.epub"
+
+        Valid  : False
+        File   : corrupt.epub
+        Reason : EPUB corrupt: ...
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [int]$MaxSizeMB = 500
+    )
+
+    $checks = @()
+    $reason = ''
+    $retry  = $false
+
+    # ── Check 1: File exists ──────────────────────────────────────────────
+    if (-not (Test-Path $FilePath)) {
+        return @{ Valid = $false; File = (Split-Path $FilePath -Leaf); SizeMB = 0; Reason = 'File not found'; Retry = $false; Checks = @('exists: FAIL') }
+    }
+    $file = Get-Item $FilePath
+    $checks += 'exists: ok'
+
+    # ── Check 2: Extension ────────────────────────────────────────────────
+    $cfg = Get-EbookConfig
+    $allFormats = ($cfg.tts.input_formats + $cfg.kindle.input_formats | Select-Object -Unique)
+    $ext = $file.Extension.TrimStart('.').ToLower()
+    if ($ext -notin $allFormats) {
+        return @{ Valid = $false; File = $file.Name; SizeMB = [math]::Round($file.Length / 1MB, 1); Reason = "Unsupported format: .$ext"; Retry = $false; Checks = ($checks + "extension: FAIL (.$ext)") }
+    }
+    $checks += "extension: ok (.$ext)"
+
+    # ── Check 3: Zero-byte ────────────────────────────────────────────────
+    if ($file.Length -eq 0) {
+        return @{ Valid = $false; File = $file.Name; SizeMB = 0; Reason = 'File is empty (0 bytes)'; Retry = $false; Checks = ($checks + 'size: FAIL (0 bytes)') }
+    }
+    $checks += "size: ok ($([math]::Round($file.Length / 1MB, 1)) MB)"
+
+    # ── Check 4: Maximum size ─────────────────────────────────────────────
+    $sizeMB = [math]::Round($file.Length / 1MB, 1)
+    if ($file.Length / 1MB -gt $MaxSizeMB) {
+        return @{ Valid = $false; File = $file.Name; SizeMB = $sizeMB; Reason = "File too large: $sizeMB MB (max: $MaxSizeMB MB)"; Retry = $false; Checks = ($checks + "max-size: FAIL ($sizeMB MB > $MaxSizeMB MB)") }
+    }
+    $checks += "max-size: ok"
+
+    # ── Check 5: File lock (still being written?) ─────────────────────────
+    try {
+        $stream = [System.IO.File]::Open($file.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::None)
+        $stream.Close()
+        $checks += 'lock: ok (not locked)'
+    } catch {
+        return @{ Valid = $false; File = $file.Name; SizeMB = $sizeMB; Reason = 'File is locked (still being written?)'; Retry = $true; Checks = ($checks + 'lock: FAIL (sharing violation)') }
+    }
+
+    # ── Check 6: Format-specific integrity ────────────────────────────────
+    $python = $cfg.paths.python
+    $calibreFormats = @('mobi', 'azw', 'azw3', 'djvu')
+
+    if ($ext -eq 'pdf') {
+        $integrityScript = Join-Path $env:TEMP 'ebook_validate_pdf.py'
+        try {
+            @"
+from pypdf import PdfReader
+import sys, json
+try:
+    r = PdfReader(sys.argv[1])
+    print(json.dumps({"valid": True, "pages": len(r.pages)}))
+except Exception as e:
+    print(json.dumps({"valid": False, "error": str(e)}))
+"@ | Set-Content $integrityScript -Encoding UTF8
+
+            $result = & $python $integrityScript $file.FullName 2>&1 | Where-Object { $_ -is [string] } | Select-Object -Last 1
+            if ($result) {
+                $parsed = $result | ConvertFrom-Json
+                if ($parsed.valid) {
+                    $checks += "integrity: ok (PDF, $($parsed.pages) pages)"
+                } else {
+                    return @{ Valid = $false; File = $file.Name; SizeMB = $sizeMB; Reason = "PDF corrupt: $($parsed.error)"; Retry = $false; Checks = ($checks + "integrity: FAIL ($($parsed.error))") }
+                }
+            } else {
+                $checks += 'integrity: skipped (no output from validator)'
+            }
+        } catch {
+            $checks += "integrity: skipped (pypdf error: $_)"
+        } finally {
+            if (Test-Path $integrityScript) { Remove-Item $integrityScript -Force -ErrorAction SilentlyContinue }
+        }
+    } elseif ($ext -eq 'epub') {
+        $integrityScript = Join-Path $env:TEMP 'ebook_validate_epub.py'
+        try {
+            @"
+from ebooklib import epub
+import sys, json
+try:
+    b = epub.read_epub(sys.argv[1], options={'ignore_ncx': True})
+    print(json.dumps({"valid": True, "items": len(list(b.get_items()))}))
+except Exception as e:
+    print(json.dumps({"valid": False, "error": str(e)}))
+"@ | Set-Content $integrityScript -Encoding UTF8
+
+            $result = & $python $integrityScript $file.FullName 2>&1 | Where-Object { $_ -is [string] } | Select-Object -Last 1
+            if ($result) {
+                $parsed = $result | ConvertFrom-Json
+                if ($parsed.valid) {
+                    $checks += "integrity: ok (EPUB, $($parsed.items) items)"
+                } else {
+                    return @{ Valid = $false; File = $file.Name; SizeMB = $sizeMB; Reason = "EPUB corrupt: $($parsed.error)"; Retry = $false; Checks = ($checks + "integrity: FAIL ($($parsed.error))") }
+                }
+            } else {
+                $checks += 'integrity: skipped (no output from validator)'
+            }
+        } catch {
+            $checks += "integrity: skipped (ebooklib error: $_)"
+        } finally {
+            if (Test-Path $integrityScript) { Remove-Item $integrityScript -Force -ErrorAction SilentlyContinue }
+        }
+    } elseif ($ext -in $calibreFormats) {
+        $checks += "integrity: skipped (Calibre-routed format)"
+    } else {
+        $checks += "integrity: skipped (no validator for .$ext)"
+    }
+
+    return @{ Valid = $true; File = $file.Name; SizeMB = $sizeMB; Reason = ''; Retry = $false; Checks = $checks }
+}
+
+#endregion
+
 #region -- Main pipeline -----------------------------------------------------
 
 function Invoke-EbookPipeline {
@@ -3148,6 +3297,41 @@ function Invoke-EbookPipeline {
 
     Write-EbookLog "Inbox scan: found $($files.Count) file(s)"
 
+    # ── Inbox file validation ─────────────────────────────────────────────
+    $rejectedDir = Join-Path $inboxDir 'rejected'
+    if (-not (Test-Path $rejectedDir)) { New-Item $rejectedDir -ItemType Directory -Force | Out-Null }
+
+    $rejectedCount = (Get-ChildItem $rejectedDir -File -ErrorAction SilentlyContinue).Count
+    if ($rejectedCount -gt 0) {
+        Write-EbookLog "  Rejected files: inbox\rejected\ ($rejectedCount files)"
+    }
+
+    $validFiles   = @()
+    $rejCount     = 0
+    $lockedCount  = 0
+    foreach ($f in $files) {
+        $vr = Test-EbookFile -FilePath $f.FullName
+        if ($vr.Valid) {
+            $validFiles += $f
+        } elseif ($vr.Retry) {
+            Write-EbookLog "  SKIPPED (locked): $($f.Name) -- will retry next cycle" -Level WARN
+            $lockedCount++
+        } else {
+            Write-EbookLog "  REJECTED: $($f.Name) -- $($vr.Reason)" -Level WARN
+            try { Move-Item $f.FullName (Join-Path $rejectedDir $f.Name) -Force } catch {
+                Write-EbookLog "    Could not move to rejected: $_" -Level WARN
+            }
+            $rejCount++
+        }
+    }
+    $files = $validFiles
+    Write-EbookLog "  Inbox validation: $($validFiles.Count) valid, $rejCount rejected, $lockedCount locked (skipped)"
+
+    if (-not $files) {
+        Write-EbookLog "Inbox scan: no valid files after validation"
+        return
+    }
+
     # ── Failed-books retry tracking ────────────────────────────────────────
     $logsDir      = Resolve-ProjectPath $cfg.paths.logs
     $failedPath   = Join-Path $logsDir 'failed-books.json'
@@ -3174,11 +3358,18 @@ function Invoke-EbookPipeline {
     $errors       = 0
     $bookNumber   = 0
     $resultLog    = @()   # collect per-book summaries for final report
+    $statusPath   = Join-Path $procDir 'status.json'
 
     foreach ($file in $files) {
         $bookNumber++
         $bookLabel = "[$bookNumber/$($files.Count)]"
         $bookStart = Get-Date
+
+        # Write processing status (best-effort, non-blocking)
+        try {
+            @{ status = 'processing'; file = $file.Name; started = (Get-Date -Format 'o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'validation' } |
+                ConvertTo-Json | Set-Content $statusPath -Encoding UTF8
+        } catch {}
 
         # Skip books that have failed too many times (max 3 attempts)
         $failKey = $file.Name
@@ -3246,6 +3437,7 @@ function Invoke-EbookPipeline {
                 $ttsMsg = "skipped (.$ext)"
             } else {
                 Write-EbookLog "  TTS: starting conversion..."
+                try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'TTS extraction' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
                 $ttsStart = Get-Date
                 try {
                     $ttsOk = Convert-ToTTS -InputFile $workCopy -OutputDir $ttsOutDir -UseClaudeChapters:$UseClaudeChapters -UseOCR:$UseOCR -ForceColumns:$ForceColumns
@@ -3294,6 +3486,7 @@ function Invoke-EbookPipeline {
                 $mp3Msg = 'skipped (txt missing)'
             } else {
                 Write-EbookLog "  MP3: starting generation..."
+                try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'MP3 generation' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
                 $mp3Start = Get-Date
                 try {
                     $mp3Ok = Invoke-Balabolka -InputFile $txtFile -OutputFile $mp3File `
@@ -3325,6 +3518,7 @@ function Invoke-EbookPipeline {
                 $kindleMsg = "skipped (.$ext)"
             } else {
                 Write-EbookLog "  Kindle: starting conversion..."
+                try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'Kindle conversion' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
                 # Auto-enable HTML extraction for EPUB generation when -EmailToKindle is active
                 $useHtml = $false
                 $useOcrAuto = $UseOCR   # Preserve explicit -UseOCR if passed
@@ -3455,6 +3649,7 @@ function Invoke-EbookPipeline {
         $anySuccess   = $ttsOk -or $kindleOk   # MP3 failure does not affect this
 
         if ($anySuccess) {
+            try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'archiving' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
             # Archive the original
             Add-ProcessedFile $file.FullName
 
@@ -3567,6 +3762,9 @@ function Invoke-EbookPipeline {
         Send-EbookNotification -Title 'Ebook Automation -- errors' `
             -Message "$errors file(s) failed -- check the log" -Type Warning
     }
+
+    # Clear processing status
+    if (Test-Path $statusPath) { Remove-Item $statusPath -Force -ErrorAction SilentlyContinue }
 
     # Daily summary log (condensed, append-mode)
     if ($processed -gt 0 -or $errors -gt 0) {
@@ -6018,6 +6216,7 @@ Export-ModuleMember -Function @(
     'Get-EbookConfig'
     'Get-EbookDefaults'
     'Set-EbookDefaults'
+    'Test-EbookFile'
 )
 
 #endregion
