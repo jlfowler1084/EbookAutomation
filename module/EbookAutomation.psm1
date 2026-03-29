@@ -2981,6 +2981,13 @@ function Invoke-EbookPipeline {
     .PARAMETER ValidateAlignment
         Run chapter alignment verification after conversion.
 
+    .PARAMETER SkipTTS
+        Skip text extraction and generate MP3s directly from existing TXT files
+        in the balabolka-txt output folder.  Implies -GenerateMP3.
+        Voice, speed, and volume are read from user-defaults.json first,
+        falling back to settings.json.  Useful for re-generating audiobooks
+        with a different voice or speed without re-running extraction.
+
     .EXAMPLE
         PS> Invoke-EbookPipeline
         Processes all new ebooks in the inbox folder.
@@ -2993,6 +3000,10 @@ function Invoke-EbookPipeline {
     .EXAMPLE
         PS> Invoke-EbookPipeline -EmailToKindle
         Converts and emails EPUB to Kindle after successful conversion.
+    .EXAMPLE
+        PS> Set-EbookDefaults -Voice "Microsoft Guy Online" -Speed 2
+        PS> Invoke-EbookPipeline -SkipTTS
+        Re-generates all audiobooks from existing TXT files with a different voice.
     #>
     [CmdletBinding()]
     param(
@@ -3028,7 +3039,9 @@ function Invoke-EbookPipeline {
         # Reserved — active on Invoke-ConvergeLoop
         [switch]$SkipPreflight,
         [switch]$IgnoreRecommendation,
-        [switch]$ValidateAlignment
+        [switch]$ValidateAlignment,
+
+        [switch]$SkipTTS
     )
 
     $pipelineStart  = Get-Date
@@ -3059,12 +3072,62 @@ function Invoke-EbookPipeline {
     if ($sendActive) { Write-EbookLog "  Send to Kindle: ENABLED" }
     if ($emailActive) { Write-EbookLog "  Email to Kindle: ENABLED" }
     if ($ApplyAIFixes) { Write-EbookLog "  AI Quality Fix application: ENABLED (experimental)" -Level WARN }
+    if ($SkipTTS) { Write-EbookLog "  MODE: SkipTTS -- skipping extraction, generating MP3 from existing TXT files" }
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
     # Ensure directories exist
     foreach ($dir in @($inboxDir, $archiveDir, $ttsOutDir, $kindleDir, $audiobooksDir, $procDir)) {
         if (-not (Test-Path $dir)) { New-Item $dir -ItemType Directory | Out-Null }
+    }
+
+    # ── SkipTTS mode: generate MP3s from existing TXT files ────────────────
+    if ($SkipTTS) {
+        # Resolve MP3 settings: user-defaults.json > settings.json
+        $userDefaults = Get-EbookDefaults
+        $mp3Voice   = if ($userDefaults.voice)           { $userDefaults.voice }  else { $cfg.mp3.voice }
+        $mp3Speed   = if ($null -ne $userDefaults.speed)  { $userDefaults.speed }  else { $cfg.mp3.speed }
+        $mp3Volume  = if ($null -ne $userDefaults.volume) { $userDefaults.volume } else { $cfg.mp3.volume }
+
+        $suffix   = $cfg.tts.output_suffix   # e.g. '_balabolka.txt'
+        $txtFiles = Get-ChildItem -Path $ttsOutDir -Filter "*$suffix" -File -ErrorAction SilentlyContinue
+
+        if (-not $txtFiles) {
+            Write-EbookLog "SkipTTS: no TXT files matching *$suffix found in $ttsOutDir"
+            return
+        }
+
+        Write-EbookLog "SkipTTS: found $($txtFiles.Count) TXT file(s) in $ttsOutDir"
+        Write-EbookLog "SkipTTS: voice=$mp3Voice  speed=$mp3Speed  volume=$mp3Volume"
+
+        $generated = 0
+        $skippedMp3 = 0
+        foreach ($txt in $txtFiles) {
+            $mp3File = Join-Path $audiobooksDir ([System.IO.Path]::ChangeExtension($txt.Name, '.mp3'))
+
+            if (-not $NoCache -and (Test-Path $mp3File)) {
+                Write-EbookLog "  SKIP: $($txt.Name) -- MP3 already exists"
+                $skippedMp3++
+                continue
+            }
+
+            if ($DryRun) {
+                Write-EbookLog "  DRY RUN: would generate $mp3File" -Level WARN
+                continue
+            }
+
+            Write-EbookLog "  Generating: $($txt.Name) -> $(Split-Path $mp3File -Leaf)"
+            $mp3Ok = Invoke-Balabolka -InputFile $txt.FullName -OutputFile $mp3File `
+                                      -Voice   $mp3Voice  `
+                                      -Speed   $mp3Speed  `
+                                      -Volume  $mp3Volume `
+                                      -Bitrate $cfg.mp3.bitrate
+            if ($mp3Ok) { $generated++ }
+            else { Write-EbookLog "  FAILED: $($txt.Name)" -Level ERROR }
+        }
+
+        Write-EbookLog "SkipTTS: generated $generated MP3s from $($txtFiles.Count) existing TXT files ($skippedMp3 skipped -- MP3 already exists)"
+        return
     }
 
     # Scan inbox
@@ -3173,6 +3236,12 @@ function Invoke-EbookPipeline {
             } else {
                 Write-EbookLog "  MP3: enabled via settings.json"
             }
+            # Resolve MP3 settings: user-defaults.json > settings.json
+            $userDefaults = Get-EbookDefaults
+            $mp3Voice   = if ($userDefaults.voice)           { $userDefaults.voice }  else { $cfg.mp3.voice }
+            $mp3Speed   = if ($null -ne $userDefaults.speed)  { $userDefaults.speed }  else { $cfg.mp3.speed }
+            $mp3Volume  = if ($null -ne $userDefaults.volume) { $userDefaults.volume } else { $cfg.mp3.volume }
+
             # Reconstruct the TXT filename that Convert-ToTTS produced.
             # Mirrors the safe_stem logic in pdf_to_balabolka.py.
             $stem     = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
@@ -3189,9 +3258,9 @@ function Invoke-EbookPipeline {
                 $mp3Start = Get-Date
                 try {
                     $mp3Ok = Invoke-Balabolka -InputFile $txtFile -OutputFile $mp3File `
-                                              -Voice   $cfg.mp3.voice  `
-                                              -Speed   $cfg.mp3.speed  `
-                                              -Volume  $cfg.mp3.volume `
+                                              -Voice   $mp3Voice  `
+                                              -Speed   $mp3Speed  `
+                                              -Volume  $mp3Volume `
                                               -Bitrate $cfg.mp3.bitrate
 
                     $mp3Duration = (Get-Date) - $mp3Start
@@ -4091,6 +4160,16 @@ function Invoke-Balabolka {
         $errFile   = Join-Path $env:TEMP 'balcon_err.txt'
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
+        # Track input size for ETA estimation
+        # Heuristic: 1 KB of TXT ≈ 900 KB of WAV at 22050 Hz 16-bit mono
+        $inputSizeKB   = (Get-Item $InputFile).Length / 1KB
+        $estimatedWavKB = $inputSizeKB * 900
+
+        $estMinutes = [math]::Round($estimatedWavKB / 1KB / 60 / 100, 0)
+        if ($estMinutes -gt 1) {
+            Write-EbookLog "Balabolka: estimated synthesis time: ~${estMinutes} minutes"
+        }
+
         $proc = Start-Process -FilePath $balcon `
                               -ArgumentList ($balconArgs -join ' ') `
                               -PassThru -NoNewWindow `
@@ -4101,7 +4180,19 @@ function Invoke-Balabolka {
             $sizeMB = if (Test-Path $tempWav) {
                 [math]::Round((Get-Item $tempWav).Length / 1MB, 1)
             } else { 0 }
-            Write-EbookLog "Balabolka: synthesising... ($sizeMB MB)"
+            $elapsedSec = $stopwatch.Elapsed.TotalSeconds
+            $wavSizeKB  = if (Test-Path $tempWav) { (Get-Item $tempWav).Length / 1KB } else { 0 }
+
+            if ($wavSizeKB -gt 100 -and $elapsedSec -gt 5 -and $estimatedWavKB -gt 0) {
+                $rateKBps    = $wavSizeKB / $elapsedSec
+                $remainingKB = [math]::Max(0, $estimatedWavKB - $wavSizeKB)
+                $etaSeconds  = if ($rateKBps -gt 0) { $remainingKB / $rateKBps } else { 0 }
+                $etaMin      = [math]::Round($etaSeconds / 60, 0)
+                $pctDone     = [math]::Min(99, [math]::Round(($wavSizeKB / $estimatedWavKB) * 100, 0))
+                Write-EbookLog "Balabolka: synthesising... $sizeMB MB ($pctDone% — ~${etaMin}m remaining)"
+            } else {
+                Write-EbookLog "Balabolka: synthesising... ($sizeMB MB)"
+            }
         }
 
         if ($proc.ExitCode -ne 0) {
