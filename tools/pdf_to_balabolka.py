@@ -1099,15 +1099,30 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                             total_skipped += 1
                             continue
 
-                    # Save image
+                    # Save image — convert JPEG2000/CMYK to standard JPEG/PNG
                     ext = base_image["ext"]
-                    if ext not in ('png', 'jpeg', 'jpg', 'jpe'):
-                        ext = 'png'  # fallback for unusual formats
+                    image_bytes = base_image["image"]
+                    needs_conversion = ext in ('jpx', 'jp2', 'j2k') or ext not in ('png', 'jpeg', 'jpg', 'jpe')
+
+                    if needs_conversion:
+                        try:
+                            from PIL import Image as _PILImage
+                            import io
+                            with _PILImage.open(io.BytesIO(image_bytes)) as pil_img:
+                                if pil_img.mode in ('CMYK', 'RGBA', 'LA', 'PA'):
+                                    pil_img = pil_img.convert('RGB')
+                                buf = io.BytesIO()
+                                pil_img.save(buf, format='JPEG', quality=85)
+                                image_bytes = buf.getvalue()
+                                ext = 'jpeg'
+                        except Exception:
+                            ext = 'png'  # last-resort fallback
+
                     filename = f"img_{page_idx + 1:03d}_{img_index:02d}.{ext}"
                     filepath = os.path.join(images_dir, filename)
 
                     with open(filepath, 'wb') as f:
-                        f.write(base_image["image"])
+                        f.write(image_bytes)
 
                     # Convert to pdfminer coordinates
                     pdfminer_rect = (
@@ -1274,7 +1289,14 @@ def _resolve_internal_links(html, heading_registry, log):
     html = re.sub(r'href="#__goto_page_(\d+)"', _resolve, html)
 
     # Remove <a> tags with empty href (unresolvable links) — keep the text
-    html = re.sub(r'<a href="">(.*?)</a>', r'\1', html)
+    html = re.sub(r'<a href="">(.*?)</a>', r'\1', html, flags=re.DOTALL)
+
+    # Strip <a> tags from inside heading elements — Calibre's TOC XPath
+    # picks up <a> text content and shows raw HTML in the TOC sidebar.
+    # Keep the heading text, remove the wrapping <a> tag.
+    html = re.sub(
+        r'(<h[123][^>]*>)\s*<a [^>]*>(.*?)</a>\s*(</h[123]>)',
+        r'\1\2\3', html, flags=re.DOTALL)
 
     if resolved > 0 or unresolved > 0:
         log(f"  Internal links: resolved {resolved} to heading anchors"

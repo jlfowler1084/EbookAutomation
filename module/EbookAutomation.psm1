@@ -1708,6 +1708,15 @@ else:
     if ($convertInput -like '*.html') {
         $argString += " --input-encoding utf-8"
         $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
+
+        # Strip <a> tags from inside headings — they leak into Calibre's TOC as raw HTML
+        $cleanedHeadings = [regex]::Replace($htmlContent, '(<h[123][^>]*>)\s*<a [^>]*>(.*?)</a>\s*(</h[123]>)', '$1$2$3', 'Singleline')
+        if ($cleanedHeadings -ne $htmlContent) {
+            $htmlContent = $cleanedHeadings
+            Set-Content $convertInput -Value $htmlContent -Encoding UTF8 -NoNewline
+            Write-EbookLog "Kindle: stripped <a> tags from headings (TOC cleanup)"
+        }
+
         $hasH1 = $htmlContent -match '<h1[^>]*>'
         $hasH2 = $htmlContent -match '<h2[^>]*>'
         # h3 tags provide visual structure but are excluded from the Kindle TOC
