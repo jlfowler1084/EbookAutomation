@@ -772,6 +772,12 @@ function Convert-ToKindle {
     $calibre = Resolve-ProjectPath $cfg.paths.calibre
     $ext     = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
 
+    # Auto-enable HTML extraction for PDFs — the pdfminer HTML path preserves
+    # headings, images, footnotes, and links that the legacy TXT path loses.
+    if ($ext -eq 'pdf' -and -not $UseHtmlExtraction -and -not $UseOCR -and -not $DirectConversion) {
+        $UseHtmlExtraction = $true
+    }
+
     # Determine extraction path for database recording
     $extractionPath = if ($ext -ne 'pdf') {
         'direct'   # EPUB, MOBI, AZW go straight to Calibre
@@ -1901,6 +1907,18 @@ else:
 
     Write-EbookLog "Kindle: calibre args: $argString"
 
+    # Report images alongside HTML (if present)
+    if ($convertInput -like '*.html') {
+        $convertInputDir = Split-Path $convertInput -Parent
+        $imagesDir = Join-Path $convertInputDir 'images'
+        if (Test-Path $imagesDir) {
+            $imgFileCount = (Get-ChildItem $imagesDir -File -ErrorAction SilentlyContinue).Count
+            if ($imgFileCount -gt 0) {
+                Write-EbookLog "Kindle: $imgFileCount images available for Calibre"
+            }
+        }
+    }
+
     try {
         # Use Start-Process to avoid PowerShell treating Calibre's stderr as exceptions
         $errFile   = Join-Path $env:TEMP 'calibre_err.txt'
@@ -2270,6 +2288,23 @@ print(json.dumps(result))
             Write-EbookLog "Kindle: pattern database write-back failed (non-blocking) -- $_" -Level WARN
         }
 
+        # ── Preserve intermediate HTML + images alongside KFX ──────────────
+        if ($convertInput -and (Test-Path $convertInput) -and $convertInput -like '*.html') {
+            $intermediatesDir = Join-Path $OutputDir '.intermediates'
+            if (-not (Test-Path $intermediatesDir)) {
+                New-Item $intermediatesDir -ItemType Directory -Force | Out-Null
+                try { (Get-Item $intermediatesDir -Force).Attributes = (Get-Item $intermediatesDir -Force).Attributes -bor [System.IO.FileAttributes]::Hidden } catch {}
+            }
+            $htmlDest = Join-Path $intermediatesDir "${outName}_kindle.html"
+            Copy-Item $convertInput $htmlDest -Force -ErrorAction SilentlyContinue
+            $srcImagesDir = Join-Path (Split-Path $convertInput) 'images'
+            if (Test-Path $srcImagesDir) {
+                $destImagesDir = Join-Path $intermediatesDir 'images'
+                Copy-Item $srcImagesDir $destImagesDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-EbookLog "Kindle: preserved intermediate HTML + images/ in .intermediates/"
+            }
+        }
+
         # ── EPUB generation (for email delivery) ──────────────────────────
         if ($ProduceEpub -and $tempDir) {
             # $convertInput is always set by this point (the HTML/TXT path used for KFX).
@@ -2315,21 +2350,7 @@ print(json.dumps(result))
                     Write-EbookLog "Kindle: EPUB generation exception (non-blocking) -- $_" -Level WARN
                 }
 
-                # Preserve intermediate HTML for future EPUB regeneration
-                $intermediatesDir = Join-Path $OutputDir '.intermediates'
-                if (-not (Test-Path $intermediatesDir)) {
-                    New-Item $intermediatesDir -ItemType Directory -Force | Out-Null
-                    $dirInfo = Get-Item $intermediatesDir -Force
-                    $dirInfo.Attributes = $dirInfo.Attributes -bor [System.IO.FileAttributes]::Hidden
-                }
-                $htmlDest = Join-Path $intermediatesDir "${outName}_kindle.html"
-                Copy-Item $htmlSource $htmlDest -Force -ErrorAction SilentlyContinue
-                # Also copy images/ subdirectory if present (for books with embedded images)
-                $srcImagesDir = Join-Path (Split-Path $htmlSource) 'images'
-                if (Test-Path $srcImagesDir) {
-                    $destImagesDir = Join-Path $intermediatesDir 'images'
-                    Copy-Item $srcImagesDir $destImagesDir -Recurse -Force -ErrorAction SilentlyContinue
-                }
+                # Intermediate HTML already preserved above (unconditional for HTML conversions)
             } else {
                 Write-EbookLog "Kindle: no intermediate HTML available for EPUB generation" -Level WARN
             }
@@ -3525,12 +3546,12 @@ function Invoke-EbookPipeline {
             } else {
                 Write-EbookLog "  Kindle: starting conversion..."
                 try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'Kindle conversion' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
-                # Auto-enable HTML extraction for EPUB generation when -EmailToKindle is active
-                $useHtml = $false
+                # Auto-enable HTML extraction for PDFs — the pdfminer HTML path is
+                # superior to legacy TXT (preserves headings, images, footnotes, links).
+                $useHtml = ($ext -eq 'pdf')
                 $useOcrAuto = $UseOCR   # Preserve explicit -UseOCR if passed
-                if ($emailActive -and $ext -eq 'pdf') {
-                    $useHtml = $true
-                    Write-EbookLog "  Kindle: HTML extraction auto-enabled for EPUB generation (-EmailToKindle)"
+                if ($useHtml) {
+                    Write-EbookLog "  Kindle: HTML extraction enabled for PDF (images + semantic headings)"
 
                     # Classify source to auto-enable OCR for scans
                     if (-not $useOcrAuto) {
