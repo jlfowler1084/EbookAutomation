@@ -923,6 +923,79 @@ def extract_bookmarks(pdf_path, log):
         return []
 
 
+def extract_pdf_links(pdf_path, log):
+    """Extract external URI hyperlinks from PDF with bounding boxes per page.
+
+    Uses PyMuPDF to read /Link annotations with /URI targets.  Coordinates are
+    converted from PyMuPDF's top-left origin to pdfminer's bottom-left origin
+    (y increases upward) so they can be compared directly against LTChar positions.
+
+    Returns:
+        dict mapping page_number (1-based) to list of link dicts:
+        [{'uri': str, 'rect': (x0, y0, x1, y1)}]
+        Returns empty dict if pymupdf is not installed or no links found.
+    """
+    try:
+        import pymupdf
+    except ImportError:
+        log("  [INFO] pymupdf not installed — hyperlink preservation unavailable")
+        return {}
+
+    links_by_page = {}
+    total_links = 0
+
+    try:
+        doc = pymupdf.open(pdf_path)
+        try:
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                page_height = page.rect.height
+                page_links = []
+
+                for link in page.get_links():
+                    # Only external URI links (kind == 2 is LINK_URI)
+                    if link.get('kind') != 2:
+                        continue
+                    uri = link.get('uri', '').strip()
+                    if not uri:
+                        continue
+                    # Skip javascript: URIs
+                    if uri.lower().startswith('javascript:'):
+                        continue
+
+                    rect = link.get('from')
+                    if rect is None:
+                        continue
+
+                    # Convert from PyMuPDF (top-left origin, y down) to
+                    # pdfminer (bottom-left origin, y up):
+                    #   pdfminer_y0 = page_height - pymupdf_y1
+                    #   pdfminer_y1 = page_height - pymupdf_y0
+                    page_links.append({
+                        'uri': uri,
+                        'rect': (
+                            rect.x0,
+                            page_height - rect.y1,   # pdfminer y0 (bottom)
+                            rect.x1,
+                            page_height - rect.y0,   # pdfminer y1 (top)
+                        ),
+                    })
+                    total_links += 1
+
+                if page_links:
+                    links_by_page[page_idx + 1] = page_links  # 1-based
+        finally:
+            doc.close()
+    except Exception as e:
+        log(f"  [WARN] Failed to extract PDF links: {e}")
+        return {}
+
+    if total_links > 0:
+        log(f"  Hyperlinks: found {total_links} external links across {len(links_by_page)} pages")
+
+    return links_by_page
+
+
 def detect_pdf_type(pdf_path, log):
     """Detect whether a PDF contains extractable text or is image-only (scanned).
 
@@ -4764,6 +4837,12 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTChar, LTAnno
     from collections import Counter
+    from html import escape as _html_escape
+
+    # Extract PDF hyperlinks for <a> tag injection
+    pdf_links = extract_pdf_links(pdf_path, log)
+    _link_tolerance = 2.0
+    _matched_link_keys = set()  # track (page, link_index) for summary
 
     # Tune LAParams for better word-boundary detection.
     # Default word_margin=0.1 misses real word gaps in many PDFs.
@@ -4820,7 +4899,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                             if gap > avg_char_width * 0.3:
                                 # Inject space if last char_data entry isn't already a space
                                 if char_data and char_data[-1][0] != ' ':
-                                    char_data.append((' ', 0, None))
+                                    char_data.append((' ', 0, None, None, None, None, None))
                         prev_x1 = char.x1
                         char_width = char.x1 - char.x0
                         if char_width > 0:
@@ -4832,9 +4911,9 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                         font_counts[char.fontname] += 1
                         size_counts[sz] += 1
                         char_total += 1
-                        char_data.append((char.get_text(), sz, char.fontname))
+                        char_data.append((char.get_text(), sz, char.fontname, char.x0, char.y0, char.x1, char.y1))
                     elif isinstance(char, LTAnno):
-                        char_data.append((char.get_text(), 0, None))
+                        char_data.append((char.get_text(), 0, None, None, None, None, None))
 
                 if char_total == 0:
                     continue
@@ -4847,15 +4926,19 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 dom_italic = ('Italic' in dominant_font or 'italic' in dominant_font
                               or 'Oblique' in dominant_font or 'oblique' in dominant_font)
 
-                # Build text with <sup>, <em>, <strong> tags for inline style changes
+                # Build text with <a>, <sup>, <em>, <strong> tags for inline style changes
                 # A digit is superscript when its font size < 80% of line's dominant size
                 # Bold/italic tags wrap spans that DIFFER from the line's dominant style
+                # <a> tags wrap hyperlinks detected from PDF link annotations (outermost)
                 sup_threshold = dominant_size * 0.8
+                page_links = pdf_links.get(pg, [])
                 text_parts = []
                 in_sup = False
                 in_em = False
                 in_strong = False
-                for ch, sz, fname in char_data:
+                in_link = False
+                current_link_uri = None
+                for ch, sz, fname, cx0, cy0, cx1, cy1 in char_data:
                     is_sup = (sz > 0 and sz < sup_threshold and ch.isdigit()
                               and dominant_size >= 9)  # only on body-sized lines
 
@@ -4872,6 +4955,49 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                     # Only tag spans that differ from the dominant style
                     want_em = ch_italic and not dom_italic
                     want_strong = ch_bold and not dom_bold
+
+                    # Determine link state for this character
+                    want_link = False
+                    want_link_uri = None
+                    if cx0 is not None and page_links:
+                        # LTChar with coordinates — check against link rects
+                        char_cx = (cx0 + cx1) / 2
+                        char_cy = (cy0 + cy1) / 2
+                        for li, lnk in enumerate(page_links):
+                            lx0, ly0, lx1, ly1 = lnk['rect']
+                            if (char_cx >= lx0 - _link_tolerance and
+                                    char_cx <= lx1 + _link_tolerance and
+                                    char_cy >= ly0 - _link_tolerance and
+                                    char_cy <= ly1 + _link_tolerance):
+                                want_link = True
+                                want_link_uri = lnk['uri']
+                                _matched_link_keys.add((pg, li))
+                                break
+                    elif cx0 is None and in_link:
+                        # LTAnno (space/inferred char) — inherit current link state
+                        want_link = True
+                        want_link_uri = current_link_uri
+
+                    # If link state is changing, close all inner tags for proper nesting
+                    if in_link and (not want_link or current_link_uri != want_link_uri):
+                        if in_sup:
+                            text_parts.append('</sup>')
+                            in_sup = False
+                        if in_em:
+                            text_parts.append('</em>')
+                            in_em = False
+                        if in_strong:
+                            text_parts.append('</strong>')
+                            in_strong = False
+                        text_parts.append('</a>')
+                        in_link = False
+                        current_link_uri = None
+
+                    # Open new link if needed (outermost tag)
+                    if want_link and not in_link:
+                        text_parts.append(f'<a href="{_html_escape(want_link_uri, quote=True)}">')
+                        in_link = True
+                        current_link_uri = want_link_uri
 
                     # Close tags that are no longer needed (reverse order of opening)
                     if in_sup and not is_sup:
@@ -4896,13 +5022,15 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                         in_sup = True
 
                     text_parts.append(ch)
-                # Close any remaining open tags
+                # Close any remaining open tags (innermost to outermost)
                 if in_sup:
                     text_parts.append('</sup>')
                 if in_em:
                     text_parts.append('</em>')
                 if in_strong:
                     text_parts.append('</strong>')
+                if in_link:
+                    text_parts.append('</a>')
                 text = ''.join(text_parts)
                 # Normalize Unicode whitespace to regular spaces
                 text = re.sub(r'[\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\t]+', ' ', text)
@@ -4976,6 +5104,15 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
 
         if pg % 50 == 0:
             log(f"  Extracted {pg}/{total_pages}+ pages...")
+
+    # Log hyperlink matching summary
+    if pdf_links:
+        total_link_annots = sum(len(v) for v in pdf_links.values())
+        matched_count = len(_matched_link_keys)
+        skipped = total_link_annots - matched_count
+        log(f"  Hyperlinks: matched {matched_count} of {total_link_annots} to text spans"
+            f" ({skipped} skipped: no text coverage)" if skipped else
+            f"  Hyperlinks: matched all {matched_count} links to text spans")
 
     # Log font summary
     font_dist = Counter()
