@@ -1175,6 +1175,34 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
     return images_by_page
 
 
+def _inject_images_into_html(html, page_images, log):
+    """Post-process HTML to insert <figure> tags after page anchors.
+
+    Used when serving from extraction cache — the cached HTML predates image
+    extraction, so images must be injected after the fact.
+    """
+    if not page_images:
+        return html
+    injected = 0
+    for page_num in sorted(page_images):
+        anchor = f'<a id="page_{page_num}"></a>'
+        if anchor not in html:
+            continue
+        img_html = ''
+        for img in page_images[page_num]:
+            cap = img.get('caption', '')
+            if cap:
+                cap_esc = re.sub(r'<[^>]+>', '', cap)
+                img_html += f'<figure><img src="{img["path"]}" alt="{cap_esc}"/><figcaption>{cap_esc}</figcaption></figure>\n'
+            else:
+                img_html += f'<figure><img src="{img["path"]}" alt=""/></figure>\n'
+            injected += 1
+        html = html.replace(anchor, anchor + '\n' + img_html, 1)
+    if injected > 0:
+        log(f"  Images injected into cached HTML: {injected}")
+    return html
+
+
 def _heading_id(text, counter):
     """Generate a stable, unique heading anchor ID from heading text."""
     clean = re.sub(r'<[^>]+>', '', text)  # strip any inner HTML tags
@@ -12025,12 +12053,22 @@ Examples:
                                f"method {_cached['extraction_method']}, "
                                f"quality {_cached['quality_score']}, "
                                f"served {_cached['times_served']} times")
+                        _cached_html = _cached['extracted_html']
+                        # Extract and inject images even on cache hit
+                        if not args.no_images:
+                            try:
+                                _html_dir = os.path.dirname(html_output) or '.'
+                                _page_images = extract_pdf_images(input_path, _html_dir, log_fn)
+                                if _page_images:
+                                    _cached_html = _inject_images_into_html(_cached_html, _page_images, log_fn)
+                            except Exception as _img_err:
+                                log_fn(f"  Image extraction on cache hit failed (non-blocking): {_img_err}")
                         with open(html_output, 'w', encoding='utf-8') as _cf:
-                            _cf.write(_cached['extracted_html'])
-                        _word_count = len(re.sub(r'<[^>]+>', '', _cached['extracted_html']).split())
+                            _cf.write(_cached_html)
+                        _word_count = len(re.sub(r'<[^>]+>', '', _cached_html).split())
                         log_fn(f"Done! Served from cache: {html_output}")
                         log_fn(f"  Words: {_word_count:,}")
-                        log_fn(f"  HTML size: {len(_cached['extracted_html']):,} chars")
+                        log_fn(f"  HTML size: {len(_cached_html):,} chars")
                         _cache_hit = True
                     else:
                         log_fn(f"Extraction cache miss for {_src_hash[:12]}... — running fresh extraction")

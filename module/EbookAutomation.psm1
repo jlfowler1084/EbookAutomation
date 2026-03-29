@@ -2324,6 +2324,12 @@ print(json.dumps(result))
                 }
                 $htmlDest = Join-Path $intermediatesDir "${outName}_kindle.html"
                 Copy-Item $htmlSource $htmlDest -Force -ErrorAction SilentlyContinue
+                # Also copy images/ subdirectory if present (for books with embedded images)
+                $srcImagesDir = Join-Path (Split-Path $htmlSource) 'images'
+                if (Test-Path $srcImagesDir) {
+                    $destImagesDir = Join-Path $intermediatesDir 'images'
+                    Copy-Item $srcImagesDir $destImagesDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
             } else {
                 Write-EbookLog "Kindle: no intermediate HTML available for EPUB generation" -Level WARN
             }
