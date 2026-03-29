@@ -1013,6 +1013,129 @@ def extract_pdf_links(pdf_path, log):
     return links_by_page
 
 
+def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
+                       skip_full_page=True):
+    """Extract embedded images from a PDF, saving to output_dir/images/.
+
+    Uses PyMuPDF for reliable image extraction with bounding box positions.
+    Filters out tiny decorative images, page-spanning scan images, and
+    duplicate images (same xref appearing on multiple pages).
+
+    Returns:
+        dict mapping page_number (1-based) to list of image dicts:
+        {1: [{'path': 'images/img_001_01.jpg', 'rect': (x0, y0, x1, y1),
+              'width': W, 'height': H}]}
+        Coordinates are in pdfminer coordinate space (bottom-left origin, y-up).
+    """
+    try:
+        import pymupdf
+    except ImportError:
+        log("  [INFO] pymupdf not installed — image extraction unavailable")
+        return {}
+
+    images_dir = os.path.join(output_dir, 'images')
+    os.makedirs(images_dir, exist_ok=True)
+
+    images_by_page = {}
+    seen_xrefs = set()
+    total_extracted = 0
+    total_skipped = 0
+
+    try:
+        doc = pymupdf.open(pdf_path)
+        try:
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                page_height = page.rect.height
+                page_width = page.rect.width
+                page_images = []
+
+                image_list = page.get_images(full=True)
+                for img_index, img_info in enumerate(image_list):
+                    xref = img_info[0]
+
+                    # Skip duplicate xrefs (logos, watermarks reused across pages)
+                    if xref in seen_xrefs:
+                        total_skipped += 1
+                        continue
+                    seen_xrefs.add(xref)
+
+                    try:
+                        base_image = doc.extract_image(xref)
+                    except Exception:
+                        continue
+                    if not base_image or not base_image.get("image"):
+                        continue
+
+                    img_width = base_image.get("width", 0)
+                    img_height = base_image.get("height", 0)
+
+                    # Skip tiny decorative images
+                    if img_width < min_width or img_height < min_height:
+                        total_skipped += 1
+                        continue
+
+                    # Get bounding box on page
+                    try:
+                        rects = page.get_image_rects(img_info)
+                    except Exception:
+                        rects = []
+                    if not rects:
+                        total_skipped += 1
+                        continue
+                    r = rects[0]  # use first rect
+
+                    # Skip full-page scan images
+                    if skip_full_page:
+                        rect_w = r.x1 - r.x0
+                        rect_h = r.y1 - r.y0
+                        if rect_w > page_width * 0.9 and rect_h > page_height * 0.9:
+                            total_skipped += 1
+                            continue
+
+                    # Save image
+                    ext = base_image["ext"]
+                    if ext not in ('png', 'jpeg', 'jpg', 'jpe'):
+                        ext = 'png'  # fallback for unusual formats
+                    filename = f"img_{page_idx + 1:03d}_{img_index:02d}.{ext}"
+                    filepath = os.path.join(images_dir, filename)
+
+                    with open(filepath, 'wb') as f:
+                        f.write(base_image["image"])
+
+                    # Convert to pdfminer coordinates
+                    pdfminer_rect = (
+                        r.x0,
+                        page_height - r.y1,   # pdfminer y0 (bottom)
+                        r.x1,
+                        page_height - r.y0,   # pdfminer y1 (top)
+                    )
+
+                    page_images.append({
+                        'path': f'images/{filename}',
+                        'rect': pdfminer_rect,
+                        'width': img_width,
+                        'height': img_height,
+                    })
+                    total_extracted += 1
+
+                if page_images:
+                    images_by_page[page_idx + 1] = page_images
+        finally:
+            doc.close()
+    except Exception as e:
+        log(f"  [WARN] Image extraction failed: {e}")
+        return {}
+
+    if total_extracted > 0:
+        log(f"  Images: extracted {total_extracted} across {len(images_by_page)} pages"
+            f" ({total_skipped} skipped: small/full-page/duplicate)")
+    elif total_skipped > 0:
+        log(f"  Images: none suitable ({total_skipped} skipped: small/full-page/duplicate)")
+
+    return images_by_page
+
+
 def _heading_id(text, counter):
     """Generate a stable, unique heading anchor ID from heading text."""
     clean = re.sub(r'<[^>]+>', '', text)  # strip any inner HTML tags
@@ -5569,7 +5692,7 @@ def rejoin_html_fragments(para_dicts, body_size, log):
 
 
 def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Untitled',
-                              skip_footnotes=False):
+                              skip_footnotes=False, page_images=None):
     """
     Convert paragraph dicts with font metadata into semantic HTML.
     Uses font size clusters + bookmark cross-reference for heading levels.
@@ -5984,6 +6107,9 @@ blockquote p {{ text-indent: 0; }}
 hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; margin: 1.5em 0 0.5em 0; }}
 .footnotes {{ font-size: 0.85em; line-height: 1.4; color: #555; }}
 .footnotes p {{ text-indent: 0; margin: 0.3em 0; }}
+.book-image {{ text-align: center; margin: 1em 0; page-break-inside: avoid; }}
+.book-image img {{ max-width: 100%; height: auto; }}
+.caption {{ font-size: 0.85em; font-style: italic; text-align: center; margin-top: 0.3em; color: #555; }}
 </style>
 </head><body>
 ''')
@@ -6021,6 +6147,9 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
     current_page = 0
     in_toc_region = False
     last_heading_text = ''  # for duplicate consecutive heading detection
+    _images_emitted = 0
+    if page_images is None:
+        page_images = {}
     heading_seen_pages = {}  # text_lower → first page where it was tagged as heading
     heading_dedup_skipped = 0
 
@@ -6029,6 +6158,12 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
 
         # Track current page
         if p.get('is_page_marker'):
+            # Emit any remaining images from the previous page
+            if page_images and current_page in page_images:
+                for img in page_images[current_page]:
+                    html_parts.append(f'<div class="book-image"><img src="{img["path"]}" alt="" /></div>\n')
+                    _images_emitted += 1
+                del page_images[current_page]
             # Close footnotes block at page boundary
             if in_footnotes:
                 html_parts.append('</div>\n')
@@ -6389,6 +6524,13 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
         log(f"  Running headers skipped: {running_header_skipped}")
     if heading_dedup_skipped:
         log(f"  Duplicate headings demoted to <p>: {heading_dedup_skipped}")
+    # Emit any remaining images from the last page
+    if page_images and current_page in page_images:
+        for img in page_images[current_page]:
+            html_parts.append(f'<div class="book-image"><img src="{img["path"]}" alt="" /></div>\n')
+            _images_emitted += 1
+    if _images_emitted > 0:
+        log(f"  Images embedded: {_images_emitted}")
 
     html = ''.join(html_parts)
 
@@ -7982,6 +8124,22 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
             .footnotes p {
                 text-indent: 0;
                 margin: 0.3em 0;
+            }
+            .book-image {
+                text-align: center;
+                margin: 1em 0;
+                page-break-inside: avoid;
+            }
+            .book-image img {
+                max-width: 100%;
+                height: auto;
+            }
+            .caption {
+                font-size: 0.85em;
+                font-style: italic;
+                text-align: center;
+                margin-top: 0.3em;
+                color: #555;
             }
         """,
         'modern': """
@@ -10518,7 +10676,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         no_cache=False, use_vision=False, vision_cost_limit=15.0,
                         use_gemini=False, gemini_remediate=False,
                         gemini_cost_limit=5.0, gemini_model=None,
-                        compare_extractors_enabled=False):
+                        compare_extractors_enabled=False,
+                        extract_images=True):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -10848,8 +11007,19 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     else:
         title = stem[:80]
 
+    # ── Image extraction ──────────────────────────────────────────
+    page_images = {}
+    if extract_images:
+        try:
+            html_dir = os.path.dirname(output_path) or '.'
+            page_images = extract_pdf_images(pdf_path, html_dir, log)
+        except Exception as e:
+            log(f"  Image extraction failed (non-blocking): {e}")
+            page_images = {}
+
     html, heading_registry = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title,
-                                                       skip_footnotes=skip_footnotes)
+                                                       skip_footnotes=skip_footnotes,
+                                                       page_images=page_images)
 
     # ── Fix double spaces from inline tag boundaries ──────────────
     # pdfminer wraps individual italic/bold words in separate <em>/<strong>
@@ -11683,6 +11853,8 @@ Examples:
                     help="Path to custom OCR substitution JSON (merged on top of config/ocr_substitutions.json)")
     ap.add_argument("--dump-ocr-table", action="store_true",
                     help="Print the effective OCR substitution table and exit")
+    ap.add_argument("--no-images", action="store_true", default=False,
+                    help="Skip image extraction from PDF (Kindle mode)")
 
     args = ap.parse_args()
 
@@ -11839,7 +12011,8 @@ Examples:
                                     gemini_remediate=args.gemini_remediate,
                                     gemini_cost_limit=args.gemini_cost_limit,
                                     gemini_model=args.gemini_model,
-                                    compare_extractors_enabled=args.compare_extractors)
+                                    compare_extractors_enabled=args.compare_extractors,
+                                    extract_images=not args.no_images)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}

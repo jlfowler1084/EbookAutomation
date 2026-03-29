@@ -154,7 +154,7 @@
     {
       "script": "tools/pdf_to_balabolka.py",
       "mode": "kindle",
-      "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes"],
+      "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes", "--no-images"],
       "description": "Kindle HTML extraction with font metadata"
     },
     {
