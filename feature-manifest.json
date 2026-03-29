@@ -1,0 +1,229 @@
+{
+  "version": "1.0",
+  "generated": "2026-03-29",
+  "project": "EbookAutomation",
+
+  "exported_functions": [
+    {
+      "name": "Invoke-EbookPipeline",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Main inbox scan + convert loop",
+      "key_parameters": ["DryRun", "GenerateMP3", "UseClaudeChapters", "UseOCR", "SkipTTS", "ForceColumns", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "SendToKindle", "EmailToKindle", "Profile", "NoFootnotes", "NoIndex", "NoBibliography", "NoHyperlinks", "NoFrontMatter", "NoBackMatter", "NoImages", "NoBlockQuotes", "ApplyAIFixes", "SkipPreflight", "IgnoreRecommendation", "ValidateAlignment"]
+    },
+    {
+      "name": "Convert-ToTTS",
+      "file": "module/EbookAutomation.psm1",
+      "description": "PDF/EPUB → Balabolka TXT",
+      "key_parameters": ["InputFile", "OutputDir", "UseClaudeChapters", "UseOCR", "ForceColumns", "DialogueVoices"]
+    },
+    {
+      "name": "Convert-ToKindle",
+      "file": "module/EbookAutomation.psm1",
+      "description": "PDF → clean text → KFX via Calibre",
+      "key_parameters": ["InputFile", "OutputDir", "UseHtmlExtraction", "ValidateQuality", "UseClaudeChapters", "ForceColumns", "UseOCR", "DirectConversion", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "ProduceEpub", "Profile", "ApplyAIFixes", "CompareExtractors", "SkipPreflight", "ValidateAlignment"]
+    },
+    {
+      "name": "Send-ToKindle",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Send ebook to Kindle via USB or email",
+      "key_parameters": ["InputFile", "CoverImage", "DeleteFromLibrary", "Email", "EmailFormat", "Compress", "SplitMaxMB"]
+    },
+    {
+      "name": "Convert-BriefToYouTube",
+      "file": "module/EbookAutomation.psm1",
+      "description": "MP3 segments + cover → YouTube-ready MP4s",
+      "key_parameters": ["InputFolder", "CoverImage", "OutputFolder", "EpisodeName", "Combine", "DryRun"]
+    },
+    {
+      "name": "Install-EbookScheduledTask",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Register Windows Scheduled Task for pipeline",
+      "key_parameters": ["Force"]
+    },
+    {
+      "name": "Uninstall-EbookScheduledTask",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Remove the scheduled task",
+      "key_parameters": []
+    },
+    {
+      "name": "Get-EbookTaskStatus",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Check scheduled task state",
+      "key_parameters": []
+    },
+    {
+      "name": "Initialize-EbookAutomation",
+      "file": "module/EbookAutomation.psm1",
+      "description": "First-run setup wizard",
+      "key_parameters": []
+    },
+    {
+      "name": "Invoke-Balabolka",
+      "file": "module/EbookAutomation.psm1",
+      "description": "TXT → WAV → MP3 pipeline via balcon.exe + ffmpeg",
+      "key_parameters": ["InputFile", "OutputFile", "Voice", "Speed", "Volume", "DictionaryFile", "Bitrate"]
+    },
+    {
+      "name": "Send-ToClaudeAPI",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Anthropic Messages API wrapper",
+      "key_parameters": ["SystemPrompt", "UserMessage", "Model", "MaxTokens"]
+    },
+    {
+      "name": "Get-ChapterStructure",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Claude-assisted chapter/part detection from book text",
+      "key_parameters": ["TextContent", "InputFile"]
+    },
+    {
+      "name": "Invoke-StructureAgent",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Standalone Structure Analysis Agent for diagnostics",
+      "key_parameters": ["InputFile", "OutputJson", "Model"]
+    },
+    {
+      "name": "Test-EbookPipeline",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Run pdfminer HTML extraction regression test suite",
+      "key_parameters": ["TestName", "Quick", "List"]
+    },
+    {
+      "name": "Test-ConversionQuality",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Visual QA on converted ebooks via Claude Vision API",
+      "key_parameters": ["InputFile", "OutputDir", "DPI", "MaxPages", "RubricPath", "Model", "PassThreshold", "FullVQA"]
+    },
+    {
+      "name": "Invoke-BatchQA",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Batch quality assurance across a folder of ebooks",
+      "key_parameters": ["FolderPath", "Quick", "Full", "IncludeVQA", "Limit", "FormatFilter", "Parallel", "Resume", "NoDb"]
+    },
+    {
+      "name": "Invoke-ConvergeLoop",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Iterative extract-score-fix loop for Kindle conversion",
+      "key_parameters": ["InputFile", "MaxIterations", "TargetScore", "OutputDir", "CostLimit", "Profile", "UseGemini", "UseVision", "SkipPreflight", "ValidateAlignment"]
+    },
+    {
+      "name": "Write-EbookLog",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Timestamped logging to file + console",
+      "key_parameters": []
+    },
+    {
+      "name": "Get-EbookConfig",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Load and cache settings.json",
+      "key_parameters": []
+    },
+    {
+      "name": "Get-EbookDefaults",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Read user preference defaults from user-defaults.json",
+      "key_parameters": []
+    },
+    {
+      "name": "Set-EbookDefaults",
+      "file": "module/EbookAutomation.psm1",
+      "description": "Save user preference defaults to user-defaults.json",
+      "key_parameters": ["Voice", "Speed", "Volume", "InputFolder", "OutputFolderTTS", "OutputFolderKindle", "GenerateMP3"]
+    }
+  ],
+
+  "python_cli_modes": [
+    {
+      "script": "tools/pdf_to_balabolka.py",
+      "mode": "gui",
+      "flags": [],
+      "description": "Tkinter GUI mode (no args)"
+    },
+    {
+      "script": "tools/pdf_to_balabolka.py",
+      "mode": "balabolka",
+      "flags": ["--input", "--output-dir", "--suffix", "--quiet", "--api-key", "--chapter-hints", "--ocr", "--force-columns", "--tts-enhance", "--dialogue-voices"],
+      "description": "TTS text extraction (default --mode)"
+    },
+    {
+      "script": "tools/pdf_to_balabolka.py",
+      "mode": "kindle",
+      "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes"],
+      "description": "Kindle HTML extraction with font metadata"
+    },
+    {
+      "script": "tools/pattern_db.py",
+      "mode": "subcommands",
+      "flags": ["--db-path"],
+      "subcommands": ["init", "stats", "import-vqa", "history", "fixes", "trend", "cost", "switches", "classify", "recommend", "cache", "override", "extract-metadata", "get-metadata", "update-metadata", "store-metadata", "publisher-report", "cache-roi", "extractor-stats", "ocr-stats", "cache-stats", "cache-invalidate"],
+      "description": "Pattern database management CLI"
+    },
+    {
+      "script": "tools/batch_qa.py",
+      "mode": "subcommands",
+      "flags": [],
+      "subcommands": ["run", "compare", "list", "report"],
+      "description": "Batch quality assurance runner"
+    },
+    {
+      "script": "tools/classify_source.py",
+      "mode": "direct",
+      "flags": ["--input"],
+      "description": "Pre-flight PDF source classification"
+    },
+    {
+      "script": "tools/detect_headings_font.py",
+      "mode": "direct",
+      "flags": ["--input", "--epub", "--format", "--verbose"],
+      "description": "Font-based heading detection"
+    },
+    {
+      "script": "tools/visual_qa.py",
+      "mode": "direct",
+      "flags": ["--input", "--api-key", "--calibre", "--poppler", "--output-dir", "--dpi", "--max-pages", "--full", "--model", "--rubric", "--pass-threshold", "--verbose"],
+      "description": "Automated visual quality assurance"
+    },
+    {
+      "script": "tools/preflight_analysis.py",
+      "mode": "direct",
+      "flags": ["--input", "--db-path", "--settings", "--verbose"],
+      "description": "Pre-flight document analysis and recipe generator"
+    },
+    {
+      "script": "tools/test_pipeline.py",
+      "mode": "direct",
+      "flags": ["--quick", "--list", "--recapture", "--capture-only", "--corpus", "--verbose"],
+      "description": "Regression test harness"
+    }
+  ],
+
+  "critical_files": [
+    {"path": "module/EbookAutomation.psm1", "type": "powershell_module", "min_lines": 4742},
+    {"path": "module/EbookAutomation.psd1", "type": "manifest", "min_lines": 31},
+    {"path": "tools/pdf_to_balabolka.py", "type": "python_script", "min_lines": 9636},
+    {"path": "tools/preflight_analysis.py", "type": "python_script", "min_lines": 899},
+    {"path": "tools/pattern_db.py", "type": "python_script", "min_lines": 2704},
+    {"path": "tools/batch_qa.py", "type": "python_script", "min_lines": 1800},
+    {"path": "tools/fix_engine.py", "type": "python_script", "min_lines": 705},
+    {"path": "tools/visual_qa.py", "type": "python_script", "min_lines": 696},
+    {"path": "tools/test_pipeline.py", "type": "test_harness", "min_lines": 1320},
+    {"path": "tools/classify_source.py", "type": "python_script", "min_lines": 391},
+    {"path": "tools/detect_headings_font.py", "type": "python_script", "min_lines": 916},
+    {"path": "config/settings.json", "type": "config", "min_lines": 99},
+    {"path": "tools/hooks/post-edit-test.ps1", "type": "hook", "min_lines": 61},
+    {"path": "CLAUDE.md", "type": "ai_context", "min_lines": 148}
+  ],
+
+  "config_schema_keys": {
+    "file": "config/settings.json",
+    "required_top_level": ["paths", "tts", "kindle", "mp3", "scheduler", "notifications", "api_models", "visual_qa", "classify", "converge_loop", "kindle_delivery", "preflight", "extraction", "quality_gate", "voice_tags", "archive_originals", "log_level"]
+  },
+
+  "test_infrastructure": {
+    "test_script": "tools/test_pipeline.py",
+    "quick_flag": "--quick",
+    "corpus_dir": "test-corpus/",
+    "min_test_count": 40,
+    "hook_script": "tools/hooks/post-edit-test.ps1"
+  }
+}

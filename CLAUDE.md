@@ -32,6 +32,19 @@ After ANY pipeline code change:
 4. Verify chapter detection count is correct
 5. Verify PAGE markers survive all processing phases
 
+### Feature Manifest Verification
+
+A machine-readable feature manifest at `feature-manifest.json` catalogs all exported functions,
+CLI modes, critical files, and config schema. Run the verification script before and after
+major changes:
+
+```powershell
+powershell -File tools\verify-manifest.ps1 -Verbose
+```
+
+If verification fails, a function, file, or config key has been removed or truncated —
+investigate before proceeding.
+
 ### Post-Edit Auto-Test Hook
 PostToolUse hook runs `test_pipeline.py --quick` after edits to core pipeline files.
 Hook script: `tools/hooks/post-edit-test.ps1` (configured in `.claude/settings.json`).
