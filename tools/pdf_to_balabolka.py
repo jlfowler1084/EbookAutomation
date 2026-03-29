@@ -924,11 +924,15 @@ def extract_bookmarks(pdf_path, log):
 
 
 def extract_pdf_links(pdf_path, log):
-    """Extract external URI hyperlinks from PDF with bounding boxes per page.
+    """Extract hyperlinks from PDF with bounding boxes per page.
 
-    Uses PyMuPDF to read /Link annotations with /URI targets.  Coordinates are
-    converted from PyMuPDF's top-left origin to pdfminer's bottom-left origin
-    (y increases upward) so they can be compared directly against LTChar positions.
+    Uses PyMuPDF to read /Link annotations.  Handles both external URI links
+    (kind==2) and internal GoTo links (kind==1).  Internal links get placeholder
+    URIs like '#__goto_page_N' that are resolved to heading anchor IDs after
+    format_paragraphs_as_html() generates the heading registry.
+
+    Coordinates are converted from PyMuPDF's top-left origin to pdfminer's
+    bottom-left origin (y increases upward).
 
     Returns:
         dict mapping page_number (1-based) to list of link dicts:
@@ -943,6 +947,7 @@ def extract_pdf_links(pdf_path, log):
 
     links_by_page = {}
     total_links = 0
+    total_internal = 0
 
     try:
         doc = pymupdf.open(pdf_path)
@@ -953,34 +958,41 @@ def extract_pdf_links(pdf_path, log):
                 page_links = []
 
                 for link in page.get_links():
-                    # Only external URI links (kind == 2 is LINK_URI)
-                    if link.get('kind') != 2:
-                        continue
-                    uri = link.get('uri', '').strip()
-                    if not uri:
-                        continue
-                    # Skip javascript: URIs
-                    if uri.lower().startswith('javascript:'):
-                        continue
-
+                    kind = link.get('kind')
                     rect = link.get('from')
                     if rect is None:
                         continue
 
-                    # Convert from PyMuPDF (top-left origin, y down) to
-                    # pdfminer (bottom-left origin, y up):
-                    #   pdfminer_y0 = page_height - pymupdf_y1
-                    #   pdfminer_y1 = page_height - pymupdf_y0
-                    page_links.append({
-                        'uri': uri,
-                        'rect': (
-                            rect.x0,
-                            page_height - rect.y1,   # pdfminer y0 (bottom)
-                            rect.x1,
-                            page_height - rect.y0,   # pdfminer y1 (top)
-                        ),
-                    })
-                    total_links += 1
+                    # Convert rect from PyMuPDF (top-left origin, y down) to
+                    # pdfminer (bottom-left origin, y up)
+                    pdfminer_rect = (
+                        rect.x0,
+                        page_height - rect.y1,   # pdfminer y0 (bottom)
+                        rect.x1,
+                        page_height - rect.y0,   # pdfminer y1 (top)
+                    )
+
+                    if kind == 2:
+                        # External URI link (LINK_URI)
+                        uri = link.get('uri', '').strip()
+                        if not uri:
+                            continue
+                        if uri.lower().startswith('javascript:'):
+                            continue
+                        page_links.append({'uri': uri, 'rect': pdfminer_rect})
+                        total_links += 1
+
+                    elif kind == 1:
+                        # Internal GoTo link (LINK_GOTO) — target page jump
+                        target_page = link.get('page', -1)
+                        if target_page < 0:
+                            continue
+                        # Placeholder URI — resolved after heading IDs are generated
+                        page_links.append({
+                            'uri': f'#__goto_page_{target_page + 1}',
+                            'rect': pdfminer_rect,
+                        })
+                        total_internal += 1
 
                 if page_links:
                     links_by_page[page_idx + 1] = page_links  # 1-based
@@ -990,10 +1002,96 @@ def extract_pdf_links(pdf_path, log):
         log(f"  [WARN] Failed to extract PDF links: {e}")
         return {}
 
-    if total_links > 0:
-        log(f"  Hyperlinks: found {total_links} external links across {len(links_by_page)} pages")
+    if total_links > 0 or total_internal > 0:
+        parts = []
+        if total_links > 0:
+            parts.append(f"{total_links} external")
+        if total_internal > 0:
+            parts.append(f"{total_internal} internal")
+        log(f"  Hyperlinks: found {', '.join(parts)} across {len(links_by_page)} pages")
 
     return links_by_page
+
+
+def _heading_id(text, counter):
+    """Generate a stable, unique heading anchor ID from heading text."""
+    clean = re.sub(r'<[^>]+>', '', text)  # strip any inner HTML tags
+    slug = re.sub(r'[^a-z0-9]+', '-', clean.lower().strip()).strip('-')[:60]
+    counter[0] += 1
+    return f"heading_{counter[0]}_{slug}" if slug else f"heading_{counter[0]}"
+
+
+def _inject_heading_ids(html, log=None):
+    """Add id= attributes to all <h1>/<h2>/<h3> tags and build a heading registry.
+
+    Scans the HTML for page anchors (<a id="page_N">) to track which page
+    each heading belongs to.  Returns (html_with_ids, heading_registry) where
+    heading_registry maps page_number → [heading_id, ...].
+    """
+    counter = [0]
+    registry = {}   # page_number → [heading_id, ...]
+    current_page = [0]
+    total_headings = [0]
+
+    def _replace_heading(match):
+        tag = match.group(1)
+        content = match.group(2)
+        hid = _heading_id(content, counter)
+        registry.setdefault(current_page[0], []).append(hid)
+        total_headings[0] += 1
+        return f'<{tag} id="{hid}">{content}</{tag}>'
+
+    lines = html.split('\n')
+    for i, line in enumerate(lines):
+        page_match = re.search(r'<a id="page_(\d+)">', line)
+        if page_match:
+            current_page[0] = int(page_match.group(1))
+        lines[i] = re.sub(r'<(h[123])>(.*?)</\1>', _replace_heading, line)
+    html = '\n'.join(lines)
+
+    if log and total_headings[0] > 0:
+        pages_with = len(registry)
+        log(f"  Heading anchors: {total_headings[0]} IDs generated across {pages_with} pages")
+
+    return html, registry
+
+
+def _resolve_internal_links(html, heading_registry, log):
+    """Replace internal link placeholders with resolved heading anchor IDs.
+
+    Placeholders look like href="#__goto_page_N".  Uses heading_registry
+    (page_number → [heading_id, ...]) to resolve each to the first heading
+    anchor on the target page.  Unresolvable links are stripped (tag removed,
+    text preserved).
+    """
+    if '#__goto_page_' not in html:
+        return html
+
+    resolved = 0
+    unresolved = 0
+
+    def _resolve(match):
+        nonlocal resolved, unresolved
+        target_page = int(match.group(1))
+        headings_on_page = heading_registry.get(target_page, [])
+        if headings_on_page:
+            resolved += 1
+            return f'href="#{headings_on_page[0]}"'
+        else:
+            unresolved += 1
+            return 'href=""'  # will be cleaned up below
+
+    html = re.sub(r'href="#__goto_page_(\d+)"', _resolve, html)
+
+    # Remove <a> tags with empty href (unresolvable links) — keep the text
+    html = re.sub(r'<a href="">(.*?)</a>', r'\1', html)
+
+    if resolved > 0 or unresolved > 0:
+        log(f"  Internal links: resolved {resolved} to heading anchors"
+            f" ({unresolved} unresolvable)" if unresolved else
+            f"  Internal links: resolved all {resolved} to heading anchors")
+
+    return html
 
 
 def detect_pdf_type(pdf_path, log):
@@ -6577,7 +6675,10 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
         lambda m: m.group(1) + m.group(2).upper(),
         html)
 
-    return html
+    # Add heading anchor IDs (final pass — after all heading level adjustments)
+    html, heading_registry = _inject_heading_ids(html, log)
+
+    return html, heading_registry
 
 
 def clean_and_join(raw_text, log):
@@ -8068,6 +8169,10 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
     html_parts.append('</html>')
 
     result = '\n'.join(html_parts)
+
+    # Add heading anchor IDs
+    result, _ = _inject_heading_ids(result, log)
+
     log(f"  Generated HTML output ({len(result):,} chars, theme: {theme})")
     return result
 
@@ -10743,8 +10848,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     else:
         title = stem[:80]
 
-    html = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title,
-                                     skip_footnotes=skip_footnotes)
+    html, heading_registry = format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title=title,
+                                                       skip_footnotes=skip_footnotes)
 
     # ── Fix double spaces from inline tag boundaries ──────────────
     # pdfminer wraps individual italic/bold words in separate <em>/<strong>
@@ -10765,6 +10870,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         html = _link_endnotes(html, log)
     else:
         log("\n-- STEP 2b: Skipping endnote linking (--skip-footnotes) ---")
+
+    # Resolve internal cross-reference links (placeholders → heading anchors)
+    html = _resolve_internal_links(html, heading_registry, log)
 
     # Detect scripts for routing intelligence
     _detected_scripts = {}
@@ -10869,7 +10977,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                             f"cost: ${_rem_cost:.4f}")
 
                         # Re-format HTML with remediated content
-                        html = format_paragraphs_as_html(
+                        html, heading_registry = format_paragraphs_as_html(
                             para_dicts, body_size, bookmarks, log, title=title,
                             skip_footnotes=skip_footnotes)
                         html = re.sub(r'\s*</em>\s*<em>\s*', ' ', html)
@@ -10880,6 +10988,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                                       lambda m: re.sub(r'  +', ' ', m.group(0)), html)
                         if not skip_footnotes:
                             html = _link_endnotes(html, log)
+                        html = _resolve_internal_links(html, heading_registry, log)
 
                         with open(html_path, 'w', encoding='utf-8') as f:
                             f.write(html)
