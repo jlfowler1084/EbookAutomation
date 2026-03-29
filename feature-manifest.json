@@ -8,7 +8,7 @@
       "name": "Invoke-EbookPipeline",
       "file": "module/EbookAutomation.psm1",
       "description": "Main inbox scan + convert loop",
-      "key_parameters": ["DryRun", "GenerateMP3", "UseClaudeChapters", "UseOCR", "SkipTTS", "ForceColumns", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "SendToKindle", "EmailToKindle", "Profile", "NoFootnotes", "NoIndex", "NoBibliography", "NoHyperlinks", "NoFrontMatter", "NoBackMatter", "NoImages", "NoBlockQuotes", "ApplyAIFixes", "SkipPreflight", "IgnoreRecommendation", "ValidateAlignment"]
+      "key_parameters": ["DryRun", "GenerateMP3", "UseClaudeChapters", "UseOCR", "SkipTTS", "RetryFailed", "ForceColumns", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "SendToKindle", "EmailToKindle", "Profile", "NoFootnotes", "NoIndex", "NoBibliography", "NoHyperlinks", "NoFrontMatter", "NoBackMatter", "NoImages", "NoBlockQuotes", "ApplyAIFixes", "SkipPreflight", "IgnoreRecommendation", "ValidateAlignment"]
     },
     {
       "name": "Convert-ToTTS",

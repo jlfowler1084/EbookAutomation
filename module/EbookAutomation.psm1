@@ -2988,6 +2988,10 @@ function Invoke-EbookPipeline {
         falling back to settings.json.  Useful for re-generating audiobooks
         with a different voice or speed without re-running extraction.
 
+    .PARAMETER RetryFailed
+        Reset failure counts and retry all previously-failed books that are
+        still in the inbox.
+
     .EXAMPLE
         PS> Invoke-EbookPipeline
         Processes all new ebooks in the inbox folder.
@@ -3041,7 +3045,8 @@ function Invoke-EbookPipeline {
         [switch]$IgnoreRecommendation,
         [switch]$ValidateAlignment,
 
-        [switch]$SkipTTS
+        [switch]$SkipTTS,
+        [switch]$RetryFailed
     )
 
     $pipelineStart  = Get-Date
@@ -3143,6 +3148,26 @@ function Invoke-EbookPipeline {
 
     Write-EbookLog "Inbox scan: found $($files.Count) file(s)"
 
+    # ── Failed-books retry tracking ────────────────────────────────────────
+    $logsDir      = Resolve-ProjectPath $cfg.paths.logs
+    $failedPath   = Join-Path $logsDir 'failed-books.json'
+    $failedBooks  = @{}
+    if (Test-Path $failedPath) {
+        try {
+            $loaded = Get-Content $failedPath -Raw | ConvertFrom-Json
+            foreach ($prop in $loaded.PSObject.Properties) {
+                $failedBooks[$prop.Name] = $prop.Value
+            }
+        } catch {
+            Write-EbookLog "  [WARN] Could not parse failed-books.json -- starting fresh" -Level WARN
+        }
+    }
+    if ($RetryFailed -and $failedBooks.Count -gt 0) {
+        Write-EbookLog "RetryFailed: resetting failure counts for $($failedBooks.Count) book(s)"
+        $failedBooks = @{}
+        Set-Content $failedPath '{}' -Encoding UTF8
+    }
+
     # Tracking
     $processed    = 0
     $skipped      = 0
@@ -3154,6 +3179,20 @@ function Invoke-EbookPipeline {
         $bookNumber++
         $bookLabel = "[$bookNumber/$($files.Count)]"
         $bookStart = Get-Date
+
+        # Skip books that have failed too many times (max 3 attempts)
+        $failKey = $file.Name
+        if ($failedBooks.ContainsKey($failKey)) {
+            $failCount = $failedBooks[$failKey].failures
+            if ($failCount -ge 3) {
+                Write-EbookLog "$bookLabel SKIP (failed $failCount times): $failKey" -Level WARN
+                $skipped++
+                $resultLog += [PSCustomObject]@{
+                    File = $file.Name; TTS = 'skip'; Kindle = 'skip'; MP3 = 'skip'; DeviceSend = 'n/a'; EmailSend = 'n/a'; Status = 'max-failures'; Time = '-'
+                }
+                continue
+            }
+        }
 
         # Skip already-processed
         if (Test-AlreadyProcessed $file.FullName) {
@@ -3450,6 +3489,16 @@ function Invoke-EbookPipeline {
             $errors++
             $bookStatus = 'FAILED'
             Write-EbookLog "  Result: ALL STEPS FAILED -- file left in inbox ($bookTime)" -Level ERROR
+
+            # Track failure in failed-books.json
+            $failKey = $file.Name
+            $prevFail = if ($failedBooks.ContainsKey($failKey)) { $failedBooks[$failKey].failures } else { 0 }
+            $failedBooks[$failKey] = @{
+                failures     = $prevFail + 1
+                last_attempt = (Get-Date -Format 'o')
+                last_error   = "$ttsMsg / $kindleMsg"
+            }
+            try { $failedBooks | ConvertTo-Json -Depth 3 | Set-Content $failedPath -Encoding UTF8 } catch {}
         }
 
         $devSendStatus  = if ($sendActive -and $kindleOk) { if ($sentToKindle) { 'OK' } else { 'FAILED' } } elseif ($sendActive) { 'skipped' } else { 'n/a' }
@@ -3518,6 +3567,24 @@ function Invoke-EbookPipeline {
         Send-EbookNotification -Title 'Ebook Automation -- errors' `
             -Message "$errors file(s) failed -- check the log" -Type Warning
     }
+
+    # Daily summary log (condensed, append-mode)
+    if ($processed -gt 0 -or $errors -gt 0) {
+        $summaryPath = Join-Path (Resolve-ProjectPath $cfg.paths.logs) 'daily-summary.txt'
+        $summaryLines = @()
+        $summaryLines += "=== Pipeline Summary -- $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
+        $summaryLines += "Books processed: $processed"
+        foreach ($entry in $resultLog) {
+            if ($entry.Status -eq 'skipped' -or $entry.Status -eq 'max-failures') { continue }
+            $icon = if ($entry.Status -like 'FAIL*') { 'FAILED' } else { 'OK' }
+            $details = "TTS: $($entry.TTS), Kindle: $($entry.Kindle)"
+            $summaryLines += "  ${icon}: $($entry.File) ($details, $($entry.Time))"
+        }
+        $summaryLines += "Total time: $totalTime"
+        $summaryLines += "================================================"
+        $summaryLines += ""
+        try { $summaryLines | Add-Content $summaryPath -Encoding UTF8 } catch {}
+    }
 }
 
 #endregion
@@ -3561,10 +3628,32 @@ function Install-EbookScheduledTask {
     }
 
     # Write the launcher script that the task will call
+    $projectRoot = $script:ModuleRoot
     $launcherContent = @"
-# Auto-generated launcher -- do not edit
-Import-Module '$modulePath' -Force
-Invoke-EbookPipeline
+# Auto-generated launcher for EbookAutomation scheduled task
+# Regenerated by Install-EbookScheduledTask -- do not edit manually
+`$ErrorActionPreference = 'Continue'
+
+try {
+    Import-Module '$modulePath' -Force
+
+    # Read user defaults for pipeline flags
+    `$defaults = Get-EbookDefaults
+
+    `$pipelineArgs = @{}
+    if (`$defaults.generate_mp3)       { `$pipelineArgs['GenerateMP3'] = `$true }
+    if (`$defaults.use_claude_chapters) { `$pipelineArgs['UseClaudeChapters'] = `$true }
+
+    Invoke-EbookPipeline @pipelineArgs
+}
+catch {
+    # Write error to a persistent location (not just console)
+    `$errorLog = Join-Path '$projectRoot' 'logs' 'scheduler-errors.txt'
+    `$timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    "`$timestamp  SCHEDULER ERROR: `$_" | Add-Content `$errorLog -Encoding UTF8
+    "`$timestamp  Stack: `$(`$_.ScriptStackTrace)" | Add-Content `$errorLog -Encoding UTF8
+    exit 1
+}
 "@
     Set-Content $runnerScript $launcherContent -Encoding UTF8
 
@@ -3588,23 +3677,29 @@ Invoke-EbookPipeline
 
     $principal = New-ScheduledTaskPrincipal `
         -UserId $env:USERNAME `
-        -LogonType InteractiveToken `
+        -LogonType Interactive `
         -RunLevel Highest
 
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     }
 
-    Register-ScheduledTask `
-        -TaskName  $taskName `
-        -Action    $action `
-        -Trigger   $triggers `
-        -Settings  $settings `
-        -Principal $principal `
-        -Description "Automatically converts new ebooks in the inbox to TTS text and Kindle format" |
-        Out-Null
+    try {
+        Register-ScheduledTask `
+            -TaskName  $taskName `
+            -Action    $action `
+            -Trigger   $triggers `
+            -Settings  $settings `
+            -Principal $principal `
+            -Description "Automatically converts new ebooks in the inbox to TTS text and Kindle format" `
+            -ErrorAction Stop |
+            Out-Null
 
-    Write-EbookLog "Scheduled task '$taskName' registered (every $intervalMins min)" -Level SUCCESS
+        Write-EbookLog "Scheduled task '$taskName' registered (every $intervalMins min)" -Level SUCCESS
+    } catch {
+        Write-EbookLog "Failed to register scheduled task: $_" -Level ERROR
+        Write-EbookLog "  Registration requires Administrator privileges. Run PowerShell as Admin." -Level ERROR
+    }
 }
 
 function Uninstall-EbookScheduledTask {
