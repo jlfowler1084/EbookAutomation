@@ -1051,8 +1051,21 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                 page_images = []
 
                 image_list = page.get_images(full=True)
+
+                # Collect SMask xrefs — these are alpha masks, not content images
+                smask_xrefs = set()
+                for img_info in image_list:
+                    smask_xref = img_info[1] if len(img_info) > 1 else 0
+                    if smask_xref:
+                        smask_xrefs.add(smask_xref)
+
                 for img_index, img_info in enumerate(image_list):
                     xref = img_info[0]
+
+                    # Skip SMask (alpha channel) images
+                    if xref in smask_xrefs:
+                        total_skipped += 1
+                        continue
 
                     # Skip duplicate xrefs (logos, watermarks reused across pages)
                     if xref in seen_xrefs:
@@ -1105,18 +1118,37 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                     needs_conversion = ext in ('jpx', 'jp2', 'j2k') or ext not in ('png', 'jpeg', 'jpg', 'jpe')
 
                     if needs_conversion:
+                        converted = False
                         try:
                             from PIL import Image as _PILImage
                             import io
                             with _PILImage.open(io.BytesIO(image_bytes)) as pil_img:
-                                if pil_img.mode in ('CMYK', 'RGBA', 'LA', 'PA'):
+                                # Convert non-RGB modes to RGB for JPEG compatibility
+                                if pil_img.mode in ('CMYK', 'RGBA', 'LA', 'PA', 'P', 'I', 'F'):
+                                    pil_img = pil_img.convert('RGB')
+                                elif pil_img.mode == 'L':
+                                    pass  # Grayscale is fine for JPEG
+                                elif pil_img.mode != 'RGB':
                                     pil_img = pil_img.convert('RGB')
                                 buf = io.BytesIO()
                                 pil_img.save(buf, format='JPEG', quality=85)
                                 image_bytes = buf.getvalue()
                                 ext = 'jpeg'
+                                converted = True
                         except Exception:
-                            ext = 'png'  # last-resort fallback
+                            pass
+                        # Fallback: render via PyMuPDF Pixmap (lossless PNG)
+                        if not converted:
+                            try:
+                                pix = pymupdf.Pixmap(doc, xref)
+                                if pix.alpha:
+                                    pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+                                image_bytes = pix.tobytes("png")
+                                ext = 'png'
+                                pix = None
+                            except Exception:
+                                total_skipped += 1
+                                continue  # Skip entirely — undecodable image
 
                     filename = f"img_{page_idx + 1:03d}_{img_index:02d}.{ext}"
                     filepath = os.path.join(images_dir, filename)
@@ -1195,9 +1227,14 @@ def _inject_images_into_html(html, page_images, log):
 
     Used when serving from extraction cache — the cached HTML predates image
     extraction, so images must be injected after the fact.
+    Strips any existing <figure>/<div class="book-image"> image tags first
+    to prevent duplicates when the cache holds stale image references.
     """
     if not page_images:
         return html
+    # Remove existing image tags to prevent duplicates from stale cache
+    html = re.sub(r'<figure><img\s+src="images/[^"]*"[^>]*/>\s*(?:<figcaption>[^<]*</figcaption>\s*)?</figure>\s*', '', html)
+    html = re.sub(r'<div class="book-image"><img\s+src="images/[^"]*"[^>]*/>\s*</div>\s*', '', html)
     injected = 0
     for page_num in sorted(page_images):
         anchor = f'<a id="page_{page_num}"></a>'
