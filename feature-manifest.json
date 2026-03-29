@@ -211,7 +211,9 @@
     {"path": "tools/detect_headings_font.py", "type": "python_script", "min_lines": 916},
     {"path": "config/settings.json", "type": "config", "min_lines": 99},
     {"path": "tools/hooks/post-edit-test.ps1", "type": "hook", "min_lines": 61},
-    {"path": "CLAUDE.md", "type": "ai_context", "min_lines": 148}
+    {"path": "CLAUDE.md", "type": "ai_context", "min_lines": 148},
+    {"path": "requirements.txt", "type": "dependency_manifest", "min_lines": 8},
+    {"path": "dev-requirements.txt", "type": "dependency_manifest", "min_lines": 3}
   ],
 
   "config_schema_keys": {

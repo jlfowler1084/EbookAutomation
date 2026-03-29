@@ -136,9 +136,9 @@ Automatic PDF analysis before extraction. Override with `-SkipPreflight` or `-Ig
 | Balabolka | TTS engine | Manual install |
 | FFmpeg | Audio processing | `winget install ffmpeg` |
 | Poppler | PDF utilities | `choco install poppler` |
-| pypdf | PDF text extraction | `py -3.12 -m pip install pypdf` |
-| pymupdf | Column-aware extraction | `py -3.12 -m pip install pymupdf` |
-| google-genai | Gemini OCR (Tier 2.5) | `py -3.12 -m pip install google-genai` |
+
+Install all Python dependencies: `py -3.12 -m pip install -r requirements.txt`
+Dev/test dependencies: `py -3.12 -m pip install -r dev-requirements.txt`
 
 ## TTS Voice Configuration
 | Voice | Use Case |
@@ -188,7 +188,7 @@ Standalone feature — uses its own schedule and output path.
 - Ligature fixes can break endnote linking
 - Heading classification changes can break Calibre TOC generation
 - Don't suggest cloud TTS unless explicitly asked
-- Don't add Python dependencies without calling them out (this project has no requirements.txt)
+- Don't add Python dependencies without updating requirements.txt and calling them out
 - Don't confuse `settings.json` (pipeline config) with `.claude/settings.json` (Claude Code config)
 
 ## Current Priorities
