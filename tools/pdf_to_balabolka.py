@@ -1014,17 +1014,17 @@ def extract_pdf_links(pdf_path, log):
 
 
 def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
-                       skip_full_page=True):
+                       min_size_kb=3, skip_full_page=True):
     """Extract embedded images from a PDF, saving to output_dir/images/.
 
     Uses PyMuPDF for reliable image extraction with bounding box positions.
-    Filters out tiny decorative images, page-spanning scan images, and
-    duplicate images (same xref appearing on multiple pages).
+    Filters out tiny decorative images, very small files, page-spanning scan
+    images, and duplicate images (same xref appearing on multiple pages).
 
     Returns:
         dict mapping page_number (1-based) to list of image dicts:
         {1: [{'path': 'images/img_001_01.jpg', 'rect': (x0, y0, x1, y1),
-              'width': W, 'height': H}]}
+              'width': W, 'height': H, 'size_kb': float}]}
         Coordinates are in pdfminer coordinate space (bottom-left origin, y-up).
     """
     try:
@@ -1075,6 +1075,12 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                         total_skipped += 1
                         continue
 
+                    # Skip very small files (spacers, 1-pixel lines, etc.)
+                    img_size_kb = len(base_image["image"]) / 1024
+                    if img_size_kb < min_size_kb:
+                        total_skipped += 1
+                        continue
+
                     # Get bounding box on page
                     try:
                         rects = page.get_image_rects(img_info)
@@ -1116,10 +1122,43 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                         'rect': pdfminer_rect,
                         'width': img_width,
                         'height': img_height,
+                        'size_kb': round(img_size_kb, 1),
+                        '_pymupdf_rect_bottom': r.y1,  # PyMuPDF y (top-left origin)
                     })
                     total_extracted += 1
 
+                # Best-effort caption detection for images on this page
                 if page_images:
+                    _caption_prefixes = ('figure', 'fig.', 'fig ', 'table', 'chart',
+                                         'map', 'plate', 'photo', 'illustration')
+                    try:
+                        blocks = page.get_text("blocks")  # (x0, y0, x1, y1, text, block_no, block_type)
+                        for img_info in page_images:
+                            if 'caption' in img_info:
+                                continue
+                            img_bottom_y = img_info['_pymupdf_rect_bottom']
+                            # Find the closest text block below the image (within 30pt)
+                            best_caption = None
+                            best_dist = 999
+                            for bx0, by0, bx1, by1, btxt, bno, btype in blocks:
+                                if btype != 0:  # text blocks only
+                                    continue
+                                btxt = btxt.strip()
+                                if not btxt or len(btxt) > 200:
+                                    continue
+                                dist = by0 - img_bottom_y
+                                if 0 < dist < 30 and dist < best_dist:
+                                    if (btxt.lower().startswith(_caption_prefixes)
+                                            or len(btxt) < 150):
+                                        best_caption = btxt.replace('\n', ' ').strip()
+                                        best_dist = dist
+                            if best_caption and best_caption.lower().startswith(_caption_prefixes):
+                                img_info['caption'] = best_caption
+                    except Exception:
+                        pass
+                    # Clean up internal key
+                    for img_info in page_images:
+                        img_info.pop('_pymupdf_rect_bottom', None)
                     images_by_page[page_idx + 1] = page_images
         finally:
             doc.close()
@@ -6107,9 +6146,9 @@ blockquote p {{ text-indent: 0; }}
 hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; margin: 1.5em 0 0.5em 0; }}
 .footnotes {{ font-size: 0.85em; line-height: 1.4; color: #555; }}
 .footnotes p {{ text-indent: 0; margin: 0.3em 0; }}
-.book-image {{ text-align: center; margin: 1em 0; page-break-inside: avoid; }}
-.book-image img {{ max-width: 100%; height: auto; }}
-.caption {{ font-size: 0.85em; font-style: italic; text-align: center; margin-top: 0.3em; color: #555; }}
+figure {{ margin: 1.5em auto; text-align: center; page-break-inside: avoid; }}
+figure img {{ max-width: 100%; height: auto; }}
+figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.5em; }}
 </style>
 </head><body>
 ''')
@@ -6161,7 +6200,12 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
             # Emit any remaining images from the previous page
             if page_images and current_page in page_images:
                 for img in page_images[current_page]:
-                    html_parts.append(f'<div class="book-image"><img src="{img["path"]}" alt="" /></div>\n')
+                    _cap = img.get('caption', '')
+                    if _cap:
+                        _cap_esc = re.sub(r'<[^>]+>', '', _cap)
+                        html_parts.append(f'<figure><img src="{img["path"]}" alt="{_cap_esc}"/><figcaption>{_cap_esc}</figcaption></figure>\n')
+                    else:
+                        html_parts.append(f'<figure><img src="{img["path"]}" alt=""/></figure>\n')
                     _images_emitted += 1
                 del page_images[current_page]
             # Close footnotes block at page boundary
@@ -8125,21 +8169,20 @@ def format_kindle_html(paragraphs, headings, log, theme='classic', book_title=''
                 text-indent: 0;
                 margin: 0.3em 0;
             }
-            .book-image {
+            figure {
+                margin: 1.5em auto;
                 text-align: center;
-                margin: 1em 0;
                 page-break-inside: avoid;
             }
-            .book-image img {
+            figure img {
                 max-width: 100%;
                 height: auto;
             }
-            .caption {
+            figcaption {
                 font-size: 0.85em;
                 font-style: italic;
-                text-align: center;
-                margin-top: 0.3em;
                 color: #555;
+                margin-top: 0.5em;
             }
         """,
         'modern': """

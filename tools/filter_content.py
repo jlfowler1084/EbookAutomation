@@ -216,15 +216,19 @@ def _strip_back_matter(soup):
 
 
 def _strip_images(soup):
-    """Remove <img> tags and empty <figure>/<figcaption>. Returns count."""
+    """Remove <img> tags and their <figure>/<figcaption> containers. Returns count."""
     count = 0
+    # Remove entire <figure> elements (they contain <img> + optional <figcaption>)
+    for fig in soup.find_all('figure'):
+        fig.decompose()
+        count += 1
+    # Remove any standalone <img> tags not inside <figure>
     for img in soup.find_all('img'):
         img.decompose()
         count += 1
-    for tag_name in ('figcaption', 'figure'):
-        for el in soup.find_all(tag_name):
-            if not el.get_text(strip=True):
-                el.decompose()
+    # Remove any orphaned <figcaption> elements
+    for fc in soup.find_all('figcaption'):
+        fc.decompose()
     return count
 
 
