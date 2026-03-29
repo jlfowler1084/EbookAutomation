@@ -13,8 +13,9 @@
 # ============================================================
 # CONFIGURATION - fill in your values before running
 # ============================================================
-$JiraEmail    = "jlfowler1084@gmail.com"    # Your Atlassian account email
-$JiraApiToken = "REDACTED_ATLASSIAN_TOKEN"        # id.atlassian.com > Security > API tokens
+# Set these env vars before running — see id.atlassian.com > Security > API tokens
+$JiraEmail    = $env:JIRA_EMAIL         # Your Atlassian account email
+$JiraApiToken = $env:JIRA_API_TOKEN     # Atlassian API token (never hardcode)
 
 $JiraBaseUrl  = "https://jlfowler1084.atlassian.net"
 $JiraProject  = "SCRUM"
