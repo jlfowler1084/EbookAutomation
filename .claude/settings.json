@@ -1,42 +1,6 @@
 {
   "hooks": {
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/log-billing-events.sh",
-            "timeout": 10,
-            "statusMessage": "Logging API error..."
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "auth_success",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/log-billing-events.sh",
-            "timeout": 10,
-            "statusMessage": "Logging auth event..."
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python -c \"import sys,json; d=json.load(sys.stdin); f=d.get('tool_input',{}).get('file_path') or d.get('tool_response',{}).get('filePath',''); print(f)\" | tr -d '\\r' | { read -r f; if echo \"$f\" | grep -qE '\\.py$'; then python -m py_compile \"$f\" 2>&1 || echo 'SYNTAX ERROR - fix before continuing'; fi; }",
-            "timeout": 10,
-            "statusMessage": "Checking Python syntax..."
-          }
-        ]
-      },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
