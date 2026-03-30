@@ -10987,11 +10987,12 @@ def _fix_ligature_splits(para_dicts, log):
         # Multi-space normalization
         text = re.sub(r'  +', ' ', text)
 
-        # Phase 3c: "Th e" → "The", "Th is" → "This"
+        # Phase 3c: "Th e"→"The", "th at"→"that", "Th is"→"This"
         def _th_repl(m):
-            merged = 'Th' + m.group(1)
+            prefix = m.group(0)[:2]  # "Th" or "th"
+            merged = prefix + m.group(1)
             return merged if merged.lower() in spell else m.group(0)
-        text = re.sub(r'\bTh (\w+)', _th_repl, text)
+        text = re.sub(r'\b[Tt]h (\w+)', _th_repl, text)
 
         # Phase 3d: fi/fl ligature splits — "fi gures" → "figures"
         def _fifl_repl(m):
@@ -11007,6 +11008,17 @@ def _fix_ligature_splits(para_dicts, log):
                         return merged
             return m.group(0)
         text = re.sub(r'\b(\w*f[il]) (\w+)', _fifl_repl, text)
+
+        # Phase 3d permissive: fi/fl merges the spellchecker couldn't validate
+        # (Latin/Greek/Hebrew terms absent from English dictionary).
+        # Safe because "fi" and "fl" are never standalone words.
+        def _fifl_permissive(m):
+            prefix, suffix = m.group(1), m.group(2)
+            merged = prefix + suffix
+            if len(merged) < 5 or suffix[0].isupper():
+                return m.group(0)
+            return merged
+        text = re.sub(r'\b(\w*f[il]) ([a-z]\w+)', _fifl_permissive, text)
 
         # Phase 3d extended: ffi/ffl triple ligature — "tra ffi cking" → "trafficking"
         def _ffi_repl(m):
