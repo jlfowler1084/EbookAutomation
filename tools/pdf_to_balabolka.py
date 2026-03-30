@@ -10417,10 +10417,11 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
 def _link_endnotes(html, log):
     """
     Link <sup> footnote references in body text to endnotes/footnotes.
-    Handles three styles:
+    Handles four styles:
       1. Collected endnotes: single "Notes" heading at the back
       2. Per-chapter endnotes: note clusters after each chapter (numbering restarts)
       3. Per-page footnotes: inline note paragraphs near their references
+      4. Footnote-div footnotes: entries inside <div class="footnotes"> blocks
     Creates bidirectional links: body → endnote and endnote → body.
     """
     if '<sup>' not in html:
@@ -10438,10 +10439,46 @@ def _link_endnotes(html, log):
     if total_sups == 0 or linked_count / total_sups > 0.2:
         return result
 
-    # Strategies 1/2 linked <20% — try per-page footnotes on original HTML
+    # Strategies 1/2 linked <20% — try footnote-div linking on original HTML
     log(f"  Strategies 1-2 linked only {linked_count}/{total_sups} (<20%)"
+        f" — trying footnote-div linking")
+    best_result = result
+    best_linked = linked_count
+
+    result4 = _link_footnote_divs(html, total_sups, log)
+    remaining4 = len(re.findall(r'<sup>\d{1,4}</sup>', result4))
+    linked4 = total_sups - remaining4
+    if linked4 > best_linked:
+        best_result = result4
+        best_linked = linked4
+
+    if total_sups > 0 and best_linked / total_sups > 0.2:
+        return best_result
+
+    # Try Strategy 5: inline note paragraphs (proximity-based <p>N. text)
+    log(f"  Strategies 1-4 best: {best_linked}/{total_sups} (<20%)"
+        f" — trying inline note paragraphs")
+    result5 = _link_inline_note_paragraphs(html, total_sups, log)
+    remaining5 = len(re.findall(r'<sup>\d{1,4}</sup>', result5))
+    linked5 = total_sups - remaining5
+    if linked5 > best_linked:
+        best_result = result5
+        best_linked = linked5
+
+    if total_sups > 0 and best_linked / total_sups > 0.2:
+        return best_result
+
+    # Try Strategy 3: per-page footnotes (<p><sup>N</sup>)
+    log(f"  Strategies 1-5 best: {best_linked}/{total_sups} (<20%)"
         f" — trying per-page footnotes")
-    return _link_per_page_footnotes(html, total_sups, log)
+    result3 = _link_per_page_footnotes(html, total_sups, log)
+    remaining3 = len(re.findall(r'<sup>\d{1,4}</sup>', result3))
+    linked3 = total_sups - remaining3
+    if linked3 > best_linked:
+        best_result = result3
+        best_linked = linked3
+
+    return best_result
 
 
 def _link_endnotes_collected(html, log):
@@ -10454,13 +10491,25 @@ def _link_endnotes_collected(html, log):
         return html
 
     # ── Strategy 1: Collected endnotes under a "Notes" heading ────────
+    # Search h1-h6 headings for notes-related keywords (case-insensitive).
+    # Use [^>]* to match heading tags with id/class attributes.
+    # Only match headings whose primary purpose is a notes section, not
+    # tangentially-related sections like "Index of Scripture References".
     notes_match = re.search(
-        r'<h[12]>([^<]*(?:Notes|Endnotes|NOTES|ENDNOTES)[^<]*)</h[12]>',
-        html)
+        r'<h([1-6])[^>]*>([^<]*\b(?:Notes|Endnotes|Footnotes)\b[^<]*)</h\1>',
+        html, re.IGNORECASE)
+    # Fallback: standalone <p> containing only a notes keyword
+    if not notes_match:
+        notes_match = re.search(
+            r'<p>(Notes|Endnotes|Footnotes)</p>',
+            html)
     if notes_match:
         notes_start = notes_match.end()
-        log(f"  Notes section found: '{notes_match.group(1).strip()}'")
-        notes_end_match = re.search(r'<h[12]>', html[notes_start:])
+        # Extract heading text from whichever pattern matched
+        heading_text = (notes_match.group(2) if notes_match.lastindex >= 2
+                        else notes_match.group(1))
+        log(f"  Notes section found: '{heading_text.strip()}'")
+        notes_end_match = re.search(r'<h[1-6][^>]*>', html[notes_start:])
         notes_end = notes_start + notes_end_match.start() if notes_end_match else len(html)
 
         body_html = html[:notes_match.start()]
@@ -10471,33 +10520,46 @@ def _link_endnotes_collected(html, log):
         def _add_anchor(m):
             num = m.group(1)
             endnote_numbers.add(num)
-            return f'<p><a id="endnote_{num}"></a><a href="#noteref_{num}">{num}.</a>{m.group(2)}'
+            full = m.group(0)
+            num_idx = full.index(num)
+            prefix = full[:num_idx]
+            return (f'{prefix}<a id="endnote_{num}"></a>'
+                    f'<a href="#noteref_{num}">{num}.</a>{m.group(2)}')
 
-        notes_linked = re.sub(r'<p>(\d{1,4})\.\s*(.)', _add_anchor, notes_section)
+        notes_linked = re.sub(
+            r'<p>(?:<em>)?(\d{1,4})\.\s*(.)', _add_anchor, notes_section)
 
         def _add_anchor2(m):
             num = m.group(1)
             if num in endnote_numbers:
                 return m.group(0)
             endnote_numbers.add(num)
-            return f'<p><a id="endnote_{num}"></a><a href="#noteref_{num}">{num}.</a> {m.group(2)}'
-        notes_linked = re.sub(r'<p>(\d{1,4})\s+([A-Z"\u201c])', _add_anchor2, notes_linked)
+            # Preserve <p> or <p><em> prefix before the number
+            full = m.group(0)
+            num_idx = full.index(num)
+            prefix = full[:num_idx]
+            return (f'{prefix}<a id="endnote_{num}"></a>'
+                    f'<a href="#noteref_{num}">{num}.</a> {m.group(2)}')
+        # N + space + letter/quote/tag (handles <p>N Text and <p><em>N Text)
+        notes_linked = re.sub(
+            r'<p>(?:<em>)?(\d{1,4})\s+([A-Za-z"\u201c<])',
+            _add_anchor2, notes_linked)
 
-        if not endnote_numbers:
-            log("  No endnote entries parsed in Notes section")
-            return html
+        if endnote_numbers:
+            linked = [0]
+            def _link_sup(m):
+                num = m.group(1)
+                if num in endnote_numbers:
+                    linked[0] += 1
+                    return f'<sup><a id="noteref_{num}" href="#endnote_{num}">{num}</a></sup>'
+                return m.group(0)
 
-        linked = [0]
-        def _link_sup(m):
-            num = m.group(1)
-            if num in endnote_numbers:
-                linked[0] += 1
-                return f'<sup><a id="noteref_{num}" href="#endnote_{num}">{num}</a></sup>'
-            return m.group(0)
-
-        body_linked = re.sub(r'<sup>(\d{1,4})</sup>', _link_sup, body_html)
-        log(f"  Endnotes parsed: {len(endnote_numbers)}, linked: {linked[0]}")
-        return body_linked + html[notes_match.start():notes_start] + notes_linked + after_notes
+            body_linked = re.sub(r'<sup>(\d{1,4})</sup>', _link_sup, body_html)
+            log(f"  Endnotes parsed: {len(endnote_numbers)}, linked: {linked[0]}")
+            return body_linked + html[notes_match.start():notes_start] + notes_linked + after_notes
+        else:
+            log("  No endnote entries parsed in Notes section — "
+                "falling through to Strategy 2")
 
     # ── Strategy 2: Per-chapter endnotes (detect note clusters) ───────
     log("  No Notes heading found — scanning for per-chapter endnote clusters")
@@ -10507,8 +10569,9 @@ def _link_endnotes_collected(html, log):
     # Epilogue, Appendix, Bibliography, Index — but NOT sub-section headings like
     # "How Civil Society..." which are mid-chapter h2/h3 breaks.
     _chapter_pat = re.compile(
-        r'<h[12]>([^<]*(?:\d+\s|Chapter|Introduction|Conclusion|Epilogue|'
-        r'Appendix|Bibliography|Index|Abbreviation|Acknowledgment|CONTENTS|Contents)[^<]*)</h[12]>',
+        r'<h([1-6])[^>]*>([^<]*(?:\d+\s|Chapter|Introduction|Conclusion|Epilogue|'
+        r'Appendix|Bibliography|Index|Abbreviation|Acknowledgment|CONTENTS|'
+        r'Contents|Preface|Foreword|Prologue)[^<]*)</h\1>',
         re.IGNORECASE)
     chapter_splits = list(_chapter_pat.finditer(html))
     if not chapter_splits:
@@ -10529,8 +10592,9 @@ def _link_endnotes_collected(html, log):
     for sec_start, sec_end, heading in sections:
         section_html = html[sec_start:sec_end]
 
-        # Find note paragraphs: <p> starting with number + period
-        note_matches = list(re.finditer(r'<p>(\d{1,4})\.\s', section_html))
+        # Find note paragraphs: <p> starting with number + period or space
+        note_matches = list(re.finditer(
+            r'<p>(\d{1,4})(?:\.\s|\s+(?=[A-Z"\u201c<]))', section_html))
         if len(note_matches) < 3:
             result_parts.append(html[last_end:sec_end])
             last_end = sec_end
@@ -10563,7 +10627,21 @@ def _link_endnotes_collected(html, log):
             uid = f'{_ch_id}_{num}'
             return f'<p><a id="endnote_{uid}"></a><a href="#noteref_{uid}">{num}.</a>{m.group(2)}'
 
+        # Pass 1: N. format (number + period)
         notes_linked = re.sub(r'<p>(\d{1,4})\.\s*(.)', _make_anchor, notes_part)
+
+        def _make_anchor2(m, _ch_id=ch_id, _notes=chapter_notes):
+            num = m.group(1)
+            if num in chapter_notes:
+                return m.group(0)
+            _notes.add(num)
+            uid = f'{_ch_id}_{num}'
+            return (f'<p><a id="endnote_{uid}"></a>'
+                    f'<a href="#noteref_{uid}">{num}.</a> {m.group(2)}')
+
+        # Pass 2: N Capital format (number + space + uppercase/quote)
+        notes_linked = re.sub(
+            r'<p>(\d{1,4})\s+([A-Z"\u201c<])', _make_anchor2, notes_linked)
 
         ch_linked = [0]
         def _link_ch(m, _ch_id=ch_id, _notes=chapter_notes, _cnt=ch_linked):
@@ -10592,6 +10670,200 @@ def _link_endnotes_collected(html, log):
 
     log(f"  Per-chapter endnotes: {total_notes} notes, {total_linked} superscripts linked")
     return ''.join(result_parts)
+
+
+def _link_footnote_divs(html, total_sups, log):
+    """
+    Strategy 4: Link footnotes using <div class="footnotes"> structural markers.
+
+    The pipeline's extraction marks per-page footnote regions with
+    <hr class="footnote-separator"><div class="footnotes">...</div>.
+    This strategy:
+      1. Finds each separator + div block
+      2. Validates that the div contains numbered entries (filters out DRM/metadata)
+      3. Extracts footnote numbers from entries
+      4. Links <sup>N</sup> in the body section preceding each separator
+    """
+    log("  Trying footnote-div linking (Strategy 4)")
+
+    # Find all footnote-separator + footnotes-div blocks
+    block_pat = re.compile(
+        r'<hr class="footnote-separator">\s*<div class="footnotes">(.*?)</div>',
+        re.DOTALL)
+    blocks = list(block_pat.finditer(html))
+
+    if not blocks:
+        log("  No footnote-separator/div blocks found")
+        return html
+
+    # Parse each block to find numbered entries.
+    # Accept: <p>N. text, <p>N text (where text starts with letter/quote)
+    entry_pat = re.compile(r'<p>(\d{1,4})(?:\.\s*|\s+(?=[A-Za-z"\u201c<]))')
+
+    # Build a list of (block_index, entry_number, entry_abs_pos) tuples
+    # Also track which blocks are "valid" (have at least one numbered entry)
+    valid_blocks = []
+    for bi, block in enumerate(blocks):
+        div_content = block.group(1)
+        entries = {}
+        for em in entry_pat.finditer(div_content):
+            num = em.group(1)
+            if num not in entries:
+                # Absolute position of this <p>N entry in the full HTML
+                entries[num] = block.start(1) + em.start()
+        if entries:
+            valid_blocks.append((bi, block, entries))
+
+    if not valid_blocks:
+        log("  No footnote divs contain numbered entries")
+        return html
+
+    log(f"  Found {len(valid_blocks)}/{len(blocks)} valid footnote-div blocks")
+
+    # Build replacement list: for each valid block, match body <sup>N</sup>
+    # to footnote entries in the div.
+    counter = [0]
+    replacements = []
+
+    for vi, (bi, block, entries) in enumerate(valid_blocks):
+        # Body section: from end of previous block (or start of file) to this separator
+        if bi > 0:
+            body_start = blocks[bi - 1].end()
+        else:
+            body_start = 0
+        body_end = block.start()  # position of the <hr>
+        body_html = html[body_start:body_end]
+
+        # Find unlinked <sup>N</sup> in body section
+        sup_pat = re.compile(r'<sup>(\d{1,4})</sup>')
+        for sm in sup_pat.finditer(body_html):
+            num = sm.group(1)
+            if num in entries:
+                counter[0] += 1
+                uid = f"fndiv_{counter[0]}"
+                abs_start = body_start + sm.start()
+                abs_end = body_start + sm.end()
+                # Body ref replacement
+                replacements.append((abs_start, abs_end,
+                    f'<sup><a id="noteref_{uid}" href="#footnote_{uid}">'
+                    f'{num}</a></sup>'))
+                # Footnote entry replacement: add anchor at the <p>N entry
+                entry_abs = entries[num]
+                # Find the <p>N pattern at that position to replace
+                fn_m = re.match(r'<p>(\d{1,4})(\.?\s*)', html[entry_abs:])
+                if fn_m:
+                    fn_end = entry_abs + fn_m.end()
+                    replacements.append((entry_abs, fn_end,
+                        f'<p><a id="footnote_{uid}"></a>'
+                        f'<a href="#noteref_{uid}">{num}.</a> '))
+                # Remove this entry so it's not matched again
+                del entries[num]
+
+    if counter[0] == 0:
+        log("  No footnote pairs matched via div strategy")
+        return html
+
+    # Apply replacements in a single forward pass
+    replacements.sort(key=lambda x: x[0])
+    parts = []
+    prev_end = 0
+    for start, end, new_text in replacements:
+        parts.append(html[prev_end:start])
+        parts.append(new_text)
+        prev_end = end
+    parts.append(html[prev_end:])
+    result = ''.join(parts)
+
+    log(f"  Footnote-div linking: {counter[0]} pairs linked")
+    return result
+
+
+def _link_inline_note_paragraphs(html, total_sups, log):
+    """
+    Strategy 5: Proximity-based linking for inline <p>N. text footnotes.
+
+    Academic commentaries often place footnotes as <p>N. citation text</p>
+    inline near the body <sup>N</sup> reference, without any structural
+    separator.  This strategy matches each body reference to the nearest
+    forward <p>N. entry with the same number.
+
+    Validation: only activates when the HTML contains enough potential
+    footnote entries (>=20) that pair with body superscripts.
+    """
+    log("  Trying inline-note-paragraph linking (Strategy 5)")
+
+    sup_pat = re.compile(r'<sup>(\d{1,4})</sup>')
+    all_sups = list(sup_pat.finditer(html))
+    if not all_sups:
+        log("  No unlinked superscripts found")
+        return html
+
+    # Find all <p>N. text entries (potential footnote paragraphs)
+    note_pat = re.compile(r'<p>(\d{1,4})\.\s')
+    all_notes = list(note_pat.finditer(html))
+    if len(all_notes) < 20:
+        log(f"  Only {len(all_notes)} <p>N. entries — too few for inline linking")
+        return html
+
+    # Build a lookup: for each number, list of note positions (sorted)
+    from collections import defaultdict
+    notes_by_num = defaultdict(list)
+    for nm in all_notes:
+        notes_by_num[nm.group(1)].append(nm)
+
+    WINDOW = 40000  # max chars between body ref and footnote entry
+    counter = 0
+    replacements = []
+    used_notes = set()
+
+    for sm in all_sups:
+        num = sm.group(1)
+        if num not in notes_by_num:
+            continue
+        pos = sm.start()
+        # Find nearest forward note entry with same number
+        best = None
+        for nm in notes_by_num[num]:
+            if id(nm) in used_notes:
+                continue
+            if nm.start() > pos and nm.start() - pos <= WINDOW:
+                best = nm
+                break
+        if best is None:
+            continue
+
+        counter += 1
+        used_notes.add(id(best))
+        uid = f"fn5_{counter}"
+
+        # Body ref: <sup>N</sup> → linked
+        replacements.append((sm.start(), sm.end(),
+            f'<sup><a id="noteref_{uid}" href="#footnote_{uid}">'
+            f'{num}</a></sup>'))
+
+        # Note entry: <p>N. → add anchor
+        note_end = best.end()
+        replacements.append((best.start(), note_end,
+            f'<p><a id="footnote_{uid}"></a>'
+            f'<a href="#noteref_{uid}">{num}.</a> '))
+
+    if counter == 0:
+        log("  No inline footnote pairs matched")
+        return html
+
+    # Apply replacements in a single forward pass
+    replacements.sort(key=lambda x: x[0])
+    parts = []
+    prev_end = 0
+    for start, end, new_text in replacements:
+        parts.append(html[prev_end:start])
+        parts.append(new_text)
+        prev_end = end
+    parts.append(html[prev_end:])
+    result = ''.join(parts)
+
+    log(f"  Inline note paragraphs: {counter} pairs linked")
+    return result
 
 
 def _link_per_page_footnotes(html, total_sups, log):
@@ -10676,11 +10948,16 @@ def _link_per_page_footnotes(html, total_sups, log):
         log("  No footnote pairs matched — skipping")
         return html
 
-    # Apply replacements in reverse position order to preserve indices
-    replacements.sort(key=lambda x: x[0], reverse=True)
-    result = html
+    # Apply replacements in a single forward pass
+    replacements.sort(key=lambda x: x[0])
+    parts = []
+    prev_end = 0
     for start, end, new_text in replacements:
-        result = result[:start] + new_text + result[end:]
+        parts.append(html[prev_end:start])
+        parts.append(new_text)
+        prev_end = end
+    parts.append(html[prev_end:])
+    result = ''.join(parts)
 
     log(f"  Per-page footnotes: {counter} pairs linked")
     return result
