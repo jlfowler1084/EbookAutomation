@@ -2430,7 +2430,8 @@ def _cmd_ocr_stats(args):
             print("No OCR fix statistics recorded yet.")
             print("Run conversions with VQA enabled to start collecting fix data.")
             return
-        print(f"{'Fix Type':<30} {'Applied':>8} {'Succeeded':>10} {'Rate':>6} {'\u0394 Score':>8}")
+        delta = '\u0394'
+        print(f"{'Fix Type':<30} {'Applied':>8} {'Succeeded':>10} {'Rate':>6} {delta + ' Score':>8}")
         print("-" * 70)
         for r in rows:
             print(f"{r['fix_type']:<30} {r['total_applied']:>8} "
