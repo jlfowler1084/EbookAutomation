@@ -174,7 +174,7 @@ TEST_CASES = {
 
 def extract_baseline_from_html(html, kfx_path=None):
     """Extract all verifiable properties from HTML output as a baseline snapshot."""
-    all_headings = re.findall(r'<(h[123])>(.*?)</\1>', html)
+    all_headings = re.findall(r'<(h[123])(?:\s[^>]*)?>(.+?)</\1>', html)
     h1_list = [text for tag, text in all_headings if tag == 'h1']
     h2_list = [text for tag, text in all_headings if tag == 'h2']
     h3_list = [text for tag, text in all_headings if tag == 'h3']
@@ -195,7 +195,7 @@ def extract_baseline_from_html(html, kfx_path=None):
 
     # Chapter openings: first 60 chars of body text after each h2
     chapter_openings = {}
-    for m in re.finditer(r'<h2>(.*?)</h2>', html):
+    for m in re.finditer(r'<h2(?:\s[^>]*)?>(.*?)</h2>', html):
         heading_text = m.group(1)
         after = html[m.end():]
         # Find first <p> after this heading
@@ -614,7 +614,7 @@ def validate_html(html, expected, pipeline_stdout=""):
     failures = []
 
     # Parse heading structure
-    all_headings = re.findall(r'<(h[123])>(.*?)</\1>', html)
+    all_headings = re.findall(r'<(h[123])(?:\s[^>]*)?>(.+?)</\1>', html)
     h1_list = [text for tag, text in all_headings if tag == 'h1']
     h2_list = [text for tag, text in all_headings if tag == 'h2']
     h3_list = [text for tag, text in all_headings if tag == 'h3']

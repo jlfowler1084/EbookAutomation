@@ -1128,7 +1128,7 @@ def _analyze_html_structure(diag, html_content):
         )
     else:
         # Manual fallback
-        all_headings = re.findall(r'<(h[123])>(.*?)</\1>', html_content)
+        all_headings = re.findall(r'<(h[123])(?:\s[^>]*)?>(.+?)</\1>', html_content)
         diag["structure"]["h1_count"] = sum(
             1 for tag, _ in all_headings if tag == 'h1'
         )

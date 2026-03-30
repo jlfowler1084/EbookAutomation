@@ -5846,7 +5846,9 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     bm_back_matter = set()   # normalized titles of back-matter bookmarks
     if bookmarks:
         for bm in bookmarks:
-            norm = re.sub(r'\s+', ' ', _strip_accents(bm['title'].strip().lower()))
+            # Strip trailing asterisks, bullets, and other non-word chars from bookmark titles
+            bm_title_clean = re.sub(r'[\*\u2022\u2023]+$', '', bm['title'].strip())
+            norm = re.sub(r'\s+', ' ', _strip_accents(bm_title_clean.strip().lower()))
             bm_map[norm] = bm['level']
             if bm.get('front_matter', False):
                 bm_front_matter.add(norm)
@@ -5909,12 +5911,33 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
         if bm_stripped and bm_stripped != bm_norm:
             bm_map_stripped[bm_stripped] = level
 
+    def _collapse_spaced(s):
+        """Collapse fully-spaced text: 'G e t t i n G' → 'Getting'."""
+        # Detect pattern: single chars separated by spaces (at least 3 chars)
+        tokens = s.split()
+        if len(tokens) >= 3 and all(len(t) <= 2 for t in tokens):
+            return ''.join(tokens)
+        # Mixed: collapse runs of single-char tokens within the string
+        parts = re.split(r'(\s{2,})', s)  # split on double+ spaces
+        result = []
+        for part in parts:
+            sub_tokens = part.split()
+            if len(sub_tokens) >= 3 and all(len(t) <= 2 for t in sub_tokens):
+                result.append(''.join(sub_tokens))
+            else:
+                result.append(part)
+        return ' '.join(result) if result else s
+
     def _match_bookmark(text):
         """Check if paragraph text matches a bookmark title. Returns level or None."""
         text = re.sub(r'\s+', ' ', text).strip()
         norm = re.sub(r'\s+', ' ', _strip_accents(text.strip().lower()))
         if norm in bm_map:
             return bm_map[norm]
+        # Try with spaced-text collapsed: "G e t t i n G" → "getting"
+        collapsed = _collapse_spaced(norm)
+        if collapsed != norm and collapsed in bm_map:
+            return bm_map[collapsed]
         # Try without leading numbers on text: "1. A Kind of Super Man" → "a kind of super man"
         stripped = re.sub(r'^\d+[\.\):]?\s*', '', norm).strip()
         if stripped and stripped in bm_map:
@@ -6255,7 +6278,7 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
         ct = p.get('is_centered', False)
         cc = p.get('char_count', len(p.get('text', '')))
         is_heading_like = bl or (ct and cc < 120)
-        if sz > body_size and is_heading_like:
+        if sz >= body_size - 0.5 and is_heading_like:
             prev_best = bm_page_best_para.get(pg)
             if prev_best is None:
                 bm_page_best_para[pg] = idx
@@ -6664,6 +6687,53 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
         log(f"  Images embedded: {_images_emitted}")
 
     html = ''.join(html_parts)
+
+    # ── Zero-heading fallback: bookmark-driven heading promotion ──────
+    # If the main detection produced zero h1/h2 headings but we have bookmarks
+    # with page numbers, do a post-pass to inject headings from bookmarks.
+    # This catches books where text matching fails due to font-size gating,
+    # spaced text, ALL-CAPS mismatches, or other normalization gaps.
+    if h1_count == 0 and h2_count == 0 and bm_page_level:
+        log(f"  Zero headings detected with {len(bm_page_level)} bookmark pages — running fallback promotion")
+        _fallback_h1 = 0
+        _fallback_h2 = 0
+        for pg in sorted(bm_page_level):
+            bm_lvl, bm_title = bm_page_level[pg]
+            anchor = f'<a id="page_{pg}"></a>'
+            if anchor not in html:
+                continue
+            # Find the first <p> tag after this page anchor
+            anchor_pos = html.find(anchor)
+            if anchor_pos < 0:
+                continue
+            # Search for the first <p> or <p class="..."> after the anchor
+            p_match = re.search(r'<p(?:\s[^>]*)?>(.+?)</p>', html[anchor_pos:anchor_pos + 2000])
+            if not p_match:
+                continue
+            p_text = re.sub(r'<[^>]+>', '', p_match.group(1)).strip()
+            # Skip if it looks like body text (too long) or a page number
+            if len(p_text) > 150 or len(p_text) < 2:
+                continue
+            if re.match(r'^\d{1,4}$', p_text):
+                continue
+            # Determine heading tag from bookmark level
+            htag = 'h1' if bm_lvl == 1 else 'h2'
+            # Use the bookmark title (often cleaner than the extracted text)
+            heading_text = bm_title
+            heading_html = f'<{htag}>{heading_text}</{htag}>'
+            # Replace the <p> with the heading
+            old_p = p_match.group(0)
+            html = html.replace(anchor + '\n' + old_p, anchor + '\n' + heading_html, 1)
+            if not html.count(heading_html):
+                # If the anchor and <p> aren't on adjacent lines, try without newline
+                html = html.replace(old_p, heading_html, 1)
+            if bm_lvl == 1:
+                _fallback_h1 += 1
+            else:
+                _fallback_h2 += 1
+        h1_count += _fallback_h1
+        h2_count += _fallback_h2
+        log(f"  Fallback promotion: {_fallback_h1} h1, {_fallback_h2} h2 from bookmarks")
 
     # ── Heading hierarchy normalization ────────────────────────────
     # Safety net: if ALL h1/h2 headings are backmatter labels and h3 headings
@@ -12107,6 +12177,23 @@ Examples:
                     from pattern_db import get_cached_extraction, compute_file_hash
                     _src_hash = compute_file_hash(input_path)
                     _cached = get_cached_extraction(source_file_hash=_src_hash, min_score=60)
+                    if _cached and _cached.get('extracted_html'):
+                        _cached_html = _cached['extracted_html']
+                        # Check heading count vs bookmark count — if the cached HTML has
+                        # far fewer headings than bookmarks, reject stale cache and re-extract
+                        # with improved matching. Back-matter labels (Glossary, Index) don't count.
+                        _bm_labels = {'glossary', 'index', 'bibliography', 'references', 'notes',
+                                      'endnotes', 'appendix', 'works cited', 'further reading'}
+                        _h12_matches = re.findall(r'<h[12][^>]*>(.*?)</h[12]>', _cached_html)
+                        _content_headings = [h for h in _h12_matches
+                                             if re.sub(r'<[^>]+>', '', h).strip().lower() not in _bm_labels]
+                        _bookmarks_check = extract_bookmarks(input_path, lambda m: None)
+                        _chapter_bms = [b for b in _bookmarks_check if not b.get('front_matter') and not b.get('back_matter')]
+                        if _chapter_bms and len(_content_headings) < max(3, len(_chapter_bms) * 0.2):
+                            log_fn(f"Extraction cache rejected: {len(_content_headings)} content headings "
+                                   f"vs {len(_chapter_bms)} chapter bookmarks — re-extracting")
+                            _cached_html = None
+                            _cached = None
                     if _cached and _cached.get('extracted_html'):
                         log_fn(f"EXTRACTION CACHE HIT: tier {_cached['extraction_tier']}, "
                                f"method {_cached['extraction_method']}, "
