@@ -6036,8 +6036,22 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     back_matter_start_page = None
     back_matter_bm_pages = set()  # pages where back-matter L1 bookmarks land
     if bookmarks:
+        # EB-61: Count how many bookmarks match each back-matter label.
+        # Labels that appear > 2 times are structural (e.g. per-chapter glossaries
+        # in textbooks) and should NOT trigger back-matter detection.
+        _bm_label_counts = Counter()
         for bm in bookmarks:
-            if bm['title'].strip().lower() in back_matter_labels and bm.get('page'):
+            _title_lower = bm['title'].strip().lower()
+            if _title_lower in back_matter_labels:
+                _bm_label_counts[_title_lower] += 1
+        _structural_labels = {l for l, c in _bm_label_counts.items() if c > 2}
+        if _structural_labels:
+            log(f"  Back-matter labels excluded (structural, >2 occurrences): "
+                f"{', '.join(sorted(_structural_labels))}")
+        _effective_bm_labels = back_matter_labels - _structural_labels
+
+        for bm in bookmarks:
+            if bm['title'].strip().lower() in _effective_bm_labels and bm.get('page'):
                 if back_matter_start_page is None or bm['page'] < back_matter_start_page:
                     back_matter_start_page = bm['page']
                 back_matter_bm_pages.add(bm['page'])
