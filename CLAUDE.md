@@ -1,6 +1,8 @@
 # CLAUDE.md — EbookAutomation Project Context
-<!-- Global rules inherited from: ~/.claude/CLAUDE.md -->
+<!-- This file contains EbookAutomation-specific rules only.
+     Shared conventions are inherited from ~/.claude/CLAUDE.md -->
 <!-- Global hooks inherited from: ~/.claude/settings.json -->
+<!-- Project hooks in: .claude/settings.json -->
 
 ## Project Identity
 EbookAutomation is a PowerShell + Python automation suite for:
@@ -181,14 +183,11 @@ Standalone feature — uses its own schedule and output path.
 - **QA Evaluation Agent:** Post-conversion quality checks against baseline metrics
 
 ## Project-Specific Mistakes to Avoid
-- Don't use bash syntax in PowerShell scripts
-- Don't use `&` (bash AND) — use `;` or pipeline in PowerShell
 - Don't use Unix-style paths (`/home/...`) — use Windows paths (`C:\...`)
 - Changes to regex phases affect downstream — always test full pipeline
 - Ligature fixes can break endnote linking
 - Heading classification changes can break Calibre TOC generation
 - Don't suggest cloud TTS unless explicitly asked
-- Don't add Python dependencies without updating requirements.txt and calling them out
 - Don't confuse `settings.json` (pipeline config) with `.claude/settings.json` (Claude Code config)
 
 ## Current Priorities
