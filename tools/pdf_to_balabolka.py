@@ -6717,6 +6717,31 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
 
     html = ''.join(html_parts)
 
+    # ── Heading explosion guard ─────────────────────────────────────
+    # Commentary-format books (Ezekiel II, etc.) can have hundreds of bold
+    # sub-section headings at a font size above body. If h1 count far exceeds
+    # what's reasonable for the page count, demote all font-cluster h1s to h3.
+    # Bookmark-matched headings (already handled above) are never demoted.
+    # Threshold: more than 1 h1 per 3 pages, with a floor of 50.
+    _max_page = max((p.get('page_number', 0) for p in para_dicts), default=0)
+    _h1_cap = max(50, _max_page // 3)
+    if h1_count > _h1_cap:
+        log(f"  [WARN] Heading explosion: {h1_count} h1 tags for {_max_page} pages "
+            f"(cap {_h1_cap}) — demoting font-cluster h1 → h3")
+        # Demote all h1 to h3, EXCEPT 'Front Matter' synthetic heading
+        def _demote_h1(m):
+            content = m.group(1)
+            text = re.sub(r'<[^>]+>', '', content).strip()
+            if text.lower() == 'front matter':
+                return m.group(0)
+            return f'<h3>{content}</h3>'
+        html = re.sub(r'<h1>(.*?)</h1>', _demote_h1, html)
+        _new_h1 = len(re.findall(r'<h1>', html))
+        _new_h3 = len(re.findall(r'<h3>', html))
+        h1_count = _new_h1
+        h3_count = _new_h3
+        log(f"  After demotion: {_new_h1} h1, {h2_count} h2, {_new_h3} h3")
+
     # ── Zero-heading fallback: bookmark-driven heading promotion ──────
     # If the main detection produced zero h1/h2 headings but we have bookmarks
     # with page numbers, do a post-pass to inject headings from bookmarks.
