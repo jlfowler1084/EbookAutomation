@@ -36,6 +36,20 @@ load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 SUPPORTED_FORMATS = ['pdf', 'epub', 'mobi', 'azw', 'azw3', 'djvu']
 
 
+# Pipeline version hash — computed once at import time.
+# Any code change to this file auto-invalidates the extraction cache.
+def _compute_pipeline_hash():
+    """SHA-256 of this file's contents, truncated to 16 hex chars."""
+    import hashlib
+    _this_file = os.path.abspath(__file__)
+    h = hashlib.sha256()
+    with open(_this_file, 'rb') as f:
+        h.update(f.read())
+    return h.hexdigest()[:16]
+
+_PIPELINE_HASH = _compute_pipeline_hash()
+
+
 def _load_api_model(tier="haiku"):
     """Load API model string from config/settings.json, falling back to defaults."""
     import json as _json
@@ -11756,6 +11770,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 cost_usd=vision_cost + gemini_cost,
                 duration_seconds=round(_extraction_duration, 1),
                 escalation_details=_escalation_info if '_escalation_info' in dir() else None,
+                pipeline_version=_PIPELINE_HASH,
             )
             log(f"Extraction cached: hash={_src_hash[:12]}..., tier={tier_used}, "
                 f"method={extraction_method}, score={_quality_score}")
@@ -12523,7 +12538,7 @@ Examples:
                         sys.path.insert(0, _tools_dir)
                     from pattern_db import get_cached_extraction, compute_file_hash
                     _src_hash = compute_file_hash(input_path)
-                    _cached = get_cached_extraction(source_file_hash=_src_hash, min_score=60)
+                    _cached = get_cached_extraction(source_file_hash=_src_hash, min_score=60, pipeline_version=_PIPELINE_HASH)
                     if _cached and _cached.get('extracted_html'):
                         _cached_html = _cached['extracted_html']
                         # Check heading count vs bookmark count — if the cached HTML has
@@ -12564,7 +12579,13 @@ Examples:
                         log_fn(f"  HTML size: {len(_cached_html):,} chars")
                         _cache_hit = True
                     else:
-                        log_fn(f"Extraction cache miss for {_src_hash[:12]}... — running fresh extraction")
+                        # Check if miss was due to version mismatch
+                        _stale = get_cached_extraction(source_file_hash=_src_hash, min_score=60)
+                        if _stale:
+                            log_fn(f"Extraction cache STALE: cached version {(_stale.get('pipeline_version') or 'None')[:12]} "
+                                   f"\u2260 current {_PIPELINE_HASH[:12]} \u2014 re-extracting")
+                        else:
+                            log_fn(f"Extraction cache miss for {_src_hash[:12]}... \u2014 running fresh extraction")
                 except Exception as _ce:
                     log_fn(f"Extraction cache check failed (continuing normally): {_ce}")
             elif args.no_cache:

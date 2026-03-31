@@ -1124,7 +1124,7 @@ def get_cached_output_path(filename=None, isbn=None, title=None, author=None,
 
 def get_cached_extraction(source_file_hash=None, source_file_path=None,
                           min_score=60, min_tier=1, cache_version=None,
-                          db_path=None):
+                          pipeline_version=None, db_path=None):
     """Look up cached extraction by source file hash.
 
     Returns dict with cache entry fields, or None on miss.
@@ -1148,6 +1148,10 @@ def get_cached_extraction(source_file_hash=None, source_file_path=None,
         if cache_version is not None:
             query += " AND cache_version >= ?"
             params.append(cache_version)
+
+        if pipeline_version is not None:
+            query += " AND pipeline_version = ?"
+            params.append(pipeline_version)
 
         query += " ORDER BY extraction_tier DESC, quality_score DESC LIMIT 1"
 
