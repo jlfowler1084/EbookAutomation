@@ -6163,7 +6163,8 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
         # themselves match bookmark titles (they ARE the same titles with page numbers).
         # Limit TOC scan to the first 15% of document pages (safety guard —
         # a Contents page is always near the front of a book).
-        total_pages = max(p.get('page_number', 0) for p in para_dicts if p.get('is_page_marker')) or 100
+        _page_marker_pages = [p.get('page_number', 0) for p in para_dicts if p.get('is_page_marker')]
+        total_pages = max(_page_marker_pages) if _page_marker_pages else 100
         max_toc_page = max(toc_start_page + 8, int(total_pages * 0.15))
         end = toc_start_page + 1  # at minimum include the heading page
         for scan_page in range(toc_start_page + 1, min(toc_start_page + 8, max_toc_page + 1)):
@@ -11302,8 +11303,23 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
         _t_extract = _time_mod.time()
         log("\n-- STEP 1: Extracting text with font metadata --")
-        para_dicts, body_size = extract_with_pdfminer_html(pdf_path, log,
-                                                            force_columns=force_columns)
+
+        # ── Timeout-protected pdfminer extraction (EB-65) ──────────────
+        # pdfminer can hang indefinitely on certain PDFs (complex academic
+        # texts, corrupted font tables).  Wrap in a thread with a 300s cap.
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FuturesTimeout
+        _EXTRACTION_TIMEOUT = 300  # 5 minutes — generous; normal books < 30s
+        with ThreadPoolExecutor(max_workers=1) as _pool:
+            _future = _pool.submit(extract_with_pdfminer_html, pdf_path, log,
+                                   force_columns=force_columns)
+            try:
+                para_dicts, body_size = _future.result(timeout=_EXTRACTION_TIMEOUT)
+            except _FuturesTimeout:
+                _future.cancel()
+                log(f"  [WARN] pdfminer extraction timed out after {_EXTRACTION_TIMEOUT}s"
+                    f" — falling through to fallback")
+                para_dicts = []
+                body_size = 12.0
 
         # ── Text layer quality scoring ──────────────────────────────────
         all_text_for_scoring = ' '.join(
@@ -11342,6 +11358,48 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         else:
             log(f"  No encoding issues found")
 
+        # ── STEP 1c3: PyMuPDF text fallback (EB-65) ──────────────────
+        # pdfminer sometimes returns zero text from PDFs that have a
+        # valid text layer (CIDFont encoding issues, etc.).  PyMuPDF uses
+        # a different extraction engine and often succeeds where pdfminer
+        # fails.  Try it BEFORE OCR since it's faster and preserves the
+        # original text rather than re-recognising from images.
+        tier1_text = '\n'.join(d.get('text', '') for d in para_dicts)
+        tier1_word_count = len(tier1_text.split()) if tier1_text else 0
+
+        if tier1_word_count < 200:
+            log(f"\n-- STEP 1c3: PyMuPDF text fallback ---------------------")
+            log(f"  Trigger: pdfminer produced only {tier1_word_count} words")
+            try:
+                import pymupdf as _fitz
+                _fb_doc = _fitz.open(pdf_path)
+                _fb_pages = []
+                for _fb_page in _fb_doc:
+                    _fb_pages.append(_fb_page.get_text())
+                _fb_doc.close()
+                _fb_text = '\n'.join(_fb_pages)
+                _fb_word_count = len(_fb_text.split())
+
+                if _fb_word_count > max(tier1_word_count * 2, 200):
+                    log(f"  PyMuPDF extracted {_fb_word_count} words"
+                        f" (pdfminer got {tier1_word_count}) — switching")
+                    _fb_text, _ = normalize_encoding(_fb_text, log=log)
+                    para_dicts, body_size = _plain_text_to_para_dicts(_fb_text, log)
+                    extraction_method = 'pymupdf_fallback'
+                    # Re-score with PyMuPDF text
+                    tier1_text = _fb_text
+                    tier1_word_count = _fb_word_count
+                    quality = score_text_layer_quality(_fb_text, log=log)
+                    log(f"  Quality score after PyMuPDF fallback: "
+                        f"{quality.get('score', 0)}/100")
+                else:
+                    log(f"  PyMuPDF got {_fb_word_count} words — not enough improvement")
+
+            except ImportError:
+                log(f"  pymupdf not installed — skipping PyMuPDF fallback")
+            except Exception as e:
+                log(f"  PyMuPDF fallback error (non-blocking): {e}")
+
         # ── STEP 1d: Zero-text OCR escalation (SCRUM-148) ──────────
         # If Tier 1 extraction produced very little text from a large PDF,
         # the text layer is probably empty/corrupted. Try OCR on page images.
@@ -11350,7 +11408,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
         _escalation_info = None  # FU-2: capture escalation comparison
 
-        if file_size_mb > 5 and tier1_word_count < 200:
+        if tier1_word_count < 200:
             log(f"\n-- STEP 1d: Zero-text OCR escalation -------------------")
             log(f"  Trigger: {file_size_mb:.1f}MB PDF produced only {tier1_word_count} words")
             log(f"  Attempting Tesseract OCR on page images...")
