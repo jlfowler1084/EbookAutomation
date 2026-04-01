@@ -138,6 +138,7 @@ Automatic PDF analysis before extraction. Override with `-SkipPreflight` or `-Ig
 | Balabolka | TTS engine | Manual install |
 | FFmpeg | Audio processing | `winget install ffmpeg` |
 | Poppler | PDF utilities | `choco install poppler` |
+| pdfplumber | Coordinate-based PDF text extraction for bookmark heading resolution (optional — degrades gracefully) | `pip install pdfplumber` |
 
 Install all Python dependencies: `py -3.12 -m pip install -r requirements.txt`
 Dev/test dependencies: `py -3.12 -m pip install -r dev-requirements.txt`
