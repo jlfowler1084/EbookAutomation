@@ -1,0 +1,3447 @@
+{
+  "run_id": "batch_20260329_202528",
+  "generated_at": "2026-03-30T00:42:54.673345+00:00",
+  "summary": {
+    "books_total": 15,
+    "books_passed": 1,
+    "books_warned": 13,
+    "books_failed": 1,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 1045.7,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": null,
+      "format_filter": "pdf",
+      "parallel": 1,
+      "folder_path": "F:\\Projects\\EbookAutomation\\test_images"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "EXTRACTION_FAILED",
+      "severity": "critical",
+      "label": "Text extraction failed",
+      "description": "Could not extract text from source file",
+      "recommendation": "Check extraction path; may need OCR fallback or alternate extraction method",
+      "book_count": 1,
+      "books": [
+        "AnnalsoftheFowlerFamily_10313122.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "CHAPTER_DETECTION_ZERO",
+      "severity": "high",
+      "label": "No chapters detected",
+      "description": "Chapter detection found zero real chapters. May be finding only back-matter headings.",
+      "recommendation": "Fix Get-ChapterStructure prompt hierarchy rules and increase text window size",
+      "book_count": 13,
+      "books": [
+        "Al Sweigart - Automate the Boring Stuff with Python_ Practical Programming for Total Beginners-No Starch Press (2015).pdf",
+        "Amazing Facts Inc - America In Bible Prophecy (2020) - libgen.li.pdf",
+        "Anabel Hernández - Narcoland The Mexican Drug Lords And Their Godfathers - libgen.li.pdf",
+        "AnnalsoftheFowlerFamily_10313122.pdf",
+        "Arthur Versluis - The Esoteric Origins of the American Renaissance (2001, Oxford University Press, USA) - libgen.li.pdf",
+        "Astronomy-LR.pdf",
+        "By Way of Deception _ The Making and Unmaking of a Mossad Officer.pdf",
+        "Christiaan Brinkhoff _ Per Larsen - Mastering Microsoft Intune, Second Edition (2024, Packt Publishing) - libgen.li.pdf",
+        "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf",
+        "Configuring Microsoft iSCSI Connections.pdf",
+        "Culture_Wars_November 2025.pdf",
+        "Daniel I. Block - Beyond the River Chebar_ Studies in Kingship and Eschatology in the Book of Ezekiel-James Clarke & Co (2014).pdf",
+        "Eric Matthes - Python Crash Course_ A Hands-On, Project-Based Introduction to Programming-No Starch Press (2019).pdf"
+      ],
+      "source_types": {
+        "unknown": 11,
+        "multi_column": 2
+      },
+      "formats": {
+        "pdf": 13
+      }
+    },
+    {
+      "pattern_id": "ENCODING_ERRORS",
+      "severity": "high",
+      "label": "Encoding errors in extracted text",
+      "description": "Non-UTF8 content caused garbled characters",
+      "recommendation": "Add encoding normalization as pre-processing step",
+      "book_count": 3,
+      "books": [
+        "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf",
+        "Christiaan Brinkhoff _ Per Larsen - Mastering Microsoft Intune, Second Edition (2024, Packt Publishing) - libgen.li.pdf",
+        "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf"
+      ],
+      "source_types": {
+        "unknown": 3
+      },
+      "formats": {
+        "pdf": 3
+      }
+    },
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 4,
+      "books": [
+        "Anabel Hernández - Narcoland The Mexican Drug Lords And Their Godfathers - libgen.li.pdf",
+        "Arthur Versluis - The Esoteric Origins of the American Renaissance (2001, Oxford University Press, USA) - libgen.li.pdf",
+        "Culture_Wars_November 2025.pdf",
+        "Daniel I. Block - Beyond the River Chebar_ Studies in Kingship and Eschatology in the Book of Ezekiel-James Clarke & Co (2014).pdf"
+      ],
+      "source_types": {
+        "unknown": 3,
+        "multi_column": 1
+      },
+      "formats": {
+        "pdf": 4
+      }
+    },
+    {
+      "pattern_id": "DOUBLE_SPACES",
+      "severity": "low",
+      "label": "Excessive double spaces (>20)",
+      "description": "Multiple double-space artifacts in output text",
+      "recommendation": "Check text normalization pass",
+      "book_count": 1,
+      "books": [
+        "Eric Matthes - Python Crash Course_ A Hands-On, Project-Based Introduction to Programming-No Starch Press (2019).pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    }
+  ],
+  "observations": [
+    "Chapter detection affects 87% of all books (13/15). Fixing this could improve batch pass rate from 7% to ~93%."
+  ],
+  "books": [
+    {
+      "filename": "Al Sweigart - Automate the Boring Stuff with Python_ Practical Programming for Total Beginners-No Starch Press (2015).pdf",
+      "file_size_bytes": 17449893,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:25:28.927583+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 55.7,
+        "html_produced": true,
+        "html_size_bytes": 1138143,
+        "errors": [],
+        "warnings": [
+          "WARNING: Risky fonts detected: PEFTKZ+Symbol, KZSPSJ+Wingdings2, IERDQN+Wingdings-Regular, NEFCID+TriplexConBlackOldstyle, AATCID+TimesNewRomanPS-ItalicMT"
+        ],
+        "completeness": {
+          "total_pages": 505,
+          "pages_with_text": 505,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 168838,
+        "page_count": 0,
+        "total_pages": 505,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 572,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 11,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 7,
+        "italic_tags": 1637,
+        "bold_tags": 2192,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 2,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 92.8,
+          "std_dev": 2.4,
+          "segment_scores": [
+            90,
+            94,
+            94,
+            96,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 90,
+          "best_score": 96
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.546,
+            "words_sampled": 500,
+            "hits": 273
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.92,
+            "stddev": 2.61,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 43
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 100
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 0,
+            "min_score": 100,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 100,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 9.9",
+        "pdf_creator": "Adobe InDesign CS5.5 (7.5.3)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 16.6,
+        "image_density": {
+          "total_images": 3,
+          "pages_sampled": 10,
+          "images_per_page": 0.3,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 15,
+        "names": [
+          "ANBSCI+Futura-CondensedOblique",
+          "AXUMID+Futura-Book",
+          "BBJSWB+Futura-Book",
+          "CIWTKZ+Futura-BookOblique",
+          "GGWWOR+NewBaskerville-Italic",
+          "IWTDQN+Futura-CondensedBoldOblique",
+          "KCBAMO+DogmaScriptBold",
+          "KMUUSJ+NewBaskerville-Roman",
+          "OXXSWB+Futura-Heavy",
+          "QAWEYX+DogmaBold",
+          "QTBKSC+VAGRounded-Light",
+          "SLTLAT+Futura-Light",
+          "TCKWOR+Futura-Bold",
+          "VNHIQN+TheSansMonoCondensed-Plain",
+          "XQGUSJ+Futura-CondensedBold"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.6,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.4,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 55.7,
+        "analysis": 2.9,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Amazing Facts Inc - America In Bible Prophecy (2020) - libgen.li.pdf",
+      "file_size_bytes": 47779584,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:26:27.540991+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 48.8,
+        "html_produced": true,
+        "html_size_bytes": 90833,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 2.3 images/page"
+        ],
+        "completeness": {
+          "total_pages": 40,
+          "pages_with_text": 40,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 13482,
+        "page_count": 0,
+        "total_pages": 40,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 2,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 57,
+        "bold_tags": 31,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 9,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 96.4,
+          "std_dev": 3.3,
+          "segment_scores": [
+            97,
+            98,
+            98,
+            90,
+            99
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 90,
+          "best_score": 99
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.618,
+            "words_sampled": 500,
+            "hits": 309
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.91,
+            "stddev": 2.56,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 22
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 3,
+            "min_score": 97,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 97,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 15.0",
+        "pdf_creator": "Adobe InDesign 15.1 (Macintosh)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 45.6,
+        "image_density": {
+          "total_images": 23,
+          "pages_sampled": 10,
+          "images_per_page": 2.3,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 20,
+        "names": [
+          "TUMTWK+BodoniSvtyTwoITCTT-Bold",
+          "TUMTWK+GloucesterMT-ExtraCondensed",
+          "TUMTWK+Knockout-HTF48-Featherweight",
+          "TUMTWK+Knockout-HTF49-Liteweight",
+          "TUMTWK+Knockout-HTF73-FullHeviweight",
+          "TUMTWK+Lato-Regular",
+          "TUMTWK+MuseoSans-500",
+          "TUMTWK+MyriadPro-Bold",
+          "TUMTWK+MyriadPro-It",
+          "TUMTWK+MyriadPro-Regular",
+          "TUMTWK+MyriadPro-Regular-SC700",
+          "TUMTWK+MyriadPro-Semibold",
+          "TUMTWK+MyriadPro-SemiboldIt",
+          "TUMTWK+SansSerifExbFLF",
+          "UCWZKI+Minion-BoldCondensed-SC700",
+          "UCWZKI+Minion-Condensed-SC700",
+          "UCWZKI+Myriad-CnBold",
+          "UCWZKI+Myriad-Condensed",
+          "UCWZKI+MyriadPro-Cond",
+          "UCWZKI+Tungsten-Medium"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.4,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.6,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 48.8,
+        "analysis": 0.8,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Anabel Hernández - Narcoland The Mexican Drug Lords And Their Godfathers - libgen.li.pdf",
+      "file_size_bytes": 2899045,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:27:17.192565+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 2.8,
+        "html_produced": true,
+        "html_size_bytes": 808125,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 457,
+          "pages_with_text": 457,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 125222,
+        "page_count": 0,
+        "total_pages": 457,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 21,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 3,
+        "italic_tags": 302,
+        "bold_tags": 133,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 339,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 99.2,
+          "std_dev": 1.0,
+          "segment_scores": [
+            100,
+            100,
+            98,
+            100,
+            98
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.5,
+          "worst_score": 98,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.544,
+            "words_sampled": 500,
+            "hits": 272
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.65,
+            "stddev": 2.32,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 12
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 0,
+            "min_score": 97,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 97,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "calibre (4.22.0) [https://calibre-ebook.com]",
+        "pdf_creator": "calibre (4.22.0) [https://calibre-ebook.com]",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 2.8,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 3,
+        "names": [
+          "CharisSIL",
+          "CharisSIL-Bold",
+          "CharisSIL-Italic"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 98.6,
+        "latin_ext_pct": 0.7,
+        "high_unicode_pct": 0.7,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 2.8,
+        "analysis": 0.7,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Andrea Nicolotti - The Shroud of Turin_ The History and Legends of the World's Most Famous Relic (2020, Baylor University Press) - libgen.li.pdf",
+      "file_size_bytes": 12984901,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:27:20.641504+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 2.2,
+        "html_produced": true,
+        "html_size_bytes": 1515598,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 525,
+          "pages_with_text": 525,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 5,
+        "heading_labels": [
+          "Genealogical Stemma"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 210416,
+        "page_count": 0,
+        "total_pages": 525,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 2,
+        "encoding_errors": 2,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 2582,
+        "bold_tags": 18,
+        "footnotes_linked": 1114,
+        "footnotes_unlinked": 206,
+        "text_layer_score": 96,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 94.6,
+          "std_dev": 4.1,
+          "segment_scores": [
+            90,
+            98,
+            90,
+            95,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.474,
+            "words_sampled": 500,
+            "hits": 237
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.9,
+            "stddev": 2.72,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 80,
+            "total_artifacts": 3,
+            "per_1000_chars": 0.6,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 3
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 23
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 92
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 5,
+            "min_score": 92,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 5,
+        "min_region": 92,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "PyPDF2",
+        "pdf_creator": null,
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 12.4,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 5,
+        "names": [
+          "FFYTTM+Palatino",
+          "Palatino-Bold_u-",
+          "Palatino-Italic_ul",
+          "Palatino-Roman_uq",
+          "XLBXLC+GoudyOldStyleT-Regular"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.6,
+        "greek": 0.3,
+        "other": 0.1,
+        "has_non_latin": true,
+        "non_latin_pct": 0.3
+      },
+      "encoding": {
+        "ascii_pct": 98.9,
+        "latin_ext_pct": 0.2,
+        "high_unicode_pct": 0.9,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 2.2,
+        "analysis": 1.8,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "AnnalsoftheFowlerFamily_10313122.pdf",
+      "file_size_bytes": 14649902,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:27:24.687543+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default"
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": false,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 601.0,
+        "html_produced": false,
+        "html_size_bytes": 0,
+        "errors": [
+          "Extraction exited with code -1",
+          "TIMEOUT: extraction exceeded 600s"
+        ],
+        "warnings": [
+          "Image density suggests scan: 5.2 images/page"
+        ]
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 0,
+        "page_count": 0,
+        "total_pages": 388,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": null,
+        "tier_suggestion": null,
+        "recommendation": null,
+        "quality_variance": null
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Frankenstein 1.0",
+        "pdf_creator": "Frankenstein",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 14.0,
+        "image_density": {
+          "total_images": 52,
+          "pages_sampled": 10,
+          "images_per_page": 5.2,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 0,
+        "names": [],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {},
+      "encoding": {},
+      "issues": [],
+      "overall_status": "FAIL",
+      "status_reason": "Text extraction failed"
+    },
+    {
+      "filename": "Arthur Versluis - The Esoteric Origins of the American Renaissance (2001, Oxford University Press, USA) - libgen.li.pdf",
+      "file_size_bytes": 851586,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:37:25.681006+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 1.1,
+        "html_produced": true,
+        "html_size_bytes": 836170,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 241,
+          "pages_with_text": 241,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 114139,
+        "page_count": 0,
+        "total_pages": 241,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 5,
+        "italic_tags": 1599,
+        "bold_tags": 3,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 557,
+        "text_layer_score": 90,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 95.4,
+          "std_dev": 3.2,
+          "segment_scores": [
+            95,
+            96,
+            100,
+            96,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.9,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 95,
+            "ratio": 0.9834,
+            "non_printable_count": 83
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.608,
+            "words_sampled": 500,
+            "hits": 304
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.93,
+            "stddev": 2.62,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 71,
+            "total_artifacts": 10,
+            "per_1000_chars": 2.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 10
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 6
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 88
+              },
+              {
+                "position": 0.25,
+                "score": 78
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 93
+              },
+              {
+                "position": 0.9,
+                "score": 66
+              }
+            ],
+            "variance": 31,
+            "min_score": 66,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 31,
+        "min_region": 66,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "iText 2.1.7 by 1T3XT",
+        "pdf_creator": "pdfsam-console (Ver. 2.3.0e)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.8,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 9,
+        "names": [
+          "BGKDGP+TimesNewRoman,Italic",
+          "GIHDEM+Times-Bold",
+          "GIHDFH+Times-Italic",
+          "GPMHHK+FournierMT",
+          "GPMHPP+OzHandicraftBT-Roman",
+          "GPMIAI+FournierMT-Italic",
+          "GPMIAP+OUP1",
+          "GPMIBE+FournierExpertMT",
+          "GPMIIP+MathematicalPi-One"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.8,
+        "other": 0.2
+      },
+      "encoding": {
+        "ascii_pct": 97.8,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 2.2,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 1.1,
+        "analysis": 0.9,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Astronomy-LR.pdf",
+      "file_size_bytes": 41720608,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:37:27.676149+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 121.2,
+        "html_produced": true,
+        "html_size_bytes": 3507275,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.0 images/page"
+        ],
+        "completeness": {
+          "total_pages": 1197,
+          "pages_with_text": 1198,
+          "completeness_pct": 100.1
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 510620,
+        "page_count": 0,
+        "total_pages": 1197,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 250,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 1,
+        "italic_tags": 2112,
+        "bold_tags": 5909,
+        "footnotes_linked": 14,
+        "footnotes_unlinked": 1161,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 95.8,
+          "std_dev": 3.4,
+          "segment_scores": [
+            98,
+            94,
+            90,
+            98,
+            99
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.5,
+          "worst_score": 90,
+          "best_score": 99
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.604,
+            "words_sampled": 500,
+            "hits": 302
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.86,
+            "stddev": 2.43,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 14
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 3,
+            "min_score": 97,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 97,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Prince 10 rev 7 (www.princexml.com)",
+        "pdf_creator": "DocBook XSL Stylesheets V1.78.1",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 39.8,
+        "image_density": {
+          "total_images": 10,
+          "pages_sampled": 10,
+          "images_per_page": 1.0,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 9,
+        "names": [
+          "Dosis",
+          "Dosis,Bold",
+          "NotoSans",
+          "NotoSans,Bold",
+          "NotoSans,BoldItalic",
+          "NotoSans,Italic",
+          "QBFINA+Arial-BoldMT",
+          "TVABHY+LiberationSans-Bold",
+          "XIYQBS+LiberationSans-Regular"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.7,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.3,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 121.2,
+        "analysis": 2.2,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "By Way of Deception _ The Making and Unmaking of a Mossad Officer.pdf",
+      "file_size_bytes": 3926759,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:39:31.018039+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 29.7,
+        "html_produced": true,
+        "html_size_bytes": 760941,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 378,
+          "pages_with_text": 378,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 125899,
+        "page_count": 0,
+        "total_pages": 378,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 378,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 1,
+        "double_spaces": 1,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 5,
+        "italic_tags": 72,
+        "bold_tags": 198,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 1,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 100.0,
+          "std_dev": 0.0,
+          "segment_scores": [
+            100,
+            100,
+            100,
+            100,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 100,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.682,
+            "words_sampled": 500,
+            "hits": 341
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.46,
+            "stddev": 2.23,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 11
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 0,
+            "min_score": 97,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 97,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe Acrobat 7.1 Paper Capture Plug-in",
+        "pdf_creator": "Adobe Acrobat 7.1",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 3.7,
+        "image_density": {
+          "total_images": 5,
+          "pages_sampled": 10,
+          "images_per_page": 0.5,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 12,
+        "names": [
+          "Courier-Bold",
+          "Courier-BoldOblique",
+          "Helvetica",
+          "Helvetica-Bold",
+          "Helvetica-BoldOblique",
+          "JGXBKM+BookmanOldStyle-BoldItalic",
+          "JOUQLQ+BookmanOldStyle-Bold",
+          "RGJYBT+BookmanOldStyle",
+          "RWVNDI+BookmanOldStyle-Italic",
+          "Times-Bold",
+          "Times-BoldItalic",
+          "Times-Roman"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 100.0,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.0,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 29.7,
+        "analysis": 0.8,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Christiaan Brinkhoff _ Per Larsen - Mastering Microsoft Intune, Second Edition (2024, Packt Publishing) - libgen.li.pdf",
+      "file_size_bytes": 125870619,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:40:01.479106+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 80.8,
+        "html_produced": true,
+        "html_size_bytes": 1115213,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.2 images/page"
+        ],
+        "completeness": {
+          "total_pages": 823,
+          "pages_with_text": 823,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 129015,
+        "page_count": 0,
+        "total_pages": 823,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 521,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 11121,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 2,
+        "bold_tags": 2888,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 93.4,
+          "std_dev": 2.9,
+          "segment_scores": [
+            96,
+            94,
+            97,
+            90,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 90,
+          "best_score": 97
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.468,
+            "words_sampled": 500,
+            "hits": 234
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.29,
+            "stddev": 2.67,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 44
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 3,
+            "min_score": 97,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 97,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 17.0",
+        "pdf_creator": "Adobe InDesign 18.5 (Windows)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 120.0,
+        "image_density": {
+          "total_images": 12,
+          "pages_sampled": 10,
+          "images_per_page": 1.2,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 7,
+        "names": [
+          "CLVGAE+SourceSerif4-Regular",
+          "KGNNDO+SourceSerif4-Semibold",
+          "OVWFMG+Jost-Semi",
+          "PSBBVE+SourceSerif4-It",
+          "QAHNJC+Consolas",
+          "QNFNJC+Jost-Bold",
+          "SJSDQY+Jost-Book"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.9,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.1,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o; Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 80.8,
+        "analysis": 2.0,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Christiaan Brinkhoff, Sandeep Patnaik, Morten Pedholt - Mastering Windows 365_ Deploy and Manage Cloud PCs and Windows 365 Link devices, Copilot with Intune, and Intune Suite (2024, Packt Publishing) - libgen.li.pdf",
+      "file_size_bytes": 87017186,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:41:24.377039+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 60.1,
+        "html_produced": true,
+        "html_size_bytes": 845279,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.2 images/page"
+        ],
+        "completeness": {
+          "total_pages": 663,
+          "pages_with_text": 663,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 98291,
+        "page_count": 0,
+        "total_pages": 663,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 407,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 5799,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 5,
+        "italic_tags": 186,
+        "bold_tags": 2221,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 92.0,
+          "std_dev": 4.0,
+          "segment_scores": [
+            100,
+            90,
+            90,
+            90,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.25,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.46,
+            "words_sampled": 500,
+            "hits": 230
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.23,
+            "stddev": 2.78,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 24
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 100
+              },
+              {
+                "position": 0.25,
+                "score": 94
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 6,
+            "min_score": 94,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 6,
+        "min_region": 94,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 17.0",
+        "pdf_creator": "Adobe InDesign 19.5 (Windows)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 83.0,
+        "image_density": {
+          "total_images": 12,
+          "pages_sampled": 10,
+          "images_per_page": 1.2,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 10,
+        "names": [
+          "AFQRGT+Consolas",
+          "CCXNIP+Jost-Semi",
+          "GGUGMH+CrimsonPro-Italic",
+          "JDETCB+Jost-Bold",
+          "JFFYCB+CrimsonPro-Regular",
+          "LAGPEX+Jost-Book",
+          "PEDDIP+CrimsonPro-SemiBold",
+          "TCIGMH+CrimsonPro-Italic",
+          "TFCWMH+Jost-Medium",
+          "ZDHVSV+CrimsonPro-Regular"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.5,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.5,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "encoding_errors",
+          "severity": "high",
+          "description": "Non-UTF8 content caused garbled characters"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o; Non-UTF8 content caused garbled characters",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 60.1,
+        "analysis": 1.8,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Configuring Microsoft iSCSI Connections.pdf",
+      "file_size_bytes": 1255777,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:42:26.188904+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": true,
+        "recommended_paid_tier": "gemini"
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0.9,
+        "html_produced": true,
+        "html_size_bytes": 10303,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 1.0 images/page"
+        ],
+        "completeness": {
+          "total_pages": 23,
+          "pages_with_text": 23,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 864,
+        "page_count": 0,
+        "total_pages": 23,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 8,
+        "bold_tags": 78,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 96,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 91.6,
+          "std_dev": 3.2,
+          "segment_scores": [
+            98,
+            90,
+            90,
+            90,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.25,
+          "worst_score": 90,
+          "best_score": 98
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.464,
+            "words_sampled": 500,
+            "hits": 232
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.63,
+            "stddev": 2.27,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 76,
+            "ratio": 0.0508,
+            "total_lines": 59
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 93
+              },
+              {
+                "position": 0.25,
+                "score": 92
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 8,
+            "min_score": 92,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 8,
+        "min_region": 92,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Microsoft® Word 2016",
+        "pdf_creator": "Microsoft® Word 2016",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 1.2,
+        "image_density": {
+          "total_images": 10,
+          "pages_sampled": 10,
+          "images_per_page": 1.0,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 5,
+        "names": [
+          "ABCDEE+Calibri",
+          "ABCDEE+Calibri-Bold",
+          "ABCDEE+Calibri-BoldItalic",
+          "ABCDEE+Calibri-Light",
+          "ArialMT"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.9,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.1,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 0.9,
+        "analysis": 0.3,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Cooper, Andrew Scott - The Oil Kings_ How the U (2011, Simon & Schuster) - libgen.li.pdf",
+      "file_size_bytes": 4453796,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:42:27.410283+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 10.1,
+        "html_produced": true,
+        "html_size_bytes": 1441866,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 406,
+          "pages_with_text": 406,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 22,
+        "h1_count": 7,
+        "h2_count": 15,
+        "h3_count": 87,
+        "heading_labels": [
+          "Front Matter",
+          "Part One GLADIATOR 1969–1974",
+          "Part Two SHOWDOWN 1974–1977",
+          "Epilogue THE LAST HURRAH",
+          "Notes",
+          "Bibliography",
+          "Index",
+          "Introduction",
+          "A Note on the Use of Iranian Imperial Titles",
+          "Chapter One A KIND OF SUPER MAN",
+          "Chapter Two GUARDIAN OF THE GULF",
+          "Chapter Three MARITAL VOWS",
+          "Chapter Four CONTINGENCIES",
+          "Chapter Five OIL SHOCK",
+          "Chapter Six CRUEL SUMMER",
+          "Chapter Seven SCREAMING EAGLE",
+          "Chapter Eight POTOMAC SCHEHERAZADE",
+          "Chapter Nine HENRY’S WARS",
+          "Chapter Ten THE SPIRIT OF ’76",
+          "Chapter Eleven ROYAL FLUSH",
+          "Chapter Twelve OIL WAR",
+          "Acknowledgments"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 221503,
+        "page_count": 0,
+        "total_pages": 406,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 21,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 3,
+        "italic_tags": 3264,
+        "bold_tags": 17,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 95.6,
+          "std_dev": 4.6,
+          "segment_scores": [
+            100,
+            98,
+            100,
+            90,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.58,
+            "words_sampled": 500,
+            "hits": 290
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.87,
+            "stddev": 2.41,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 4
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 96
+              }
+            ],
+            "variance": 4,
+            "min_score": 96,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 4,
+        "min_region": 96,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "calibre 1.22.0 [http://calibre-ebook.com]",
+        "pdf_creator": "calibre 1.22.0 [http://calibre-ebook.com]",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 4.2,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 4,
+        "names": [
+          "AAAAAA+TimesNewRomanPSMT",
+          "AAAAAB+TimesNewRomanPS-ItalicMT",
+          "AAAAAC+Tahoma-Bold",
+          "AAAAAD+Tahoma"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.3,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.7,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 10.1,
+        "analysis": 1.2,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Culture_Wars_November 2025.pdf",
+      "file_size_bytes": 3254281,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:42:38.734624+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 1.7,
+        "html_produced": true,
+        "html_size_bytes": 212074,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 52,
+          "pages_with_text": 54,
+          "completeness_pct": 103.8
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 32428,
+        "page_count": 0,
+        "total_pages": 52,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 135,
+        "bold_tags": 13,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 168,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 98.0,
+          "std_dev": 1.3,
+          "segment_scores": [
+            98,
+            98,
+            100,
+            96,
+            98
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 96,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 0.9998,
+            "non_printable_count": 1
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.636,
+            "words_sampled": 500,
+            "hits": 318
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.88,
+            "stddev": 2.73,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 8
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 0,
+            "min_score": 97,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 97,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 15.0",
+        "pdf_creator": "Adobe InDesign 16.0 (Macintosh)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 3.1,
+        "image_density": {
+          "total_images": 3,
+          "pages_sampled": 10,
+          "images_per_page": 0.3,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 12,
+        "names": [
+          "LHPCJB+AGaramondPro-Bold",
+          "LHPCJB+AGaramondPro-Bold-SC700",
+          "LHPCJB+AGaramondPro-BoldItalic",
+          "LHPCJB+AGaramondPro-Italic",
+          "LHPCJB+AGaramondPro-Italic-SC700",
+          "LHPCJB+AGaramondPro-Regular",
+          "LHPCJB+AdobeGothicStd-Bold",
+          "LHPCJB+Calibri-LightItalic",
+          "LHPCJB+MinionPro-Bold",
+          "LHPCJB+MinionPro-Regular",
+          "LHPCJB+ParisianBT-Regular",
+          "LHPCJB+TimesNewRomanPS-BoldMT"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 98.9,
+        "latin_ext_pct": 0.1,
+        "high_unicode_pct": 1.0,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 1.7,
+        "analysis": 1.0,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Daniel I. Block - Beyond the River Chebar_ Studies in Kingship and Eschatology in the Book of Ezekiel-James Clarke & Co (2014).pdf",
+      "file_size_bytes": 1897717,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:42:41.383359+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 3.7,
+        "html_produced": true,
+        "html_size_bytes": 613518,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 230,
+          "pages_with_text": 230,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 93631,
+        "page_count": 0,
+        "total_pages": 230,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 98,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 1,
+        "italic_tags": 32,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 619,
+        "text_layer_score": 94,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 98.2,
+          "std_dev": 0.7,
+          "segment_scores": [
+            98,
+            98,
+            97,
+            99,
+            99
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.5,
+          "worst_score": 97,
+          "best_score": 99
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.572,
+            "words_sampled": 500,
+            "hits": 286
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.75,
+            "stddev": 2.54,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 71,
+            "total_artifacts": 10,
+            "per_1000_chars": 2.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 10
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 21
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 95
+              },
+              {
+                "position": 0.25,
+                "score": 80
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 89
+              },
+              {
+                "position": 0.9,
+                "score": 93
+              }
+            ],
+            "variance": 17,
+            "min_score": 80,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 17,
+        "min_region": 80,
+        "max_region": 97
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 9.9",
+        "pdf_creator": "Adobe InDesign CS5.5 (7.5.3)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 1.8,
+        "image_density": {
+          "total_images": 1,
+          "pages_sampled": 10,
+          "images_per_page": 0.1,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 11,
+        "names": [
+          "EEADKA+PalatinoLinotype-Italic",
+          "LNPYIW+MinionPro-It",
+          "LOIJIW+MinionPro-MediumIt",
+          "LQOTIW+MinionPro-Medium",
+          "MKKBDJ+MinionPro-Regular",
+          "MKKBEJ+MinionPro-It",
+          "MKKBFK+MinionPro-Bold",
+          "QPEHAM+MinionPro-Regular",
+          "QQXSAM+SBLHebrew",
+          "RNACOK+MinionPro-CnDisp",
+          "UWFFAU+PalatinoLinotype-Roman"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 98.4,
+        "hebrew": 1.6,
+        "has_non_latin": true,
+        "non_latin_pct": 1.6
+      },
+      "encoding": {
+        "ascii_pct": 97.3,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 2.7,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 3.7,
+        "analysis": 0.7,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Eric Matthes - Python Crash Course_ A Hands-On, Project-Based Introduction to Programming-No Starch Press (2019).pdf",
+      "file_size_bytes": 7020007,
+      "format": "pdf",
+      "batch_run_id": "batch_20260329_202528",
+      "timestamp": "2026-03-30T00:42:45.821783+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 6.7,
+        "html_produced": true,
+        "html_size_bytes": 1212649,
+        "errors": [],
+        "warnings": [],
+        "completeness": {
+          "total_pages": 548,
+          "pages_with_text": 548,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 188705,
+        "page_count": 0,
+        "total_pages": 548,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 552,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 32,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 5,
+        "italic_tags": 1839,
+        "bold_tags": 866,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 93.8,
+          "std_dev": 3.1,
+          "segment_scores": [
+            92,
+            98,
+            97,
+            92,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.9,
+          "worst_score": 90,
+          "best_score": 98
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 0.9996,
+            "non_printable_count": 2
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.628,
+            "words_sampled": 500,
+            "hits": 314
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.97,
+            "stddev": 2.57,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 27
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 100
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 0,
+            "min_score": 100,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 100,
+        "max_region": 100
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "Adobe PDF Library 10.0.1",
+        "pdf_creator": "Adobe InDesign CS6 (Windows)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 6.7,
+        "image_density": {
+          "total_images": 2,
+          "pages_sampled": 10,
+          "images_per_page": 0.2,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 18,
+        "names": [
+          "BIPADV+Futura-BookOblique",
+          "CEGGRT+TheSansMonoCondensed-Plain",
+          "EHFSTP+Futura-Bold",
+          "FGUYHN+DogmaBold",
+          "GORKVL+Futura-Book",
+          "IVGQXH+Futura-CondensedBold",
+          "JRSWLF+NewBaskerville-Roman-SC750",
+          "ODBJIB+TimesNewRomanPSMT",
+          "OPAQDV+Futura-CondensedBoldOblique",
+          "PHQPWZ+Futura-CondensedOblique",
+          "PISGRT+Futura-Book",
+          "SCIDHN+Futura-HeavyOblique",
+          "SCIDHN+NewBaskerville-Italic",
+          "SCIDHN+NewBaskerville-Roman",
+          "TNONAR+Futura-BoldOblique",
+          "WUCFQL+DogmaScriptBold",
+          "XTRLEJ+DogmaBold",
+          "ZPUTBZ+Futura-Heavy"
+        ],
+        "has_risky_fonts": true,
+        "risky_fonts": [
+          "SCIDHN+Futura-HeavyOblique",
+          "SCIDHN+NewBaskerville-Italic",
+          "SCIDHN+NewBaskerville-Roman"
+        ]
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.4,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.6,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "double_spaces",
+          "severity": "low",
+          "description": "Multiple double-space artifacts in output text"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 6.7,
+        "analysis": 2.1,
+        "calibre": 0,
+        "vqa": 0
+      }
+    }
+  ]
+}
