@@ -1000,28 +1000,57 @@ def resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log):
                 pdf_top = bm['dest_top']
                 plumber_y = page.height - pdf_top
 
-                # Search a horizontal strip at the destination y-position.
-                # Use a tolerance band to catch text near the destination.
-                tolerance = 20  # points (~7mm, generous to catch heading text)
+                # Page bounding box (some PDFs have non-zero origins)
+                px0, py0, px1, py1 = page.bbox
 
-                # Clamp to page boundaries
-                y_min = max(0, plumber_y - tolerance)
-                y_max = min(page.height, plumber_y + tolerance)
+                # When plumber_y is near the top of the page content area,
+                # the bookmark is a "go to page top" destination. In that case,
+                # search a larger region to find the first heading text.
+                near_top = (plumber_y - py0) < 20  # within 20pt of content top
 
-                # Full page width
-                x_min = 0
-                x_max = page.width
+                if near_top:
+                    # Grab the top ~200pt of the page (heading zone)
+                    y_min = py0
+                    y_max = min(py1, py0 + 200)
+                else:
+                    # Narrow band around the specific destination coordinate
+                    tolerance_up = 5
+                    tolerance_down = 50
+                    y_min = max(py0, plumber_y - tolerance_up)
+                    y_max = min(py1, plumber_y + tolerance_down)
+
+                x_min = px0
+                x_max = px1
 
                 try:
-                    cropped = page.within_bbox((x_min, y_min, x_max, y_max))
+                    # Use crop() not within_bbox(): crop clips text that
+                    # intersects the region, while within_bbox requires full
+                    # containment (misses headings whose bounding box extends
+                    # beyond the tolerance band).
+                    cropped = page.crop((x_min, y_min, x_max, y_max))
                     text = cropped.extract_text()
                 except Exception:
                     text = None
 
                 if text and text.strip():
                     clean = text.strip()
+                    if near_top:
+                        # For top-of-page destinations, take only the first
+                        # line(s) — the heading, not body text below it.
+                        lines = clean.split('\n')
+                        # Take lines until we hit one that looks like body text
+                        # (long paragraph line), max 3 lines for multi-line headings
+                        heading_lines = []
+                        for line in lines[:3]:
+                            if len(line.strip()) > 80:
+                                break  # body text
+                            heading_lines.append(line.strip())
+                            if len(heading_lines) >= 2 and len(line.strip()) < 5:
+                                break  # short separator line
+                        clean = ' '.join(heading_lines).strip()
+
                     # Only keep if it looks like a heading (short, not a full paragraph)
-                    if len(clean) <= 150:
+                    if clean and len(clean) <= 150:
                         bm['dest_text'] = clean
                         resolved_count += 1
 
@@ -6663,11 +6692,13 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
             # Normalize both texts for comparison
             para_norm = re.sub(r'\s+', ' ', text.strip().lower())
             coord_norm = re.sub(r'\s+', ' ', coord_text.strip().lower())
-            # Check if paragraph text starts with or matches the coordinate text
-            # (coordinate text may be truncated or include adjacent content)
+            # Check if paragraph text matches the coordinate text.
+            # Coordinate text often spans multiple lines (e.g. "Chapter One\n
+            # A KIND OF SUPER MAN"), so check containment in both directions.
             if (para_norm == coord_norm
                     or para_norm.startswith(coord_norm)
-                    or coord_norm.startswith(para_norm)):
+                    or coord_norm.startswith(para_norm)
+                    or (len(para_norm) >= 4 and para_norm in coord_norm)):
                 bm_level = coord_level
                 log(f"  [COORD] Heading promoted via coordinate resolution p.{current_page}: "
                     f"'{text[:50]}'")
