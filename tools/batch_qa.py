@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import glob
+import html
 import json
 import logging
 import os
@@ -1603,6 +1604,638 @@ def generate_md_report(run_id, diagnostics_list, clusters, observations,
     return str(md_path)
 
 
+def _load_historical_runs(current_run_id):
+    """Load summary + per-book status from all JSON reports for trend tracking."""
+    history = []
+    for json_file in sorted(REPORTS_DIR.glob("batch_*.json")):
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                report = json.load(f)
+            rid = report.get("run_id", json_file.stem)
+            summary = report.get("summary", {})
+            book_statuses = {
+                b["filename"]: b["overall_status"]
+                for b in report.get("books", [])
+            }
+            history.append({
+                "run_id": rid,
+                "date": report.get("generated_at", "")[:10],
+                "pass_rate": round(
+                    summary.get("books_passed", 0)
+                    / max(summary.get("books_total", 1), 1) * 100, 1
+                ),
+                "total": summary.get("books_total", 0),
+                "passed": summary.get("books_passed", 0),
+                "failed": summary.get("books_failed", 0),
+                "warned": summary.get("books_warned", 0),
+                "errored": summary.get("books_errored", 0),
+                "book_statuses": book_statuses,
+            })
+        except Exception:
+            continue
+    return history
+
+
+def generate_html_report(run_id, diagnostics_list, clusters, observations,
+                         duration, flags):
+    """Write a self-contained HTML dashboard alongside the Markdown/JSON reports."""
+    # ── Summary stats ──────────────────────────────────────────────────────
+    total = len(diagnostics_list)
+    passed = sum(1 for d in diagnostics_list if d["overall_status"] == "PASS")
+    warned = sum(1 for d in diagnostics_list if d["overall_status"] == "WARN")
+    failed = sum(1 for d in diagnostics_list if d["overall_status"] == "FAIL")
+    errored = sum(1 for d in diagnostics_list if d["overall_status"] == "ERROR")
+    skipped = sum(1 for d in diagnostics_list if d["overall_status"] == "SKIP")
+    api_cost = sum(
+        d.get("visual_qa", {}).get("api_cost_usd", 0) for d in diagnostics_list
+    )
+    dur_min = int(duration // 60)
+    dur_sec = int(duration % 60)
+    counted = total - skipped
+    pass_rate = round(passed / counted * 100, 1) if counted else 0.0
+
+    mode_label = "Quick / HTML only" if flags.get("quick") else "Full"
+    if flags.get("vqa"):
+        mode_label += " + VQA"
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # ── Historical runs for trend / heatmap ────────────────────────────────
+    history = _load_historical_runs(run_id)
+
+    # ── Colour helpers ─────────────────────────────────────────────────────
+    if pass_rate >= 80:
+        rate_color = "#27ae60"
+    elif pass_rate >= 50:
+        rate_color = "#f39c12"
+    else:
+        rate_color = "#e74c3c"
+
+    STATUS_COLORS = {
+        "PASS": "#27ae60",
+        "WARN": "#f39c12",
+        "FAIL": "#e74c3c",
+        "ERROR": "#95a5a6",
+        "SKIP": "#bdc3c7",
+    }
+
+    def status_pill(status):
+        color = STATUS_COLORS.get(status, "#bdc3c7")
+        return (
+            f'<span class="status-pill status-{html.escape(status)}" '
+            f'style="background:{color}">{html.escape(status)}</span>'
+        )
+
+    # ── SVG donut chart ────────────────────────────────────────────────────
+    donut_r = 60
+    donut_cx = 90
+    donut_cy = 90
+    donut_stroke = 28
+    circumference = 3.14159265 * 2 * donut_r
+
+    segments = [
+        ("PASS",  passed,  "#27ae60"),
+        ("WARN",  warned,  "#f39c12"),
+        ("FAIL",  failed,  "#e74c3c"),
+        ("ERROR", errored, "#95a5a6"),
+        ("SKIP",  skipped, "#bdc3c7"),
+    ]
+    donut_circles = []
+    offset = 0.0
+    denom = total if total > 0 else 1
+    for _label, count, color in segments:
+        frac = count / denom
+        dash = frac * circumference
+        gap = circumference - dash
+        donut_circles.append(
+            f'<circle cx="{donut_cx}" cy="{donut_cy}" r="{donut_r}" fill="none" '
+            f'stroke="{color}" stroke-width="{donut_stroke}" '
+            f'stroke-dasharray="{dash:.2f} {gap:.2f}" '
+            f'stroke-dashoffset="-{offset:.2f}" />'
+        )
+        offset += dash
+
+    donut_svg = (
+        f'<svg width="180" height="180" viewBox="0 0 180 180" '
+        f'style="transform:rotate(-90deg)">'
+        + "".join(donut_circles)
+        + f'</svg>'
+        f'<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);'
+        f'text-align:center;">'
+        f'<div style="font-size:1.8em;font-weight:700;color:{rate_color}">{pass_rate}%</div>'
+        f'<div style="font-size:0.75em;color:#666">pass rate</div>'
+        f'</div>'
+    )
+
+    # ── Cluster cards ──────────────────────────────────────────────────────
+    cluster_html = ""
+    if clusters:
+        sev_colors = {"HIGH": "#e74c3c", "MEDIUM": "#f39c12", "LOW": "#3498db"}
+        cards = []
+        for _pid, cluster in clusters:
+            sev = cluster["pattern"]["severity"].upper()
+            label = html.escape(cluster["pattern"]["label"])
+            rec = html.escape(cluster["pattern"].get("recommendation", ""))
+            books = cluster["books"]
+            book_count = len(books)
+            border_color = sev_colors.get(sev, "#3498db")
+            sev_bg = border_color
+            shown_books = books[:5]
+            shown_html = "".join(
+                f'<span style="background:#f1f3f5;border-radius:4px;padding:2px 6px;'
+                f'margin:2px;display:inline-block;font-size:0.8em">'
+                f'{html.escape(b)}</span>'
+                for b in shown_books
+            )
+            more_html = ""
+            if book_count > 5:
+                more_html = (
+                    f'<span style="font-size:0.8em;color:#666">'
+                    f'+{book_count - 5} more</span>'
+                )
+            cards.append(
+                f'<div class="cluster-card" '
+                f'style="border-left:4px solid {border_color};background:white;'
+                f'border-radius:0 8px 8px 0;padding:16px;margin-bottom:12px;'
+                f'box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
+                f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+                f'<span style="background:{sev_bg};color:white;font-size:0.7em;'
+                f'font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase">'
+                f'{html.escape(sev)}</span>'
+                f'<strong>{label}</strong>'
+                f'<span style="margin-left:auto;color:#666;font-size:0.85em">'
+                f'{book_count} book{"s" if book_count != 1 else ""}</span>'
+                f'</div>'
+                f'<div style="margin-bottom:8px;">{shown_html}{more_html}</div>'
+                f'<div style="color:#555;font-size:0.88em">{rec}</div>'
+                f'</div>'
+            )
+        cluster_html = (
+            '<div class="card">'
+            '<h2 style="margin-bottom:16px">Failure Clusters</h2>'
+            + "".join(cards)
+            + '</div>'
+        )
+
+    # ── Per-book table rows ────────────────────────────────────────────────
+    table_rows = []
+    for i, diag in enumerate(diagnostics_list, 1):
+        fname = diag["filename"]
+        status = diag["overall_status"]
+        fmt = diag.get("format", "—")
+        ch = diag["structure"]["chapter_count"]
+        ch_display = str(ch) if diag["extraction"]["success"] else "—"
+        ch_warn = " &#9888;" if (fmt == "pdf" and ch == 0 and diag["extraction"]["success"]) else ""
+        h1 = diag["structure"]["h1_count"]
+        h2 = diag["structure"]["h2_count"]
+        h3 = diag["structure"]["h3_count"]
+        wc = diag["structure"].get("word_count", 0)
+        wc_str = f"{wc:,}" if wc else "—"
+        issues_count = len(diag["issues"])
+        ext_dur = diag["extraction"]["duration_seconds"]
+        kfx_dur = diag.get("kindle_conversion", {}).get("duration_seconds", 0)
+        vqa_dur = diag.get("visual_qa", {}).get("duration_seconds", 0)
+        total_dur = ext_dur + kfx_dur + vqa_dur
+        time_str = f"{total_dur:.0f}s" if total_dur > 0 else "—"
+
+        # ── detail content ────────────────────────────────────────────────
+        ext_path = html.escape(diag["extraction"].get("extraction_path", "—"))
+        warnings_list = diag["extraction"].get("warnings", [])
+        errors_list = diag["extraction"].get("errors", [])
+        w_html = "".join(
+            f'<li style="color:#856404">{html.escape(str(w))}</li>'
+            for w in warnings_list
+        ) if warnings_list else "<li style='color:#666'>None</li>"
+        e_html = "".join(
+            f'<li style="color:#721c24">{html.escape(str(e))}</li>'
+            for e in errors_list
+        ) if errors_list else "<li style='color:#666'>None</li>"
+
+        heading_labels = diag["structure"].get("heading_labels", [])
+        if len(heading_labels) > 10:
+            shown_labels = heading_labels[:10]
+            extra = len(heading_labels) - 10
+            labels_html = (
+                ", ".join(html.escape(str(l)) for l in shown_labels)
+                + f' <em>...and {extra} more</em>'
+            )
+        else:
+            labels_html = ", ".join(html.escape(str(l)) for l in heading_labels) or "—"
+
+        tq = diag["text_quality"]
+        kfx_size = diag.get("kindle_conversion", {}).get("kfx_size_bytes", 0)
+        kfx_str = f"{kfx_size / 1024:.0f} KB" if kfx_size else "—"
+        vqa_score = diag.get("visual_qa", {}).get("score")
+        vqa_str = str(vqa_score) if vqa_score is not None else "—"
+
+        issues_html = ""
+        if diag["issues"]:
+            issues_html = "<ul style='margin:4px 0 0 0;padding-left:20px'>" + "".join(
+                f'<li style="font-size:0.85em">{html.escape(str(iss))}</li>'
+                for iss in diag["issues"]
+            ) + "</ul>"
+
+        detail_html = f"""
+            <table style="width:100%;border-collapse:collapse;font-size:0.88em">
+              <tr>
+                <td style="padding:6px 12px;vertical-align:top;width:160px;color:#666;font-weight:600">Extraction path</td>
+                <td style="padding:6px 12px">{ext_path}</td>
+                <td style="padding:6px 12px;vertical-align:top;width:120px;color:#666;font-weight:600">KFX size</td>
+                <td style="padding:6px 12px">{kfx_str}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 12px;vertical-align:top;color:#666;font-weight:600">Warnings</td>
+                <td style="padding:6px 12px"><ul style="margin:0;padding-left:18px">{w_html}</ul></td>
+                <td style="padding:6px 12px;vertical-align:top;color:#666;font-weight:600">VQA score</td>
+                <td style="padding:6px 12px">{vqa_str}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 12px;vertical-align:top;color:#666;font-weight:600">Errors</td>
+                <td style="padding:6px 12px" colspan="3"><ul style="margin:0;padding-left:18px">{e_html}</ul></td>
+              </tr>
+              <tr>
+                <td style="padding:6px 12px;vertical-align:top;color:#666;font-weight:600">Headings (first 10)</td>
+                <td style="padding:6px 12px" colspan="3">{labels_html}</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 12px;color:#666;font-weight:600">Text quality</td>
+                <td style="padding:6px 12px" colspan="3">
+                  Ligatures: {tq.get('ligature_splits', 0)} &nbsp;
+                  Double spaces: {tq.get('double_spaces', 0)} &nbsp;
+                  Encoding errors: {tq.get('encoding_errors', 0)} &nbsp;
+                  Footnotes linked: {tq.get('footnotes_linked', 0)} /
+                  unlinked: {tq.get('footnotes_unlinked', 0)} &nbsp;
+                  Italic tags: {tq.get('italic_tags', 0)} &nbsp;
+                  Bold tags: {tq.get('bold_tags', 0)}
+                </td>
+              </tr>
+              {"<tr><td style='padding:6px 12px;color:#666;font-weight:600'>Issues</td><td colspan='3' style='padding:6px 12px'>" + issues_html + "</td></tr>" if diag["issues"] else ""}
+            </table>"""
+
+        row_id = f"book-{i}"
+        table_rows.append(
+            f'<tr class="book-row" id="{row_id}">'
+            f'<td>{i}</td>'
+            f'<td style="font-weight:500">{html.escape(fname)}</td>'
+            f'<td>{status_pill(status)}</td>'
+            f'<td>{html.escape(fmt)}</td>'
+            f'<td>{html.escape(ch_display)}{ch_warn}</td>'
+            f'<td>{h1}/{h2}/{h3}</td>'
+            f'<td>{wc_str}</td>'
+            f'<td>{issues_count}</td>'
+            f'<td>{html.escape(time_str)}</td>'
+            f'</tr>'
+            f'<tr class="detail-row">'
+            f'<td colspan="9">{detail_html}</td>'
+            f'</tr>'
+        )
+
+    table_body = "\n".join(table_rows)
+
+    # ── Trend chart (2+ runs) ──────────────────────────────────────────────
+    trend_html = ""
+    if len(history) >= 2:
+        chart_w = 1100
+        chart_h = 300
+        pad_l = 50
+        pad_r = 30
+        pad_t = 20
+        pad_b = 50
+        inner_w = chart_w - pad_l - pad_r
+        inner_h = chart_h - pad_t - pad_b
+        n = len(history)
+
+        # Build polyline points
+        def _x(idx):
+            return pad_l + (idx / (n - 1)) * inner_w if n > 1 else pad_l + inner_w / 2
+
+        def _y(rate):
+            return pad_t + (1.0 - rate / 100.0) * inner_h
+
+        pts = " ".join(
+            f"{_x(i):.1f},{_y(h['pass_rate']):.1f}"
+            for i, h in enumerate(history)
+        )
+
+        # Grid lines
+        grid_lines = []
+        for rate in (25, 50, 75, 100):
+            gy = _y(rate)
+            grid_lines.append(
+                f'<line x1="{pad_l}" y1="{gy:.1f}" x2="{chart_w - pad_r}" y2="{gy:.1f}" '
+                f'stroke="#e0e0e0" stroke-dasharray="4,4"/>'
+                f'<text x="{pad_l - 6}" y="{gy + 4:.1f}" text-anchor="end" '
+                f'font-size="11" fill="#999">{rate}%</text>'
+            )
+
+        # X-axis labels
+        x_labels = []
+        for i, h in enumerate(history):
+            lx = _x(i)
+            label = (h["date"] or h["run_id"])[-10:]
+            x_labels.append(
+                f'<text x="{lx:.1f}" y="{chart_h - 8}" text-anchor="middle" '
+                f'font-size="10" fill="#888">{html.escape(label)}</text>'
+            )
+
+        # Dots — current run highlighted
+        dots = []
+        for i, h in enumerate(history):
+            is_current = h["run_id"] == run_id
+            r_dot = 7 if is_current else 4
+            color_dot = "#2c3e50" if is_current else "#3498db"
+            rate_val = h["pass_rate"]
+            dots.append(
+                f'<circle cx="{_x(i):.1f}" cy="{_y(rate_val):.1f}" r="{r_dot}" '
+                f'fill="{color_dot}">'
+                f'<title>{html.escape(h["run_id"])}: {rate_val}%</title>'
+                f'</circle>'
+            )
+
+        trend_svg = (
+            f'<svg width="{chart_w}" height="{chart_h}" '
+            f'style="max-width:100%;overflow:visible">'
+            + "".join(grid_lines)
+            + f'<polyline points="{pts}" fill="none" stroke="#3498db" stroke-width="2.5"/>'
+            + "".join(x_labels)
+            + "".join(dots)
+            + f'</svg>'
+        )
+
+        # Regression alert — books PASS last run → now FAIL or WARN
+        regression_books = []
+        if len(history) >= 2:
+            prev_statuses = history[-2]["book_statuses"] if len(history) >= 2 else {}
+            # current run statuses
+            cur_statuses = {d["filename"]: d["overall_status"] for d in diagnostics_list}
+            for bname, cur_st in cur_statuses.items():
+                prev_st = prev_statuses.get(bname)
+                if prev_st == "PASS" and cur_st in ("FAIL", "WARN", "ERROR"):
+                    regression_books.append((bname, prev_st, cur_st))
+
+        regression_html = ""
+        if regression_books:
+            reg_items = "".join(
+                f'<li>{html.escape(b)} — was {ps}, now {cs}</li>'
+                for b, ps, cs in regression_books
+            )
+            regression_html = (
+                f'<div style="border:2px solid #f39c12;background:#fffbf0;'
+                f'border-radius:6px;padding:12px;margin-top:16px">'
+                f'<strong style="color:#856404">&#9888; Regressions since last run</strong>'
+                f'<ul style="margin:8px 0 0 0;padding-left:20px">{reg_items}</ul>'
+                f'</div>'
+            )
+
+        trend_html = (
+            '<div class="card trend-section">'
+            '<h2 style="margin-bottom:16px">Pass Rate Trend</h2>'
+            f'<div style="overflow-x:auto">{trend_svg}</div>'
+            f'{regression_html}'
+            '</div>'
+        )
+
+    # ── Heatmap (3+ runs) ─────────────────────────────────────────────────
+    heatmap_html = ""
+    if len(history) >= 3:
+        max_cols = 10
+        hist_slice = history[-max_cols:]
+        all_books = sorted(set(
+            fname
+            for h in hist_slice
+            for fname in h["book_statuses"]
+        ))
+
+        col_headers = "".join(
+            f'<th style="padding:4px;font-size:0.75em;color:#666;white-space:nowrap;'
+            f'text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis">'
+            f'{html.escape((h["date"] or h["run_id"])[-8:])}</th>'
+            for h in hist_slice
+        )
+        heatmap_rows = []
+        for bname in all_books:
+            cells = "".join(
+                f'<td style="padding:2px;text-align:center">'
+                f'<span class="heatmap-cell" '
+                f'style="background:{STATUS_COLORS.get(h["book_statuses"].get(bname,""), "#eee")};'
+                f'display:inline-block;width:24px;height:24px;border-radius:3px" '
+                f'title="{html.escape(h["run_id"])}: '
+                f'{html.escape(h["book_statuses"].get(bname, "—"))}"></span>'
+                f'</td>'
+                for h in hist_slice
+            )
+            heatmap_rows.append(
+                f'<tr>'
+                f'<td style="padding:4px 8px;font-size:0.8em;white-space:nowrap;'
+                f'max-width:300px;overflow:hidden;text-overflow:ellipsis" '
+                f'title="{html.escape(bname)}">'
+                f'{html.escape(bname[:50] + ("..." if len(bname) > 50 else ""))}</td>'
+                f'{cells}'
+                f'</tr>'
+            )
+
+        heatmap_html = (
+            '<div class="card">'
+            '<h2 style="margin-bottom:16px">Per-Book Status Heatmap</h2>'
+            '<div class="table-wrap">'
+            '<table style="border-collapse:collapse">'
+            f'<thead><tr><th style="padding:4px 8px">Book</th>{col_headers}</tr></thead>'
+            f'<tbody>{"".join(heatmap_rows)}</tbody>'
+            '</table>'
+            '</div>'
+            '</div>'
+        )
+
+    # ── Observations ──────────────────────────────────────────────────────
+    obs_html = ""
+    if observations:
+        obs_items = "".join(
+            f'<li style="margin-bottom:4px">{html.escape(str(obs))}</li>'
+            for obs in observations
+        )
+        obs_html = (
+            '<div class="card">'
+            '<h2 style="margin-bottom:12px">Observations</h2>'
+            f'<ul style="padding-left:20px">{obs_items}</ul>'
+            '</div>'
+        )
+
+    # ── CSS ───────────────────────────────────────────────────────────────
+    css = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8f9fa; color: #333; line-height: 1.6; }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+.status-pill { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; color: white; }
+.status-PASS { background: #27ae60; }
+.status-WARN { background: #f39c12; }
+.status-FAIL { background: #e74c3c; }
+.status-ERROR { background: #95a5a6; }
+.status-SKIP { background: #bdc3c7; }
+table { width: 100%; border-collapse: collapse; }
+th { cursor: pointer; user-select: none; text-align: left; padding: 10px 8px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; }
+th:hover { background: #e9ecef; }
+td { padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+tr.book-row { cursor: pointer; }
+tr.book-row:hover { background: #f1f3f5; }
+tr.detail-row { display: none; }
+tr.detail-row td { background: #f8f9fa; padding: 16px; }
+.table-wrap { overflow-x: auto; }
+.heatmap-cell { width: 24px; height: 24px; display: inline-block; border-radius: 3px; }
+@media print { .detail-row, .trend-section { display: none !important; } .card { box-shadow: none; border: 1px solid #ddd; } }
+"""
+
+    # ── JavaScript ────────────────────────────────────────────────────────
+    js = r"""
+document.querySelectorAll('tr.book-row').forEach(row => {
+    row.addEventListener('click', () => {
+        const detail = row.nextElementSibling;
+        if (detail && detail.classList.contains('detail-row')) {
+            detail.style.display = detail.style.display === 'table-row' ? 'none' : 'table-row';
+        }
+    });
+});
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const table = th.closest('table');
+        const tbody = table.querySelector('tbody');
+        const idx = Array.from(th.parentNode.children).indexOf(th);
+        const type = th.dataset.sort;
+        const rows = Array.from(tbody.querySelectorAll('tr.book-row'));
+        const asc = th.dataset.dir !== 'asc';
+        th.dataset.dir = asc ? 'asc' : 'desc';
+        th.parentNode.querySelectorAll('th').forEach(h => { if (h !== th) delete h.dataset.dir; });
+        rows.sort((a, b) => {
+            let va = a.children[idx].textContent.trim();
+            let vb = b.children[idx].textContent.trim();
+            if (type === 'num') {
+                va = parseFloat(va) || 0;
+                vb = parseFloat(vb) || 0;
+                return asc ? va - vb : vb - va;
+            }
+            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+        });
+        rows.forEach(row => {
+            const detail = row.nextElementSibling;
+            tbody.appendChild(row);
+            if (detail && detail.classList.contains('detail-row')) {
+                tbody.appendChild(detail);
+            }
+        });
+        th.parentNode.querySelectorAll('th').forEach(h => {
+            h.textContent = h.textContent.replace(/ [▲▼]$/, '');
+        });
+        th.textContent += asc ? ' ▲' : ' ▼';
+    });
+});
+"""
+
+    # ── Assemble full HTML ────────────────────────────────────────────────
+    mode_badge_color = "#3498db" if flags.get("quick") else "#8e44ad"
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batch QA Report — {html.escape(run_id)}</title>
+<style>{css}</style>
+</head>
+<body>
+<div class="container">
+
+<!-- Header -->
+<div class="card">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px">
+    <div>
+      <h1 style="font-size:1.5em;margin-bottom:6px">EbookAutomation — Batch QA Report</h1>
+      <div style="color:#666;font-size:0.9em">{html.escape(now_str)} &nbsp;|&nbsp; Run: <code>{html.escape(run_id)}</code></div>
+      <div style="margin-top:8px">
+        <span style="background:{mode_badge_color};color:white;font-size:0.78em;font-weight:600;
+          padding:3px 10px;border-radius:10px">{html.escape(mode_label)}</span>
+      </div>
+    </div>
+    <div style="position:relative;width:180px;height:180px;flex-shrink:0">
+      {donut_svg}
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:20px;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700">{total}</div>
+      <div style="font-size:0.78em;color:#666">Total</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700;color:#27ae60">{passed}</div>
+      <div style="font-size:0.78em;color:#666">Passed</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700;color:#f39c12">{warned}</div>
+      <div style="font-size:0.78em;color:#666">Warned</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700;color:#e74c3c">{failed}</div>
+      <div style="font-size:0.78em;color:#666">Failed</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700;color:#95a5a6">{errored}</div>
+      <div style="font-size:0.78em;color:#666">Errored</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700">{dur_min}m {dur_sec}s</div>
+      <div style="font-size:0.78em;color:#666">Duration</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:1.6em;font-weight:700">${api_cost:.2f}</div>
+      <div style="font-size:0.78em;color:#666">API Cost</div>
+    </div>
+  </div>
+</div>
+
+{cluster_html}
+
+{obs_html}
+
+<!-- Per-book results -->
+<div class="card">
+  <h2 style="margin-bottom:16px">Per-Book Results <span style="font-size:0.7em;color:#888;font-weight:400">(click row to expand)</span></h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-sort="num">#</th>
+          <th data-sort="alpha">Filename</th>
+          <th data-sort="alpha">Status</th>
+          <th data-sort="alpha">Format</th>
+          <th data-sort="num">Chapters</th>
+          <th data-sort="alpha">H1/H2/H3</th>
+          <th data-sort="num">Words</th>
+          <th data-sort="num">Issues</th>
+          <th data-sort="num">Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {table_body}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{trend_html}
+
+{heatmap_html}
+
+</div>
+<script>{js}</script>
+</body>
+</html>"""
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    html_path = REPORTS_DIR / f"{run_id}.html"
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    return str(html_path)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Database recording
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1895,7 +2528,7 @@ def list_past_runs(db_path=None):
 
 def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
               format_filter=None, parallel=1, resume_run_id=None,
-              db_path=None, no_db=False, max_pages=0):
+              db_path=None, no_db=False, max_pages=0, open_html=False):
     """
     Main batch QA entry point.
     Scans folder, processes each book, analyzes patterns, generates reports.
@@ -2066,6 +2699,10 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
         run_id, diagnostics_list, clusters, observations,
         batch_duration, flags,
     )
+    html_path = generate_html_report(
+        run_id, diagnostics_list, clusters, observations,
+        batch_duration, flags,
+    )
 
     # ── Record to database ──────────────────────────────────────
     if not no_db:
@@ -2099,6 +2736,10 @@ def run_batch(folder_path, quick=True, include_vqa=False, limit=None,
     print(f"  Reports:")
     print(f"    JSON: {json_path}")
     print(f"    MD:   {md_path}")
+    print(f"    HTML: {html_path}")
+    if open_html:
+        import webbrowser
+        webbrowser.open(f'file:///{str(html_path).replace(os.sep, "/")}')
     print(f"{'=' * 60}\n")
 
     return run_id
@@ -2165,6 +2806,10 @@ Examples:
         help="Skip PDFs with more than this many pages (0 = no limit). "
              "Useful for excluding massive scans from routine batch runs."
     )
+    run_parser.add_argument(
+        '--open', action='store_true',
+        help='Open HTML report in browser after generation'
+    )
 
     # ── compare ─────────────────────────────────────────────────
     cmp_parser = subparsers.add_parser(
@@ -2183,6 +2828,10 @@ Examples:
         "report", help="Regenerate report from saved JSON"
     )
     rpt_parser.add_argument("run_id", help="Run ID to regenerate report for")
+    rpt_parser.add_argument(
+        '--open', action='store_true',
+        help='Open HTML report in browser after generation'
+    )
 
     args = parser.parse_args()
 
@@ -2223,6 +2872,7 @@ Examples:
             db_path=args.db_path,
             no_db=args.no_db,
             max_pages=args.max_pages,
+            open_html=getattr(args, 'open', False),
         )
     elif args.command == "compare":
         compare_runs(args.run_id1, args.run_id2, args.db_path)
@@ -2245,6 +2895,16 @@ Examples:
             report["summary"].get("flags", {}),
         )
         print(f"Report regenerated: {md_path}")
+        html_path = generate_html_report(
+            args.run_id, diagnostics_list, clusters, observations,
+            report["summary"].get("total_duration_seconds", 0),
+            report["summary"].get("flags", {}),
+        )
+        print(f"HTML report: {html_path}")
+        if getattr(args, 'open', False):
+            import webbrowser
+            webbrowser.open(f'file:///{str(html_path).replace(os.sep, "/")}')
+
 
 
 if __name__ == "__main__":
