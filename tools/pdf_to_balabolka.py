@@ -24,6 +24,7 @@ import sys
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import threading
+import time
 import json
 import re
 import statistics
@@ -850,12 +851,28 @@ def extract_bookmarks(pdf_path, log):
                         else:
                             level = 2
 
+                        # Capture destination coordinates if available.
+                        # pypdf's Destination.top/left come from the PDF /Dest array.
+                        # .top is the y-coordinate in PDF space (y=0 at page BOTTOM).
+                        # May be None for /Fit or /FitH destinations without exact coords.
+                        dest_top = None
+                        dest_left = None
+                        try:
+                            if hasattr(item, 'top') and item.top is not None:
+                                dest_top = float(item.top)
+                            if hasattr(item, 'left') and item.left is not None:
+                                dest_left = float(item.left)
+                        except (TypeError, ValueError):
+                            pass  # Some Destination objects have non-numeric top/left
+
                         bookmarks.append({
                             'title': title,
                             'page': page,
                             'level': level,
                             'front_matter': is_front_matter,
-                            'back_matter': is_back_matter
+                            'back_matter': is_back_matter,
+                            'dest_top': dest_top,
+                            'dest_left': dest_left,
                         })
                     except Exception:
                         continue
@@ -928,13 +945,95 @@ def extract_bookmarks(pdf_path, log):
         except ImportError:
             pass  # pyspellchecker not installed — skip
 
-        log(f"  Found {len(bookmarks)} content bookmarks in PDF")
+        coords_available = sum(1 for bm in bookmarks if bm.get('dest_top') is not None)
+        log(f"  Found {len(bookmarks)} content bookmarks ({coords_available} with destination coordinates)")
         for bm in bookmarks:
             log(f"    [{bm['level']}] p.{bm['page']}: {bm['title'][:60]}")
         return bookmarks
     except Exception as e:
         log(f"  Bookmark extraction failed: {e}")
         return []
+
+
+def resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log):
+    """Resolve unmatched bookmark destinations to text via pdfplumber coordinates.
+
+    For each bookmark that has dest_top coordinates, opens the PDF page with
+    pdfplumber and extracts the text at the bookmark's destination position.
+    Stores the resolved text in bookmark['dest_text'] for use as a fallback
+    when _match_bookmark() text matching fails.
+
+    COORDINATE SYSTEM NOTE:
+    - pypdf dest_top: PDF space, y=0 at page BOTTOM, increases upward
+    - pdfplumber bbox: top-down, y=0 at page TOP, increases downward
+    - Conversion: pdfplumber_y = page.height - pypdf_dest_top
+    """
+    try:
+        import pdfplumber
+    except ImportError:
+        log("  [INFO] pdfplumber not installed — coordinate-based heading resolution unavailable")
+        log("  [INFO] Install with: python -m pip install pdfplumber")
+        return
+
+    # Only process bookmarks that have coordinates
+    coords_bookmarks = [bm for bm in bookmarks if bm.get('dest_top') is not None]
+    if not coords_bookmarks:
+        log("  No bookmarks with destination coordinates — skipping coordinate resolution")
+        return
+
+    log(f"  Resolving {len(coords_bookmarks)} bookmark destinations via pdfplumber coordinates...")
+
+    resolved_count = 0
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            total_pages = len(pdf.pages)
+            for bm in coords_bookmarks:
+                page_num = bm['page']  # 1-indexed
+                if page_num < 1 or page_num > total_pages:
+                    continue
+
+                page = pdf.pages[page_num - 1]  # 0-indexed
+
+                # Convert from PDF coordinate space to pdfplumber coordinate space
+                # PDF: y=0 at bottom, increases upward
+                # pdfplumber: y=0 at top, increases downward
+                pdf_top = bm['dest_top']
+                plumber_y = page.height - pdf_top
+
+                # Search a horizontal strip at the destination y-position.
+                # Use a tolerance band to catch text near the destination.
+                tolerance = 20  # points (~7mm, generous to catch heading text)
+
+                # Clamp to page boundaries
+                y_min = max(0, plumber_y - tolerance)
+                y_max = min(page.height, plumber_y + tolerance)
+
+                # Full page width
+                x_min = 0
+                x_max = page.width
+
+                try:
+                    cropped = page.within_bbox((x_min, y_min, x_max, y_max))
+                    text = cropped.extract_text()
+                except Exception:
+                    text = None
+
+                if text and text.strip():
+                    clean = text.strip()
+                    # Only keep if it looks like a heading (short, not a full paragraph)
+                    if len(clean) <= 150:
+                        bm['dest_text'] = clean
+                        resolved_count += 1
+
+    except Exception as e:
+        log(f"  [WARN] pdfplumber coordinate resolution failed: {e}")
+        return
+
+    log(f"  Coordinate resolution: {resolved_count}/{len(coords_bookmarks)} bookmarks resolved to text")
+    if resolved_count > 0:
+        for bm in bookmarks:
+            if 'dest_text' in bm:
+                log(f"    p.{bm['page']}: '{bm.get('dest_text', '')[:60]}' (bookmark: '{bm['title'][:40]}')")
 
 
 def extract_pdf_links(pdf_path, log):
@@ -5179,6 +5278,41 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
     return all_paras, body_size
 
 
+def _extract_page_with_timeout(page_layout, timeout_seconds=30):
+    """Run pdfminer page layout iteration with a time budget.
+
+    Returns the page_layout elements if completed within budget, or None if timed out.
+    Uses a thread to run the layout iteration and joins with timeout.
+    """
+    result = {'elements': None, 'error': None}
+
+    def _iterate():
+        try:
+            # Force pdfminer to fully resolve the page layout by iterating elements.
+            # extract_pages() is lazy — the actual PDF parsing happens when you
+            # iterate the page_layout's children, not when the generator yields.
+            elements = []
+            for element in page_layout:
+                elements.append(element)
+            result['elements'] = elements
+        except Exception as e:
+            result['error'] = e
+
+    thread = threading.Thread(target=_iterate, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_seconds)
+
+    if thread.is_alive():
+        # Thread is still running — page timed out
+        # Daemon thread will be cleaned up when process exits
+        return None
+
+    if result['error']:
+        raise result['error']
+
+    return result['elements']
+
+
 def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     """
     Extract PDF content using pdfminer with font metadata preserved.
@@ -5226,9 +5360,40 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     total_pages = 0
     page_heights = {}  # {page_number: height} for footnote zone detection
 
+    extraction_start = time.time()
+    OVERALL_BUDGET_SECONDS = 480  # leave 120s headroom for post-processing
+    PER_PAGE_BUDGET_SECONDS = 30
+    pages_skipped = 0
+    budget_exhausted = False
+
     for page_num, page_layout in enumerate(extract_pages(pdf_path, laparams=laparams)):
         total_pages += 1
         pg = page_num + 1  # 1-indexed
+
+        # ── Overall budget check ──────────────────────────────────────
+        elapsed = time.time() - extraction_start
+        if elapsed > OVERALL_BUDGET_SECONDS:
+            log(f"  [WARN] Overall extraction budget exhausted ({elapsed:.0f}s > {OVERALL_BUDGET_SECONDS}s) "
+                f"after {pg - 1} pages — stopping early")
+            budget_exhausted = True
+            break
+
+        # ── Per-page timeout ──────────────────────────────────────────
+        page_start = time.time()
+        elements = _extract_page_with_timeout(page_layout, PER_PAGE_BUDGET_SECONDS)
+        page_elapsed = time.time() - page_start
+
+        if elements is None:
+            pages_skipped += 1
+            log(f"  [WARN] Page {pg} timed out after {page_elapsed:.1f}s — skipping")
+            # Still insert page marker so page numbering stays correct
+            all_paras.append({
+                'text': '', 'font_size': 0, 'is_bold': False, 'is_italic': False,
+                'is_centered': False, 'is_all_caps': False, 'page_number': pg,
+                'line_count': 0, 'char_count': 0, 'is_page_marker': True,
+            })
+            continue
+
         page_width = page_layout.width
         page_height = page_layout.height
         page_heights[pg] = page_height
@@ -5242,7 +5407,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
 
         # Collect all text lines on this page with font metadata
         page_lines = []
-        for element in page_layout:
+        for element in elements:  # iterate pre-resolved elements, NOT page_layout
             if not isinstance(element, LTTextBox):
                 continue
             for line in element:
@@ -5477,6 +5642,27 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
 
         if pg % 50 == 0:
             log(f"  Extracted {pg}/{total_pages}+ pages...")
+
+    if pages_skipped > 0:
+        log(f"  [WARN] Extraction completed with {pages_skipped} page(s) skipped due to timeout")
+    if budget_exhausted:
+        log(f"  [WARN] Extracted {total_pages} of unknown total pages before budget exhaustion")
+
+    # ── PyMuPDF fallback on budget exhaustion ─────────────────────────
+    content_paras = [p for p in all_paras if not p.get('is_page_marker') and p.get('text', '').strip()]
+    if budget_exhausted and len(content_paras) < 50:
+        log(f"  [WARN] Only {len(content_paras)} content paragraphs from pdfminer before timeout")
+        log(f"  Attempting PyMuPDF HTML fallback...")
+        try:
+            pymupdf_paras, pymupdf_body_size = _extract_html_with_pymupdf_columns(pdf_path, log)
+            pymupdf_content = [p for p in pymupdf_paras if not p.get('is_page_marker') and p.get('text', '').strip()]
+            if len(pymupdf_content) > len(content_paras):
+                log(f"  PyMuPDF fallback recovered {len(pymupdf_content)} paragraphs (vs {len(content_paras)} from pdfminer)")
+                return pymupdf_paras, pymupdf_body_size
+            else:
+                log(f"  PyMuPDF fallback got {len(pymupdf_content)} paragraphs — keeping pdfminer result")
+        except Exception as e:
+            log(f"  [WARN] PyMuPDF fallback failed: {e} — keeping partial pdfminer result")
 
     # Log hyperlink matching summary
     if pdf_links:
@@ -5883,6 +6069,13 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
             if 'page' in bm:
                 bm_page_level[bm['page']] = (bm['level'], bm['title'])
                 bm_page_title[bm['page']] = bm['title']
+
+    # Build page → coordinate-resolved text mapping for fallback
+    bm_coord_text = {}  # page_number → (dest_text, level)
+    if bookmarks:
+        for bm in bookmarks:
+            if 'dest_text' in bm and bm.get('page'):
+                bm_coord_text[bm['page']] = (bm['dest_text'], bm['level'])
 
     # Map word-form chapter numbers to digits for bookmark matching
     _word_to_num = {
@@ -6461,6 +6654,23 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
         if bm_level is None and current_page in bm_page_best_para:
             if bm_page_best_para[current_page] == i:
                 bm_level = bm_page_level[current_page][0]
+
+        # Coordinate-text bookmark fallback: if both text matching and page-based
+        # font fallback failed, check if pdfplumber resolved text at the bookmark's
+        # destination coordinates matches this paragraph's text.
+        if bm_level is None and current_page in bm_coord_text:
+            coord_text, coord_level = bm_coord_text[current_page]
+            # Normalize both texts for comparison
+            para_norm = re.sub(r'\s+', ' ', text.strip().lower())
+            coord_norm = re.sub(r'\s+', ' ', coord_text.strip().lower())
+            # Check if paragraph text starts with or matches the coordinate text
+            # (coordinate text may be truncated or include adjacent content)
+            if (para_norm == coord_norm
+                    or para_norm.startswith(coord_norm)
+                    or coord_norm.startswith(para_norm)):
+                bm_level = coord_level
+                log(f"  [COORD] Heading promoted via coordinate resolution p.{current_page}: "
+                    f"'{text[:50]}'")
 
         # In back matter, demote re-used chapter headings (e.g. "CHAPTER ONE: ..."
         # inside the Notes section) to h3 to avoid duplicate TOC entries.
@@ -10229,6 +10439,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
     if is_pdf:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(input_path, log)
+        resolve_bookmarks_by_coordinates(input_path, bookmarks, log)
 
     log(f"\n-- STEP 1: Extracting text from {ext_upper} --")
 
@@ -11276,6 +11487,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     if use_vision:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
+        resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log)
 
         log("\n-- STEP 1 (VISION): Claude Vision transcription -------")
         log("  Tier 3 extraction — premium AI transcription")
@@ -11314,6 +11526,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     if use_gemini and not use_vision:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
+        resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log)
 
         log("\n-- STEP 1 (GEMINI): Gemini Flash transcription ---------")
         log("  Tier 2.5 extraction — Gemini Flash OCR")
@@ -11365,6 +11578,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         # ── Standard Tier 1/2 extraction ──────────────────────────
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
+        resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log)
 
         _t_extract = _time_mod.time()
         log("\n-- STEP 1: Extracting text with font metadata --")
@@ -11860,6 +12074,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
     if is_pdf:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(input_path, log)
+        resolve_bookmarks_by_coordinates(input_path, bookmarks, log)
 
     log(f"\n-- STEP 1: Extracting text from {ext_upper} --")
     raw = extract_text_auto(input_path, log, calibre_path=calibre_path,
