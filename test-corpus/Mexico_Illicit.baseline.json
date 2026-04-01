@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-24T22:21:44.744734+00:00",
+  "captured_at": "2026-04-01T01:57:39.648490+00:00",
   "source_file": "Mexico_Illicit.pdf",
   "source_format": "pdf",
   "extraction_path": "pdfminer",
@@ -8,7 +8,7 @@
   "baseline": {
     "h1_count": 4,
     "h2_count": 8,
-    "h3_count": 50,
+    "h3_count": 35,
     "h1_headings": [
       "Abbreviations",
       "Appendix: Comparison of Territorial versus Transactional Drug-Trafficking Networks",
@@ -25,23 +25,23 @@
       "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios",
       "Conclusion"
     ],
-    "linked_footnotes": 377,
-    "unlinked_footnotes": 337,
+    "linked_footnotes": 256,
+    "unlinked_footnotes": 458,
     "blockquotes": 1,
-    "em_tags": 986,
+    "em_tags": 969,
     "attributions": 0,
     "ligature_splits_remaining": 22,
     "double_spaces": 0,
     "standalone_page_numbers": 0,
     "has_front_matter_h1": false,
     "chapter_openings": {
-      "Contents": "1.1 A Three-Part Illicit-Network Typology 20 1.2 Hierarchy a",
+      "Contents": "vii",
       "Acknowledgments": "along the way a young scholar writing his dissertation and c",
       "Introduction": "i will be discussing profit-seeking illicit networks (PSINs)",
-      "1 The State Reaction and Illicit-Network Resilience": "illicit networks include insurgent networks such as Al Qaeda",
-      "2 The Arellano Félix Organization’s Resilience": "the arellano félix organization (AFO) was considered one of ",
-      "3 The State Reaction": "the successful destruction of the territorial drug network l",
-      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios": "this chapter will apply the state-reaction theoretical frame",
+      "1 The State Reaction and Illicit-Network Resilience": "1 The State Reaction and Illicit-Network Resilience",
+      "2 The Arellano Félix Organization’s Resilience": "2 The Arellano Félix Organization’s Resilience",
+      "3 The State Reaction": "3 The State Reaction",
+      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios": "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templari",
       "Conclusion": "the state-reaction argument provides us with important insig"
     }
   }

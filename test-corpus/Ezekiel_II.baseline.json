@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-24T22:21:50.788444+00:00",
+  "captured_at": "2026-04-01T02:44:18.306441+00:00",
   "source_file": "Ezekiel_II.pdf",
   "source_format": "pdf",
   "extraction_path": "pymupdf",
@@ -8,7 +8,7 @@
   "baseline": {
     "h1_count": 2,
     "h2_count": 1,
-    "h3_count": 38,
+    "h3_count": 34,
     "h1_headings": [
       "Front Matter",
       "• • .--."
@@ -18,16 +18,15 @@
     ],
     "linked_footnotes": 0,
     "unlinked_footnotes": 22,
-    "blockquotes": 3,
-    "em_tags": 5415,
+    "blockquotes": 2,
+    "em_tags": 5412,
     "attributions": 0,
     "ligature_splits_remaining": 1,
-    "double_spaces": 114,
+    "double_spaces": 115,
     "standalone_page_numbers": 0,
     "has_front_matter_h1": true,
     "chapter_openings": {
       "Foreword": "The name Hermeneia, Greek tPIJ.7IUfla, has been chosen as th"
-    },
-    "kfx_size_kb": 3332
+    }
   }
 }

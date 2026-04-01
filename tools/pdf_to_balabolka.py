@@ -1339,8 +1339,20 @@ def _resolve_internal_links(html, heading_registry, log):
 
     html = re.sub(r'href="#__goto_page_(\d+)"', _resolve, html)
 
-    # Remove <a> tags with empty href (unresolvable links) — keep the text
+    # Remove <a> tags with empty href (unresolvable links) — keep the text.
+    # Two forms: actual HTML tags and HTML-escaped entity tags (from PyMuPDF
+    # extraction where link annotations are emitted inside paragraph text).
     html = re.sub(r'<a href="">(.*?)</a>', r'\1', html, flags=re.DOTALL)
+    _escaped_stripped = 0
+    def _strip_escaped_link(m):
+        nonlocal _escaped_stripped
+        _escaped_stripped += 1
+        return m.group(1)
+    html = re.sub(r'&lt;a href=""&gt;(.*?)&lt;/a&gt;', _strip_escaped_link, html, flags=re.DOTALL)
+    if _escaped_stripped:
+        # Collapse double spaces left by stripped tag boundaries
+        html = re.sub(r'  +', ' ', html)
+        log(f"  Stripped {_escaped_stripped} escaped empty-href links")
 
     # Strip <a> tags from inside heading elements — Calibre's TOC XPath
     # picks up <a> text content and shows raw HTML in the TOC sidebar.
