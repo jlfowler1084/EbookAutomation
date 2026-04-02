@@ -11474,7 +11474,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         use_gemini=False, gemini_remediate=False,
                         gemini_cost_limit=5.0, gemini_model=None,
                         compare_extractors_enabled=False,
-                        extract_images=True):
+                        extract_images=True,
+                        _pending_corrections=None, export_corrections=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -11921,6 +11922,11 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         log(f"  Timing: extraction={_timing.get('extraction_s', 0)}s, "
             f"formatting={_timing.get('formatting_s', 0)}s")
 
+    # ── Apply per-book corrections (opt-in only) — EB-73 ───────
+    if _pending_corrections:
+        log(f"\n-- CORRECTIONS: Applying {len(_pending_corrections)} rules --------")
+        html = apply_corrections(html, _pending_corrections, log)
+
     # Write HTML output
     html_path = re.sub(r'\.(txt|html?)$', '.html', output_path)
     if not html_path.endswith('.html'):
@@ -11933,6 +11939,37 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     log(f"\nDone! Saved to: {html_path}")
     log(f"  Words: {word_count:,}")
     log(f"  HTML size: {len(html):,} chars")
+
+    # ── Export corrections sidecar if requested — EB-73 ──────
+    if export_corrections:
+        try:
+            _script_dir = Path(__file__).resolve().parent
+            if str(_script_dir) not in sys.path:
+                sys.path.insert(0, str(_script_dir))
+            from pattern_db import get_book_override as _get_bo
+            _filename = Path(pdf_path).name
+            _override = _get_bo(filename=_filename)
+            if _override and _override.get("corrections"):
+                _sidecar = Path(pdf_path).with_suffix('.corrections.json')
+                with open(_sidecar, 'w', encoding='utf-8') as f:
+                    json.dump(_override["corrections"], f, indent=2, ensure_ascii=False)
+                log(f"  Exported corrections to: {_sidecar}")
+            else:
+                _sidecar = Path(pdf_path).with_suffix('.corrections.json')
+                _template = [
+                    {
+                        "action": "strip_heading",
+                        "pattern": "EXAMPLE: Replace this with the heading text to remove",
+                        "match": "exact",
+                        "note": "Remove running headers that appear as headings"
+                    }
+                ]
+                with open(_sidecar, 'w', encoding='utf-8') as f:
+                    json.dump(_template, f, indent=2, ensure_ascii=False)
+                log(f"  Exported correction template to: {_sidecar}")
+                log(f"  Edit the file, then re-run with --apply-corrections")
+        except ImportError:
+            log("  [WARN] pattern_db not available — cannot export corrections")
 
     # ── Gemini page remediation (Mode B) — post-extraction ───────
     if gemini_remediate and not use_gemini and not use_vision:
@@ -12016,6 +12053,10 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         if not skip_footnotes:
                             html = _link_endnotes(html, log)
                         html = _resolve_internal_links(html, heading_registry, log)
+
+                        # Apply per-book corrections to remediated HTML (EB-73)
+                        if _pending_corrections:
+                            html = apply_corrections(html, _pending_corrections, log)
 
                         with open(html_path, 'w', encoding='utf-8') as f:
                             f.write(html)
@@ -12604,6 +12645,235 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
 
 
 # ───────────────────────────────────────────────────────────
+#  PER-BOOK CORRECTIONS (EB-73)
+# ───────────────────────────────────────────────────────────
+
+def apply_corrections(html, corrections, log):
+    """Apply per-book corrections to generated HTML.
+
+    Corrections is a list of correction rule dicts. Each rule has:
+    - action: str — one of 'strip_heading', 'strip_text', 'demote_heading',
+                    'force_heading', 'replace_text'
+    - pattern: str — text or regex pattern to match
+    - match: str — 'exact' (default) or 'regex'
+    - Plus action-specific fields (see below)
+
+    Returns the corrected HTML string.
+    """
+    if not corrections:
+        return html
+
+    import re as _re
+
+    total_applied = 0
+
+    for rule in corrections:
+        action = rule.get("action", "")
+        pattern = rule.get("pattern", "")
+        match_type = rule.get("match", "exact")
+        note = rule.get("note", "")
+
+        if not action or not pattern:
+            log(f"  [CORRECTION] Skipping invalid rule: {rule}")
+            continue
+
+        if action == "strip_heading":
+            # Remove heading tags containing the pattern
+            if match_type == "regex":
+                pat = _re.compile(
+                    r'<(h[1-6])([^>]*)>' + pattern + r'</\1>',
+                    _re.IGNORECASE
+                )
+                html, n = pat.subn('', html)
+            else:
+                escaped = _re.escape(pattern)
+                escaped = _re.sub(r'\\ ', r'\\s+', escaped)
+                pat = _re.compile(
+                    r'<(h[1-6])([^>]*)>\s*' + escaped + r'\s*</\1>',
+                    _re.IGNORECASE
+                )
+                html, n = pat.subn('', html)
+            if n:
+                log(f"  [CORRECTION] strip_heading: removed {n} headings matching "
+                    f"'{pattern[:50]}'{f' — {note}' if note else ''}")
+                total_applied += n
+
+        elif action == "strip_text":
+            # Remove <p> tags containing the pattern
+            if match_type == "regex":
+                pat = _re.compile(
+                    r'<p[^>]*>' + pattern + r'</p>',
+                    _re.IGNORECASE
+                )
+                html, n = pat.subn('', html)
+            else:
+                escaped = _re.escape(pattern)
+                escaped = _re.sub(r'\\ ', r'\\s+', escaped)
+                pat = _re.compile(
+                    r'<p[^>]*>\s*' + escaped + r'\s*</p>',
+                    _re.IGNORECASE
+                )
+                html, n = pat.subn('', html)
+            if n:
+                log(f"  [CORRECTION] strip_text: removed {n} paragraphs matching "
+                    f"'{pattern[:50]}'{f' — {note}' if note else ''}")
+                total_applied += n
+
+        elif action == "demote_heading":
+            # Change heading level: e.g., h1 -> h3
+            target_from = rule.get("from", "h1")
+            target_to = rule.get("to", "h3")
+            if match_type == "regex":
+                pat = _re.compile(
+                    r'<' + target_from + r'([^>]*)>(' + pattern + r')</' + target_from + r'>',
+                    _re.IGNORECASE
+                )
+            else:
+                escaped = _re.escape(pattern)
+                escaped = _re.sub(r'\\ ', r'\\s+', escaped)
+                pat = _re.compile(
+                    r'<' + target_from + r'([^>]*)>\s*(' + escaped + r')\s*</' + target_from + r'>',
+                    _re.IGNORECASE
+                )
+            def _demote_repl(m):
+                return f'<{target_to}{m.group(1)}>{m.group(2)}</{target_to}>'
+            html, n = pat.subn(_demote_repl, html)
+            if n:
+                log(f"  [CORRECTION] demote_heading: changed {n} '{target_from}' -> '{target_to}' "
+                    f"for '{pattern[:50]}'{f' — {note}' if note else ''}")
+                total_applied += n
+
+        elif action == "force_heading":
+            # Promote a <p> to a heading
+            text = rule.get("text", pattern)
+            level = rule.get("level", "h1")
+            escaped = _re.escape(text)
+            escaped = _re.sub(r'\\ ', r'\\s+', escaped)
+            pat = _re.compile(
+                r'<p([^>]*)>\s*(' + escaped + r')\s*</p>',
+                _re.IGNORECASE
+            )
+            def _promote_repl(m):
+                return f'<{level}{m.group(1)}>{m.group(2)}</{level}>'
+            html, n = pat.subn(_promote_repl, html)
+            if n:
+                log(f"  [CORRECTION] force_heading: promoted {n} paragraphs to '{level}' "
+                    f"for '{text[:50]}'{f' — {note}' if note else ''}")
+                total_applied += n
+
+        elif action == "replace_text":
+            # Find/replace within text content
+            replacement = rule.get("replacement", "")
+            if match_type == "regex":
+                pat = _re.compile(pattern, _re.IGNORECASE)
+                html, n = pat.subn(replacement, html)
+            else:
+                n = html.count(pattern)
+                html = html.replace(pattern, replacement)
+            if n:
+                log(f"  [CORRECTION] replace_text: {n} replacements "
+                    f"'{pattern[:30]}' -> '{replacement[:30]}'{f' — {note}' if note else ''}")
+                total_applied += n
+
+        else:
+            log(f"  [CORRECTION] Unknown action '{action}' — skipping")
+
+    if total_applied:
+        log(f"  [CORRECTION] Total: {total_applied} corrections applied")
+    else:
+        log(f"  [CORRECTION] {len(corrections)} rules loaded but 0 matched — "
+            f"corrections may need updating for this book version")
+
+    return html
+
+
+def _collect_corrections(args, input_path, log):
+    """Collect corrections from CLI flags, sidecar file, and pattern_db.
+
+    Returns (corrections_list, should_save_to_db).
+    Only called when --apply-corrections is set (or implied by --strip-heading etc.)
+    """
+    corrections = []
+    should_save = False
+
+    # 1. CLI flags -> correction rules
+    for text in (args.strip_heading or []):
+        corrections.append({
+            "action": "strip_heading",
+            "pattern": text,
+            "match": "exact",
+            "note": "Added via --strip-heading CLI flag"
+        })
+        should_save = True
+
+    for text in (args.strip_text or []):
+        corrections.append({
+            "action": "strip_text",
+            "pattern": text,
+            "match": "exact",
+            "note": "Added via --strip-text CLI flag"
+        })
+        should_save = True
+
+    for spec in (args.force_heading or []):
+        # Parse "Chapter One:h1" format
+        if ':' in spec:
+            text, level = spec.rsplit(':', 1)
+            level = level.strip().lower()
+            if level not in ('h1', 'h2', 'h3'):
+                log(f"  [WARN] Invalid heading level '{level}' in --force-heading, using h1")
+                level = 'h1'
+        else:
+            text = spec
+            level = 'h1'
+        corrections.append({
+            "action": "force_heading",
+            "text": text.strip(),
+            "pattern": text.strip(),
+            "level": level,
+            "match": "exact",
+            "note": "Added via --force-heading CLI flag"
+        })
+        should_save = True
+
+    # 2. Sidecar file: BookName.corrections.json next to the input PDF
+    sidecar_path = Path(input_path).with_suffix('.corrections.json')
+    if sidecar_path.exists():
+        try:
+            with open(sidecar_path, 'r', encoding='utf-8') as f:
+                sidecar_rules = json.load(f)
+            if isinstance(sidecar_rules, list):
+                log(f"  [CORRECTION] Loaded {len(sidecar_rules)} rules from sidecar: {sidecar_path.name}")
+                corrections.extend(sidecar_rules)
+        except Exception as e:
+            log(f"  [WARN] Failed to load sidecar corrections: {e}")
+
+    # 3. pattern_db cached corrections
+    try:
+        _script_dir = Path(__file__).resolve().parent
+        if str(_script_dir) not in sys.path:
+            sys.path.insert(0, str(_script_dir))
+        from pattern_db import get_book_override
+        filename = Path(input_path).name
+        override = get_book_override(filename=filename)
+        if override and override.get("corrections"):
+            db_corrections = override["corrections"]
+            if isinstance(db_corrections, list):
+                log(f"  [CORRECTION] Loaded {len(db_corrections)} cached corrections from pattern_db")
+                # Deduplicate by (action, pattern) tuple
+                existing = {(c.get("action"), c.get("pattern", c.get("text", "")))
+                            for c in corrections}
+                for rule in db_corrections:
+                    key = (rule.get("action"), rule.get("pattern", rule.get("text", "")))
+                    if key not in existing:
+                        corrections.append(rule)
+    except ImportError:
+        pass  # pattern_db not available
+
+    return corrections, should_save
+
+
+# ───────────────────────────────────────────────────────────
 #  CLI MODE
 # ───────────────────────────────────────────────────────────
 
@@ -12715,6 +12985,26 @@ Examples:
     ap.add_argument("--no-images", action="store_true", default=False,
                     help="Skip image extraction from PDF (Kindle mode)")
 
+    # Per-book corrections (EB-73)
+    ap.add_argument("--apply-corrections", action="store_true",
+                    help="Apply cached per-book corrections from pattern_db "
+                         "(and/or sidecar .corrections.json file)")
+    ap.add_argument("--strip-heading", action="append", default=[],
+                    metavar="TEXT",
+                    help="Strip all headings matching TEXT (exact match). "
+                         "Can be used multiple times. Implies --apply-corrections. "
+                         "Corrections are saved to pattern_db for future conversions.")
+    ap.add_argument("--strip-text", action="append", default=[],
+                    metavar="TEXT",
+                    help="Remove all paragraphs matching TEXT (exact match). "
+                         "Can be used multiple times. Implies --apply-corrections.")
+    ap.add_argument("--force-heading", action="append", default=[],
+                    metavar="TEXT:LEVEL",
+                    help="Promote paragraph TEXT to heading LEVEL (e.g., 'Chapter One:h1'). "
+                         "Can be used multiple times. Implies --apply-corrections.")
+    ap.add_argument("--export-corrections", action="store_true",
+                    help="Export current book corrections as a .corrections.json sidecar file")
+
     args = ap.parse_args()
 
     # --dialogue-voices implies --tts-enhance
@@ -12797,6 +13087,14 @@ Examples:
     log_fn(f"[cli] Mode:   {args.mode}")
     log_fn(f"[cli] Input:  {input_path}")
     log_fn(f"[cli] Output: {output_path}")
+
+    # Pre-collect corrections (evaluated once, applied at each HTML write point) — EB-73
+    _pending_corrections = None
+    _corrections_should_save = False
+    if args.apply_corrections or args.strip_heading or args.strip_text or args.force_heading:
+        _pending_corrections, _corrections_should_save = _collect_corrections(args, input_path, log_fn)
+        if _pending_corrections:
+            log_fn(f"[cli] Corrections: {len(_pending_corrections)} rules loaded")
 
     try:
         hints_path = None
@@ -12904,7 +13202,9 @@ Examples:
                                     gemini_cost_limit=args.gemini_cost_limit,
                                     gemini_model=args.gemini_model,
                                     compare_extractors_enabled=args.compare_extractors,
-                                    extract_images=not args.no_images)
+                                    extract_images=not args.no_images,
+                                    _pending_corrections=_pending_corrections,
+                                    export_corrections=args.export_corrections)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}
@@ -12941,6 +13241,35 @@ Examples:
                         tts_enhance=args.tts_enhance,
                         tag_syntax=args.tag_syntax,
                         dialogue_voices=args.dialogue_voices)
+        # ── Save CLI corrections to pattern_db for future conversions (EB-73) ──
+        if _corrections_should_save and _pending_corrections:
+            try:
+                _script_dir = Path(__file__).resolve().parent
+                if str(_script_dir) not in sys.path:
+                    sys.path.insert(0, str(_script_dir))
+                from pattern_db import get_book_override, add_book_override, \
+                    update_book_override, get_or_create_book
+                _filename = Path(input_path).name
+                _book_id = get_or_create_book(_filename)
+                _existing = get_book_override(filename=_filename)
+                _corrections_json = json.dumps(_pending_corrections)
+                if _existing:
+                    update_book_override(_existing['id'],
+                                         corrections_json=_corrections_json)
+                    log_fn(f"  [CORRECTION] Updated cached corrections in pattern_db "
+                           f"(override #{_existing['id']})")
+                else:
+                    _override_id = add_book_override(
+                        book_id=_book_id,
+                        corrections=_pending_corrections
+                    )
+                    log_fn(f"  [CORRECTION] Saved corrections to pattern_db "
+                           f"(new override #{_override_id})")
+            except ImportError:
+                log_fn("  [CORRECTION] pattern_db not available — corrections not cached")
+            except Exception as e:
+                log_fn(f"  [CORRECTION] Failed to save corrections: {e}")
+
         sys.exit(0)
     except Exception as exc:
         print(f"[error] Conversion failed: {exc}", file=sys.stderr)

@@ -367,6 +367,13 @@ def _migrate(conn):
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    # EB-73: Per-book corrections column on book_overrides
+    try:
+        conn.execute("SELECT corrections_json FROM book_overrides LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE book_overrides ADD COLUMN corrections_json TEXT")
+        conn.commit()
+
     # FU-4: Unique index for source_profiles upsert (COALESCE handles NULLs)
     # First deduplicate any existing rows, then create the unique index
     try:
@@ -1557,7 +1564,7 @@ def add_book_override(book_id=None, isbn=None, title=None, author=None,
                       chapter_structure=None, extraction_path=None,
                       extraction_notes=None, calibre_options=None,
                       skip_front_pages=None, skip_back_pages=None,
-                      db_path=None):
+                      corrections=None, db_path=None):
     """Add a manual override for a specific book.
 
     At least one of book_id, isbn, or title must be provided.
@@ -1579,17 +1586,25 @@ def add_book_override(book_id=None, isbn=None, title=None, author=None,
         else:
             chapters_json = json.dumps(chapter_structure)
 
+    # Serialize corrections to JSON string
+    corrections_json = None
+    if corrections is not None:
+        if isinstance(corrections, str):
+            corrections_json = corrections
+        else:
+            corrections_json = json.dumps(corrections)
+
     conn = get_db(db_path)
     try:
         cursor = conn.execute(
             """INSERT INTO book_overrides
                (book_id, isbn, title_hash, chapter_structure,
                 extraction_path, extraction_notes, calibre_options,
-                skip_front_pages, skip_back_pages)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                skip_front_pages, skip_back_pages, corrections_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (book_id, isbn, title_hash, chapters_json,
              extraction_path, extraction_notes, calibre_options,
-             skip_front_pages, skip_back_pages)
+             skip_front_pages, skip_back_pages, corrections_json)
         )
         conn.commit()
         return cursor.lastrowid
@@ -1655,6 +1670,14 @@ def get_book_override(filename=None, isbn=None, book_id=None, title=None,
                 )
             except (json.JSONDecodeError, TypeError):
                 pass  # Leave as string if not valid JSON
+        # Parse corrections_json (EB-73)
+        if result.get("corrections_json"):
+            try:
+                result["corrections"] = json.loads(result["corrections_json"])
+            except (json.JSONDecodeError, TypeError):
+                result["corrections"] = []
+        else:
+            result["corrections"] = []
         return result
     finally:
         conn.close()
@@ -1666,7 +1689,8 @@ def update_book_override(override_id, db_path=None, **kwargs):
         'book_id', 'isbn', 'title_hash', 'chapter_structure',
         'extraction_path', 'extraction_notes', 'calibre_options',
         'skip_front_pages', 'skip_back_pages', 'source',
-        'submitted_by', 'review_status', 'upvotes'
+        'submitted_by', 'review_status', 'upvotes',
+        'corrections_json'
     }
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
@@ -1677,6 +1701,12 @@ def update_book_override(override_id, db_path=None, **kwargs):
         cs = updates['chapter_structure']
         if cs is not None and not isinstance(cs, str):
             updates['chapter_structure'] = json.dumps(cs)
+
+    # Serialize corrections_json if present (EB-73)
+    if 'corrections_json' in updates:
+        cj = updates['corrections_json']
+        if cj is not None and not isinstance(cj, str):
+            updates['corrections_json'] = json.dumps(cj)
 
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values())
@@ -2539,6 +2569,22 @@ def _cmd_override_add(args):
         with open(args.chapters, 'r', encoding='utf-8') as f:
             chapter_structure = json.load(f)
 
+    # Build corrections list from --corrections file and --strip-heading flags
+    corrections = None
+    if args.corrections:
+        with open(args.corrections, 'r', encoding='utf-8') as f:
+            corrections = json.load(f)
+    if args.strip_heading:
+        if corrections is None:
+            corrections = []
+        for text in args.strip_heading:
+            corrections.append({
+                "action": "strip_heading",
+                "pattern": text,
+                "match": "exact",
+                "note": "Added via pattern_db CLI"
+            })
+
     override_id = add_book_override(
         book_id=book_id,
         title=title,
@@ -2548,6 +2594,7 @@ def _cmd_override_add(args):
         chapter_structure=chapter_structure,
         skip_front_pages=args.skip_front,
         skip_back_pages=args.skip_back,
+        corrections=corrections,
         db_path=args.db_path,
     )
 
@@ -2562,6 +2609,8 @@ def _cmd_override_add(args):
         print(f"  Notes: {args.notes}")
     if chapter_structure:
         print(f"  Chapter structure: {len(chapter_structure)} entries loaded")
+    if corrections:
+        print(f"  Corrections: {len(corrections)} rules loaded")
     if args.skip_front:
         print(f"  Skip front pages: {args.skip_front}")
     if args.skip_back:
@@ -2621,6 +2670,18 @@ def _cmd_override_show(args):
                 print(f"    ... and {len(chapters) - 5} more")
         else:
             print(f"  Chapters:        {chapters}")
+    if override.get('corrections'):
+        corrections = override['corrections']
+        if isinstance(corrections, list) and corrections:
+            print(f"  Corrections:     {len(corrections)} rules")
+            for i, rule in enumerate(corrections[:10]):
+                action = rule.get('action', '?')
+                pattern = rule.get('pattern', rule.get('text', '?'))
+                note = rule.get('note', '')
+                print(f"    [{i+1}] {action}: '{pattern[:60]}'"
+                      f"{f' ({note})' if note else ''}")
+            if len(corrections) > 10:
+                print(f"    ... and {len(corrections) - 10} more")
     print(f"  Source:          {override.get('source', 'local')}")
     print(f"  Created:         {override.get('created_at')}")
 
@@ -3251,6 +3312,13 @@ def main():
     )
     ov_add.add_argument(
         '--skip-back', type=int, help='Pages to skip at back'
+    )
+    ov_add.add_argument(
+        '--corrections', help='Path to corrections JSON file'
+    )
+    ov_add.add_argument(
+        '--strip-heading', action='append', default=[],
+        help='Add a strip_heading correction (can be used multiple times)'
     )
 
     ov_show = override_cmds.add_parser(
