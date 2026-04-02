@@ -5011,7 +5011,7 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     return paragraphs, fix_stats
 
 
-def _extract_html_with_pymupdf_columns(pdf_path, log):
+def _extract_html_with_pymupdf_columns(pdf_path, log, page_range=None):
     """Extract HTML-ready paragraph dicts from a two-column PDF using PyMuPDF.
 
     Uses page.get_text("dict") for font metadata (size, bold, italic, superscript)
@@ -5031,8 +5031,17 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
     total_pages = len(doc)
     all_paras = []
 
+    # Determine page range (EB-74: chunked extraction)
+    if page_range:
+        start_pg, end_pg = page_range
+        end_pg = min(end_pg, total_pages)
+        page_indices = range(start_pg, end_pg)
+        log(f"  PyMuPDF HTML extraction: pages {start_pg + 1}-{end_pg} of {total_pages}")
+    else:
+        page_indices = range(total_pages)
+
     try:
-        for pg_idx in range(total_pages):
+        for pg_idx in page_indices:
             pg = pg_idx + 1  # 1-indexed
             page = doc[pg_idx]
             page_dict = page.get_text("dict")
@@ -5277,8 +5286,8 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
                     '_is_running_header_candidate': _is_header_candidate,
                 })
 
-            if (pg_idx + 1) % 50 == 0:
-                log(f"  PyMuPDF HTML extraction: {pg_idx + 1}/{total_pages} pages...")
+            if (pg_idx + 1) % 100 == 0:
+                log(f"  PyMuPDF HTML extraction: page {pg_idx + 1}/{total_pages}...")
     finally:
         doc.close()
 
@@ -5301,7 +5310,8 @@ def _extract_html_with_pymupdf_columns(pdf_path, log):
         p.pop('_is_footnote', None)
         # Keep _is_running_header_candidate — consumed by format_paragraphs_as_html()
 
-    log(f"  PyMuPDF HTML extraction: {total_pages} pages, {len(all_paras)} paragraphs")
+    pages_extracted = len(page_indices) if page_range else total_pages
+    log(f"  PyMuPDF HTML extraction: {pages_extracted} pages, {len(all_paras)} paragraphs")
     log(f"  Body font detected: {body_size}pt")
 
     return all_paras, body_size
@@ -5342,7 +5352,83 @@ def _extract_page_with_timeout(page_layout, timeout_seconds=30):
     return result['elements']
 
 
-def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
+def _extract_chunked(pdf_path, log, force_columns=False, chunk_size=200, total_pages=None):
+    """Extract a large PDF in page-range chunks, merging results.
+
+    Used automatically when a PDF exceeds the chunking threshold (default 500 pages).
+    Each chunk gets an independent extraction call with its own timeout budget.
+
+    Args:
+        chunk_size: Number of pages per chunk (default 200)
+        total_pages: Total page count (pre-computed to avoid re-opening PDF)
+
+    Returns:
+        (para_dicts, body_size) — same as extract_with_pdfminer_html()
+    """
+    import time as _chunk_time
+    if total_pages is None:
+        import pymupdf as _chunk_pymupdf
+        _doc = _chunk_pymupdf.open(pdf_path)
+        total_pages = len(_doc)
+        _doc.close()
+
+    num_chunks = (total_pages + chunk_size - 1) // chunk_size
+    log(f"  Large PDF detected ({total_pages} pages) — chunking into "
+        f"{num_chunks} segments of {chunk_size} pages")
+
+    all_para_dicts = []
+    body_sizes = []
+    chunks_succeeded = 0
+    chunks_failed = 0
+
+    for chunk_idx in range(num_chunks):
+        start_page = chunk_idx * chunk_size
+        end_page = min(start_page + chunk_size, total_pages)
+
+        log(f"\n  === Chunk {chunk_idx + 1}/{num_chunks}: pages {start_page + 1}-{end_page} ===")
+        chunk_start = _chunk_time.time()
+
+        try:
+            chunk_paras, chunk_body_size = extract_with_pdfminer_html(
+                pdf_path, log, force_columns=force_columns,
+                page_range=(start_page, end_page)
+            )
+
+            chunk_elapsed = _chunk_time.time() - chunk_start
+            real_paras = [p for p in chunk_paras if not p.get('is_page_marker')]
+            log(f"  Chunk {chunk_idx + 1} complete: {len(real_paras)} paragraphs, "
+                f"{chunk_elapsed:.1f}s")
+
+            all_para_dicts.extend(chunk_paras)
+            body_sizes.append(chunk_body_size)
+            chunks_succeeded += 1
+
+        except Exception as e:
+            chunks_failed += 1
+            log(f"  [WARN] Chunk {chunk_idx + 1} failed: {e}")
+            # Insert page markers for the failed chunk so page numbering stays intact
+            for pg in range(start_page + 1, end_page + 1):
+                all_para_dicts.append({
+                    'text': '', 'font_size': 0, 'is_bold': False, 'is_italic': False,
+                    'is_centered': False, 'is_all_caps': False, 'page_number': pg,
+                    'line_count': 0, 'char_count': 0, 'is_page_marker': True,
+                })
+
+    # Use the most common body_size across chunks
+    if body_sizes:
+        from collections import Counter as _ChunkCounter
+        body_size = _ChunkCounter(body_sizes).most_common(1)[0][0]
+    else:
+        body_size = 12.0
+
+    log(f"\n  Chunked extraction complete: {chunks_succeeded}/{num_chunks} chunks succeeded"
+        f" ({chunks_failed} failed), "
+        f"{len([p for p in all_para_dicts if not p.get('is_page_marker')])} total paragraphs")
+
+    return all_para_dicts, body_size
+
+
+def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=None):
     """
     Extract PDF content using pdfminer with font metadata preserved.
     Returns list of paragraph dicts with font properties.
@@ -5359,7 +5445,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
                 reason = "Column extraction forced (--force-columns)"
             log(f"  {reason} — using PyMuPDF HTML extraction")
             try:
-                para_dicts, body_size = _extract_html_with_pymupdf_columns(pdf_path, log)
+                para_dicts, body_size = _extract_html_with_pymupdf_columns(pdf_path, log, page_range=page_range)
                 if any(not p.get('is_page_marker') for p in para_dicts):
                     log("  [EXTRACTION_PATH] pymupdf_columns")
                     return para_dicts, body_size
@@ -5395,14 +5481,28 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
     page_heights = {}  # {page_number: height} for footnote zone detection
 
     extraction_start = time.time()
-    OVERALL_BUDGET_SECONDS = 480  # leave 120s headroom for post-processing
+    # EB-70 timeout protection — budget is per extraction call
+    # When chunked (EB-74), each chunk gets its own 480s budget
+    OVERALL_BUDGET_SECONDS = 480  # 8 minutes — generous for a chunk of ≤200 pages
     PER_PAGE_BUDGET_SECONDS = 30
     pages_skipped = 0
     budget_exhausted = False
 
-    for page_num, page_layout in enumerate(extract_pages(pdf_path, laparams=laparams)):
+    # EB-74: page-range filtering for chunked extraction
+    _pdfminer_page_numbers = None
+    if page_range:
+        _pr_start, _pr_end = page_range
+        _pdfminer_page_numbers = set(range(_pr_start, min(_pr_end, 99999)))
+        log(f"  pdfminer extraction: pages {_pr_start + 1}-{_pr_end}")
+
+    for page_num, page_layout in enumerate(
+            extract_pages(pdf_path, laparams=laparams, page_numbers=_pdfminer_page_numbers)):
         total_pages += 1
-        pg = page_num + 1  # 1-indexed
+        # EB-74: real page number (absolute), not chunk-relative
+        if page_range:
+            pg = page_range[0] + page_num + 1  # 1-indexed absolute page
+        else:
+            pg = page_num + 1  # 1-indexed
 
         # ── Overall budget check ──────────────────────────────────────
         elapsed = time.time() - extraction_start
@@ -5688,7 +5788,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
         log(f"  [WARN] Only {len(content_paras)} content paragraphs from pdfminer before timeout")
         log(f"  Attempting PyMuPDF HTML fallback...")
         try:
-            pymupdf_paras, pymupdf_body_size = _extract_html_with_pymupdf_columns(pdf_path, log)
+            pymupdf_paras, pymupdf_body_size = _extract_html_with_pymupdf_columns(pdf_path, log, page_range=page_range)
             pymupdf_content = [p for p in pymupdf_paras if not p.get('is_page_marker') and p.get('text', '').strip()]
             if len(pymupdf_content) > len(content_paras):
                 log(f"  PyMuPDF fallback recovered {len(pymupdf_content)} paragraphs (vs {len(content_paras)} from pdfminer)")
@@ -11480,7 +11580,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         gemini_cost_limit=5.0, gemini_model=None,
                         compare_extractors_enabled=False,
                         extract_images=True,
-                        _pending_corrections=None, export_corrections=False):
+                        _pending_corrections=None, export_corrections=False,
+                        chunk_size=200, chunk_threshold=500):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -11620,19 +11721,47 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         _t_extract = _time_mod.time()
         log("\n-- STEP 1: Extracting text with font metadata --")
 
-        # ── Timeout-protected pdfminer extraction (EB-65) ──────────────
+        # ── Page count check for chunking (EB-74) ────────────────────
+        import pymupdf as _pymupdf_count
+        _doc_count = _pymupdf_count.open(pdf_path)
+        _total_pages = len(_doc_count)
+        _doc_count.close()
+
+        _CHUNK_THRESHOLD = chunk_threshold
+        _CHUNK_SIZE = chunk_size
+        _use_chunking = _CHUNK_THRESHOLD > 0 and _total_pages >= _CHUNK_THRESHOLD
+
+        if _use_chunking:
+            _num_chunks = (_total_pages + _CHUNK_SIZE - 1) // _CHUNK_SIZE
+            log(f"  Large PDF: {_total_pages} pages (threshold: {_CHUNK_THRESHOLD}) "
+                f"— using chunked extraction ({_num_chunks} chunks of {_CHUNK_SIZE})")
+
+        # ── Timeout-protected extraction (EB-65, EB-74) ──────────────
         # pdfminer can hang indefinitely on certain PDFs (complex academic
-        # texts, corrupted font tables).  Wrap in a thread with a 300s cap.
+        # texts, corrupted font tables).  Wrap in a thread with a timeout.
+        # EB-74: scale timeout for large PDFs using chunked extraction.
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FuturesTimeout
-        _EXTRACTION_TIMEOUT = 300  # 5 minutes — generous; normal books < 30s
+        if _use_chunking:
+            _num_chunks = (_total_pages + _CHUNK_SIZE - 1) // _CHUNK_SIZE
+            _EXTRACTION_TIMEOUT = 300 + (_num_chunks - 1) * 120
+            log(f"  Timeout scaled to {_EXTRACTION_TIMEOUT}s for {_num_chunks} chunks")
+        else:
+            _EXTRACTION_TIMEOUT = 300  # 5 minutes — generous; normal books < 30s
+
         with ThreadPoolExecutor(max_workers=1) as _pool:
-            _future = _pool.submit(extract_with_pdfminer_html, pdf_path, log,
-                                   force_columns=force_columns)
+            if _use_chunking:
+                _future = _pool.submit(_extract_chunked, pdf_path, log,
+                                       force_columns=force_columns,
+                                       chunk_size=_CHUNK_SIZE,
+                                       total_pages=_total_pages)
+            else:
+                _future = _pool.submit(extract_with_pdfminer_html, pdf_path, log,
+                                       force_columns=force_columns)
             try:
                 para_dicts, body_size = _future.result(timeout=_EXTRACTION_TIMEOUT)
             except _FuturesTimeout:
                 _future.cancel()
-                log(f"  [WARN] pdfminer extraction timed out after {_EXTRACTION_TIMEOUT}s"
+                log(f"  [WARN] extraction timed out after {_EXTRACTION_TIMEOUT}s"
                     f" — falling through to fallback")
                 para_dicts = []
                 body_size = 12.0
@@ -12990,6 +13119,13 @@ Examples:
     ap.add_argument("--no-images", action="store_true", default=False,
                     help="Skip image extraction from PDF (Kindle mode)")
 
+    # Large PDF chunking (EB-74)
+    ap.add_argument("--chunk-size", type=int, default=200,
+                    help="Pages per chunk for large PDF extraction (default: 200)")
+    ap.add_argument("--chunk-threshold", type=int, default=500,
+                    help="Auto-chunk PDFs above this page count (default: 500). "
+                         "Set to 0 to disable chunking.")
+
     # Per-book corrections (EB-73)
     ap.add_argument("--apply-corrections", action="store_true",
                     help="Apply cached per-book corrections from pattern_db "
@@ -13209,7 +13345,9 @@ Examples:
                                     compare_extractors_enabled=args.compare_extractors,
                                     extract_images=not args.no_images,
                                     _pending_corrections=_pending_corrections,
-                                    export_corrections=args.export_corrections)
+                                    export_corrections=args.export_corrections,
+                                    chunk_size=args.chunk_size,
+                                    chunk_threshold=args.chunk_threshold)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}

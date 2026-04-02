@@ -725,6 +725,8 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "html_size_bytes": 0,
             "errors": [],
             "warnings": [],
+            "chunked": False,
+            "chunk_count": 1,
         },
         "structure": {
             "chapter_count": 0,
@@ -957,6 +959,13 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                     elif path_val.startswith('pymupdf_columns'):
                         diag["extraction"]["pymupdf_attempted"] = True
                         diag["extraction"]["pymupdf_fallback_reason"] = None
+                # EB-74: detect chunked extraction
+                if 'chunking into' in line:
+                    diag["extraction"]["chunked"] = True
+                    # Parse chunk count: "chunking into N segments of ..."
+                    _m = re.search(r'chunking into\s+(\d+)\s+segment', line)
+                    if _m:
+                        diag["extraction"]["chunk_count"] = int(_m.group(1))
 
         # DE-5: Encoding distribution
         _body_for_encoding = body_text if 'body_text' in dir() else None
