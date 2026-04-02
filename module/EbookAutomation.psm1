@@ -5610,6 +5610,10 @@ function Invoke-ConvergeLoop {
 
     Write-EbookLog "ConvergeLoop: strategy source: $strategySource"
     Write-EbookLog "ConvergeLoop: sequence: $($strategies.Name -join ' -> ')"
+    if ($classification -and $classification.recommended_strategies) {
+        Write-EbookLog "ConvergeLoop: classification recommended: $($classification.recommended_strategies -join ' -> ')"
+        Write-EbookLog "ConvergeLoop: classification type: $($classification.classification)"
+    }
 
     # For non-PDFs, max iterations is effectively 1 (no alternate strategies)
     $effectiveMax = [Math]::Min($MaxIterations, $strategies.Count)

@@ -940,11 +940,23 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             diag["status_reason"] = "Extraction produced no output"
             return diag
 
-        # Capture warnings from stdout
+        # Capture warnings and extraction path from stdout
         if stdout:
             for line in stdout.split('\n'):
                 if 'warn' in line.lower() or 'WARNING' in line:
                     diag["extraction"]["warnings"].append(line.strip()[:200])
+                # Parse structured extraction path from Python gate
+                if '[EXTRACTION_PATH]' in line:
+                    path_val = line.split('[EXTRACTION_PATH]', 1)[1].strip()
+                    diag["extraction"]["extraction_path"] = path_val.split()[0]
+                    # Track PyMuPDF attempt details
+                    if 'pymupdf_fallback' in path_val:
+                        diag["extraction"]["pymupdf_attempted"] = True
+                        reason = path_val.split('pymupdf_fallback:', 1)[1].strip().rstrip(')')
+                        diag["extraction"]["pymupdf_fallback_reason"] = reason
+                    elif path_val.startswith('pymupdf_columns'):
+                        diag["extraction"]["pymupdf_attempted"] = True
+                        diag["extraction"]["pymupdf_fallback_reason"] = None
 
         # DE-5: Encoding distribution
         _body_for_encoding = body_text if 'body_text' in dir() else None
@@ -1188,6 +1200,31 @@ def _analyze_html_structure(diag, html_content):
                 diag["text_quality"]["max_region"] = ms.get("max_score")
         except Exception:
             pass  # non-blocking
+
+    # Column-merge detection: flag when a known multi-column PDF was extracted
+    # without column-aware routing, producing suspiciously long lines
+    is_multicolumn = diag.get("source_classification", {}).get("is_multicolumn", False)
+    actual_path = diag.get("extraction", {}).get("extraction_path", "")
+    if is_multicolumn and actual_path != "pymupdf_columns":
+        # Check for abnormally long text lines (>150 chars) — a sign that
+        # two narrow columns were merged into one wide stream
+        paragraphs = re.findall(r'<p[^>]*>(.*?)</p>', html_content, re.DOTALL)
+        long_lines = 0
+        sampled = 0
+        for p_html in paragraphs[:200]:
+            plain = re.sub(r'<[^>]+>', '', p_html).strip()
+            if len(plain) < 20:
+                continue
+            sampled += 1
+            # Split on line breaks within the paragraph and check each line
+            for raw_line in plain.split('\n'):
+                if len(raw_line.strip()) > 150:
+                    long_lines += 1
+        diag["text_quality"]["possible_column_merge"] = (
+            sampled > 10 and long_lines / max(sampled, 1) > 0.3
+        )
+    else:
+        diag["text_quality"]["possible_column_merge"] = False
 
 
 def _detect_issues(diag):

@@ -5361,14 +5361,19 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False):
             try:
                 para_dicts, body_size = _extract_html_with_pymupdf_columns(pdf_path, log)
                 if any(not p.get('is_page_marker') for p in para_dicts):
+                    log("  [EXTRACTION_PATH] pymupdf_columns")
                     return para_dicts, body_size
                 log("  [WARN] PyMuPDF HTML extraction returned empty — falling back to pdfminer")
+                log("  [EXTRACTION_PATH] html_extraction (pymupdf_fallback: empty_result)")
             except Exception as e:
                 log(f"  [WARN] PyMuPDF HTML extraction failed: {e} — falling back to pdfminer")
+                log(f"  [EXTRACTION_PATH] html_extraction (pymupdf_fallback: {type(e).__name__})")
         else:
             log(f"  Single-column layout (confidence {col_info['confidence']:.0%}) — using pdfminer")
+            log("  [EXTRACTION_PATH] html_extraction")
     except Exception as e:
         log(f"  [WARN] Column detection error: {e} — using pdfminer")
+        log("  [EXTRACTION_PATH] html_extraction (column_detection_error)")
     # ── existing pdfminer extraction (UNCHANGED below) ────────────────────────
     from pdfminer.high_level import extract_pages
     from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTChar, LTAnno
