@@ -12229,6 +12229,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
             _quality_score = quality.get('score') if quality else None
 
+            _image_count = len(re.findall(r'<figure>', html))
             store_extraction(
                 book_id=_book_id,
                 source_file_hash=_src_hash,
@@ -12242,6 +12243,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 duration_seconds=round(_extraction_duration, 1),
                 escalation_details=_escalation_info if '_escalation_info' in dir() else None,
                 pipeline_version=_PIPELINE_HASH,
+                image_count=_image_count,
             )
             log(f"Extraction cached: hash={_src_hash[:12]}..., tier={tier_used}, "
                 f"method={extraction_method}, score={_quality_score}")
@@ -13299,6 +13301,7 @@ Examples:
                                f"served {_cached['times_served']} times")
                         _cached_html = _cached['extracted_html']
                         # Extract and inject images even on cache hit
+                        _page_images = {}
                         if not args.no_images:
                             try:
                                 _html_dir = os.path.dirname(html_output) or '.'
@@ -13307,13 +13310,36 @@ Examples:
                                     _cached_html = _inject_images_into_html(_cached_html, _page_images, log_fn)
                             except Exception as _img_err:
                                 log_fn(f"  Image extraction on cache hit failed (non-blocking): {_img_err}")
-                        with open(html_output, 'w', encoding='utf-8') as _cf:
-                            _cf.write(_cached_html)
-                        _word_count = len(re.sub(r'<[^>]+>', '', _cached_html).split())
-                        log_fn(f"Done! Served from cache: {html_output}")
-                        log_fn(f"  Words: {_word_count:,}")
-                        log_fn(f"  HTML size: {len(_cached_html):,} chars")
-                        _cache_hit = True
+
+                        # EB-79: Validate image injection — if images were extracted
+                        # from PDF but none made it into HTML, the cached HTML lacks
+                        # page anchors for injection. Invalidate and re-extract.
+                        _cache_invalidated = False
+                        if not args.no_images and _page_images:
+                            _total_extracted = sum(len(imgs) for imgs in _page_images.values())
+                            _figures_in_html = len(re.findall(r'<figure>', _cached_html))
+                            if _figures_in_html == 0 and _total_extracted > 0:
+                                log_fn(f"Cache image check: PDF has {_total_extracted} images but "
+                                       f"cached HTML has 0 <figure> tags \u2014 cache lacks page anchors")
+                                log_fn(f"Invalidating stale cache entry and re-extracting...")
+                                try:
+                                    from pattern_db import invalidate_extraction_cache
+                                    invalidate_extraction_cache(source_file_hash=_src_hash)
+                                except Exception as _inv_err:
+                                    log_fn(f"  Cache invalidation failed (non-blocking): {_inv_err}")
+                                _cache_invalidated = True
+                            elif _figures_in_html > 0:
+                                log_fn(f"Cache image check: {_figures_in_html} images in HTML "
+                                       f"({_total_extracted} extracted from PDF)")
+
+                        if not _cache_invalidated:
+                            with open(html_output, 'w', encoding='utf-8') as _cf:
+                                _cf.write(_cached_html)
+                            _word_count = len(re.sub(r'<[^>]+>', '', _cached_html).split())
+                            log_fn(f"Done! Served from cache: {html_output}")
+                            log_fn(f"  Words: {_word_count:,}")
+                            log_fn(f"  HTML size: {len(_cached_html):,} chars")
+                            _cache_hit = True
                     else:
                         # Check if miss was due to version mismatch
                         _stale = get_cached_extraction(source_file_hash=_src_hash, min_score=60)

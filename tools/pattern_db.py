@@ -360,6 +360,8 @@ def _migrate(conn):
         ("conversions", "quality_status", "TEXT"),
         # SCRUM-125: Multi-extractor comparison results
         ("conversions", "extractor_comparison", "TEXT"),
+        # EB-79: Image count in cached HTML
+        ("extraction_cache", "image_count", "INTEGER"),
     ]
     for table, col, col_type in _new_columns:
         try:
@@ -1185,7 +1187,7 @@ def store_extraction(book_id, source_file_hash, tier, method,
                      chapter_hints_json=None, quality_score=None,
                      page_count=None, word_count=None, chapter_count=None,
                      cost_usd=0, duration_seconds=None, pipeline_version=None,
-                     escalation_details=None, db_path=None):
+                     escalation_details=None, image_count=None, db_path=None):
     """Store an extraction result in the cache.
 
     Only replaces an existing entry if the new quality_score is higher.
@@ -1213,13 +1215,14 @@ def store_extraction(book_id, source_file_hash, tier, method,
                     extracted_html = ?, extracted_text = ?, chapter_hints_json = ?,
                     text_hash = ?, extraction_cost_usd = ?,
                     extraction_duration_seconds = ?, pipeline_version = ?,
-                    escalation_details = ?,
+                    escalation_details = ?, image_count = ?,
                     cache_version = 1, created_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """, (book_id, method, quality_score, page_count, word_count,
                   chapter_count, extracted_html, extracted_text,
                   chapter_hints_json, text_hash, cost_usd, duration_seconds,
-                  pipeline_version, escalation_details, existing['id']))
+                  pipeline_version, escalation_details, image_count,
+                  existing['id']))
             conn.commit()
             return existing['id']
         else:
@@ -1229,12 +1232,13 @@ def store_extraction(book_id, source_file_hash, tier, method,
                      quality_score, page_count, word_count, chapter_count,
                      extracted_html, extracted_text, chapter_hints_json,
                      text_hash, extraction_cost_usd, extraction_duration_seconds,
-                     pipeline_version, escalation_details)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     pipeline_version, escalation_details, image_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (book_id, source_file_hash, tier, method, quality_score,
                   page_count, word_count, chapter_count, extracted_html,
                   extracted_text, chapter_hints_json, text_hash, cost_usd,
-                  duration_seconds, pipeline_version, escalation_details))
+                  duration_seconds, pipeline_version, escalation_details,
+                  image_count))
             conn.commit()
             return cursor.lastrowid
     finally:
@@ -1262,6 +1266,33 @@ def invalidate_extraction_cache(source_file_hash=None, book_id=None,
             return 0
         conn.commit()
         return cursor.rowcount
+    finally:
+        conn.close()
+
+
+def backfill_cache_image_counts(db_path=None):
+    """Backfill image_count for existing extraction cache entries.
+
+    Scans entries where image_count IS NULL and counts <figure> tags
+    in their extracted_html. Returns number of entries updated.
+    """
+    conn = get_db(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, extracted_html FROM extraction_cache "
+            "WHERE image_count IS NULL AND extracted_html IS NOT NULL"
+        ).fetchall()
+
+        updated = 0
+        for row in rows:
+            count = len(re.findall(r'<figure>', row['extracted_html'] or ''))
+            conn.execute(
+                "UPDATE extraction_cache SET image_count = ? WHERE id = ?",
+                (count, row['id']))
+            updated += 1
+
+        conn.commit()
+        return updated
     finally:
         conn.close()
 
@@ -2254,6 +2285,12 @@ def _cmd_cache_invalidate(args):
         db_path=args.db_path,
     )
     print(f"Invalidated {count} extraction cache entries")
+
+
+def _cmd_cache_backfill_images(args):
+    """Backfill image_count for existing extraction cache entries."""
+    updated = backfill_cache_image_counts(db_path=getattr(args, 'db_path', None))
+    print(f"Backfilled image_count for {updated} cache entries")
 
 
 def _cmd_publisher_report(args):
@@ -3404,6 +3441,9 @@ def main():
     cache_inv_parser.add_argument('--older-than-version', type=int, default=None,
                                   help='Invalidate entries below this cache_version')
 
+    subparsers.add_parser('cache-backfill-images',
+                          help='Backfill image_count for existing cache entries')
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -3434,6 +3474,7 @@ def main():
         'cache': _cmd_cache,
         'cache-stats': _cmd_cache_stats,
         'cache-invalidate': _cmd_cache_invalidate,
+        'cache-backfill-images': _cmd_cache_backfill_images,
         'classify': _cmd_classify,
         'recommend': _cmd_recommend,
         'extract-metadata': _cmd_extract_metadata,
