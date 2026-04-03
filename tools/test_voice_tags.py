@@ -11,6 +11,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import re
 import pytest
 from pdf_to_balabolka import (
     detect_scene_breaks,
@@ -177,23 +178,27 @@ class TestApplyVoiceTags:
     def test_chapter_heading_uppercased(self):
         paras = ["Chapter One", "Some body text here."]
         out = apply_voice_tags(paras, self._cs(chapters=[0]), tag_syntax='sapi', log=nolog)
-        assert out[0] == "CHAPTER ONE"
+        assert out[0].startswith("CHAPTER ONE")
 
-    def test_chapter_silence_inserted_after_heading(self):
+    def test_chapter_silence_inlined_with_heading(self):
         paras = ["Chapter One", "Some body text here."]
         out = apply_voice_tags(paras, self._cs(chapters=[0]), tag_syntax='sapi', log=nolog)
-        assert out[1] == f'<silence msec="{CHAPTER_SILENCE_MS}"/>'
+        assert out[0].startswith("CHAPTER ONE")
+        assert out[0].endswith(f'<silence msec="{CHAPTER_SILENCE_MS}"/>')
 
     def test_part_silence_longer_than_chapter(self):
         paras = ["Part One", "Chapter Two", "Body text here with words."]
         out = apply_voice_tags(paras, self._cs(parts=[0], chapters=[1]), tag_syntax='sapi', log=nolog)
-        assert out[1] == f'<silence msec="{PART_SILENCE_MS}"/>'
-        assert out[3] == f'<silence msec="{CHAPTER_SILENCE_MS}"/>'
+        assert f'<silence msec="{PART_SILENCE_MS}"/>' in out[0]
+        assert f'<silence msec="{CHAPTER_SILENCE_MS}"/>' in out[1]
+        assert PART_SILENCE_MS > CHAPTER_SILENCE_MS
 
-    def test_scene_break_replaced_with_silence(self):
+    def test_scene_break_silence_inlined_with_preceding(self):
         paras = ["Body text.", "***", "More body text."]
         out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
-        assert out[1] == f'<silence msec="{SCENE_BREAK_SILENCE_MS}"/>'
+        # Scene break silence appended to preceding paragraph, *** removed
+        assert out[0].endswith(f'<silence msec="{SCENE_BREAK_SILENCE_MS}"/>')
+        assert "***" not in "\n\n".join(out)
 
     def test_emphatic_closer_wrapped_in_rate_tag(self):
         paras = ["He walked into the room. He was alone."]
@@ -202,15 +207,16 @@ class TestApplyVoiceTags:
         assert '<rate speed="-1">' in combined
         assert "He was alone." in combined
 
-    def test_emphatic_silence_appended_after_closer(self):
+    def test_emphatic_silence_inlined_with_closer(self):
         paras = ["He walked into the room. He was alone."]
         out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
-        assert f'<silence msec="{EMPHATIC_SILENCE_MS}"/>' in out
+        assert f'<silence msec="{EMPHATIC_SILENCE_MS}"/>' in out[0]
 
-    def test_universal_syntax_chapter_pause(self):
+    def test_universal_syntax_chapter_pause_inlined(self):
         paras = ["Chapter One", "Body text."]
         out = apply_voice_tags(paras, self._cs(chapters=[0]), tag_syntax='universal', log=nolog)
-        assert out[1] == f'{{{{Pause={CHAPTER_SILENCE_MS}}}}}'
+        assert f'{{{{Pause={CHAPTER_SILENCE_MS}}}}}' in out[0]
+        assert out[0].startswith("CHAPTER ONE")
 
     def test_universal_syntax_no_rate_tag(self):
         # Universal syntax has no rate support — text passes through unchanged
@@ -229,34 +235,35 @@ class TestApplyVoiceTags:
     def test_emphatic_silence_skipped_when_next_is_scene_break(self):
         paras = ["He walked. He was alone.", "***"]
         out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
-        emphatic_silence = f'<silence msec="{EMPHATIC_SILENCE_MS}"/>'
-        scene_silence = f'<silence msec="{SCENE_BREAK_SILENCE_MS}"/>'
-        assert emphatic_silence not in out
-        assert scene_silence in out
+        combined = "\n\n".join(out)
+        assert f'<silence msec="{EMPHATIC_SILENCE_MS}"/>' not in combined
+        assert f'<silence msec="{SCENE_BREAK_SILENCE_MS}"/>' in combined
 
     def test_emphatic_silence_skipped_when_next_is_heading(self):
         paras = ["He walked. He was alone.", "Chapter Two"]
         out = apply_voice_tags(paras, self._cs(chapters=[1]), tag_syntax='sapi', log=nolog)
-        emphatic_silence = f'<silence msec="{EMPHATIC_SILENCE_MS}"/>'
-        assert emphatic_silence not in out
+        combined = "\n\n".join(out)
+        assert f'<silence msec="{EMPHATIC_SILENCE_MS}"/>' not in combined
 
-    def test_output_length_heading_plus_silence_plus_body(self):
-        # 1 chapter heading → [heading, silence, body] = 3 items
+    def test_output_length_heading_with_inline_silence_plus_body(self):
+        # 1 chapter heading → [heading+silence, body] = 2 items (silence inlined)
         paras = ["Chapter One", "Body text here with enough words."]
         out = apply_voice_tags(paras, self._cs(chapters=[0]), tag_syntax='sapi', log=nolog)
-        assert len(out) == 3
+        assert len(out) == 2
 
     def test_plain_paragraph_unchanged(self):
         paras = ["This is a long body paragraph with many words and does not qualify as emphatic."]
         out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
         assert out == paras
 
-    def test_heading_uppercase_no_xml_on_same_line(self):
-        # ALL CAPS heading line must contain no XML tags (Balabolka split rule)
+    def test_heading_uppercase_with_inline_silence_only(self):
+        # Heading line: uppercase text + inline silence tag (no rate/voice tags)
         paras = ["Chapter One", "Body."]
         out = apply_voice_tags(paras, self._cs(chapters=[0]), tag_syntax='sapi', log=nolog)
-        assert out[0] == "CHAPTER ONE"
-        assert "<" not in out[0]
+        assert out[0].startswith("CHAPTER ONE")
+        assert '<silence' in out[0]
+        assert '<rate' not in out[0]
+        assert '<voice' not in out[0]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -403,7 +410,7 @@ class TestApplyVoiceTagsDialogue:
         options = {'chapter_silence': True, 'scene_break_silence': True,
                    'emphatic_closers': True, 'dialogue_voices': True}
         out = apply_voice_tags(paras, cs, tag_syntax='sapi', options=options, log=nolog)
-        assert out[0] == '# CHAPTER ONE'
+        assert out[0].startswith('# CHAPTER ONE')
         tagged_para = [p for p in out if 'Microsoft Guy Online' in p]
         assert len(tagged_para) == 1
 
@@ -509,6 +516,84 @@ class TestVoiceTagFormat:
         """Universal syntax doesn't support voice switching."""
         result = _voice_wrap('Hello world', 'Microsoft Guy Online', 'universal')
         assert result == 'Hello world'
+
+
+# ─────────────────────────────────────────────────────────────
+#  TTS regression guard: no standalone silence tags (EB-81)
+# ─────────────────────────────────────────────────────────────
+
+class TestNoStandaloneSilenceTags:
+    """Regression guard: silence tags must never appear as standalone paragraphs.
+
+    Balcon.exe only processes SAPI XML when inline with speakable text.
+    A standalone <silence.../> on its own line produces zero audio.
+    This test ensures apply_voice_tags() never produces that pattern.
+    """
+
+    SILENCE_ONLY_RE = re.compile(r'^\s*<silence\s+msec="\d+"\s*/>\s*$')
+    PAUSE_ONLY_RE = re.compile(r'^\s*\{\{Pause=\d+\}\}\s*$')
+
+    def _assert_no_standalone_silence(self, output, tag_syntax='sapi'):
+        """Assert no item in output is a standalone silence/pause tag."""
+        pattern = self.SILENCE_ONLY_RE if tag_syntax == 'sapi' else self.PAUSE_ONLY_RE
+        for i, item in enumerate(output):
+            assert not pattern.match(item), (
+                f"Standalone silence tag at index {i}: {item!r} — "
+                f"balcon will produce zero audio. Must be inlined with adjacent text."
+            )
+
+    def _cs(self, parts=None, chapters=None):
+        return {'parts': parts or [], 'chapters': chapters or []}
+
+    def test_chapter_heading_silence_inlined(self):
+        paras = ["Chapter One", "Body text here with enough words."]
+        out = apply_voice_tags(paras, self._cs(chapters=[0]),
+                              tag_syntax='sapi', log=nolog)
+        self._assert_no_standalone_silence(out)
+        assert '<silence' in out[0]
+
+    def test_part_heading_silence_inlined(self):
+        paras = ["Part One", "Chapter One", "Body text here."]
+        out = apply_voice_tags(paras, self._cs(parts=[0], chapters=[1]),
+                              tag_syntax='sapi', log=nolog)
+        self._assert_no_standalone_silence(out)
+
+    def test_scene_break_silence_inlined(self):
+        paras = ["Body text before.", "***", "Body text after."]
+        out = apply_voice_tags(paras, self._cs(),
+                              tag_syntax='sapi', log=nolog)
+        self._assert_no_standalone_silence(out)
+
+    def test_emphatic_closer_silence_inlined(self):
+        paras = ["He walked into the room. He was alone."]
+        out = apply_voice_tags(paras, self._cs(),
+                              tag_syntax='sapi', log=nolog)
+        self._assert_no_standalone_silence(out)
+
+    def test_universal_syntax_no_standalone_pause(self):
+        paras = ["Chapter One", "Body text."]
+        out = apply_voice_tags(paras, self._cs(chapters=[0]),
+                              tag_syntax='universal', log=nolog)
+        self._assert_no_standalone_silence(out, tag_syntax='universal')
+
+    def test_complex_document_no_standalone_silence(self):
+        """Full document with all tag types — no standalone silence anywhere."""
+        paras = [
+            "Part One",
+            "Chapter One",
+            "The detective arrived at the scene.",
+            "He examined the room. This was the end.",
+            "***",
+            "Chapter Two",
+            "A new day dawned over the city.",
+        ]
+        structure = self._cs(parts=[0], chapters=[1, 5])
+        out = apply_voice_tags(paras, structure, tag_syntax='sapi', log=nolog)
+        self._assert_no_standalone_silence(out)
+
+        # Verify silence tags ARE present (not just removed)
+        combined = "\n".join(out)
+        assert '<silence' in combined, "Silence tags should be present, just inlined"
 
 
 if __name__ == "__main__":

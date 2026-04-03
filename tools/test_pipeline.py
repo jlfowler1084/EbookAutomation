@@ -605,6 +605,26 @@ def run_kfx_conversion(pdf_path):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# TTS output validation (EB-81)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def check_no_standalone_silence_tags(txt_content):
+    """Validate that no line in TTS output is a standalone silence tag.
+
+    Balcon.exe only processes SAPI XML when inline with speakable text.
+    Standalone silence/pause tags on their own line produce zero audio.
+    """
+    issues = []
+    for i, line in enumerate(txt_content.split('\n')):
+        stripped = line.strip()
+        if re.match(r'^<silence\s+msec="\d+"\s*/>\s*$', stripped):
+            issues.append(f"Line {i+1}: standalone silence tag: {stripped}")
+        if re.match(r'^\{\{Pause=\d+\}\}\s*$', stripped):
+            issues.append(f"Line {i+1}: standalone pause tag: {stripped}")
+    return issues
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Validation checks (hardcoded test cases)
 # ═══════════════════════════════════════════════════════════════════════════
 

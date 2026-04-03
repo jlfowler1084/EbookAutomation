@@ -8618,27 +8618,35 @@ def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=N
     output = []
     for i, p in enumerate(paragraphs):
         if i in part_set:
-            output.append(p.upper())
+            heading = p.upper()
             if options.get('chapter_silence', True):
-                output.append(_silence_tag(PART_SILENCE_MS, tag_syntax))
+                heading += _silence_tag(PART_SILENCE_MS, tag_syntax)
+            output.append(heading)
 
         elif i in chapter_set:
-            output.append(p.upper())
+            heading = p.upper()
             if options.get('chapter_silence', True):
-                output.append(_silence_tag(CHAPTER_SILENCE_MS, tag_syntax))
+                heading += _silence_tag(CHAPTER_SILENCE_MS, tag_syntax)
+            output.append(heading)
 
         elif i in scene_breaks:
-            output.append(_silence_tag(SCENE_BREAK_SILENCE_MS, tag_syntax))
+            # Inline with preceding paragraph — standalone silence produces zero audio in balcon
+            silence = _silence_tag(SCENE_BREAK_SILENCE_MS, tag_syntax)
+            if output:
+                output[-1] += silence
+            else:
+                output.append(silence)
 
         elif i in closer_map:
             info = closer_map[i]
             before = p[:info['sentence_start']]
             final = p[info['sentence_start']:].strip()
             tagged_final = _rate_wrap(final, EMPHATIC_RATE, tag_syntax)
-            output.append(before + tagged_final)
+            para = before + tagged_final
             next_is_break = (i + 1 in scene_breaks) or (i + 1 in heading_set)
             if not next_is_break:
-                output.append(_silence_tag(EMPHATIC_SILENCE_MS, tag_syntax))
+                para += _silence_tag(EMPHATIC_SILENCE_MS, tag_syntax)
+            output.append(para)
 
         else:
             output.append(p)
