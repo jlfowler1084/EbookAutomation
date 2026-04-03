@@ -117,7 +117,9 @@
     "dialogue_silence_before_ms": 150,
     "dialogue_silence_after_ms": 200,
     "blockquote_silence_before_ms": 200,
-    "blockquote_silence_after_ms": 300
+    "blockquote_silence_after_ms": 300,
+    "em_dash_pause_ms": 250,
+    "en_dash_pause_ms": 150
   },
   "archive_originals":  true,
   "log_level":          "INFO"

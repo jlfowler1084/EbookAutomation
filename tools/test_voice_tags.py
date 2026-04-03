@@ -424,6 +424,93 @@ class TestApplyVoiceTagsDialogue:
         assert len(tagged) == 1
 
 
+# ─────────────────────────────────────────────────────────────
+#  Em dash pause insertion (EB-77)
+# ─────────────────────────────────────────────────────────────
+
+class TestEmDashPause:
+    def _cs(self):
+        return {'parts': [], 'chapters': []}
+
+    def test_em_dash_replaced_with_silence(self):
+        paras = ["The king arrived\u2014his last refuge\u2014before nightfall."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        combined = "\n\n".join(out)
+        assert '<silence msec="250"/>' in combined
+        assert '\u2014' not in combined
+
+    def test_double_hyphen_replaced(self):
+        paras = ["The king arrived--his last refuge--before nightfall."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        combined = "\n\n".join(out)
+        assert '<silence msec="250"/>' in combined
+        assert '--' not in combined
+
+    def test_en_dash_number_range_preserved(self):
+        """En dashes between numbers (page ranges) should NOT get pauses."""
+        paras = ["See pages 10\u201320 for details."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        combined = "\n\n".join(out)
+        assert '<silence msec="150"/>' not in combined
+
+    def test_en_dash_between_words_gets_pause(self):
+        """En dashes between words should get a shorter pause."""
+        paras = ["The Paris\u2013London express departed early."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        combined = "\n\n".join(out)
+        assert '<silence msec="150"/>' in combined
+
+    def test_em_dash_pause_disabled_by_option(self):
+        paras = ["The king arrived\u2014his last refuge."]
+        options = {'chapter_silence': True, 'scene_break_silence': True,
+                   'emphatic_closers': True, 'em_dash_pause': False}
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', options=options, log=nolog)
+        combined = "\n\n".join(out)
+        assert '250' not in combined
+
+    def test_universal_syntax_em_dash_pause(self):
+        paras = ["The king arrived\u2014before nightfall."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='universal', log=nolog)
+        combined = "\n\n".join(out)
+        assert '{{Pause=250}}' in combined
+
+    def test_xml_tags_not_mangled(self):
+        """Existing silence tags should pass through unchanged."""
+        paras = ['<silence msec="300"/>']
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        assert out[0] == '<silence msec="300"/>'
+
+    def test_single_hyphen_preserved(self):
+        """Regular hyphenated words should NOT be affected."""
+        paras = ["The well-known author wrote a best-selling book."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        assert "well-known" in out[0]
+        assert "best-selling" in out[0]
+
+    def test_triple_hyphen_not_matched(self):
+        """Triple hyphens (scene breaks) should not be partially replaced."""
+        paras = ["Text before.", "---", "Text after."]
+        out = apply_voice_tags(paras, self._cs(), tag_syntax='sapi', log=nolog)
+        # Scene break gets its own silence, the --- itself shouldn't be em-dash-paused
+        assert '<silence msec="250"/>' not in "\n\n".join(out)
+
+
+# ─────────────────────────────────────────────────────────────
+#  Voice tag format validation (EB-78)
+# ─────────────────────────────────────────────────────────────
+
+class TestVoiceTagFormat:
+    def test_sapi_voice_tag_format(self):
+        """Verify voice tags use the exact SAPI XML format balcon expects."""
+        result = _voice_wrap('Hello world', 'Microsoft Guy Online', 'sapi')
+        assert result == '<voice required="Name=Microsoft Guy Online">Hello world</voice>'
+
+    def test_universal_voice_tag_no_switch(self):
+        """Universal syntax doesn't support voice switching."""
+        result = _voice_wrap('Hello world', 'Microsoft Guy Online', 'universal')
+        assert result == 'Hello world'
+
+
 if __name__ == "__main__":
     import subprocess
     result = subprocess.run(

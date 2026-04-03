@@ -4598,6 +4598,61 @@ function Convert-BriefToYouTube {
 
 #endregion
 
+function Test-BalabolkaVoices {
+    <#
+    .SYNOPSIS
+        Diagnostic: list SAPI voices available to balcon and flag mismatches against settings.json.
+    .DESCRIPTION
+        Runs balcon -l to discover registered SAPI voices, then compares against the
+        narrator, dialogue, and blockquote voices configured in settings.json voice_tags.
+        Warns on any mismatch so the user can fix voice names before synthesis.
+    .EXAMPLE
+        PS> Test-BalabolkaVoices
+        Lists all available voices and flags any config mismatches.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $cfg    = Get-EbookConfig
+    $balcon = Resolve-ProjectPath $cfg.paths.balcon
+
+    if (-not (Test-Path $balcon)) {
+        Write-EbookLog "Test-BalabolkaVoices: balcon.exe not found at: $balcon" -Level ERROR
+        return $false
+    }
+
+    $voiceList = & $balcon -l 2>$null
+    $available = $voiceList | Where-Object { $_ -match '^\s+\S' } |
+                 ForEach-Object { $_.Trim() }
+
+    Write-EbookLog "Available SAPI voices ($($available.Count)):" -Level INFO
+    foreach ($v in $available) {
+        Write-EbookLog "  $v"
+    }
+
+    # Check configured voices against available list
+    $narrator   = $cfg.mp3.voice
+    $dialogue   = $cfg.voice_tags.dialogue_voice
+    $blockquote = $cfg.voice_tags.blockquote_voice
+
+    $allOk = $true
+    foreach ($entry in @(
+        @{ Name = 'Narrator (mp3.voice)';            Voice = $narrator },
+        @{ Name = 'Dialogue (voice_tags.dialogue)';   Voice = $dialogue },
+        @{ Name = 'Blockquote (voice_tags.blockquote)'; Voice = $blockquote }
+    )) {
+        if ($entry.Voice -and ($entry.Voice -notin $available)) {
+            Write-EbookLog "  MISMATCH: $($entry.Name) = '$($entry.Voice)' -- NOT in SAPI registry" -Level WARN
+            $allOk = $false
+        } else {
+            Write-EbookLog "  OK: $($entry.Name) = '$($entry.Voice)'"
+        }
+    }
+
+    return $allOk
+}
+
+
 function Invoke-Balabolka {
     <#
     .SYNOPSIS
@@ -4678,14 +4733,27 @@ function Invoke-Balabolka {
     # Temp WAV path (same folder as output, cleaned up in finally)
     $tempWav = [System.IO.Path]::ChangeExtension($OutputFile, '.tmp.wav')
 
+    # ── Voice validation: verify requested voice exists in SAPI ──
+    $voiceList = & $balcon -l 2>$null
+    if ($voiceList) {
+        $available = $voiceList | Where-Object { $_ -match '^\s+\S' } |
+                     ForEach-Object { $_.Trim() }
+        if ($available -and ($Voice -notin $available)) {
+            Write-EbookLog "Balabolka: WARNING -- voice '$Voice' not found in SAPI registry" -Level WARN
+            Write-EbookLog "Balabolka: available voices: $($available -join ', ')" -Level WARN
+        }
+    }
+
     Write-EbookLog "Balabolka: voice=$Voice  speed=$Speed  volume=$Volume"
     if ($dictPath) { Write-EbookLog "Balabolka: dictionary=$dictPath" }
     Write-EbookLog "Balabolka: $InputFile -> $OutputFile"
 
     try {
         # Stage 1: TTS -> WAV (no speaker output -- -w suppresses playback)
+        # -enc utf8: pipeline output is UTF-8; ensures SAPI XML tags are parsed correctly
         $balconArgs = @('-f', "`"$InputFile`"", '-w', "`"$tempWav`"",
-                        '-n', "`"$Voice`"", '-s', $Speed, '-v', $Volume)
+                        '-n', "`"$Voice`"", '-s', $Speed, '-v', $Volume,
+                        '-enc', 'utf8')
         if ($dictPath) { $balconArgs += '-d', "`"$dictPath`"" }
 
         $errFile   = Join-Path $env:TEMP 'balcon_err.txt'
@@ -6448,6 +6516,7 @@ Export-ModuleMember -Function @(
     'Get-EbookTaskStatus'
     'Initialize-EbookAutomation'
     'Invoke-Balabolka'
+    'Test-BalabolkaVoices'
     'Send-ToClaudeAPI'
     'Get-ChapterStructure'
     'Invoke-StructureAgent'

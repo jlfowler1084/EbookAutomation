@@ -8536,6 +8536,66 @@ def _apply_dialogue_voices(paragraphs, tag_syntax, options, log):
     return result
 
 
+def _replace_em_dashes_with_pause(paragraphs, tag_syntax, log):
+    """Replace em dashes with a brief silence for natural TTS pausing.
+
+    Em dashes (U+2014, or -- from unicode normalization) create unnatural
+    run-on reading in TTS. Replace with a short inline silence tag.
+    En dashes (U+2013) between words also get a shorter pause; digit ranges
+    like '10\u201320' are preserved.
+
+    Only called from apply_voice_tags (TTS mode), not Kindle mode.
+    """
+    try:
+        _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+        if _cfg_path.exists():
+            with open(_cfg_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f).get('voice_tags', {})
+        else:
+            cfg = {}
+    except Exception:
+        cfg = {}
+
+    em_dash_ms = cfg.get('em_dash_pause_ms', 250)
+    en_dash_ms = cfg.get('en_dash_pause_ms', 150)
+
+    em_pause = _silence_tag(em_dash_ms, tag_syntax)
+    en_pause = _silence_tag(en_dash_ms, tag_syntax)
+
+    count = 0
+    result = []
+    for p in paragraphs:
+        if not p or p.startswith('<silence') or p.startswith('{{Pause'):
+            result.append(p)
+            continue
+
+        original = p
+
+        # Em dash (Unicode U+2014) — may survive if normalization didn't run
+        p = re.sub(r'\s*\u2014\s*', f' {em_pause} ', p)
+
+        # Double hyphen used as em dash (from unicode normalization: \u2014 -> --)
+        # Negative lookbehind/ahead prevents matching triple+ hyphens or XML tags
+        p = re.sub(r'(?<![<\-])--(?![>\-])', f' {em_pause} ', p)
+
+        # En dash (Unicode U+2013) between characters — skip digit-digit ranges
+        def _en_dash_repl(m):
+            before, after = m.group(1), m.group(2)
+            if before.isdigit() and after.isdigit():
+                return m.group(0)  # Preserve number ranges (e.g. pages 10-20)
+            return f'{before} {en_pause} {after}'
+
+        p = re.sub(r'(.)\s*\u2013\s*(.)', _en_dash_repl, p)
+
+        if p != original:
+            count += 1
+        result.append(p)
+
+    if count:
+        log(f"  Em dash pauses: replaced in {count} paragraphs ({em_dash_ms}ms em, {en_dash_ms}ms en)")
+    return result
+
+
 def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=None, log=lambda m: None):
     """Apply structural (Tier 1) and dialogue (Tier 2) voice tags to paragraphs."""
     if options is None:
@@ -8586,6 +8646,12 @@ def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=N
     # ── Tier 2: Dialogue voice tags ──────────────────────────────────
     if options.get('dialogue_voices', False):
         output = _apply_dialogue_voices(output, tag_syntax, options, log)
+
+    # ── Tier 3: Em dash pause insertion ───────────────────────────────
+    # Runs AFTER dialogue tagging so that silence tags (which contain ")
+    # don't create false-positive quote spans in dialogue detection.
+    if options.get('em_dash_pause', True):
+        output = _replace_em_dashes_with_pause(output, tag_syntax, log)
 
     return output
 
