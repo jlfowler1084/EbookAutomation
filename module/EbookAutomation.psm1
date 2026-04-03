@@ -2395,6 +2395,207 @@ print(json.dumps(result))
 
 #endregion
 
+#region -- Merge to Kindle ---------------------------------------------------
+
+function Merge-ToKindle {
+    <#
+    .SYNOPSIS
+        Merge multiple files into a single Kindle KFX book.
+    .DESCRIPTION
+        Accepts multiple input files (Markdown, TXT, HTML, or any Calibre-supported
+        format), concatenates them in natural sort order with section headings derived
+        from filenames, and converts the merged result to KFX via Convert-ToKindle.
+
+        Wildcard/glob patterns are supported in -InputFiles.
+
+        Each source file becomes a top-level chapter (## heading) in the merged
+        document under the book title (# heading). Existing headings within each
+        file are demoted one level (# -> ##, ## -> ###) to preserve hierarchy
+        under the file-level chapter.
+    .PARAMETER InputFiles
+        One or more file paths or wildcard patterns. Resolved files are sorted
+        using natural (alphanumeric) ordering so "01_Intro" comes before "02_Core"
+        and "10_Appendix".
+    .PARAMETER Title
+        Book title for KFX metadata. If omitted, derived from the common prefix
+        of the input filenames.
+    .PARAMETER Author
+        Author name for KFX metadata.
+    .PARAMETER OutputDir
+        Folder for the output KFX file. Defaults to output\kindle from settings.json.
+    .PARAMETER UseHtmlExtraction
+        Pass through to Convert-ToKindle for any PDF inputs in the merge set.
+    .PARAMETER KeepMergedFile
+        Do not delete the intermediate merged Markdown file after conversion.
+        Useful for debugging.
+    .EXAMPLE
+        Merge-ToKindle -InputFiles "F:\notes\Miso_Interview_Prep_*.md" -Title "Miso Interview Prep"
+    .EXAMPLE
+        Merge-ToKindle -InputFiles @("01_STAR.md","02_Hands_On.md","03_Knowledge.md") -Title "Interview Prep" -Author "Joe"
+    .EXAMPLE
+        Get-ChildItem .\notes\*.md | Merge-ToKindle -Title "Combined Notes"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName, Position = 0)]
+        [Alias('Path','FullName')]
+        [string[]]$InputFiles,
+
+        [string]$Title,
+        [string]$Author,
+        [string]$OutputDir,
+        [switch]$UseHtmlExtraction,
+        [switch]$KeepMergedFile
+    )
+
+    begin {
+        $collectedFiles = [System.Collections.Generic.List[string]]::new()
+    }
+
+    process {
+        foreach ($pattern in $InputFiles) {
+            $resolved = Resolve-Path $pattern -ErrorAction SilentlyContinue
+            if ($resolved) {
+                foreach ($r in $resolved) {
+                    $collectedFiles.Add($r.Path)
+                }
+            } else {
+                Write-EbookLog "Merge: pattern resolved no files: $pattern" -Level WARN
+            }
+        }
+    }
+
+    end {
+        if ($collectedFiles.Count -eq 0) {
+            Write-EbookLog "Merge: no input files found" -Level ERROR
+            return $false
+        }
+
+        if ($collectedFiles.Count -eq 1) {
+            Write-EbookLog "Merge: only 1 file found — passing directly to Convert-ToKindle"
+            $convertParams = @{ InputFile = $collectedFiles[0] }
+            if ($OutputDir)           { $convertParams.OutputDir          = $OutputDir }
+            if ($UseHtmlExtraction)   { $convertParams.UseHtmlExtraction  = $true }
+            return Convert-ToKindle @convertParams
+        }
+
+        # -- Natural sort --
+        # Pad all digit runs to 20 chars for natural ordering
+        $sorted = $collectedFiles | Sort-Object {
+            [regex]::Replace($_, '\d+', { param($m) $m.Value.PadLeft(20, '0') })
+        }
+
+        Write-EbookLog "Merge: $($sorted.Count) files to merge (natural sort order):"
+        foreach ($f in $sorted) {
+            Write-EbookLog "  - $(Split-Path $f -Leaf)"
+        }
+
+        # -- Derive title from common filename prefix if not provided --
+        if (-not $Title) {
+            $names = $sorted | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) }
+            $prefix = $names[0]
+            foreach ($name in $names[1..($names.Count - 1)]) {
+                while ($prefix.Length -gt 0 -and (
+                    $name.Length -lt $prefix.Length -or
+                    $name.Substring(0, $prefix.Length) -ne $prefix)) {
+                    $prefix = $prefix.Substring(0, $prefix.Length - 1)
+                }
+            }
+            $Title = ($prefix -replace '[_\-\s]+$', '').Trim()
+            if (-not $Title) { $Title = 'Merged Document' }
+            $Title = $Title -replace '_', ' '
+            Write-EbookLog "Merge: auto-derived title: $Title"
+        }
+
+        # -- Build merged Markdown --
+        $cfg = Get-EbookConfig
+        $processingDir = Resolve-ProjectPath $cfg.paths.processing
+        if (-not (Test-Path $processingDir)) {
+            New-Item $processingDir -ItemType Directory -Force | Out-Null
+        }
+
+        $safeName = ($Title -replace '[^\w\-]', '_')
+        $mergedFile = Join-Path $processingDir "${safeName}_merged.md"
+
+        Write-EbookLog "Merge: building merged document..."
+        $sb = [System.Text.StringBuilder]::new()
+
+        [void]$sb.AppendLine("# $Title")
+        [void]$sb.AppendLine()
+
+        foreach ($filePath in $sorted) {
+            $fileName = [IO.Path]::GetFileNameWithoutExtension($filePath)
+
+            # Derive section title: strip numeric prefixes and clean up
+            $sectionTitle = $fileName -replace '^\d+[\._\-\s]*', ''
+            $sectionTitle = $sectionTitle -replace '_', ' '
+            if (-not $sectionTitle) { $sectionTitle = $fileName }
+
+            Write-EbookLog "Merge: appending $fileName as section '$sectionTitle'"
+
+            [void]$sb.AppendLine("## $sectionTitle")
+            [void]$sb.AppendLine()
+
+            $content = Get-Content $filePath -Raw -Encoding UTF8 -ErrorAction Stop
+
+            # Demote existing Markdown headings by one level (# -> ##, ## -> ###, etc.)
+            $lines = $content -split "`r?`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -match '^(#{1,5})\s') {
+                    $lines[$i] = '#' + $lines[$i]
+                }
+            }
+            $content = $lines -join "`r`n"
+
+            [void]$sb.AppendLine($content)
+            [void]$sb.AppendLine()
+            [void]$sb.AppendLine('---')
+            [void]$sb.AppendLine()
+        }
+
+        Set-Content $mergedFile -Value $sb.ToString() -Encoding UTF8 -NoNewline
+        $mergedMB = [math]::Round((Get-Item $mergedFile).Length / 1MB, 2)
+        Write-EbookLog "Merge: merged document written -> $mergedFile ($mergedMB MB)" -Level SUCCESS
+
+        # -- Convert via existing pipeline --
+        $convertParams = @{ InputFile = $mergedFile }
+        if ($OutputDir) {
+            $convertParams.OutputDir = $OutputDir
+        }
+        if ($UseHtmlExtraction) {
+            $convertParams.UseHtmlExtraction = $true
+        }
+
+        # Rename merged file to encode metadata for Get-EbookMetadataFromFilename
+        if ($Author) {
+            $metaName = "${safeName} - ${Author}_merged.md"
+        } else {
+            $metaName = "${safeName}_merged.md"
+        }
+        $metaPath = Join-Path $processingDir $metaName
+        if ($metaPath -ne $mergedFile) {
+            Rename-Item $mergedFile $metaPath -Force -ErrorAction SilentlyContinue
+            $mergedFile = $metaPath
+            $convertParams.InputFile = $mergedFile
+        }
+
+        Write-EbookLog "Merge: handing off to Convert-ToKindle..."
+        $result = Convert-ToKindle @convertParams
+
+        # -- Cleanup --
+        if (-not $KeepMergedFile -and (Test-Path $mergedFile)) {
+            Remove-Item $mergedFile -Force -ErrorAction SilentlyContinue
+            Write-EbookLog "Merge: cleaned up intermediate file"
+        } elseif ($KeepMergedFile) {
+            Write-EbookLog "Merge: intermediate file kept at $mergedFile"
+        }
+
+        return $result
+    }
+}
+
+#endregion
+
 #region -- Send to Kindle Device ---------------------------------------------
 
 function Send-ToKindle {
@@ -3583,6 +3784,7 @@ function Invoke-EbookPipeline {
                         }
                     }
                 }
+                # NOTE: For multi-file merges (e.g. Obsidian notes), use Merge-ToKindle instead
                 $kindleStart = Get-Date
                 try {
                     $kindleResult = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$useOcrAuto -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
@@ -6238,6 +6440,7 @@ Export-ModuleMember -Function @(
     'Invoke-EbookPipeline'
     'Convert-ToTTS'
     'Convert-ToKindle'
+    'Merge-ToKindle'
     'Send-ToKindle'
     'Convert-BriefToYouTube'
     'Install-EbookScheduledTask'

@@ -10,6 +10,7 @@
         'Invoke-EbookPipeline'
         'Convert-ToTTS'
         'Convert-ToKindle'
+        'Merge-ToKindle'
         'Send-ToKindle'
         'Convert-BriefToYouTube'
         'Install-EbookScheduledTask'
