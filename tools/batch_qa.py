@@ -578,13 +578,20 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
     Run text extraction on a single book.
     Returns (html_path_or_none, txt_path_or_none, stdout, stderr, exit_code).
     """
+    ext = Path(pdf_path).suffix.lstrip('.').lower()
+
     cmd = [
         sys.executable, str(SCRIPT_DIR / "pdf_to_balabolka.py"),
         "--input", str(pdf_path),
         "--mode", "kindle",
         "--output-dir", str(output_dir),
-        "--html-extraction",
     ]
+
+    if ext == 'pdf':
+        cmd.append("--html-extraction")
+    elif ext == 'epub':
+        cmd.append("--epub-html")
+    # MOBI/AZW3 — no special flag needed, process_kindle handles routing
 
     # Pass tool paths from settings.json so OCR escalation can find Tesseract
     _tess = _SETTINGS.get("tesseract")
@@ -595,6 +602,10 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
         _pop_resolved = str(PROJECT_ROOT / _pop) if not os.path.isabs(_pop) else _pop
         if os.path.isdir(_pop_resolved):
             cmd.extend(["--poppler-path", _pop_resolved])
+
+    _calibre = _SETTINGS.get("calibre")
+    if _calibre and os.path.isfile(_calibre):
+        cmd.extend(["--calibre-path", str(_calibre)])
 
     # Scale timeout: base 600s + 10s per MB over 20MB
     file_size_mb = os.path.getsize(str(pdf_path)) / (1024 * 1024)
@@ -710,7 +721,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         "source_classification": {
             "source_type": "unknown",
             "confidence": 0,
-            "strategy_selected": "html_extraction" if ext == 'pdf' else "direct",
+            "strategy_selected": "html_extraction" if ext == 'pdf' else ("epub_html" if ext == 'epub' else ("calibre_conversion" if ext in ('mobi', 'azw', 'azw3') else "direct")),
             "strategy_source": "default",
         },
         "routing": {
@@ -719,7 +730,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         },
         "extraction": {
             "success": False,
-            "extraction_path": "html_extraction" if ext == 'pdf' else "direct",
+            "extraction_path": "html_extraction" if ext == 'pdf' else ("epub_html" if ext == 'epub' else ("calibre_conversion" if ext in ('mobi', 'azw', 'azw3') else "direct")),
             "duration_seconds": 0,
             "html_produced": False,
             "html_size_bytes": 0,
@@ -1009,7 +1020,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
     else:
         # Non-PDF formats — just record basic metadata
         diag["extraction"]["success"] = True
-        diag["extraction"]["extraction_path"] = "direct"
+        diag["extraction"]["extraction_path"] = "epub_html" if ext == 'epub' else ("calibre_conversion" if ext in ('mobi', 'azw', 'azw3') else "direct")
         diag["extraction"]["duration_seconds"] = round(time.time() - t0, 1)
         t_analysis = time.time()
 
