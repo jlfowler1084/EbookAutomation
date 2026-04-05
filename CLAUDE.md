@@ -107,6 +107,7 @@ EbookAutomation/
 ### Python
 - Use `argparse` for CLI interfaces
 - Use `tkinter` for GUI components
+- For new Python code, follow the `python-core` global skill (`~/.claude/skills/python-core/SKILL.md`)
 
 ## Key Components
 ### settings.json (Pipeline Config — NOT Claude Code settings)
