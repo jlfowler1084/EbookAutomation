@@ -573,7 +573,7 @@ def scan_folder(folder_path, format_filter=None):
 # Per-book extraction and diagnostics
 # ═══════════════════════════════════════════════════════════════════════════
 
-def run_extraction_for_book(pdf_path, output_dir, quick=True):
+def run_extraction_for_book(pdf_path, output_dir, quick=True, is_scan=None):
     """
     Run text extraction on a single book.
     Returns (html_path_or_none, txt_path_or_none, stdout, stderr, exit_code).
@@ -587,8 +587,27 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
         "--output-dir", str(output_dir),
     ]
 
+    # For PDFs: detect scans and route to OCR instead of html-extraction
+    scan_detected = False
     if ext == 'pdf':
-        cmd.append("--html-extraction")
+        scan_detected = is_scan if is_scan is not None else False
+        if is_scan is None:
+            # Auto-detect: quick check using detect_pdf_type
+            try:
+                from pdf_to_balabolka import detect_pdf_type
+                detection = detect_pdf_type(str(pdf_path), lambda msg: None)
+                scan_detected = (detection.get('pdf_type') == 'image')
+                if scan_detected:
+                    logger.info("Scan detected for %s (avg %.0f chars/page) — routing to OCR",
+                                Path(pdf_path).name, detection.get('avg_chars_per_page', 0))
+            except Exception as e:
+                logger.debug("Scan detection failed for %s: %s", Path(pdf_path).name, e)
+                scan_detected = False
+
+        if scan_detected:
+            cmd.append("--ocr")
+        else:
+            cmd.append("--html-extraction")
     elif ext == 'epub':
         cmd.append("--epub-html")
     # MOBI/AZW3 — no special flag needed, process_kindle handles routing
@@ -607,9 +626,14 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True):
     if _calibre and os.path.isfile(_calibre):
         cmd.extend(["--calibre-path", str(_calibre)])
 
-    # Scale timeout: base 600s + 10s per MB over 20MB
+    # Scale timeout based on scan vs standard extraction
+    # OCR: 1200s base + 15s/MB (renders every page as image)
+    # Standard: 600s base + 15s/MB (bumped from 10 for large PDFs like Aquinas)
     file_size_mb = os.path.getsize(str(pdf_path)) / (1024 * 1024)
-    timeout = max(600, 600 + int((file_size_mb - 20) * 10)) if file_size_mb > 20 else 600
+    if scan_detected:
+        timeout = max(1200, 1200 + int((file_size_mb - 20) * 15)) if file_size_mb > 20 else 1200
+    else:
+        timeout = max(600, 600 + int((file_size_mb - 20) * 15)) if file_size_mb > 20 else 600
 
     try:
         result = subprocess.run(
@@ -857,21 +881,34 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             pass
 
         # DE-4: Image density detection
+        _is_scan_hint = None
         try:
             from pdf_to_balabolka import detect_image_density
             _density = detect_image_density(str(file_path), lambda msg: None)
             diag["metadata"]["image_density"] = _density
             if _density.get('likely_scan'):
+                _is_scan_hint = True
                 diag["extraction"]["warnings"].append(
                     f"Image density suggests scan: {_density['images_per_page']:.1f} images/page")
         except Exception:
             pass
 
         html_path, txt_path, stdout, stderr, exit_code = \
-            run_extraction_for_book(file_path, output_dir, quick)
+            run_extraction_for_book(file_path, output_dir, quick, is_scan=_is_scan_hint)
         extraction_duration = time.time() - t0
 
         diag["extraction"]["duration_seconds"] = round(extraction_duration, 1)
+
+        # Update extraction_path if OCR was used
+        if _is_scan_hint:
+            diag["extraction"]["extraction_path"] = "ocr"
+            diag["source_classification"]["strategy_selected"] = "ocr"
+        else:
+            # Also check subprocess output for OCR indicators (fallback detection)
+            combined_output = (stdout or '') + (stderr or '')
+            if 'extract_text_ocr' in combined_output or 'OCR extraction' in combined_output:
+                diag["extraction"]["extraction_path"] = "ocr"
+                diag["source_classification"]["strategy_selected"] = "ocr"
 
         t_analysis = time.time()
 
