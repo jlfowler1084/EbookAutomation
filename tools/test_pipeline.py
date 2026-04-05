@@ -571,8 +571,16 @@ def run_extraction(pdf_path, use_pdfminer=True, test_name="test"):
     if use_pdfminer:
         cmd.append("--html-extraction")
 
-    result = subprocess.run(cmd, capture_output=True, text=True,
-                            encoding='utf-8', errors='replace', timeout=600)
+    # Scale timeout based on file size (matches batch_qa.py pattern from EB-83)
+    # Base 900s (generous for post-processing) + 15s per MB over 20MB
+    file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+    timeout = max(900, 900 + int((file_size_mb - 20) * 15)) if file_size_mb > 20 else 900
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None, "", f"TIMEOUT: extraction exceeded {timeout}s for {Path(pdf_path).name}"
 
     # Find the HTML file that was produced
     base = Path(pdf_path).stem
@@ -596,11 +604,19 @@ def run_kfx_conversion(pdf_path):
         f'Import-Module "{PROJECT_ROOT / "module" / "EbookAutomation.psd1"}" -Force; '
         f'Convert-ToKindle -InputFile "{pdf_path}" -UsePdfminer'
     )
-    result = subprocess.run(
-        ["powershell", "-Command", ps_cmd],
-        capture_output=True, text=True,
-        encoding='utf-8', errors='replace', timeout=600
-    )
+    # Scale timeout based on file size (matches batch_qa.py pattern from EB-83)
+    file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
+    timeout = max(900, 900 + int((file_size_mb - 20) * 15)) if file_size_mb > 20 else 900
+
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", ps_cmd],
+            capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        return "", f"TIMEOUT: KFX conversion exceeded {timeout}s for {Path(pdf_path).name}"
+
     return result.stdout, result.stderr
 
 
