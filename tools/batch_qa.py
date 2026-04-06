@@ -892,9 +892,8 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             pass
 
         # DE-4: Image density detection
-        # Don't pre-route based on image density alone — let classify_pdf() decide.
-        # The DE-4 data is still recorded in diagnostics for reporting.
-        _is_scan_hint = None
+        # Recorded for diagnostics only — classify_pdf() inside
+        # run_extraction_for_book() decides OCR routing.
         try:
             from pdf_to_balabolka import detect_image_density
             _density = detect_image_density(str(file_path), lambda msg: None)
@@ -906,21 +905,16 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             pass
 
         html_path, txt_path, stdout, stderr, exit_code = \
-            run_extraction_for_book(file_path, output_dir, quick, is_scan=_is_scan_hint)
+            run_extraction_for_book(file_path, output_dir, quick)
         extraction_duration = time.time() - t0
 
         diag["extraction"]["duration_seconds"] = round(extraction_duration, 1)
 
-        # Update extraction_path if OCR was used
-        if _is_scan_hint:
+        # Detect if OCR was used (classify_pdf() decides inside run_extraction_for_book)
+        combined_output = (stdout or '') + (stderr or '')
+        if 'extract_text_ocr' in combined_output or 'OCR extraction' in combined_output:
             diag["extraction"]["extraction_path"] = "ocr"
             diag["source_classification"]["strategy_selected"] = "ocr"
-        else:
-            # Also check subprocess output for OCR indicators (fallback detection)
-            combined_output = (stdout or '') + (stderr or '')
-            if 'extract_text_ocr' in combined_output or 'OCR extraction' in combined_output:
-                diag["extraction"]["extraction_path"] = "ocr"
-                diag["source_classification"]["strategy_selected"] = "ocr"
 
         t_analysis = time.time()
 
