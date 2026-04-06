@@ -587,22 +587,33 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True, is_scan=None):
         "--output-dir", str(output_dir),
     ]
 
-    # For PDFs: detect scans and route to OCR instead of html-extraction
+    # For PDFs: use multi-signal classifier to decide OCR vs HTML extraction
     scan_detected = False
     if ext == 'pdf':
-        scan_detected = is_scan if is_scan is not None else False
+        # Only auto-detect if caller didn't force a decision
         if is_scan is None:
-            # Auto-detect: quick check using detect_pdf_type
             try:
-                from pdf_to_balabolka import detect_pdf_type
-                detection = detect_pdf_type(str(pdf_path), lambda msg: None)
-                scan_detected = (detection.get('pdf_type') == 'image')
-                if scan_detected:
-                    logger.info("Scan detected for %s (avg %.0f chars/page) — routing to OCR",
-                                Path(pdf_path).name, detection.get('avg_chars_per_page', 0))
+                from classify_source import classify_pdf
+                classification = classify_pdf(str(pdf_path))
+                needs_ocr = classification.get('flags', {}).get('needs_ocr', False)
+                cls_type = classification.get('classification', 'unknown')
+                confidence = classification.get('confidence', 0)
+
+                if needs_ocr:
+                    scan_detected = True
+                    text_density = classification.get('signals', {}).get('text_density_per_page', 0)
+                    logger.info("Scan detected for %s: %s (confidence %.2f, %.0f chars/page) — routing to OCR",
+                                Path(pdf_path).name, cls_type, confidence, text_density)
+                else:
+                    logger.debug("PDF classified as %s (confidence %.2f) for %s — using html_extraction",
+                                 cls_type, confidence, Path(pdf_path).name)
             except Exception as e:
-                logger.debug("Scan detection failed for %s: %s", Path(pdf_path).name, e)
+                logger.debug("PDF classification failed for %s: %s — defaulting to html_extraction",
+                             Path(pdf_path).name, e)
                 scan_detected = False
+        elif is_scan is True:
+            scan_detected = True
+        # else: is_scan is False → scan_detected stays False
 
         if scan_detected:
             cmd.append("--ocr")
@@ -881,13 +892,14 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             pass
 
         # DE-4: Image density detection
+        # Don't pre-route based on image density alone — let classify_pdf() decide.
+        # The DE-4 data is still recorded in diagnostics for reporting.
         _is_scan_hint = None
         try:
             from pdf_to_balabolka import detect_image_density
             _density = detect_image_density(str(file_path), lambda msg: None)
             diag["metadata"]["image_density"] = _density
             if _density.get('likely_scan'):
-                _is_scan_hint = True
                 diag["extraction"]["warnings"].append(
                     f"Image density suggests scan: {_density['images_per_page']:.1f} images/page")
         except Exception:
