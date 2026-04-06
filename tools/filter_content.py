@@ -15,6 +15,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -302,13 +303,13 @@ def _resolve_flags(profile='full', **kwargs):
     return flags
 
 
-def filter_html(html_str, profile='full', **kwargs):
+def filter_html(html_str: str, profile: str = 'full', **kwargs: bool) -> str:
     """Filter HTML content. Returns filtered HTML string."""
     filtered, _ = filter_html_with_report(html_str, profile, **kwargs)
     return filtered
 
 
-def filter_html_with_report(html_str, profile='full', **kwargs):
+def filter_html_with_report(html_str: str, profile: str = 'full', **kwargs: bool) -> tuple[str, dict[str, Any]]:
     """Filter HTML and return (filtered_html, report_dict)."""
     flags = _resolve_flags(profile, **kwargs)
 
@@ -367,7 +368,7 @@ def filter_html_with_report(html_str, profile='full', **kwargs):
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(description='Filter ebook content by profile/flags.')
     ap.add_argument('--input', required=True, help='Input HTML or TXT file')
     ap.add_argument('--output', required=True, help='Output filtered file')

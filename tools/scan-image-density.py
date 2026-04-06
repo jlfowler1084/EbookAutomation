@@ -15,9 +15,10 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 
-def scan_pdf_images(pdf_path):
+def scan_pdf_images(pdf_path: Path) -> dict[str, Any]:
     """Count images per page using PyMuPDF. Returns detailed stats."""
     try:
         import fitz  # PyMuPDF
@@ -118,7 +119,7 @@ def scan_pdf_images(pdf_path):
     return stats
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Scan PDFs for image density')
     parser.add_argument('--folder', default='inbox',
                         help='Folder to scan (default: inbox)')

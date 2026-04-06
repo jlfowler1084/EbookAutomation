@@ -18,9 +18,10 @@ import argparse
 import time
 import json
 import traceback
+from typing import Any
 
 
-def find_kindle_mtp(scanner_devices, timeout=60):
+def find_kindle_mtp(scanner_devices: Any, timeout: int = 60) -> tuple[Any, Any]:
     """Detect a Kindle via the MTP driver (Kindle Scribe and newer)."""
     from calibre.devices.mtp.driver import MTP_DEVICE
 
@@ -54,7 +55,7 @@ def find_kindle_mtp(scanner_devices, timeout=60):
     return drv, detected
 
 
-def find_kindle_usbms(timeout=60):
+def find_kindle_usbms(timeout: int = 60) -> tuple[Any, Any]:
     """Detect a Kindle via USBMS driver (older Kindles with drive letters)."""
     from calibre.devices.scanner import DeviceScanner
     from calibre.customize.ui import device_plugins
@@ -94,7 +95,7 @@ def find_kindle_usbms(timeout=60):
     return None, None
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Send book to connected Kindle via Calibre')
     parser.add_argument('--library-path', required=True, help='Path to Calibre library')
     parser.add_argument('--book-id', required=True, type=int, help='Calibre book ID to send')

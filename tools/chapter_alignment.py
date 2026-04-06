@@ -15,6 +15,7 @@ import re
 import sys
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -285,7 +286,7 @@ def _compare_body_snippets(matches, source_snippets, output_headings, threshold,
 # Step 6: Generate alignment report (main entry point)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def verify_chapter_alignment(source_pdf_path, output_html_path, threshold=0.6, log=None):
+def verify_chapter_alignment(source_pdf_path: str | Path, output_html_path: str | Path, threshold: float = 0.6, log=None) -> dict[str, Any]:
     """Main entry point. Returns alignment report dict.
 
     Args:
@@ -444,7 +445,7 @@ def verify_chapter_alignment(source_pdf_path, output_html_path, threshold=0.6, l
 # CLI entry point
 # ═══════════════════════════════════════════════════════════════════════════
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Chapter alignment verification: compare output HTML headings "
                     "against source PDF bookmarks using fuzzy matching."

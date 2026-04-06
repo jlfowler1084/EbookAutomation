@@ -18,6 +18,7 @@ import os
 import re
 import sys
 from pathlib import Path as _Path
+from typing import Any
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -125,9 +126,9 @@ def _get_page_count(pdf_path):
         return 0
 
 
-def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
-                         dpi=200, batch_size=5, cost_limit=5.0,
-                         model=None):
+def extract_text_gemini(pdf_path: str, log, api_key: str | None = None, poppler_path: str | None = None,
+                         dpi: int = 200, batch_size: int = 5, cost_limit: float = 5.0,
+                         model: str | None = None) -> dict[str, Any] | None:
     """Mode A: Full book transcription via Gemini Flash.
 
     Renders every page, sends to Gemini in batches, returns clean text.
@@ -257,9 +258,9 @@ def extract_text_gemini(pdf_path, log, api_key=None, poppler_path=None,
     }
 
 
-def remediate_pages_gemini(pdf_path, page_numbers, log, api_key=None,
-                            poppler_path=None, dpi=200,
-                            model=None):
+def remediate_pages_gemini(pdf_path: str, page_numbers: list[int], log, api_key: str | None = None,
+                            poppler_path: str | None = None, dpi: int = 200,
+                            model: str | None = None) -> dict[str, Any] | None:
     """Mode B: Page-level remediation via Gemini Flash.
 
     Only re-extracts specific pages identified as low quality.

@@ -29,6 +29,7 @@ import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from foh_parser import extract_posts
+from typing import Any
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 BASE_URL    = "https://www.firesofheaven.org"
@@ -51,7 +52,7 @@ HEADERS = {
 
 
 # ── Credential management ──────────────────────────────────────────────────────
-def load_or_prompt_credentials():
+def load_or_prompt_credentials() -> dict[str, str]:
     if CRED_FILE.exists():
         with open(CRED_FILE) as f:
             creds = json.load(f)
@@ -69,7 +70,7 @@ def load_or_prompt_credentials():
 
 
 # ── Session management ─────────────────────────────────────────────────────────
-def load_session():
+def load_session() -> requests.Session | None:
     if SESSION_FILE.exists():
         with open(SESSION_FILE) as f:
             data = json.load(f)
@@ -80,20 +81,20 @@ def load_session():
     return None
 
 
-def save_session(session):
+def save_session(session: requests.Session) -> None:
     data = {"cookies": dict(session.cookies)}
     with open(SESSION_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
 
-def clear_session():
+def clear_session() -> None:
     if SESSION_FILE.exists():
         SESSION_FILE.unlink()
         print("[auth] Session cleared.")
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
-def get_csrf_token(session):
+def get_csrf_token(session: requests.Session) -> str:
     resp = session.get(LOGIN_PAGE, timeout=15)
     resp.raise_for_status()
     match = re.search(r'_xfToken["\'][^>]*value=["\']([^"\']+)', resp.text)
@@ -104,7 +105,7 @@ def get_csrf_token(session):
     return match.group(1)
 
 
-def login(creds):
+def login(creds: dict[str, str]) -> requests.Session:
     session = requests.Session()
     session.headers.update(HEADERS)
     print("[auth] Fetching login page for CSRF token...")
@@ -128,7 +129,7 @@ def login(creds):
     raise RuntimeError(f"Login failed: {msg}")
 
 
-def get_authenticated_session(force_login=False):
+def get_authenticated_session(force_login: bool = False) -> requests.Session:
     if not force_login:
         session = load_session()
         if session:
@@ -144,7 +145,7 @@ def get_authenticated_session(force_login=False):
 
 
 # ── Date helpers ───────────────────────────────────────────────────────────────
-def parse_date_arg(s):
+def parse_date_arg(s: str) -> datetime:
     """
     Parse a date string. Accepts YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS.
     Returns timezone-aware UTC datetime.
@@ -159,7 +160,7 @@ def parse_date_arg(s):
     raise ValueError(f"Cannot parse date '{s}'. Use YYYY-MM-DD.")
 
 
-def post_datetime(post):
+def post_datetime(post: dict[str, Any]) -> datetime | None:
     """
     Return a UTC-aware datetime for a post, or None if unparseable.
     Tries the 'datetime' field first (ISO format), falls back to 'date'.
@@ -181,7 +182,7 @@ def post_datetime(post):
 
 
 # ── Page fetcher ───────────────────────────────────────────────────────────────
-def fetch_thread_page(session, thread_url, page_num, silent=False):
+def fetch_thread_page(session: requests.Session, thread_url: str, page_num: int, silent: bool = False) -> list[dict[str, Any]]:
     url = f"{thread_url}page-{page_num}"
     if not silent:
         print(f"[fetch] {url}")
@@ -198,14 +199,14 @@ def fetch_thread_page(session, thread_url, page_num, silent=False):
     return posts
 
 
-def get_latest_page_number(session, thread_url):
+def get_latest_page_number(session: requests.Session, thread_url: str) -> int:
     resp = session.get(thread_url, timeout=15)
     resp.raise_for_status()
     pages = re.findall(r'page-(\d+)', resp.text)
     return max(int(p) for p in pages) if pages else 1
 
 
-def fetch_pages(session, thread_url, num_pages=3, start_page=None):
+def fetch_pages(session: requests.Session, thread_url: str, num_pages: int = 3, start_page: int | None = None) -> list[dict[str, Any]]:
     """Original page-based fetch. Fully backward compatible."""
     if start_page is None:
         print("[fetch] Detecting latest page number...")
@@ -226,7 +227,7 @@ def fetch_pages(session, thread_url, num_pages=3, start_page=None):
 
 
 # ── Binary search: find the page for a target date ─────────────────────────────
-def get_page_first_date(session, thread_url, page_num):
+def get_page_first_date(session: requests.Session, thread_url: str, page_num: int) -> datetime | None:
     """
     Fetch a page silently and return the datetime of the first post on it.
     Returns None if the page can't be fetched or has no parseable dates.
@@ -242,7 +243,7 @@ def get_page_first_date(session, thread_url, page_num):
     return None
 
 
-def find_start_page(session, thread_url, target_dt, last_page):
+def find_start_page(session: requests.Session, thread_url: str, target_dt: datetime, last_page: int) -> int:
     """
     Binary search for the earliest page whose content reaches target_dt.
     Returns the page number to begin fetching from.
@@ -283,7 +284,7 @@ def find_start_page(session, thread_url, target_dt, last_page):
 
 
 # ── Date-range fetch ───────────────────────────────────────────────────────────
-def fetch_date_range(session, thread_url, after_dt=None, before_dt=None):
+def fetch_date_range(session: requests.Session, thread_url: str, after_dt: datetime | None = None, before_dt: datetime | None = None) -> list[dict[str, Any]]:
     """
     Fetch all posts in [after_dt, before_dt].
     Uses binary search to locate the start page, then reads forward until
@@ -348,7 +349,7 @@ def fetch_date_range(session, thread_url, after_dt=None, before_dt=None):
 
 
 # ── Keyword filter ─────────────────────────────────────────────────────────────
-def keyword_filter(posts, keywords):
+def keyword_filter(posts: list[dict[str, Any]], keywords: list[str] | None) -> list[dict[str, Any]]:
     if not keywords:
         return posts
     pattern = re.compile('|'.join(re.escape(k) for k in keywords), re.IGNORECASE)
@@ -363,7 +364,7 @@ def keyword_filter(posts, keywords):
 
 
 # ── Boolean query filter ───────────────────────────────────────────────────────
-def boolean_query_filter(posts, query):
+def boolean_query_filter(posts: list[dict[str, Any]], query: str | None) -> list[dict[str, Any]]:
     """Supports AND, OR, NOT, parentheses, "quoted phrases"."""
     if not query:
         return posts
@@ -449,7 +450,7 @@ def boolean_query_filter(posts, query):
 
 
 # ── Enrichment ─────────────────────────────────────────────────────────────────
-def fetch_article_content(url, session, timeout=15):
+def fetch_article_content(url: str, session: requests.Session, timeout: int = 15) -> dict[str, Any] | None:
     try:
         resp = session.get(url, timeout=timeout, allow_redirects=True)
         if resp.status_code != 200: return None
@@ -466,7 +467,7 @@ def fetch_article_content(url, session, timeout=15):
         return None
 
 
-def fetch_tweet_content(tweet_url, timeout=10):
+def fetch_tweet_content(tweet_url: str, timeout: int = 10) -> dict[str, str | None]:
     try:
         api  = f"https://publish.twitter.com/oembed?url={tweet_url}&omit_script=true"
         resp = requests.get(api, timeout=timeout, headers=HEADERS)
@@ -483,7 +484,7 @@ def fetch_tweet_content(tweet_url, timeout=10):
         return {'url': tweet_url, 'author': '', 'text': '', 'error': str(e)}
 
 
-def enrich_posts(posts, session, fetch_articles=False, fetch_tweets=False):
+def enrich_posts(posts: list[dict[str, Any]], session: requests.Session, fetch_articles: bool = False, fetch_tweets: bool = False) -> list[dict[str, Any]]:
     if not fetch_articles and not fetch_tweets:
         return posts
     article_cache, tweet_cache = {}, {}
@@ -515,7 +516,7 @@ def enrich_posts(posts, session, fetch_articles=False, fetch_tweets=False):
 
 
 # ── Output ─────────────────────────────────────────────────────────────────────
-def print_summary(posts, max_body=200):
+def print_summary(posts: list[dict[str, Any]], max_body: int = 200) -> None:
     print(f"\n{'='*60}\n  {len(posts)} posts\n{'='*60}")
     for p in posts:
         print(f"\n[{p['id']}] {p['username']} @ {p['date']}")
@@ -526,7 +527,7 @@ def print_summary(posts, max_body=200):
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(
         description="Fires of Heaven scraper",
         formatter_class=argparse.RawDescriptionHelpFormatter,

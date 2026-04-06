@@ -29,6 +29,7 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from pathlib import Path
+from typing import Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -244,7 +245,7 @@ def _signal_producer(pdf_path):
     return producer or '', creator or ''
 
 
-def classify_pdf(pdf_path, config=None):
+def classify_pdf(pdf_path: str | Path, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Classify a PDF source file. Returns a dict with classification results."""
     if config is None:
         config = _load_config()
@@ -466,7 +467,7 @@ def classify_pdf(pdf_path, config=None):
     return result
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Pre-flight PDF source classification"
     )

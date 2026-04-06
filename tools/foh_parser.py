@@ -9,6 +9,7 @@ Fires of Heaven vBulletin/XenForo Parser
 
 import re
 import glob
+from typing import Any
 
 # ── Profanity decoder ──────────────────────────────────────────────────────────
 PROFANITY_MAP = [
@@ -34,14 +35,14 @@ PROFANITY_MAP = [
     (r'\bcr\*p\b',              'crap'),
 ]
 
-def decode_profanity(text):
+def decode_profanity(text: str) -> str:
     for pattern, replacement in PROFANITY_MAP:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
 
 
 # ── HTML cleaner ───────────────────────────────────────────────────────────────
-def clean_html(html):
+def clean_html(html: str) -> str:
     """Strip tags, decode entities, collapse whitespace."""
     html = re.sub(r'<(script|style)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL|re.IGNORECASE)
     text = re.sub(r'<[^>]+>', ' ', html)
@@ -142,7 +143,7 @@ def _get_post_body_html(raw_block):
     return m.group(1) if m else raw_block
 
 
-def extract_links(raw_block):
+def extract_links(raw_block: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """
     Extract article URLs and tweet URLs from a post block BEFORE HTML is stripped.
 
@@ -246,7 +247,7 @@ def extract_links(raw_block):
 
 
 # ── Quote extractor ────────────────────────────────────────────────────────────
-def extract_quotes(raw_block):
+def extract_quotes(raw_block: str) -> list[dict[str, str]]:
     """Return list of dicts: {quoted_user, quoted_text}"""
     quotes = []
     for bq in re.finditer(r'<blockquote[^>]*>(.*?)</blockquote>', raw_block, re.DOTALL):
@@ -266,7 +267,7 @@ def extract_quotes(raw_block):
 
 
 # ── Main body extractor ────────────────────────────────────────────────────────
-def extract_body(raw_block):
+def extract_body(raw_block: str) -> str:
     """Extract post body from bbWrapper, strip quotes from it, clean up."""
     body_match = re.search(
         r'class="[^"]*bbWrapper[^"]*">(.*?)(?=</div>\s*</div>\s*</div>\s*</article>'
@@ -289,7 +290,7 @@ def extract_body(raw_block):
 
 
 # ── Full post parser ───────────────────────────────────────────────────────────
-def extract_posts(filepath):
+def extract_posts(filepath: str) -> list[dict[str, Any]]:
     with open(filepath, encoding='utf-8', errors='ignore') as f:
         content = f.read()
 
