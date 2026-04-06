@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "deny": [
+      "mcp__claude_ai_Google_Calendar__*",
+      "mcp__claude_ai_Gmail__*",
+      "mcp__claude_ai_Supabase__*",
+      "mcp__claude_ai_Indeed__*",
+      "mcp__claude_ai_Dice__*",
+      "mcp__claude_ai_Microsoft_Learn__*"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -13,5 +23,10 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "playwright@claude-plugins-official": false,
+    "context7@claude-plugins-official": false,
+    "github@claude-plugins-official": false
   }
 }

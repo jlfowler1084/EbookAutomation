@@ -62,3 +62,6 @@ test-corpus/*
 !test-corpus/README.md
 !test-corpus/*.baseline.json
 !test-corpus/*.expect.json
+
+# Git worktrees (INFRA-71)
+.worktrees/

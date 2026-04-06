@@ -1,12 +1,12 @@
 {
   "mcpServers": {
     "context7": {
-      "type": "command",
-      "command": "C:\\Program Files\\nodejs\\npx.cmd",
-      "args": ["-y", "@upstash/context7-mcp@latest"]
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"]
     },
     "atlassian": {
-      "type": "url",
+      "type": "http",
       "url": "https://mcp.atlassian.com/v1/mcp"
     }
   }
