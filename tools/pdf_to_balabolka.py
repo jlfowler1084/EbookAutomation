@@ -12059,6 +12059,24 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 log(f"  OCR escalation error (non-blocking): {e}")
                 log(f"  Continuing with Tier 1 output")
 
+        # ── Garbled text bail-out (EB-86) ──────────────────────────────
+        # If extraction quality is very poor (garbled encoding) and OCR
+        # escalation failed or wasn't available, bail out early instead of
+        # processing garbled text through heading classification etc.
+        _cwr = (quality.get('details', {}).get('common_word_rate', {})
+                .get('hit_rate', 1.0) if quality else 1.0)
+        if (tier_used == 1
+                and quality and quality.get('score', 100) < 60
+                and _cwr < 0.05):
+            log(f"\n[FATAL] Text extraction produced garbled output "
+                f"(common word rate: {_cwr:.0%}, quality: "
+                f"{quality['score']}/100).")
+            log(f"  This PDF likely has custom font encoding that "
+                f"prevents text extraction.")
+            log(f"  Resolution: install Tesseract OCR, or re-run "
+                f"with --gemini-ocr for paid OCR.")
+            sys.exit(78)  # EX_CONFIG — system not configured for this input
+
     _timing['extraction_s'] = round(_time_mod.time() - _t_extract, 1) if '_t_extract' in dir() else 0
     _t_format = _time_mod.time()
     log("\n-- STEP 2: Formatting as semantic HTML ----------------")

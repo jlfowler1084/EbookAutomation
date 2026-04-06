@@ -113,31 +113,33 @@ def _signal_text_density(pdf_path, sample_pages):
         from pypdf import PdfReader
     except ImportError:
         log.warning("pypdf not available — skipping text density signal")
-        return None, []
+        return None, [], []
 
     try:
         reader = PdfReader(pdf_path)
     except Exception as e:
         log.warning("pypdf failed to open PDF: %s", e)
-        return None, []
+        return None, [], []
 
     char_counts = []
+    texts = []
     for page_idx in sample_pages:
         if page_idx >= len(reader.pages):
             continue
         try:
             text = reader.pages[page_idx].extract_text() or ""
             char_counts.append(len(text.strip()))
+            texts.append(text)
         except Exception:
             char_counts.append(0)
 
     if not char_counts:
-        return 0.0, char_counts
+        return 0.0, char_counts, []
 
     avg_density = sum(char_counts) / len(char_counts)
     log.info("Signal 2 (text density): %.1f chars/page avg (samples: %s)",
              avg_density, char_counts)
-    return avg_density, char_counts
+    return avg_density, char_counts, texts
 
 
 def _signal_image_vs_text(pdf_path, sample_pages):
@@ -304,7 +306,7 @@ def classify_pdf(pdf_path: str | Path, config: dict[str, Any] | None = None) -> 
     result["signals"]["file_size_per_page_kb"] = round(kb_per_page, 1)
 
     # Signal 2: Text density
-    text_density, char_counts = _signal_text_density(pdf_path, sample_pages)
+    text_density, char_counts, _sampled_texts = _signal_text_density(pdf_path, sample_pages)
     if text_density is not None:
         result["signals"]["text_density_per_page"] = round(text_density, 1)
         result["signals"]["text_pages_with_content"] = sum(1 for c in char_counts if c > 50)
@@ -372,6 +374,36 @@ def classify_pdf(pdf_path: str | Path, config: dict[str, Any] | None = None) -> 
         result["confidence"] = 0.60
         result["recommended_strategies"] = ["html_extraction", "legacy", "column_aware"]
         result["flags"]["skip_html_extraction"] = False
+
+    # ── Garbled encoding detection (EB-86) ────────────────────────────
+    # Some digital-native PDFs have custom font CMaps that produce high
+    # char density but completely unreadable text.  Detect by checking
+    # extracted samples for common English words.
+    if (result["classification"] == "digital_native"
+            and text_density >= min_digital
+            and _sampled_texts):
+        _combined = ' '.join(_sampled_texts).lower()
+        _words = [w for w in _combined.split() if 3 <= len(w) <= 15]
+        if len(_words) >= 50:
+            _COMMON = frozenset([
+                'the', 'and', 'for', 'that', 'this', 'with', 'from', 'have',
+                'was', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her',
+                'one', 'our', 'out', 'his', 'has', 'been', 'were', 'they',
+                'will', 'when', 'who', 'said', 'each', 'which', 'their',
+                'time', 'very', 'than', 'other', 'about', 'into', 'some',
+                'could', 'them', 'would', 'make', 'like', 'just', 'over',
+            ])
+            _sample = _words[:200]
+            _hits = sum(1 for w in _sample if w in _COMMON)
+            _hit_rate = _hits / len(_sample)
+            log.info("Readability check: %.1f%% common words (%d/%d)",
+                     _hit_rate * 100, _hits, len(_sample))
+            if _hit_rate < 0.05:
+                result["flags"]["needs_ocr"] = True
+                result["flags"]["garbled_encoding"] = True
+                result["recommended_strategies"] = ["ocr", "gemini", "vision"]
+                log.info("Garbled encoding override: digital_native with <5%% "
+                         "common words — routing to OCR")
 
     # Boost confidence if producer metadata agrees
     if is_scan_producer and result["classification"].startswith("scan"):

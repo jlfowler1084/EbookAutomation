@@ -758,15 +758,31 @@ def _generate_recipe(classification, text_quality, chapter_structure,
             )
 
     elif cls_type == 'digital_native':
-        # Case 5: Digital native
-        profile = "full"
-        strategy = ["html_extraction", "legacy"]
-        flags = _default_flags()
-        flags["UseHtmlExtraction"] = True
-        claude_chap_flag = claude_chap
-        reasoning.append(
-            "Digital native PDF — full profile, HTML extraction preferred"
-        )
+        # Check for garbled encoding: high density but unreadable text (EB-86)
+        tq_common_word_rate = (text_quality.get("common_word_hit_rate", 1.0)
+                               if text_quality else 1.0)
+        if tq_common_word_rate < 0.05 and tq_score < 70:
+            # Case 5b: Digital native with garbled encoding — needs OCR
+            profile = "full"
+            strategy = ["ocr", "gemini", "vision"]
+            flags = _default_flags()
+            flags["UseOCR"] = True
+            flags["UseHtmlExtraction"] = False
+            claude_chap_flag = False
+            reasoning.append(
+                f"Digital native PDF with garbled encoding "
+                f"(common word rate {tq_common_word_rate:.0%}) — OCR required"
+            )
+        else:
+            # Case 5: Normal digital native
+            profile = "full"
+            strategy = ["html_extraction", "legacy"]
+            flags = _default_flags()
+            flags["UseHtmlExtraction"] = True
+            claude_chap_flag = claude_chap
+            reasoning.append(
+                "Digital native PDF — full profile, HTML extraction preferred"
+            )
 
     else:
         # Unknown — safe defaults
