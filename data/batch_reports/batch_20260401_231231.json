@@ -1,0 +1,1265 @@
+{
+  "run_id": "batch_20260401_231231",
+  "generated_at": "2026-04-02T03:12:58.660564+00:00",
+  "summary": {
+    "books_total": 5,
+    "books_passed": 5,
+    "books_warned": 0,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 27.4,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": true,
+      "vqa": false,
+      "limit": 5,
+      "format_filter": null,
+      "parallel": 1,
+      "folder_path": "F:\\Books\\Double_Columned"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 3,
+      "books": [
+        "BERT_Pre_Training.pdf",
+        "Covariance_Matrix.pdf",
+        "Deep_Residual_Learning.pdf"
+      ],
+      "source_types": {
+        "multi_column": 3
+      },
+      "formats": {
+        "pdf": 3
+      }
+    }
+  ],
+  "observations": [],
+  "books": [
+    {
+      "filename": "2604.01179v1.pdf",
+      "file_size_bytes": 208782,
+      "format": "pdf",
+      "batch_run_id": "batch_20260401_231231",
+      "timestamp": "2026-04-02T03:12:31.270481+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "pymupdf_columns",
+        "duration_seconds": 3.9,
+        "html_produced": true,
+        "html_size_bytes": 28087,
+        "errors": [],
+        "warnings": [],
+        "pymupdf_attempted": true,
+        "pymupdf_fallback_reason": null,
+        "completeness": {
+          "total_pages": 5,
+          "pages_with_text": 5,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 3,
+        "h1_count": 0,
+        "h2_count": 3,
+        "h3_count": 3,
+        "heading_labels": [
+          "A. Overall Node Architecture",
+          "C. ROS 2 Interfaces and Message Design",
+          "B. Functional Validation Across ROS 2 Modes"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 3826,
+        "page_count": 0,
+        "total_pages": 5,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 15,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 44,
+        "bold_tags": 9,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 3,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 98.2,
+          "std_dev": 1.7,
+          "segment_scores": [
+            99,
+            100,
+            99,
+            98,
+            95
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.9,
+          "worst_score": 95,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.438,
+            "words_sampled": 500,
+            "hits": 219
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 6.02,
+            "stddev": 3.12,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 3
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 87
+              },
+              {
+                "position": 0.9,
+                "score": 85
+              }
+            ],
+            "variance": 12,
+            "min_score": 85,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 12,
+        "min_region": 85,
+        "max_region": 97,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "pikepdf 8.15.1",
+        "pdf_creator": "arXiv GenPDF (tex2pdf:a6404ea)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.2,
+        "image_density": {
+          "total_images": 1,
+          "pages_sampled": 5,
+          "images_per_page": 0.2,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 8,
+        "names": [
+          "JNKIAX+NimbusRomNo9L-Medi",
+          "LREKMX+NimbusRomNo9L-MediItal",
+          "RAXLWI+NimbusRomNo9L-ReguItal",
+          "Times-Roman",
+          "WYJFDX+NimbusRomNo9L-Regu",
+          "XBFDTM+NimbusMonL-Regu",
+          "YRRKYX+NimbusMonL-Bold",
+          "ZTFRYM+CMR10"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.9,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.1,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 3.9,
+        "analysis": 0.9,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "BERT_Pre_Training.pdf",
+      "file_size_bytes": 775166,
+      "format": "pdf",
+      "batch_run_id": "batch_20260401_231231",
+      "timestamp": "2026-04-02T03:12:36.032076+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "pymupdf_columns",
+        "duration_seconds": 2.1,
+        "html_produced": true,
+        "html_size_bytes": 71693,
+        "errors": [],
+        "warnings": [],
+        "pymupdf_attempted": true,
+        "pymupdf_fallback_reason": null,
+        "completeness": {
+          "total_pages": 16,
+          "pages_with_text": 16,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 21,
+        "heading_labels": [
+          "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 10026,
+        "page_count": 0,
+        "total_pages": 16,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 146,
+        "bold_tags": 53,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 15,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 95.6,
+          "std_dev": 3.6,
+          "segment_scores": [
+            99,
+            94,
+            100,
+            95,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.9,
+          "worst_score": 90,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.412,
+            "words_sampled": 500,
+            "hits": 206
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.55,
+            "stddev": 2.91,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 36
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 96
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 99
+              },
+              {
+                "position": 0.9,
+                "score": 96
+              }
+            ],
+            "variance": 3,
+            "min_score": 96,
+            "max_score": 99,
+            "problem_regions": []
+          }
+        },
+        "variance": 3,
+        "min_region": 96,
+        "max_region": 99,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "pdfTeX-1.40.17",
+        "pdf_creator": "LaTeX with hyperref package",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.7,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 23,
+        "names": [
+          "CRPSRL+CMEX8",
+          "CWPQER+CMR8",
+          "DRMZXX+NimbusRomNo9L-Regu",
+          "FRERWI+CMMI8",
+          "IJPVAX+CMSY10",
+          "MRWCKP+CMMI6",
+          "MUFUZY+Arial-BoldMT",
+          "MUFUZY+ArialMT",
+          "MUFUZY+Verdana",
+          "NVWMCV+CMSY6",
+          "OLQIXF+CMTT8",
+          "QAPZNT+CMSY8",
+          "QRYJNG+CMSY7",
+          "RLWFBU+NimbusRomNo9L-ReguItal",
+          "Times-Roman",
+          "VWQKZV+CMMI10",
+          "WLXZAD+CMR9",
+          "WQTLNC+NimbusRomNo9L-Medi",
+          "XAEZUU+CMMI9",
+          "XHYEWS+CMR10",
+          "YDTJNN+CMTT10",
+          "YFCFET+NimbusMonL-Regu",
+          "YQSCRP+MSBM10"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.7,
+        "other": 0.3
+      },
+      "encoding": {
+        "ascii_pct": 99.5,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.5,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 2.1,
+        "analysis": 1.5,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "BlackHole.pdf",
+      "file_size_bytes": 755880,
+      "format": "pdf",
+      "batch_run_id": "batch_20260401_231231",
+      "timestamp": "2026-04-02T03:12:39.639480+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "pymupdf_columns",
+        "duration_seconds": 8.8,
+        "html_produced": true,
+        "html_size_bytes": 104416,
+        "errors": [],
+        "warnings": [],
+        "pymupdf_attempted": true,
+        "pymupdf_fallback_reason": null,
+        "completeness": {
+          "total_pages": 18,
+          "pages_with_text": 18,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 10,
+        "h1_count": 0,
+        "h2_count": 10,
+        "h3_count": 4,
+        "heading_labels": [
+          "Dynamics of an Acoustic Black Hole as an Open Quantum System",
+          "II. A PARTICULAR ACOUSTIC BLACK HOLE: THE ION RING",
+          "III. CHARACTERIZATION OF BOSONIC ENVIRONMENTS AND THE NON-EQUILIBRIUM DYNAMICS A. Interaction Model",
+          "B. Reduced Density Matrix",
+          "C. Estimation of the Eﬀective Coupling Constant",
+          "V. DYNAMICS OF THE ENTANGLEMENT THROUGH CORRELATIONS",
+          "A. Stochastic Description",
+          "VI. CLOSING REMARKS",
+          "Acknowledgements",
+          "Appendix B: Modes of the Wave Equation"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 14336,
+        "page_count": 0,
+        "total_pages": 18,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 21,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 10,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 2,
+        "italic_tags": 1529,
+        "bold_tags": 87,
+        "footnotes_linked": 98,
+        "footnotes_unlinked": 28,
+        "text_layer_score": 96,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 90.8,
+          "std_dev": 1.6,
+          "segment_scores": [
+            90,
+            94,
+            90,
+            90,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 90,
+          "best_score": 94
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 0.9978,
+            "non_printable_count": 11
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.554,
+            "words_sampled": 500,
+            "hits": 277
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.61,
+            "stddev": 2.71,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 80,
+            "total_artifacts": 3,
+            "per_1000_chars": 0.6,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 3
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 24
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 93
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 85
+              },
+              {
+                "position": 0.9,
+                "score": 93
+              }
+            ],
+            "variance": 15,
+            "min_score": 85,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 15,
+        "min_region": 85,
+        "max_region": 100,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "pdfTeX-1.40.12",
+        "pdf_creator": "LaTeX with hyperref package",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.7,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 47,
+        "names": [
+          "ACOOJD+CMBX12",
+          "AHGHPI+Mathematica1",
+          "AKWYLM+MSBM7",
+          "AUBCWI+LASY10",
+          "BSOEWH+Mathematica1",
+          "BSRJQM+Mathematica1",
+          "CLNACO+CMR8",
+          "EVDNDE+CMMI5",
+          "EWHPIH+CMR9",
+          "GFEQML+Times-Italic",
+          "HBIEHQ+CMSY6",
+          "HCLLKG+CMMI6",
+          "IOZJWM+Mathematica1",
+          "JAWWEG+CMMI9",
+          "JEPOCP+CMR6",
+          "KTNFUO+Mathematica2",
+          "KXYNEV+CMR5",
+          "KZNSUD+Times-Italic",
+          "MRILWN+Times-Roman",
+          "MWUGIO+CMBX7",
+          "NEOFWH+CMMI8",
+          "NKAKZE+CMTI9",
+          "NKWMJB+CMSY7",
+          "NLDHYI+CMSS9",
+          "NLVXJF+CMR10",
+          "NOPBSI+CMSY5",
+          "NUIJCY+CMSY10",
+          "OAJDEC+CMBX10",
+          "OPKRBR+CMSS8",
+          "PVJHMI+CMEX10"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 97.3,
+        "greek": 2.1,
+        "other": 0.6,
+        "has_non_latin": true,
+        "non_latin_pct": 2.1
+      },
+      "encoding": {
+        "ascii_pct": 96.9,
+        "latin_ext_pct": 0.1,
+        "high_unicode_pct": 3.0,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 8.8,
+        "analysis": 2.3,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Covariance_Matrix.pdf",
+      "file_size_bytes": 153034,
+      "format": "pdf",
+      "batch_run_id": "batch_20260401_231231",
+      "timestamp": "2026-04-02T03:12:50.798972+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 0.75,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "pymupdf_columns",
+        "duration_seconds": 1.6,
+        "html_produced": true,
+        "html_size_bytes": 34311,
+        "errors": [],
+        "warnings": [],
+        "pymupdf_attempted": true,
+        "pymupdf_fallback_reason": null,
+        "completeness": {
+          "total_pages": 7,
+          "pages_with_text": 7,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [
+          "A systematic approach to Covariance matrix formulation in charged particle activation experiments"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 4884,
+        "page_count": 0,
+        "total_pages": 7,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 1,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 33,
+        "text_layer_score": 96,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 97.2,
+          "std_dev": 3.5,
+          "segment_scores": [
+            100,
+            100,
+            94,
+            92,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.75,
+          "worst_score": 92,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 95,
+            "hit_rate": 0.386,
+            "words_sampled": 500,
+            "hits": 193
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 6.67,
+            "stddev": 3.4,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 9
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 96
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 91
+              }
+            ],
+            "variance": 9,
+            "min_score": 91,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 9,
+        "min_region": 91,
+        "max_region": 100,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "pikepdf 8.15.1",
+        "pdf_creator": "arXiv GenPDF (tex2pdf:a6404ea)",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.1,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 7,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 22,
+        "names": [
+          "AIHMBE+CMR7",
+          "ALKDUB+CMMI10",
+          "CHOCNF+CMR10",
+          "CRCVOB+CMSY6",
+          "EPMKSB+CMR6",
+          "JOKFBO+CMR9",
+          "JZZPCH+CMSSBX10",
+          "KRQXCG+CMR5",
+          "NCCQOL+CMSY9",
+          "OBUVGR+CMTT9",
+          "PLISEZ+CMMI9",
+          "QFDTEE+CMEX10",
+          "REPCKL+CMMI6",
+          "REWNJK+CMMI5",
+          "REZBUB+CMMI7",
+          "TBNUER+CMTI9",
+          "TMXXHW+CMSY10",
+          "Times-Roman",
+          "WKZMLU+CMBX9",
+          "WXEVAP+CMBX10",
+          "XDJTSA+CMTI10",
+          "ZBQUEC+CMSY7"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.1,
+        "greek": 0.4,
+        "other": 0.5,
+        "has_non_latin": true,
+        "non_latin_pct": 0.4
+      },
+      "encoding": {
+        "ascii_pct": 99.1,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.9,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 1.6,
+        "analysis": 1.7,
+        "calibre": 0,
+        "vqa": 0
+      }
+    },
+    {
+      "filename": "Deep_Residual_Learning.pdf",
+      "file_size_bytes": 819383,
+      "format": "pdf",
+      "batch_run_id": "batch_20260401_231231",
+      "timestamp": "2026-04-02T03:12:54.059177+00:00",
+      "source_classification": {
+        "source_type": "multi_column",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": true,
+        "column_confidence": 1.0,
+        "num_columns": 2
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "pymupdf_columns",
+        "duration_seconds": 2.0,
+        "html_produced": true,
+        "html_size_bytes": 69598,
+        "errors": [],
+        "warnings": [],
+        "pymupdf_attempted": true,
+        "pymupdf_fallback_reason": null,
+        "completeness": {
+          "total_pages": 12,
+          "pages_with_text": 12,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 1,
+        "h1_count": 1,
+        "h2_count": 0,
+        "h3_count": 14,
+        "heading_labels": [
+          "Deep Residual Learning for Image Recognition"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 10171,
+        "page_count": 0,
+        "total_pages": 12,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 1,
+        "italic_tags": 317,
+        "bold_tags": 98,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 13,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 92.8,
+          "std_dev": 2.4,
+          "segment_scores": [
+            90,
+            90,
+            94,
+            96,
+            94
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 90,
+          "best_score": 96
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.456,
+            "words_sampled": 500,
+            "hits": 228
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.64,
+            "stddev": 3.09,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 8
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 75
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 25,
+            "min_score": 75,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 25,
+        "min_region": 75,
+        "max_region": 100,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": false,
+        "success": false,
+        "kfx_size_bytes": 0,
+        "duration_seconds": 0
+      },
+      "visual_qa": {
+        "attempted": false,
+        "score": null,
+        "pass_threshold": 70,
+        "passed": false,
+        "category_scores": {},
+        "api_cost_usd": 0,
+        "duration_seconds": 0
+      },
+      "metadata": {
+        "pdf_producer": "pdfTeX-1.40.12",
+        "pdf_creator": "LaTeX with hyperref package",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 0.8,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 29,
+        "names": [
+          "CCHXUK+NimbusRomNo9L-Regu",
+          "DAYBWG+CMMI9",
+          "HHEZNL+CMMI7",
+          "HMPWZX+CMMI8",
+          "Helvetica",
+          "JGKPJP+CMR7",
+          "JQUDPS+NimbusMonL-Regu",
+          "JWRQMS+CMEX10",
+          "KGMNOB+TT93o00",
+          "KIXWID+CMSY8",
+          "LDGLDH+TT3Do00",
+          "LDGLDI+TT3Eo00",
+          "LJDGFE+TT3Bo00",
+          "LJDGFF+TT3Co00",
+          "LJDGFJ+MinionPro-Regular",
+          "LJXNUA+CMR10",
+          "MHMEKG+TT4Co00",
+          "MJKLIV+CMSY9",
+          "MJNQMS+CMSY10",
+          "MKDMEG+TT55o00",
+          "OIBCLP+TT94o00",
+          "OIBCMA+TT95o00",
+          "QPLLIX+CMSY6",
+          "RRPAQA+NimbusRomNo9L-ReguItal",
+          "TVTMCE+NimbusRomNo9L-MediItal",
+          "Times-Roman",
+          "WMCLTX+CMBX10",
+          "XORMUP+NimbusRomNo9L-Medi",
+          "YYBXCM+CMMI10"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 99.7,
+        "greek": 0.0,
+        "other": 0.2,
+        "has_non_latin": true,
+        "non_latin_pct": 0.0
+      },
+      "encoding": {
+        "ascii_pct": 99.7,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.3,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 2.0,
+        "analysis": 2.6,
+        "calibre": 0,
+        "vqa": 0
+      }
+    }
+  ]
+}
