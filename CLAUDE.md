@@ -192,6 +192,11 @@ Standalone feature — uses its own schedule and output path.
 - Don't suggest cloud TTS unless explicitly asked
 - Don't confuse `settings.json` (pipeline config) with `.claude/settings.json` (Claude Code config)
 
+## MCP Servers
+Allowed: Atlassian Rovo, Context7
+All other cloud MCP servers should be disabled in this project (`/mcp disable <name>`).
+Source of truth: ClaudeInfra `configs/mcp-server-registry.json` (INFRA-70).
+
 ## Current Priorities
 1. Stabilize 5-book regression suite — zero failures on all test cases
 2. Column-aware extraction for multi-column PDFs
