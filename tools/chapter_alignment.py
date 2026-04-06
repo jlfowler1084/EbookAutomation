@@ -8,6 +8,7 @@ Usage:
     python tools/chapter_alignment.py --source "book.pdf" --output "book_kindle.html"
     python tools/chapter_alignment.py --source "book.pdf" --output "book_kindle.html" --threshold 0.6 --verbose
 """
+from __future__ import annotations
 
 import argparse
 import json

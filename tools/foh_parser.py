@@ -6,6 +6,7 @@ Fires of Heaven vBulletin/XenForo Parser
 - Filters low-content posts (memes, short reactions, sig-only)
 - Extracts embedded article links and tweet URLs from each post
 """
+from __future__ import annotations
 
 import re
 import glob

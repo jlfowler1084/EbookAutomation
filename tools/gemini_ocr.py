@@ -12,6 +12,7 @@ Two modes:
     Mode A: Full book transcription (all pages)
     Mode B: Page remediation (only VQA-flagged pages)
 """
+from __future__ import annotations
 
 import json as _json
 import os

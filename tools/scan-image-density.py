@@ -9,6 +9,7 @@ Usage:
     python scan-image-density.py --folder "F:\Books"      # scans custom folder
     python scan-image-density.py --folder inbox --min-images 5
 """
+from __future__ import annotations
 
 import argparse
 import json

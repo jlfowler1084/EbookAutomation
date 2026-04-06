@@ -18,6 +18,7 @@ Usage (CLI):
 Credentials are stored in foh_credentials.json (created on first run).
 Session cookie is cached in foh_session.json so you only log in once per session.
 """
+from __future__ import annotations
 
 import requests
 import json
