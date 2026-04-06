@@ -154,8 +154,8 @@ def _assess_text_quality(pdf_path, page_count, log_fn):
                 details = quality.get('details', {})
                 page_hit_rates.append(details.get('common_word_rate', {}).get('hit_rate', 0.0))
                 page_unicode_ratios.append(details.get('unicode_printable', {}).get('ratio', 0.0))
-            except Exception:
-                pass
+            except Exception as e:
+                log_fn(f"  [warn] text quality scoring failed for page {idx}: {e}")
 
         if not page_scores:
             log_fn("  Text quality: no scorable pages from samples")

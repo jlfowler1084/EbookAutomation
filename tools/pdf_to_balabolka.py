@@ -67,8 +67,8 @@ def _load_api_model(tier="haiku"):
             with open(settings_path, 'r', encoding='utf-8') as f:
                 cfg = _json.load(f)
             return cfg.get("api_models", {}).get(tier, _defaults.get(tier, _defaults["haiku"]))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  [warn] API model config load failed: {e}", file=sys.stderr)
     return _defaults.get(tier, _defaults["haiku"])
 
 # ── OCR Substitution Table Loader ──────────────────────────────────────
@@ -874,7 +874,8 @@ def extract_bookmarks(pdf_path, log):
                             'dest_top': dest_top,
                             'dest_left': dest_left,
                         })
-                    except Exception:
+                    except Exception as e:
+                        log(f"  [warn] bookmark extraction failed for entry: {e}")
                         continue
 
         walk(outline)
@@ -1277,8 +1278,8 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                                 image_bytes = buf.getvalue()
                                 ext = 'jpeg'
                                 converted = True
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log(f"  [warn] image format conversion failed: {e}")
                         # Fallback: render via PyMuPDF Pixmap (lossless PNG)
                         if not converted:
                             try:
@@ -1343,8 +1344,8 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                                         best_dist = dist
                             if best_caption and best_caption.lower().startswith(_caption_prefixes):
                                 img_info['caption'] = best_caption
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log(f"  [warn] caption extraction failed: {e}")
                     # Clean up internal key
                     for img_info in page_images:
                         img_info.pop('_pymupdf_rect_bottom', None)
