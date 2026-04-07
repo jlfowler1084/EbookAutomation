@@ -19,6 +19,7 @@ import os
 import re
 import sys
 from pathlib import Path as _Path
+from collections.abc import Callable
 from typing import Any
 
 if sys.platform == 'win32':
@@ -127,7 +128,7 @@ def _get_page_count(pdf_path):
         return 0
 
 
-def extract_text_gemini(pdf_path: str, log, api_key: str | None = None, poppler_path: str | None = None,
+def extract_text_gemini(pdf_path: str, log: Callable[..., None], api_key: str | None = None, poppler_path: str | None = None,
                          dpi: int = 200, batch_size: int = 5, cost_limit: float = 5.0,
                          model: str | None = None) -> dict[str, Any] | None:
     """Mode A: Full book transcription via Gemini Flash.
@@ -259,7 +260,7 @@ def extract_text_gemini(pdf_path: str, log, api_key: str | None = None, poppler_
     }
 
 
-def remediate_pages_gemini(pdf_path: str, page_numbers: list[int], log, api_key: str | None = None,
+def remediate_pages_gemini(pdf_path: str, page_numbers: list[int], log: Callable[..., None], api_key: str | None = None,
                             poppler_path: str | None = None, dpi: int = 200,
                             model: str | None = None) -> dict[str, Any] | None:
     """Mode B: Page-level remediation via Gemini Flash.
