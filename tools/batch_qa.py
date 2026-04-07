@@ -233,13 +233,11 @@ FAILURE_PATTERNS = {
             "check extraction path selection"
         ),
     },
-    "ENCODING_ERRORS": {
-        "condition": lambda d: d["text_quality"].get("encoding_errors", 0) > 0,
-        "severity": "high",
-        "label": "Encoding errors in extracted text",
-        "description": "Non-UTF8 content caused garbled characters",
-        "recommendation": "Add encoding normalization as pre-processing step",
-    },
+    # ENCODING_ERRORS removed (EB-87): The > 0 threshold caused false positives
+    # on books with a few unmappable glyphs (icons, code-block chars). Truly
+    # garbled PDFs are caught by EB-86's common-word readability gate and the
+    # TEXT_LAYER_LOW_QUALITY pattern. The raw encoding_errors count remains in
+    # diag["text_quality"] for informational purposes.
     "EXTRACTION_FAILED": {
         "condition": lambda d: not d["extraction"]["success"],
         "severity": "critical",
