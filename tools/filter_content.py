@@ -9,6 +9,7 @@ Usage:
     python tools/filter_content.py --input book.html --output filtered.html --profile clean-read
     python tools/filter_content.py --input book.html --output filtered.html --no-footnotes --no-index
 """
+from __future__ import annotations
 import argparse
 import json
 import os
