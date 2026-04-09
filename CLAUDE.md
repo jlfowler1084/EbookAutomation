@@ -86,6 +86,9 @@ EbookAutomation/
 ├── output/                  # Final KFX/MP3/TXT files
 ├── tests/
 │   └── validate_against_baseline.py
+├── prompts/                 # Session handoff prompts
+├── docs/plans/              # CE implementation plans (archive)
+├── docs/solutions/          # Knowledge compounding (solved problems)
 ├── .mcp.json                # MCP server configuration
 └── .claude/
     ├── settings.json        # Project hooks (regression test runner)
