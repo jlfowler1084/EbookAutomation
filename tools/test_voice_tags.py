@@ -596,6 +596,192 @@ class TestNoStandaloneSilenceTags:
         assert '<silence' in combined, "Silence tags should be present, just inlined"
 
 
+# ─────────────────────────────────────────────────────────────
+#  SecondBrain autobook SAPI XML contract (SB-6)
+# ─────────────────────────────────────────────────────────────
+
+# Fixtures: actual output from Format-SBAutobookSSML (patched) for each format
+# using a 3-paragraph stub input. Locks in the fixed contract as a snapshot.
+
+_SAMPLE_STUDYGUIDE = (
+    '<voice required="Name=Microsoft Steffan Online"><rate speed="-2">'
+    "This is a personalized study guide on Test Topic, generated for you on 2026-04-09."
+    "</rate></voice>\n"
+    '<voice required="Name=Microsoft Steffan Online">This is paragraph one about the main topic.</voice>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Aria Online">'
+    "Key Takeaway: The most important thing to remember is focus."
+    '</voice><silence msec="500"/>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Steffan Online">'
+    "Chapter 1: Getting Started</voice>\n"
+    '<voice required="Name=Microsoft Steffan Online">Here is the first chapter content.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "Decision: We will proceed with the new approach."
+    '</voice><silence msec="500"/>\n'
+    '<voice required="Name=Microsoft Jenny Online">Another regular line here.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "That's the end of this study guide. Happy learning, and remember -- you've got this."
+    "</voice>"
+)
+
+_SAMPLE_REVIEW = (
+    '<voice required="Name=Microsoft Jenny Online"><rate speed="-2">'
+    "Here's your week in review for 2026-04-09. Let's look at what you've been up to."
+    "</rate></voice>\n"
+    '<voice required="Name=Microsoft Jenny Online">This is paragraph one about the main topic.</voice>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Aria Online">'
+    "Key Takeaway: The most important thing to remember is focus."
+    '</voice><silence msec="500"/>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "Chapter 1: Getting Started</voice>\n"
+    '<voice required="Name=Microsoft Jenny Online">Here is the first chapter content.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Steffan Online">'
+    "Decision: We will proceed with the new approach."
+    '</voice><silence msec="500"/>\n'
+    '<voice required="Name=Microsoft Steffan Online">Another regular line here.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Steffan Online">'
+    "That's your week. You're making progress, even when it doesn't feel like it. See you next week."
+    "</voice>"
+)
+
+_SAMPLE_REFLECTION = (
+    '<voice required="Name=Microsoft Aria Online"><rate speed="-2">'
+    "Let's explore some patterns emerging from your recent thinking. Generated on 2026-04-09."
+    "</rate></voice>\n"
+    '<voice required="Name=Microsoft Aria Online">This is paragraph one about the main topic.</voice>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Steffan Online">'
+    "Key Takeaway: The most important thing to remember is focus."
+    '</voice><silence msec="500"/>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Aria Online">'
+    "Chapter 1: Getting Started</voice>\n"
+    '<voice required="Name=Microsoft Aria Online">Here is the first chapter content.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "Decision: We will proceed with the new approach."
+    '</voice><silence msec="500"/>\n'
+    '<voice required="Name=Microsoft Jenny Online">Another regular line here.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "Those are the patterns I'm seeing. Sit with them. There's no rush to resolve everything at once."
+    "</voice>"
+)
+
+_SAMPLE_SESSION = (
+    '<voice required="Name=Microsoft Steffan Online"><rate speed="-2">'
+    "Here's a synthesis of our conversation about Test Topic, from 2026-04-09."
+    "</rate></voice>\n"
+    '<voice required="Name=Microsoft Steffan Online">This is paragraph one about the main topic.</voice>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Aria Online">'
+    "Key Takeaway: The most important thing to remember is focus."
+    '</voice><silence msec="500"/>\n'
+    "\n"
+    '<silence msec="500"/><voice required="Name=Microsoft Steffan Online">'
+    "Chapter 1: Getting Started</voice>\n"
+    '<voice required="Name=Microsoft Steffan Online">Here is the first chapter content.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "Decision: We will proceed with the new approach."
+    '</voice><silence msec="500"/>\n'
+    '<voice required="Name=Microsoft Jenny Online">Another regular line here.</voice>\n'
+    '<silence msec="500"/><voice required="Name=Microsoft Jenny Online">'
+    "That covers our discussion. The key decisions are clear, and the action items are ready when you are."
+    "</voice>"
+)
+
+_ALL_SAMPLES = {
+    "StudyGuide": _SAMPLE_STUDYGUIDE,
+    "Review": _SAMPLE_REVIEW,
+    "Reflection": _SAMPLE_REFLECTION,
+    "Session": _SAMPLE_SESSION,
+}
+
+_FORMAT_PRIMARY_VOICES = {
+    "StudyGuide": "Microsoft Steffan Online",
+    "Review": "Microsoft Jenny Online",
+    "Reflection": "Microsoft Aria Online",
+    "Session": "Microsoft Steffan Online",
+}
+
+
+class TestSecondBrainTagFormat:
+    """Validate SecondBrain autobook output matches the SAPI XML contract."""
+
+    def _all_sample_text(self):
+        return "\n".join(_ALL_SAMPLES.values())
+
+    def test_no_curly_voice_tags(self):
+        """No {{Voice substring should appear in any sample output."""
+        assert "{{Voice" not in self._all_sample_text()
+
+    def test_no_curly_rate_tags(self):
+        """No {{Rate substring should appear in any sample output."""
+        assert "{{Rate" not in self._all_sample_text()
+
+    def test_no_curly_pause_or_silence_tags(self):
+        """No {{Pause or {{Silence substring should appear."""
+        text = self._all_sample_text()
+        assert "{{Pause" not in text
+        assert "{{Silence" not in text
+
+    def test_no_colon_tag_syntax(self):
+        """No {{Voice:, {{Rate:, {{Silence:, or {{Pause: substrings."""
+        text = self._all_sample_text()
+        for tag in ("{{Voice:", "{{Rate:", "{{Silence:", "{{Pause:"):
+            assert tag not in text, f"Found broken tag syntax: {tag}"
+
+    def test_voice_tag_xml_format(self):
+        """Every voice tag must match SAPI XML format with an approved voice."""
+        text = self._all_sample_text()
+        voice_tags = re.findall(r'<voice\s+required="Name=([^"]+)">', text)
+        assert len(voice_tags) > 0, "No voice tags found at all"
+        pattern = re.compile(r"^Microsoft (Steffan|Guy|Aria|Jenny) Online$")
+        for voice_name in voice_tags:
+            assert pattern.match(voice_name), (
+                f"Voice tag has unapproved name: {voice_name}"
+            )
+
+    def test_no_standalone_control_tag_lines(self):
+        """No line should contain *only* a control tag (no speakable text)."""
+        bad_line_re = re.compile(
+            r"^\s*<(voice|rate|silence|/voice|/rate)[^>]*/?>\s*$"
+        )
+        text = self._all_sample_text()
+        for i, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                continue
+            assert not bad_line_re.match(line), (
+                f"Standalone control tag on line {i}: {line!r}"
+            )
+
+    def test_approved_voices_only(self):
+        """No occurrence of legacy desktop voices or non-Online voices."""
+        text = self._all_sample_text()
+        for name in ("Zira", "Hazel", "David"):
+            assert name not in text, f"Found forbidden voice: {name}"
+        voice_names = re.findall(r'<voice\s+required="Name=([^"]+)">', text)
+        for name in voice_names:
+            assert name.endswith("Online"), (
+                f"Voice name does not end with 'Online': {name}"
+            )
+
+    def test_all_four_formats_have_intro_voice(self):
+        """Each format's first non-empty content line has its primary voice."""
+        for fmt, sample in _ALL_SAMPLES.items():
+            expected_voice = _FORMAT_PRIMARY_VOICES[fmt]
+            first_line = ""
+            for line in sample.splitlines():
+                if line.strip():
+                    first_line = line
+                    break
+            assert f'<voice required="Name={expected_voice}">' in first_line, (
+                f"Format {fmt!r}: first content line missing primary voice "
+                f"{expected_voice!r}. Got: {first_line!r}"
+            )
+
+
 if __name__ == "__main__":
     import subprocess
     result = subprocess.run(
