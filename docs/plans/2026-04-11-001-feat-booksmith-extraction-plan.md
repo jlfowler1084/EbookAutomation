@@ -1,7 +1,7 @@
 ---
 title: "feat: Extract BookSmith PDF-to-ebook CLI from EbookAutomation"
 type: feat
-status: active
+status: completed
 date: 2026-04-11
 origin: docs/brainstorms/2026-04-10-kindlecraft-open-source-launch-requirements.md
 ---
