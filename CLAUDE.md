@@ -187,6 +187,16 @@ Standalone feature — uses its own schedule and output path.
 - **Structure Analysis Agent:** Pre-extraction PDF structure analysis (headings, TOC, footnotes)
 - **QA Evaluation Agent:** Post-conversion quality checks against baseline metrics
 
+## Cross-Repo TTS Coverage Rule (SB-8)
+SecondBrain's autobook pipeline emits TTS-bound text via `Format-SBAutobookSSML`.
+That output is consumed by this project's `Invoke-Balabolka`. The contract is enforced by
+`tools/test_voice_tags.py` — the `TestSecondBrainTagFormat` class validates snapshot samples
+against SAPI XML format rules: no colon-syntax pseudo-tags, no standalone tag lines, voices
+restricted to the approved list (Microsoft Steffan/Aria/Jenny/Guy Online).
+
+Any new SecondBrain TTS emission path must have a regression case added here before it ships.
+Run `python tools/test_voice_tags.py` to verify.
+
 ## Project-Specific Mistakes to Avoid
 - Don't use Unix-style paths (`/home/...`) — use Windows paths (`C:\...`)
 - Changes to regex phases affect downstream — always test full pipeline

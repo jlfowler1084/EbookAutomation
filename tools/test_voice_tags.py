@@ -782,6 +782,64 @@ class TestSecondBrainTagFormat:
             )
 
 
+    # --- SB-8: Explicit colon-syntax regression tests ---
+
+    def test_colon_syntax_regression_voice(self):
+        """Colon-syntax {{Voice:...}} must never appear — this is the SB-6 regression."""
+        broken = '{{Voice:Microsoft Steffan Online}}\n{{Rate:-2}}\nHello world'
+        assert "{{Voice:" in broken, "Sanity: broken sample has colon syntax"
+        # The real samples must NOT have it
+        for fmt, sample in _ALL_SAMPLES.items():
+            assert "{{Voice:" not in sample, (
+                f"Format {fmt!r} contains colon-syntax {{{{Voice:}}}} tag — "
+                f"SB-6 regression detected"
+            )
+
+    def test_colon_syntax_regression_rate(self):
+        """Colon-syntax {{Rate:...}} must never appear."""
+        for fmt, sample in _ALL_SAMPLES.items():
+            assert "{{Rate:" not in sample, (
+                f"Format {fmt!r} contains colon-syntax {{{{Rate:}}}} tag — "
+                f"SB-6 regression detected"
+            )
+
+    def test_colon_syntax_regression_silence(self):
+        """Colon-syntax {{Silence:...}} and {{Pause:...}} must never appear."""
+        for fmt, sample in _ALL_SAMPLES.items():
+            for tag in ("{{Silence:", "{{Pause:"):
+                assert tag not in sample, (
+                    f"Format {fmt!r} contains colon-syntax {tag}}} tag"
+                )
+
+    def test_standalone_tag_line_regression(self):
+        """No line should be tag-only (e.g., '<voice ...>' on its own line)."""
+        standalone_re = re.compile(
+            r"^\s*<(voice|rate|silence|/voice|/rate)[^>]*/?>\s*$"
+        )
+        for fmt, sample in _ALL_SAMPLES.items():
+            for i, line in enumerate(sample.splitlines(), 1):
+                if not line.strip():
+                    continue
+                assert not standalone_re.match(line), (
+                    f"Format {fmt!r} line {i}: standalone tag — "
+                    f"SB-6 regression detected: {line!r}"
+                )
+
+    def test_every_voice_line_has_speakable_text(self):
+        """Every line with a <voice> tag must also contain speakable text."""
+        text_after_strip = re.compile(
+            r"</?(?:voice|rate|silence)[^>]*/?>"
+        )
+        for fmt, sample in _ALL_SAMPLES.items():
+            for i, line in enumerate(sample.splitlines(), 1):
+                if "<voice" not in line:
+                    continue
+                stripped = text_after_strip.sub("", line).strip()
+                assert len(stripped) > 0, (
+                    f"Format {fmt!r} line {i}: voice tag with no speakable text: {line!r}"
+                )
+
+
 if __name__ == "__main__":
     import subprocess
     result = subprocess.run(
