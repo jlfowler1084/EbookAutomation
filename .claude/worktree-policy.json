@@ -12,6 +12,8 @@
     "docs/**",
     ".claude/**",
     "CLAUDE.md",
+    "QWEN.md",
+    "README.md",
     "feature-manifest.json",
     "requirements.txt",
     "dev-requirements.txt",
