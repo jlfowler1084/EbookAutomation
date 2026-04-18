@@ -63,7 +63,7 @@ focus. Stored in `output/kindle/`.
 | Endnote linking | `The Oil Kings_ How the U - Cooper, Andrew Scott.kfx` | Complex endnotes, dual numbering |
 | OCR / text cleanup | `Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones.kfx` | OCR artifacts, ligatures |
 | Chapter detection (stylistic) | `The Return of the Gods - Jonathan Cahn.kfx` | Thematic chapter names, non-sequential structure |
-| Heading vs body (dense + callouts) | `Atomic Habits_ Tiny Changes, Remarkable Results_ An Easy & Proven Way to Build Good Habits & Break Bad Ones.pdf` | Dense formatting, callout boxes (currently PDF input; convert to KFX as follow-up) |
+| Heading vs body (dense + callouts) | `Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.kfx` | Dense formatting, callout boxes |
 | Long chapters + footnotes | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | TOC depth, footnote pairing on long-form historical prose |
 | Simple structure canary | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured chapters — baseline sanity |
 
