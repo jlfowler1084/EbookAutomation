@@ -2,10 +2,10 @@
 date: 2026-04-18
 plan_id: 2026-04-18-002
 title: Local VQA — hallucination and calibration remediation investigation
-status: draft
+status: ready
 parent_plan: docs/plans/2026-04-13-001-local-llm-visual-qa.md
 parent_ticket: SCRUM-275
-proposed_ticket: SCRUM-next (investigation)
+ticket: SCRUM-279
 ce_phase_reference: Phase 5 (baseline comparison + calibration)
 owner: Joe
 estimated_sessions: 2 (1 Opus for experiment design, 1 Sonnet for execution)
