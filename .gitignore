@@ -58,6 +58,9 @@ tools/data/pipeline_cache.db
 data/vqa_baseline_pre_274/
 data/vqa_baseline_post_274/
 
+# SCRUM smoke-test output (regenerable; cross-provider + sb-chat evolution drift)
+data/scrum*_smoke/
+
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
 

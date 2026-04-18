@@ -3,13 +3,14 @@
 visual_qa.py — Automated Visual Quality Assurance for Ebook Conversions
 
 Converts a KFX/AZW3/EPUB file to paginated PDF via Calibre, renders sampled
-pages to PNG via pdf2image/poppler, sends them to the Claude Vision API with
+pages to PNG via pdf2image/poppler, sends them to a vision provider with
 a rubric prompt, and produces a structured JSON QA report.
 
 Usage:
     python visual_qa.py --input "output\\kindle\\Author - Title.kfx"
     python visual_qa.py --input "book.kfx" --dpi 200 --max-pages 15
     python visual_qa.py --input "book.epub" --model claude-sonnet-4-6 --verbose
+    python visual_qa.py --input "book.kfx" --provider local
 """
 
 import argparse
@@ -25,6 +26,12 @@ import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
+
+# Provider abstraction (SCRUM-274 Phase 1 / SCRUM-275 Phase 2). Routes vision
+# calls through a pluggable backend so the orchestration code in this module
+# no longer contains provider-specific payload or pricing logic.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from llm_providers import ClaudeVisionProvider, LocalVisionProvider, VisionProvider, VisionResponse  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
@@ -319,133 +326,87 @@ def render_pages_to_png(pdf_path, page_numbers, dpi=150, poppler_path=None):
 
 
 # ---------------------------------------------------------------------------
-# Step 4: Send to Claude Vision API
+# Step 4: Vision evaluation — provider-agnostic
 # ---------------------------------------------------------------------------
-
-def build_vision_request(page_images, rubric_text, model):
-    """Build the Claude API request payload with page images + rubric."""
-    content = []
-
-    # Add each page image
-    for page_num, png_bytes in page_images:
-        b64_data = base64.b64encode(png_bytes).decode('utf-8')
-        content.append({
-            "type": "text",
-            "text": f"--- Page {page_num} ---"
-        })
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": b64_data,
-            }
-        })
-
-    content.append({
-        "type": "text",
-        "text": (
-            "Evaluate all pages above against the rubric. "
-            "Return ONLY valid JSON (no markdown fences, no commentary). "
-            "Include a 'pages' array with one object per page evaluated, "
-            "each containing: page_number, page_type, score (0-100), pass (bool), "
-            "and issues (array of objects with category, severity, description, suggestion)."
-        )
-    })
-
-    return {
-        "model": model,
-        "max_tokens": 8192,
-        "system": rubric_text,
-        "messages": [
-            {"role": "user", "content": content}
-        ]
-    }
+# build_vision_request and call_claude_vision now live in
+# tools/llm_providers/claude_provider.py (SCRUM-274 Phase 1) and
+# tools/llm_providers/local_provider.py (SCRUM-275 Phase 2). The
+# orchestration code below delegates to provider.build_request and
+# provider.call so additional backends can be added without touching this
+# module.
 
 
-def call_claude_vision(payload, api_key):
-    """Send the vision request to Claude API with retry for overload errors."""
-    import requests
-    import time
-
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-    }
-
-    image_count = sum(1 for b in payload["messages"][0]["content"]
-                      if isinstance(b, dict) and b.get("type") == "image")
-    logger.info("Sending %d images to Claude Vision API...", image_count)
-
-    max_retries = 3
-    backoff_seconds = [10, 30, 60]
-
-    for attempt in range(max_retries + 1):
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=payload,
-            timeout=300,
-        )
-
-        if response.status_code == 200:
-            break  # Success
-
-        # Retry on overload (529) and rate limit (429)
-        if response.status_code in (429, 529) and attempt < max_retries:
-            wait = backoff_seconds[attempt]
-            logger.warning("  API returned %d (attempt %d/%d) — retrying in %ds...",
-                           response.status_code, attempt + 1, max_retries, wait)
-            time.sleep(wait)
-            continue
-
-        # Non-retryable error or retries exhausted
-        error_body = response.text[:500]
-        raise RuntimeError(
-            f"Claude API returned {response.status_code}: {error_body}"
-        )
-
-    # Parse successful response
-    result = response.json()
-
-    # Extract usage stats
-    usage = result.get("usage", {})
-    input_tokens = usage.get("input_tokens", 0)
-    output_tokens = usage.get("output_tokens", 0)
-
-    # Extract text content
-    text_blocks = [
-        b["text"] for b in result.get("content", [])
-        if b.get("type") == "text"
-    ]
-    raw_text = "\n".join(text_blocks).strip()
-
-    return raw_text, input_tokens, output_tokens
-
-
-def parse_qa_response(raw_text):
-    """Parse Claude's JSON response, stripping any markdown fences."""
-    # Strip markdown code fences if present
-    cleaned = raw_text.strip()
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences from a JSON response."""
+    cleaned = text.strip()
     if cleaned.startswith("```"):
-        # Remove opening fence (```json or ```)
         cleaned = re.sub(r'^```\w*\n?', '', cleaned)
-        # Remove closing fence
         cleaned = re.sub(r'\n?```\s*$', '', cleaned)
+    return cleaned
+
+
+def parse_qa_response(raw_text, provider=None, original_payload=None):
+    """Parse the vision provider's JSON response, stripping any markdown fences.
+
+    On JSONDecodeError, attempts one repair pass: sends the failing response
+    back to the provider asking it to return only valid JSON. If the repair
+    also fails, falls through to the error-report-dict behavior.
+
+    provider and original_payload are optional. If both are supplied and the
+    first parse fails, the repair prompt is attempted. If either is absent
+    the repair is skipped and the original error behavior is used.
+    """
+    cleaned = _strip_fences(raw_text)
 
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse Claude response as JSON: %s", e)
+    except json.JSONDecodeError as first_err:
+        logger.warning(
+            "First JSON parse failed: %s — raw response (first 300 chars): %s",
+            first_err,
+            raw_text[:300],
+        )
+
+        # --- Attempt repair via re-prompt ---
+        if provider is not None and original_payload is not None:
+            logger.info("Attempting JSON repair re-prompt via provider...")
+            try:
+                repair_payload = dict(original_payload)
+                # Append the bad response as assistant turn, then ask for repair
+                repair_messages = list(repair_payload.get("messages", []))
+
+                # For Claude (Anthropic format): messages list has a single user entry
+                # For local (OpenAI format): messages list has system + user
+                # In both cases we append an assistant + user repair turn.
+                repair_messages.append({"role": "assistant", "content": raw_text})
+                repair_messages.append({
+                    "role": "user",
+                    "content": (
+                        "The previous response was not valid JSON. "
+                        "Return ONLY the JSON object, nothing else."
+                    ),
+                })
+                repair_payload["messages"] = repair_messages
+
+                repair_response = provider.call(repair_payload)
+                repair_cleaned = _strip_fences(repair_response.raw_text)
+                result = json.loads(repair_cleaned)
+                logger.info("JSON repair re-prompt succeeded.")
+                return result
+            except Exception as repair_err:
+                logger.error(
+                    "JSON repair re-prompt also failed: %s", repair_err
+                )
+
+        # --- Fall through to error report ---
+        logger.error("Failed to parse vision response as JSON: %s", first_err)
         logger.error("Raw response (first 500 chars): %s", raw_text[:500])
-        # Return a minimal error report
         return {
             "overall_score": 0,
             "overall_pass": False,
             "pages": [],
             "category_scores": {},
-            "summary": f"Failed to parse QA response: {e}",
+            "summary": f"Failed to parse QA response: {first_err}",
             "top_issues": [],
             "parse_error": True,
             "raw_response": raw_text[:2000],
@@ -457,25 +418,31 @@ def parse_qa_response(raw_text):
 # ---------------------------------------------------------------------------
 
 def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
-                 input_tokens, output_tokens, pass_threshold=70):
-    """Assemble the final QA report JSON."""
+                 input_tokens, output_tokens, provider=None, pass_threshold=70):
+    """Assemble the final QA report JSON.
 
-    # Estimate cost (Sonnet pricing as default)
-    model_lower = model.lower()
-    if "opus" in model_lower:
-        input_cost_per_m = 5.00
-        output_cost_per_m = 25.00
-    elif "haiku" in model_lower:
-        input_cost_per_m = 1.00
-        output_cost_per_m = 5.00
-    else:  # sonnet
-        input_cost_per_m = 3.00
-        output_cost_per_m = 15.00
-
-    estimated_cost = (
-        (input_tokens / 1_000_000) * input_cost_per_m +
-        (output_tokens / 1_000_000) * output_cost_per_m
-    )
+    Cost estimation is delegated to provider.estimate_cost when a provider
+    is supplied. When provider is None (legacy call path), falls back to the
+    inline Sonnet-tier pricing that predates the provider abstraction.
+    """
+    if provider is not None:
+        estimated_cost = provider.estimate_cost(model, input_tokens, output_tokens)
+    else:
+        # Legacy fallback — matches pre-SCRUM-274 behavior
+        model_lower = model.lower()
+        if "opus" in model_lower:
+            input_cost_per_m = 5.00
+            output_cost_per_m = 25.00
+        elif "haiku" in model_lower:
+            input_cost_per_m = 1.00
+            output_cost_per_m = 5.00
+        else:  # sonnet
+            input_cost_per_m = 3.00
+            output_cost_per_m = 15.00
+        estimated_cost = (
+            (input_tokens / 1_000_000) * input_cost_per_m +
+            (output_tokens / 1_000_000) * output_cost_per_m
+        )
 
     overall_score = qa_data.get("overall_score", 0)
 
@@ -507,10 +474,15 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
+def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   output_dir, dpi, max_pages, model, rubric_path,
                   pass_threshold=70):
-    """Execute the full visual QA pipeline."""
+    """Execute the full visual QA pipeline.
+
+    provider is a VisionProvider instance. Pass a ClaudeVisionProvider for
+    the Anthropic path or a LocalVisionProvider for the sb-chat / local
+    vLLM path. The orchestration loop is provider-agnostic.
+    """
 
     input_path = Path(input_path).resolve()
     if not input_path.exists():
@@ -578,22 +550,26 @@ def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
     for i in range(0, len(page_images), BATCH_SIZE):
         batches.append(page_images[i:i + BATCH_SIZE])
 
-    logger.info("Sending %d images in %d batch(es) of up to %d...",
-                len(page_images), len(batches), BATCH_SIZE)
+    logger.info("Sending %d images in %d batch(es) of up to %d via %s provider...",
+                len(page_images), len(batches), BATCH_SIZE, provider.name)
 
     for batch_idx, batch in enumerate(batches, 1):
         logger.info("  Batch %d/%d: %d pages [%s]",
                      batch_idx, len(batches), len(batch),
                      ", ".join(str(p) for p, _ in batch))
-        payload = build_vision_request(batch, rubric_text, model)
+        payload = provider.build_request(batch, rubric_text, model)
         try:
-            raw_text, in_tok, out_tok = call_claude_vision(payload, api_key)
-            total_input_tokens += in_tok
-            total_output_tokens += out_tok
+            response = provider.call(payload)
+            total_input_tokens += response.input_tokens
+            total_output_tokens += response.output_tokens
             logger.info("  Batch %d: %d input, %d output tokens",
-                         batch_idx, in_tok, out_tok)
+                         batch_idx, response.input_tokens, response.output_tokens)
 
-            batch_data = parse_qa_response(raw_text)
+            batch_data = parse_qa_response(
+                response.raw_text,
+                provider=provider,
+                original_payload=payload,
+            )
             # Collect per-page results from this batch
             if isinstance(batch_data, dict):
                 pages = batch_data.get("pages", [])
@@ -674,7 +650,7 @@ def run_visual_qa(input_path, api_key, calibre_path, poppler_path,
     # --- Build report ---
     report = build_report(
         str(input_path), qa_data, total_pages, len(page_images),
-        dpi, model, input_tokens, output_tokens, pass_threshold
+        dpi, model, input_tokens, output_tokens, provider, pass_threshold
     )
 
     # --- Write report ---
@@ -736,6 +712,10 @@ def main():
     default_dpi = vqa_settings.get("dpi", 100)
     default_max_pages = vqa_settings.get("max_pages", 8)
     default_threshold = vqa_settings.get("pass_threshold", 70)
+    # Provider: from settings.json visual_qa.provider, falling back to "claude"
+    default_provider = vqa_settings.get("provider", "claude")
+    default_local_base_url = vqa_settings.get("local_base_url", "http://localhost:8000/v1")
+    default_local_model = vqa_settings.get("local_model", "qwen3.5-35b-a3b-fp8")
     # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
     # This setting is used as a fallback only.
     default_rubric = vqa_settings.get("rubric_path", "")
@@ -745,15 +725,19 @@ def main():
         default_rubric = str(Path(__file__).resolve().parent.parent / default_rubric)
 
     parser = argparse.ArgumentParser(
-        description="Visual QA for ebook conversions using Claude Vision API"
+        description="Visual QA for ebook conversions using a vision provider"
     )
     parser.add_argument(
         "--input", required=True,
         help="Path to KFX, AZW3, EPUB, or PDF file"
     )
     parser.add_argument(
+        "--provider", default=default_provider, choices=["claude", "local"],
+        help=f"Vision provider backend (default: {default_provider})"
+    )
+    parser.add_argument(
         "--api-key", default=None,
-        help="Anthropic API key (falls back to ANTHROPIC_API_KEY env var)"
+        help="Anthropic API key (falls back to ANTHROPIC_API_KEY env var; only used with --provider claude)"
     )
     parser.add_argument(
         "--calibre", default=default_calibre,
@@ -781,7 +765,7 @@ def main():
     )
     parser.add_argument(
         "--model", default=None,
-        help="Claude model for evaluation (default: from settings.json or claude-sonnet-4-6)"
+        help="Model identifier for evaluation (default: from settings.json or provider default)"
     )
     parser.add_argument(
         "--rubric", default=default_rubric,
@@ -798,10 +782,17 @@ def main():
 
     args = parser.parse_args()
 
-    # Resolve model from settings.json if not specified on CLI
+    # Resolve model default based on provider
     if args.model is None:
-        settings = load_settings_json()
-        args.model = settings.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
+        settings_reload = load_settings_json()
+        if args.provider == "local":
+            # Env var takes priority, then settings.json, then hardcoded default
+            args.model = (
+                os.environ.get("LOCAL_LLM_VISION_MODEL")
+                or settings_reload.get("visual_qa", {}).get("local_model", default_local_model)
+            )
+        else:
+            args.model = settings_reload.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
 
     # --full overrides to comprehensive evaluation
     if args.full:
@@ -825,17 +816,28 @@ def main():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
-    # Resolve API key
-    api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        parser.error(
-            "No API key provided. Use --api-key or set ANTHROPIC_API_KEY env var."
+    # --- Provider factory ---
+    if args.provider == "local":
+        local_base_url = (
+            os.environ.get("LOCAL_LLM_BASE_URL")
+            or vqa_settings.get("local_base_url", default_local_base_url)
         )
+        provider = LocalVisionProvider(base_url=local_base_url)
+        logger.info("Using local vision provider at %s (model: %s)", local_base_url, args.model)
+    else:
+        # claude (default)
+        api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            parser.error(
+                "No API key provided. Use --api-key or set ANTHROPIC_API_KEY env var."
+            )
+        provider = ClaudeVisionProvider(api_key=api_key)
+        logger.info("Using Claude vision provider (model: %s)", args.model)
 
     try:
         report = run_visual_qa(
             input_path=args.input,
-            api_key=api_key,
+            provider=provider,
             calibre_path=args.calibre,
             poppler_path=args.poppler,
             output_dir=args.output_dir,
