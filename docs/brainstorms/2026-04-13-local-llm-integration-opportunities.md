@@ -245,6 +245,94 @@ fields directly. Replaces user-prompt fallback with automatic recovery.
 FOH forum scraper currently calls Claude for summarization. Perfect local job —
 runs on a schedule, no rate limit, unlimited rewrites for tone tuning.
 
+#### 16. LLM semantic cleanup for residual OCR errors after regex
+
+**Value:** low · **Effort:** low · **Risk:** low-medium
+
+Added 2026-04-18 — low priority, captured here so it isn't forgotten.
+
+Current OCR cleanup is deterministic-first: `ligature_map`, `merged_word_splits`,
+`backtick_replacements`, and the multi-phase running-header/footer stripping in
+`pdf_to_balabolka.py` catch the common patterns. A small LLM pass *after* these
+regex layers could catch residual fragmentation that regex can't address without
+false positives — e.g., `"The cat s at on the mat"` → `"The cat sat on the mat"`.
+
+Not a priority because:
+
+- The regex layer already catches ~95%+ of the common patterns at $0 and with
+  deterministic behavior.
+- LLM cleanup adds non-determinism, a second token-counting dimension, and a
+  regression surface that would need its own test corpus.
+- Residual-error rate on current corpus hasn't been measured — would need to
+  scope from an actual error-rate baseline, not a hunch.
+
+When to revisit: if a specific book's output quality is measurably below bar
+after all current cleanup phases run, and the residual errors cluster around
+semantic patterns regex can't address. Rough design if adopted:
+
+- Run as a Tier 1b pass between `fix_engine.py` and the final HTML/TXT writer.
+- Chunk by chapter, not whole-book — keeps context small and failures local.
+- Constrained prompt: "fix OCR errors only; preserve all other text verbatim,"
+  with a diff-based acceptance gate (reject if the LLM rewrote more than N% of
+  the chapter).
+- sb-chat Qwen3.5-35B as the provider — zero marginal cost, plenty of context.
+
+Cross-ref: external recommendation from Qwen (2026-04-18 research session)
+that overstated the value. Most of Qwen's ligature/hyphen/header examples are
+already handled at the deterministic layer. The genuinely novel part — semantic
+rejoining of OCR-fragmented words — is real but low-yield against the current
+corpus.
+
+#### 17. Per-character voice assignment for fiction TTS
+
+**Value:** medium · **Effort:** medium · **Risk:** medium
+
+Added 2026-04-18 — see also SCRUM ticket for implementation plan.
+
+EB already owns dialogue-vs-narration detection today: `detect_dialogue_spans`,
+`_apply_dialogue_voices`, and `apply_voice_tags` in `pdf_to_balabolka.py`. The
+current default is a *uniform* dialogue voice (`Microsoft Guy Online`) for all
+detected quoted speech — SCRUM-36 shipped this as Tier 2 and explicitly flagged
+gender-aware / per-character voices as a future enhancement.
+
+What an LLM unlocks here: **speaker attribution**. Given a dialogue span and its
+surrounding paragraph, identify who is speaking ("`said John`", "`Sarah
+whispered`", unattributed but implied by alternating turns). Output: a
+character→voice map maintained across the whole book, respecting the 4-voice
+approved list (Steffan/Guy/Jenny/Aria) with a deterministic fallback order.
+
+Why this lives in EB, not SecondBrain:
+
+- All the required plumbing is already in EB — dialogue detection, paragraph
+  structure, chapter boundaries, voice-wrap primitives, config in
+  `config/settings.json → voice_tags`.
+- Speaker attribution needs book-wide state (the same character gets the same
+  voice from chapter 1 to chapter 20). That context lives in EB's pipeline,
+  not in SB's per-note autobook emitter.
+- SB's `Format-SBAutobookSSML` handles vault-originated content (notes,
+  journal entries, short-form) where character attribution isn't the use case.
+  The SB contract enforced by `tools/test_voice_tags.py::TestSecondBrainTagFormat`
+  stays unchanged — SB keeps emitting SAPI-compatible voice tags for its own
+  flow.
+
+Design sketch if adopted:
+
+- New Tier 2b pass after `_apply_dialogue_voices`, gated on an
+  `options['per_character_voices']` flag (default off; opt-in per book).
+- Chapter-level LLM call: input is the chapter's paragraphs with detected
+  dialogue spans; output is JSON `[{span_index, speaker}]`.
+- Book-level character→voice map built greedily: first speaker gets Guy,
+  second gets Jenny, additional speakers rotate through the remaining
+  approved voices with a collision fallback.
+- Narrator (everything not in a span) stays Steffan (untagged, current
+  behavior).
+- Fallback: if attribution confidence < threshold for a span, use the current
+  uniform `dialogue_voice` — no regression vs today's behavior.
+
+Risk: attribution quality on pages with unattributed alternating dialogue
+("`—Yes. —No. —Then we agree.`"). Needs a test corpus with labeled ground
+truth before this ships as a default.
+
 ## Escalation and Tiering Principles
 
 Local inference should sit inside a unified tiering layer so tier promotion is
