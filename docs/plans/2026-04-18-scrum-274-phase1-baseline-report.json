@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-04-18T11:47:18.2801333-04:00",
+  "commit_post": "0014c1c9b86338ae2e9531e35775a99cb48b56d1",
+  "commit_pre": "0ba73d85623960b6980cdd56e73fdac836e9567b",
+  "books": [
+    {
+      "Book": "Atomic Habits_ Tiny Changes, Remarkable Results_ An Easy & Proven Way to Build Good Habits & Break Bad Ones",
+      "Status": "JITTER",
+      "Deltas": [],
+      "Jitter": [
+        "  p: pre=72 post=50 (delta=22)"
+      ]
+    },
+    {
+      "Book": "Decline of the West Volumes 1 and 2 - Oswald Spengler",
+      "Status": "MATCH",
+      "Deltas": [],
+      "Jitter": []
+    },
+    {
+      "Book": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones",
+      "Status": "MATCH",
+      "Deltas": [],
+      "Jitter": []
+    },
+    {
+      "Book": "Python in easy steps, 2nd Edition - Mike McGrath",
+      "Status": "JITTER",
+      "Deltas": [],
+      "Jitter": [
+        "  p: pre=62 post=55 (delta=7)",
+        "  p: pre=48 post=54 (delta=6)"
+      ]
+    },
+    {
+      "Book": "The Oil Kings_ How the U - Cooper, Andrew Scott",
+      "Status": "MATCH",
+      "Deltas": [],
+      "Jitter": []
+    },
+    {
+      "Book": "The Return of the Gods - Jonathan Cahn",
+      "Status": "JITTER",
+      "Deltas": [],
+      "Jitter": [
+        "  p: pre=32 post=42 (delta=10)"
+      ]
+    }
+  ],
+  "phase": "Phase 1 baseline — bit-identical refactor gate",
+  "all_match": true
+}

@@ -54,6 +54,10 @@ data/covers/
 # Pipeline cache (local run data)
 tools/data/pipeline_cache.db
 
+# VQA baseline artifacts (regenerable; Claude free-form text drifts per run)
+data/vqa_baseline_pre_274/
+data/vqa_baseline_post_274/
+
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
 
