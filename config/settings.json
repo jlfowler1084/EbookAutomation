@@ -14,7 +14,7 @@
     "python":        "C:\\Users\\Joe\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
     "calibre":       "C:\\Program Files\\Calibre2\\ebook-convert.exe",
     "tesseract":     "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
-    "poppler":       "tools\\poppler\\Release-25.12.0-0\\poppler-25.12.0\\Library\\bin",
+    "poppler":       "tools\\poppler",
     "data":          "tools\\data",
     "ghostscript":   ""
   },
