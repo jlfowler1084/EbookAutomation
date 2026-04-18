@@ -172,7 +172,7 @@ def test_enable_thinking_is_false(provider: LocalVisionProvider) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Temperature and frequency_penalty
+# Temperature and sampling penalties
 # ---------------------------------------------------------------------------
 
 
@@ -187,13 +187,19 @@ def test_temperature_is_0_1(provider: LocalVisionProvider) -> None:
     )
 
 
-def test_frequency_penalty_is_0_3(provider: LocalVisionProvider) -> None:
+def test_no_frequency_penalty(provider: LocalVisionProvider) -> None:
+    """Absence is load-bearing. See SCRUM-275 smoke evidence 2026-04-18:
+    frequency_penalty=0.3 penalizes repeated JSON schema tokens across
+    multi-page batches, causing mid-generation dropout. Must not be re-added.
+    """
     payload = provider.build_request(
         page_images=[(1, PNG_FIXTURE)],
         rubric_text=RUBRIC_FIXTURE,
         model=MODEL_FIXTURE,
     )
-    assert payload["frequency_penalty"] == pytest.approx(0.3)
+    assert "frequency_penalty" not in payload, (
+        "frequency_penalty must not be set — it breaks multi-page JSON output"
+    )
 
 
 # ---------------------------------------------------------------------------

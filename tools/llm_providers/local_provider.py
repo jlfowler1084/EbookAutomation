@@ -88,7 +88,10 @@ class LocalVisionProvider:
             ],
             "max_tokens": 16384,
             "temperature": 0.1,
-            "frequency_penalty": 0.3,
+            # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
+            # repeated JSON schema tokens (keys, enum values) across multi-page
+            # batches, causing the model to emit empty {} entries and stop early.
+            # See SCRUM-275 smoke evidence 2026-04-18.
             "response_format": {"type": "json_object"},
             # MANDATORY: disable Qwen3 thinking or sb-chat consumes the entire
             # max_tokens budget on <think> blocks, leaving content empty.
