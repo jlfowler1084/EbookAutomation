@@ -18,6 +18,7 @@
     "requirements.txt",
     "dev-requirements.txt",
     "settings.json",
+    "config/settings.json",
     ".mcp.json",
     ".gitignore"
   ]
