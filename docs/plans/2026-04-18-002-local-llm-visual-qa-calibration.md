@@ -1,7 +1,7 @@
 ---
 date: 2026-04-18
 plan_id: 2026-04-18-002
-title: Local VQA calibration investigation — grader leniency in Qwen3.5-35B-A3B
+title: Local VQA — hallucination and calibration remediation investigation
 status: draft
 parent_plan: docs/plans/2026-04-13-001-local-llm-visual-qa.md
 parent_ticket: SCRUM-275
@@ -11,116 +11,187 @@ owner: Joe
 estimated_sessions: 2 (1 Opus for experiment design, 1 Sonnet for execution)
 ---
 
-# Ticket Draft — Local VQA Calibration Investigation
+# Ticket Draft — Local VQA Hallucination & Calibration Investigation
 
 ## Summary
 
-Investigate and remediate grader-leniency bias observed in SCRUM-275 Phase 2 live smoke testing. Local Qwen3.5-35B-A3B provider produces structurally-valid output but scores every page 100/100, disagreeing dramatically with Claude baseline (e.g., p3 empty TOC: Claude=22, Local=100, Δ=78). Must determine whether this is a **grading bias** (fixable via prompt engineering) or a **detection failure** (requires model swap), then remediate.
+SCRUM-275 Phase 2 6-book live smoke surfaced **two independent failure modes** in the local Qwen3.5-35B-A3B provider. Both are scoped out of Phase 2 (plumbing) and into this follow-up investigation.
 
-## Context
+1. **Page-count hallucination (structural correctness).** Return of the Gods produced 221 sequential page entries for 8 input images, 10,661 output tokens. Other 5 books returned 8/8 cleanly. Structural fix: vLLM `guided_json` with `minItems`/`maxItems` constraints on the `pages` array.
+2. **Grader leniency (score calibration).** All 6 books scored higher than Claude by Δ 11-32 (consistent directional bias). Prompt-engineering + anchored few-shot likely sufficient; model swap reserved as fallback.
 
-SCRUM-275 Phase 2 closed the literal plumbing gate across three smoke iterations:
+An interim defensive guard (`PageCountMismatchError` raised on count mismatch in `local_provider.call()`) shipped with SCRUM-275 merge. This ticket drives the structural fix and calibration remediation.
 
-| Version | max_tokens | frequency_penalty | Pages returned | Output tokens | Overall score |
+## 6-Book Phase 2 Gate Results
+
+| Book | Pages returned | Local score | Claude score | Δ | Structural OK |
 |---|---|---|---|---|---|
-| v1 | 8192 | 0.3 | 5 of 8 (with `{}` trailers) | 541 | 71 |
-| v2 | 16384 | 0.3 | 5 of 8 (with `{}` trailers) | 374 (↓) | 71 |
-| v3 | 16384 | removed | 8 of 8 ✓ | 400 | 100 ⚠️ |
+| Oil Kings | 8 | 94 | 75 | 19 | ✅ |
+| Mexico Illicit | 8 | 90 | 72 | 18 | ✅ |
+| Return of the Gods | **221** | 95 | 81 | 14 | ❌ (hallucinated) |
+| Atomic Habits | 8 | 95 | 84 | 11 | ✅ |
+| Decline of the West | 8 | 94 | 79 | 15 | ✅ |
+| Python in easy steps | 8 | 91 | 59 | **32** | ✅ |
 
-v1→v2 falsified the max_tokens-budget hypothesis (output decreased with more headroom = self-limiting, not truncation). v2→v3 fixed the true cause (frequency_penalty=0.3 penalizing repeated JSON schema tokens). Plumbing is complete; calibration is the remaining question.
+Plan's literal gate (`valid report JSON matching schema, no exceptions`) is met on all 6 (the 221-entry output is still schema-valid since the schema does not constrain `pages` length). Strict reading (sensible output) is 5 of 6.
 
-**Per-page scores, Python in easy steps, v3 run:**
+## Side finding — grader leniency is softening
 
-| Page | Claude | Local | Δ |
-|---|---|---|---|
-| p1 (cover) | 92 | 100 | 8 |
-| p2 (front matter) | 68 | 100 | 32 |
-| p3 (TOC) | 22 | 100 | 78 |
-| p35 (body) | 58 | 100 | 42 |
-| p68 | 72 | 100 | 28 |
-| p108 (chapter start) | 62 | 100 | 38 |
-| p139 | 48 | 100 | 52 |
-| p173 | 52 | 100 | 48 |
+Between the v3 sample (all 100s, 400 output tokens) and this 6-book run (91-95 spread, 400-933 output tokens), removing `frequency_penalty` unlocked score variance. Insufficient to match Claude, but the model is no longer pinning everything at 100. Phase 5 experiments should start from this post-fix baseline, not v3's.
 
-Claude identified the empty TOC on p3; Local rated it perfect. That delta is not sampling noise — it is the grader refusing to grade.
+---
 
-## The Key Open Question — (a) vs (b)
+## Priority 1 — Page-Count Hallucination (structural correctness)
 
-The remediation path forks entirely on this distinction:
+### Nature of the failure
 
-**(a) Grading bias** — Qwen *detects* issues and populates the `issues` array, but assigns `severity: "minor"` and still emits `score: 100`. This is classic instruction-tuned teacher bias: the model is RLHF'd to be agreeable and defaults high unless forced otherwise.
-- **Remediable via prompts alone.** Hardened instructions, few-shot anchoring, score-band enums, and guided_json all work here.
+Return of the Gods input: 8 images labelled pages [3, 17, 34, 55, 89, 110, 142, 171] (or similar — whatever the sampler picked). Model output: 221 entries with `page_number` 1 through 221, sequentially. No duplicates, plausible-looking rubric fields per entry. Output tokens = 10,661 (typical range for non-hallucinated 8-page runs: 400-900). The model invented ~213 page evaluations that correspond to no input image.
 
-**(b) Detection failure** — Qwen's visual attention does not register the anomaly at all. `issues` array is empty on pages Claude flagged hard.
-- **Requires model swap or prompt restructure.** Qwen2.5-VL-32B-Instruct (pre-listed in parent plan as fallback) has denser visual attention. Alternative: forced-enumeration prompting ("list every visual element present, then evaluate").
+### Why this is more dangerous than grader leniency
 
-**This question must be answered before designing remediation.** Running any prompt experiment without knowing which failure mode we are in will waste cycles.
+Leniency is a magnitude bias — scores are wrong by a knowable amount. Hallucination corrupts the *referent*: downstream consumers trust `page_number` as a pointer back to the source ("fix the issue on page 183"). A consumer acting on a hallucinated entry would investigate a page the model never saw. Schema-valid but semantically fabricated output is the worst failure mode.
 
-## Investigation Sequence
+### Interim guard (shipped with SCRUM-275)
 
-### Step 1 — Classify the failure mode across 6-book corpus
-**Gate:** SCRUM-275 Phase 2 closure (remaining 5 books run against local provider).
+- `PageCountMismatchError` raised in `LocalVisionProvider.call()` when `len(parsed["pages"]) != len(input_images)`
+- Handles both hallucination (overcount) and silent dropout (undercount)
+- Skips on malformed JSON to preserve `parse_qa_response` retry path
+- 4 test cases: hallucination, undercount, matching-count passthrough, malformed-JSON passthrough
 
-For every page scoring 100, record:
+The guard is defensive — it detects and surfaces the failure but does not prevent it. Phase 5 owns the structural fix.
+
+### Structural fix — `guided_json` at the decoder layer
+
+vLLM supports OpenAI's `response_format={"type": "json_schema", "json_schema": {...}}` via the outlines-backed guided decoding path. A schema with `minItems: N` / `maxItems: N` on the `pages` array **physically prevents** the decoder from emitting a 9th entry — the token masking at generation time makes it structurally impossible.
+
+Proposed schema shape:
+
+```json
+{
+  "type": "object",
+  "required": ["pages"],
+  "properties": {
+    "pages": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["page_number", "page_type", "score", "pass", "issues"],
+        "properties": {
+          "page_number": {"type": "integer"},
+          "page_type": {"type": "string", "enum": ["cover", "front_matter", "toc", "body", "chapter_start", "appendix", "index"]},
+          "score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "pass": {"type": "boolean"},
+          "issues": {"type": "array", "items": { ... }}
+        }
+      }
+    }
+  }
+}
+```
+
+Open questions:
+- `minItems`/`maxItems` must match the dynamic batch size. Requires threading batch size through to the schema builder in `build_request()`.
+- Can we also constrain `page_number` to be one of the input image labels? That would be a stronger check (prevents the "first 8 of 221" pseudo-validity case) but requires dynamic schema generation per-request. Worth trying.
+- `guided_json` imposes some latency overhead and can occasionally hurt output coherence. Measure against post-leniency-fix baseline, not pre-fix.
+
+### Priority 1 acceptance criteria
+
+- [ ] `guided_json` JSON schema integrated into `build_request()`
+- [ ] Schema enforces `minItems == maxItems == len(page_images)` dynamically
+- [ ] `page_number` schema constraint experimented with (decision documented either way)
+- [ ] 6-book corpus re-run: 0 hallucination events, 6 of 6 structural OK
+- [ ] Performance delta vs pre-`guided_json` baseline measured (latency + token count)
+- [ ] `PageCountMismatchError` guard stays in place as belt-and-suspenders defense
+
+---
+
+## Priority 2 — Grader Leniency Calibration
+
+### The key open question — (a) grading bias vs (b) detection failure
+
+**(a) Grading bias** — Qwen *detects* issues and populates the `issues` array, but assigns low severity and emits high scores anyway. Classic instruction-tuned teacher bias: RLHF'd to be agreeable, defaults high unless forced otherwise.
+- **Remediable via prompts alone.** Hardened instructions, few-shot anchoring, score-band enums.
+
+**(b) Detection failure** — Qwen's visual attention does not register the anomaly. `issues` array is empty on pages Claude flagged hard.
+- **Requires prompt restructure or model swap.** Qwen2.5-VL-32B-Instruct (pre-listed in parent plan as fallback) has denser visual attention.
+
+The 6-book data from SCRUM-275's smoke must be inspected to classify which mode we are in before designing remediation. Eyeball the first 10-20 pages with score=100 — don't let a threshold decide.
+
+### Step 1 — Classify the failure mode (6-book corpus)
+
+For every page scoring ≥95 in the local run, record:
 - `len(issues)` — populated or empty?
-- If populated: what severities? (`minor` / `major` / `critical` distribution)
+- If populated: severity distribution (`minor` / `major` / `critical`)
 - If empty: does Claude's corresponding report flag real issues on that same page?
 
-**Decision:** If ≥70% of all-100 pages have populated `issues` arrays → we are in mode (a). If ≥70% have empty arrays despite Claude finding issues → we are in mode (b). Mixed → treat as (b) for safety (prompting won't uniformly fix detection gaps).
+Quantitative heuristic + qualitative judgment: if ≥70% of high-scoring pages have populated `issues` arrays AND the issues look reasonable → mode (a). If ≥70% have empty arrays despite Claude finding issues → mode (b). Mixed → treat as (b) for safety.
 
 ### Step 2a — If mode (a): prompt-engineering experiments
-Run in order, cheapest first, with same Python-in-easy-steps 8-page fixture for fast iteration:
 
-1. **Strict-grader instruction append** — add to user-facing trailing text: *"Grade strictly. If ANY issue is present, deduct points. A score of 100 requires zero visible issues."*
-2. **Persona framing** — system prompt prefix: *"You are a strict editor reviewing this book for quality control. Your job is to find every flaw."*
-3. **Score-band enum via guided_json** — replace `score: integer [0-100]` with `score_band: "FAIL" | "POOR" | "ACCEPTABLE" | "GOOD" | "EXCELLENT"` and explicit criteria per band. Post-process to numeric.
-4. **Few-shot anchoring** — include 1-2 Claude-scored example pages in the system message (score + short explanation). Anchors the distribution.
-5. **Chain-of-criticism structure** — require `issues_detected` array output *before* the `score` field in the schema. Forces enumeration pass before grading pass.
+Run in order, cheapest first, same Python-in-easy-steps 8-page fixture for fast iteration:
 
-**Gate:** mean absolute score delta vs Claude across 6-book corpus drops below 15 points. If any single experiment gets us there, stop and commit that configuration.
+1. **Strict-grader instruction append** — "Grade strictly. If ANY issue is present, deduct points. A score of 100 requires zero visible issues."
+2. **Persona framing** — system prompt prefix: "You are a strict editor reviewing this book for quality control. Your job is to find every flaw."
+3. **Score-band enum via guided_json** — replace `score: integer [0-100]` with `score_band: "FAIL" | "POOR" | "ACCEPTABLE" | "GOOD" | "EXCELLENT"` and explicit criteria per band. Post-process to numeric if needed.
+4. **Few-shot anchoring** — include 1-2 Claude-scored example pages in the system message. Anchors the distribution.
+5. **Chain-of-criticism structure** — require `issues_detected` array output *before* the `score` field. Forces enumeration pass before grading pass.
+
+Gate: mean absolute score delta vs Claude across 6-book corpus drops below 15 points. Stop at the first experiment that hits the gate — no need to stack.
 
 ### Step 2b — If mode (b): architectural experiments
-1. **Two-pass structure** — pass 1 emits `issues[]` only (no score), pass 2 accepts the issues list and emits score. Separates detection from grading; may work because scoring-with-input is easier than scoring-with-perception.
-2. **Forced enumeration prompt** — *"List every visual element visible on this page: headers, body text blocks, images, tables, page numbers. Then evaluate."* Engages visual attention explicitly before evaluation.
-3. **Model swap — Qwen2.5-VL-32B-Instruct** — pre-listed in parent plan as the designated fallback. Denser visual attention than MoE-A3B's 3B active params.
-4. **Hybrid grader** — local model does detection (where it's adequate), Claude does scoring (where calibration is critical). Partial cost reduction, keeps trust. Only viable if detection is partially working (mixed mode).
 
-**Gate:** same as 2a — mean absolute score delta below 15 points across corpus.
+1. **Two-pass structure** — pass 1 emits `issues[]` only (no score), pass 2 accepts the issues list and emits score. Separates detection from grading.
+2. **Forced enumeration prompt** — "List every visual element visible on this page: headers, body text blocks, images, tables, page numbers. Then evaluate." Engages visual attention explicitly before evaluation.
+3. **Model swap — Qwen2.5-VL-32B-Instruct** — pre-listed in parent plan. Denser visual attention than MoE-A3B's 3B active params.
+4. **Hybrid grader** — local model does detection, Claude does scoring. Only viable in mixed-mode (detection partially works). Partial cost reduction, keeps trust.
+
+Gate: same as 2a — mean absolute score delta below 15 points.
 
 ### Step 3 — Multi-book robustness
-Whichever remediation lands in step 2, validate against all 6 corpus books (not just Python in easy steps) before declaring done. Score distribution should be non-degenerate: at least one book should have at least one FAIL (< 60) page if Claude flagged one.
 
-## Acceptance Criteria
+Whichever remediation lands in Step 2, validate against all 6 corpus books. Score distribution should be non-degenerate: at least one FAIL (< 60) page across the corpus if Claude flagged one.
 
-- [ ] Failure-mode classification (a/b/mixed) documented with evidence from 6-book corpus
-- [ ] At least one remediation experiment produces mean absolute score Δ < 15 vs Claude across corpus
+### Priority 2 acceptance criteria
+
+- [ ] Failure-mode classification (a/b/mixed) documented with evidence table
+- [ ] At least one remediation experiment produces mean absolute Δ < 15 vs Claude across corpus
 - [ ] Non-degenerate score distribution (no all-pages-same-score behavior)
-- [ ] Final configuration committed to `local_provider.py` with load-bearing comment matching the `enable_thinking=False` style
-- [ ] Test coverage for the new configuration (follow the `test_no_frequency_penalty` pattern)
-- [ ] Parent plan `docs/plans/2026-04-13-001-local-llm-visual-qa.md` updated with amendment noting Phase 5 resolution path
+- [ ] Final configuration committed to `local_provider.py` with load-bearing comment
+- [ ] Test coverage matching the `test_no_frequency_penalty` style
+
+---
 
 ## Out of Scope
 
-- Full-book mode implementation (`--all-pages`, `--batch-size`, tempdir streaming) — that is SCRUM-275 Phase 3, a separate ticket
-- Fine-tuning / LoRA adaptation — deferred until prompt-engineering + model-swap options are exhausted. Requires 50-200 labeled examples minimum; revisit only if step 2 fails
-- Replacing the sb-chat shared stack with a dedicated vision model container — infrastructure decision, not a calibration investigation
+- Full-book mode (`--all-pages`, `--batch-size`, tempdir streaming) — SCRUM-275 Phase 3, a separate ticket
+- Fine-tuning / LoRA adaptation — deferred until prompt-engineering + model-swap options are exhausted
+- Replacing sb-chat shared stack with a dedicated vision container — infrastructure, not calibration
 - Re-architecting the provider abstraction — SCRUM-274's interface is adequate
+- Automatic retry on `PageCountMismatchError` — may be useful later, not structurally required for this ticket
 
-## Methodology Note — Debugging LLM Output Anomalies (template for reuse)
+---
 
-The v1→v2→v3 sequence is a reusable diagnostic template for future LLM output debugging:
+## Methodology Note — Debugging LLM Output Anomalies (reusable template)
 
-1. **Form a hypothesis, identify its unique prediction.** v1→v2 hypothesis was "max_tokens too low." Unique prediction: raising the ceiling increases output tokens.
-2. **Watch for counterintuitive metric movement.** Output tokens *decreasing* (541 → 374) when the ceiling was raised falsified the hypothesis — self-limiting behavior rather than budget exhaustion.
-3. **The tell often isn't where you're looking.** Page 35's duplicated description→suggestion text was the real evidence of frequency_penalty damage, not the score or token counts we were initially tracking.
-4. **One variable per iteration.** v1→v2 changed only max_tokens. v2→v3 changed only frequency_penalty. If either had changed multiple settings at once, the diagnosis would be ambiguous.
+The SCRUM-275 v1→v2→v3 sequence is a reusable diagnostic template:
 
-This methodology should be referenced in future LLM behavior investigations (CareerPilot scoring, SecondBrain proposal quality, any downstream Qwen work on the shared stack).
+1. **Form a hypothesis, identify its unique prediction.** v1→v2 hypothesis: "max_tokens too low." Unique prediction: raising the ceiling increases output tokens.
+2. **Watch for counterintuitive metric movement.** Output tokens *decreased* (541 → 374) when the ceiling was raised, falsifying the budget hypothesis and pointing at self-limiting behavior.
+3. **The tell often isn't where you're looking.** Page 35's duplicated `description` → `suggestion` text was the evidence of `frequency_penalty` damage, not the score or token counts we were initially tracking.
+4. **One variable per iteration.** v1→v2 changed only `max_tokens`. v2→v3 changed only `frequency_penalty`. Multiple-variable changes make the diagnosis ambiguous.
+5. **Distinguish magnitude bias from structural failure.** Leniency and hallucination look similar on aggregate metrics (both inflate scores) but require different fixes. Always check per-page outputs, not just summary stats.
+
+Apply this template to future CareerPilot scoring work, SecondBrain proposal quality investigations, and any downstream Qwen work on the shared vLLM stack.
+
+---
 
 ## References
 
 - Parent plan: `docs/plans/2026-04-13-001-local-llm-visual-qa.md`
 - Parent ticket: SCRUM-275 (Phase 2 local provider implementation)
-- Pre-listed fallback: parent plan's Phase 5 section naming Qwen2.5-VL-32B-Instruct
+- Pre-listed fallback model: parent plan Phase 5 — Qwen2.5-VL-32B-Instruct
+- Interim hallucination guard: `tools/llm_providers/local_provider.py` (`PageCountMismatchError` class)
 - Smoke test data: `data/scrum275_local_smoke/` (gitignored; regenerate via `tools/visual_qa.py --provider local`)
-- Cross-project memory: `feedback_qwen_frequency_penalty_json.md` — non-obvious Qwen+JSON gotcha discovered during this work
+- vLLM guided_json docs: https://docs.vllm.ai/en/latest/features/structured_outputs.html

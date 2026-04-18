@@ -255,6 +255,136 @@ def test_custom_base_url() -> None:
 
 
 # ---------------------------------------------------------------------------
+# LOAD-BEARING: page-count hallucination guard
+# SCRUM-275 smoke 2026-04-18 — Return of the Gods produced 221 sequential
+# page entries for 8 input images. Silent truncation would hide this and
+# yield ungrounded page_number values to downstream consumers. The guard
+# must raise PageCountMismatchError, not truncate.
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_completion(content: str, prompt_tokens: int = 100, completion_tokens: int = 500) -> MagicMock:
+    """Helper: build a mock OpenAI ChatCompletion response."""
+    fake = MagicMock()
+    fake.choices = [MagicMock()]
+    fake.choices[0].message.content = content
+    fake.usage = MagicMock()
+    fake.usage.prompt_tokens = prompt_tokens
+    fake.usage.completion_tokens = completion_tokens
+    return fake
+
+
+def test_call_raises_on_page_count_hallucination(provider: LocalVisionProvider) -> None:
+    """Model returns MORE page entries than images sent — guard must raise."""
+    from llm_providers.local_provider import PageCountMismatchError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+
+    # Simulate Return-of-the-Gods-style hallucination: 5 entries for 2 images.
+    fake_content = json.dumps({
+        "pages": [
+            {"page_number": i, "page_type": "body", "score": 95, "pass": True, "issues": []}
+            for i in range(1, 6)
+        ]
+    })
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(fake_content)
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(PageCountMismatchError) as exc_info:
+            provider.call(payload)
+
+    assert exc_info.value.expected == 2
+    assert exc_info.value.actual == 5
+
+
+def test_call_raises_on_page_count_undercount(provider: LocalVisionProvider) -> None:
+    """Model returns FEWER page entries than images sent — guard must raise.
+
+    Covers the complementary failure mode (e.g., model drops pages mid-generation).
+    Same guard, same exception — the caller should not guess which pages are missing.
+    """
+    from llm_providers.local_provider import PageCountMismatchError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE), (3, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+
+    fake_content = json.dumps({
+        "pages": [
+            {"page_number": 1, "page_type": "body", "score": 95, "pass": True, "issues": []},
+        ]
+    })
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(fake_content)
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(PageCountMismatchError) as exc_info:
+            provider.call(payload)
+
+    assert exc_info.value.expected == 3
+    assert exc_info.value.actual == 1
+
+
+def test_call_passes_through_on_matching_count(provider: LocalVisionProvider) -> None:
+    """Happy path: model returns exactly the expected page count — no exception."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+
+    fake_content = json.dumps({
+        "pages": [
+            {"page_number": 1, "page_type": "body", "score": 85, "pass": True, "issues": []},
+            {"page_number": 2, "page_type": "body", "score": 90, "pass": True, "issues": []},
+        ]
+    })
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(fake_content)
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        result = provider.call(payload)
+
+    assert result.raw_text == fake_content
+    assert result.input_tokens == 100
+    assert result.output_tokens == 500
+
+
+def test_call_skips_guard_on_malformed_json(provider: LocalVisionProvider) -> None:
+    """If JSON is malformed, call() must NOT raise PageCountMismatchError.
+
+    parse_qa_response owns the retry-on-JSON-error path. The guard is for
+    semantic mismatch on syntactically-valid output.
+    """
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+
+    # Malformed JSON — the guard must pass this through for downstream retry.
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content="not valid json {{{",
+    )
+
+    with patch("openai.OpenAI", return_value=mock_client):
+        result = provider.call(payload)
+
+    assert result.raw_text == "not valid json {{{"
+
+
+# ---------------------------------------------------------------------------
 # parse_qa_response retry on JSONDecodeError
 # ---------------------------------------------------------------------------
 

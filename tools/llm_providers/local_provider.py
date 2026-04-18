@@ -15,6 +15,7 @@ amendment 2026-04-17 for full smoke-test evidence.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import time
 
@@ -24,6 +25,27 @@ from .base import VisionResponse
 
 
 logger = logging.getLogger("visual_qa.local_provider")
+
+
+class PageCountMismatchError(RuntimeError):
+    """Raised when the model returns a different number of page evaluations
+    than images sent in the request.
+
+    Typically indicates a hallucination cascade — e.g., SCRUM-275 smoke
+    2026-04-18 where Qwen3.5-MoE generated 221 sequential page entries for
+    8 input images (10,661 output tokens vs typical 400-900). Silent
+    truncation to expected length would hide the failure and produce
+    plausible-looking but ungrounded page_number values; raising preserves
+    the signal so downstream consumers mark the report invalid.
+    """
+
+    def __init__(self, expected: int, actual: int):
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"Model returned {actual} page entries for {expected} input images "
+            f"(hallucination suspected — report invalid, do not trust output)"
+        )
 
 
 class LocalVisionProvider:
@@ -173,6 +195,26 @@ class LocalVisionProvider:
             input_tokens,
             output_tokens,
         )
+
+        # Hallucination guard: model must return exactly one page entry per
+        # input image. If JSON is malformed we skip the check here and let
+        # parse_qa_response's retry handle it; if JSON parses but the count
+        # disagrees, raise loudly rather than let downstream consume
+        # ungrounded page_number values.
+        try:
+            parsed = json.loads(raw_text)
+            actual_count = len(parsed.get("pages", []))
+        except (json.JSONDecodeError, AttributeError):
+            actual_count = None
+
+        if actual_count is not None and actual_count != image_count:
+            logger.error(
+                "Page count mismatch: sent %d images, got %d page entries "
+                "(hallucination suspected — see SCRUM-275 smoke evidence)",
+                image_count,
+                actual_count,
+            )
+            raise PageCountMismatchError(expected=image_count, actual=actual_count)
 
         return VisionResponse(
             raw_text=raw_text,
