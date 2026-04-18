@@ -86,7 +86,7 @@ class LocalVisionProvider:
                 {"role": "system", "content": rubric_text},
                 {"role": "user", "content": user_content},
             ],
-            "max_tokens": 8192,
+            "max_tokens": 16384,
             "temperature": 0.1,
             "frequency_penalty": 0.3,
             "response_format": {"type": "json_object"},
