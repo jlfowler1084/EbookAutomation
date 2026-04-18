@@ -52,14 +52,20 @@ PostToolUse hook runs `test_pipeline.py --quick` after edits to core pipeline fi
 Hook script: `tools/hooks/post-edit-test.ps1` (configured in `.claude/settings.json`).
 
 ### Test Corpus
-| Book | Key Challenge | Regression Focus |
-|------|---------------|------------------|
-| Oil Kings | Complex endnotes, dual numbering | Endnote linking accuracy |
-| Mexico Illicit | OCR artifacts, ligatures | Text cleanup fidelity |
-| Lincoln Highway | Multi-narrator, stylistic chapters | Chapter detection |
-| Atomic Habits | Dense formatting, callout boxes | Heading vs body classification |
-| Sapiens | Long chapters, footnotes | TOC depth + footnote pairing |
-| Extreme Ownership | Simple structure | Baseline regression canary |
+
+Rebuilt 2026-04-18 during SCRUM-274 Phase 1 preflight. Only Oil Kings and Mexico
+Illicit survived the PC migration with converted artifacts; the other four slots
+were re-filled with books from the 87-KFX inventory that match the same regression
+focus. Stored in `output/kindle/`.
+
+| Slot Focus | File | Regression Focus |
+|------------|------|------------------|
+| Endnote linking | `The Oil Kings_ How the U - Cooper, Andrew Scott.kfx` | Complex endnotes, dual numbering |
+| OCR / text cleanup | `Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones.kfx` | OCR artifacts, ligatures |
+| Chapter detection (stylistic) | `The Return of the Gods - Jonathan Cahn.kfx` | Thematic chapter names, non-sequential structure |
+| Heading vs body (dense + callouts) | `Atomic Habits_ Tiny Changes, Remarkable Results_ An Easy & Proven Way to Build Good Habits & Break Bad Ones.pdf` | Dense formatting, callout boxes (currently PDF input; convert to KFX as follow-up) |
+| Long chapters + footnotes | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | TOC depth, footnote pairing on long-form historical prose |
+| Simple structure canary | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured chapters — baseline sanity |
 
 ### Regression Prevention (Project-Specific)
 The #1 time sink is fix-then-regression cycles. Changes to heading levels cascade into TOC

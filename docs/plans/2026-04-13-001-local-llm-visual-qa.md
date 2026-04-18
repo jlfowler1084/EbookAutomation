@@ -1,6 +1,6 @@
 ---
 date: 2026-04-13
-amended: 2026-04-17
+amended: 2026-04-18
 plan_id: 2026-04-13-001
 title: Full-book visual QA via local sb-chat Qwen3.5-35B (amended from Qwen3-VL)
 status: amended
@@ -13,6 +13,39 @@ estimated_sessions: 2–3 (Sonnet for implementation, Opus for review)
 ---
 
 # Plan — Full-Book Visual QA via Local sb-chat (Qwen3.5-35B-A3B-FP8)
+
+## Amendment — 2026-04-18 — Phase 1 corpus rebuild
+
+PC migration from `DESKTOP-488UQB2` to current host left `output/kindle/` with only
+`Intune-Study-Notes.kfx`. Of the six canonical CLAUDE.md test books, only Oil Kings
+and Mexico Illicit had converted KFX artifacts on the old PC's admin share. No
+source PDFs for Lincoln Highway, Atomic Habits, Sapiens, or Extreme Ownership
+existed anywhere on the old host; the user supplied an Atomic Habits PDF from
+`C:\Users\Joe\Downloads`.
+
+The 87-KFX inventory on the old PC was mined for substitutes that preserve each
+slot's **regression focus**, not its genre:
+
+| Original slot | Substitute | Rationale |
+|---|---|---|
+| Lincoln Highway (stylistic chapters) | `The Return of the Gods - Jonathan Cahn.kfx` | Narrative non-fiction with thematic chapter names — best chapter-detection stressor in inventory |
+| Sapiens (long chapters + footnotes) | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | Sweeping historical work with long chapters and heavy footnote apparatus |
+| Extreme Ownership (simple structure) | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured — good canary |
+
+Atomic Habits remains as a PDF input for Phase 1. `visual_qa.py --input` accepts
+PDF natively, which exercises the same Claude Vision call path the refactor
+touched. Converting to KFX is a follow-up task; doing it *before* baseline would
+introduce Calibre conversion as a second confounding variable in the gate.
+
+**This changes the Phase 1 gate from "all 6 canonical books" to "all 6 corpus
+slots per the updated CLAUDE.md test corpus table."** Defensible because the
+refactor commit `0014c1c` is book-agnostic — it extracts `VisionProvider` with
+zero branching on book identity. The gate's purpose is to catch "did the refactor
+change Claude's payload or response handling?" — a structural question satisfied
+by any KFX/PDF inputs with varied page content.
+
+The Phase 1 baseline runbook below (originally written for the 6 canonical books)
+is updated inline: the foreach book list now reads the rebuilt corpus.
 
 ## Amendment — 2026-04-17 — pivot to sb-chat
 
