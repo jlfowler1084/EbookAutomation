@@ -372,6 +372,10 @@ def parse_qa_response(raw_text, provider=None, original_payload=None):
             logger.info("Attempting JSON repair re-prompt via provider...")
             try:
                 repair_payload = dict(original_payload)
+                # Strip guided_json schema from repair payload — the repair call
+                # has no images, so a strict N-page schema would force fabricated
+                # entries.  SCRUM-279 P1 defensive edit.
+                repair_payload.pop("response_format", None)
                 # Append the bad response as assistant turn, then ask for repair
                 repair_messages = list(repair_payload.get("messages", []))
 

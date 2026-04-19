@@ -514,6 +514,54 @@ def test_output_truncated_fires_before_json_loads(provider: LocalVisionProvider)
             provider.call(payload)
 
 
+def test_repair_payload_strips_response_format() -> None:
+    """parse_qa_response must pop response_format from the repair payload.
+
+    Verifies sub-step 2c: if guided_json is active, the repair call has no
+    images and a strict N-page schema would force fabricated entries.
+    """
+    import visual_qa
+
+    captured_repair_payloads: list[dict] = []
+
+    def capturing_call(p: dict) -> VisionResponse:
+        captured_repair_payloads.append(dict(p))
+        return VisionResponse(
+            raw_text=json.dumps({
+                "overall_score": 80,
+                "pages": [{"page_number": 1, "score": 80}],
+                "category_scores": {},
+                "summary": "ok",
+                "top_issues": [],
+            }),
+            input_tokens=10,
+            output_tokens=20,
+        )
+
+    mock_provider = MagicMock()
+    mock_provider.call.side_effect = capturing_call
+
+    original_payload = {
+        "messages": [{"role": "user", "content": []}],
+        "model": MODEL_FIXTURE,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "page_extraction_report", "strict": True, "schema": {}},
+        },
+    }
+
+    visual_qa.parse_qa_response(
+        raw_text="not valid json {",
+        provider=mock_provider,
+        original_payload=original_payload,
+    )
+
+    assert len(captured_repair_payloads) == 1
+    assert "response_format" not in captured_repair_payloads[0], (
+        "response_format must be stripped from repair payload before the repair call"
+    )
+
+
 # ---------------------------------------------------------------------------
 # LOAD-BEARING: page-count hallucination guard
 # SCRUM-275 smoke 2026-04-18 — Return of the Gods produced 221 sequential
