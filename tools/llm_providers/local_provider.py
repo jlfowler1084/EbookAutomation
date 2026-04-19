@@ -191,6 +191,32 @@ def _build_page_extraction_schema(page_count: int) -> dict:
     }
 
 
+class OutputTruncatedError(RuntimeError):
+    """Raised when the model's response is cut off mid-generation by the
+    max_tokens budget (``finish_reason == "length"``).
+
+    SCRUM-279 P1: guided_json schema enforcement makes the 221-entry
+    hallucination cascade structurally impossible, but creates a new leading
+    failure mode — the decoder is forced to keep generating toward the closing
+    bracket of the required schema; if max_tokens (16384) runs out first, the
+    output is truncated JSON.  Surface this explicitly rather than letting it
+    fall through as a JSONDecodeError in parse_qa_response.
+
+    Distinct from PageCountMismatchError (wrong count, valid JSON) and
+    JSONDecodeError (malformed JSON, any reason).
+    """
+
+    def __init__(self, finish_reason: str, output_tokens: int, max_tokens_budget: int):
+        self.finish_reason = finish_reason
+        self.output_tokens = output_tokens
+        self.max_tokens_budget = max_tokens_budget
+        super().__init__(
+            f"Model output truncated mid-generation: finish_reason={finish_reason!r}, "
+            f"output_tokens={output_tokens} (budget={max_tokens_budget}) — "
+            f"response is incomplete JSON, report invalid"
+        )
+
+
 class PageCountMismatchError(RuntimeError):
     """Raised when the model returns a different number of page evaluations
     than images sent in the request.
@@ -278,7 +304,20 @@ class LocalVisionProvider:
             # repeated JSON schema tokens (keys, enum values) across multi-page
             # batches, causing the model to emit empty {} entries and stop early.
             # See SCRUM-275 smoke evidence 2026-04-18.
-            "response_format": {"type": "json_object"},
+            # SCRUM-279 P1: json_schema (OpenAI-native) replaces json_object so
+            # vLLM's guided-decoding backend enforces pages array cardinality at
+            # token-masking time.  strict=True prevents silent field masking on
+            # optional fields.  Backend auto-selected per vLLM 0.19.0 PR #12210
+            # (xgrammar lack of minItems/maxItems support triggers fallback to
+            # guidance or outlines, both of which honor array-length bounds).
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "page_extraction_report",
+                    "strict": True,
+                    "schema": _build_page_extraction_schema(len(page_images)),
+                },
+            },
             # MANDATORY: disable Qwen3 thinking or sb-chat consumes the entire
             # max_tokens budget on <think> blocks, leaving content empty.
             "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
@@ -359,6 +398,24 @@ class LocalVisionProvider:
             input_tokens,
             output_tokens,
         )
+
+        # Truncation guard — fires BEFORE json.loads / PageCountMismatchError.
+        # Under guided_json, the decoder is forced toward the schema's closing
+        # bracket; if max_tokens is exhausted first, finish_reason=="length" and
+        # raw_text is truncated JSON.  Surface this explicitly (SCRUM-279 P1).
+        if choice.finish_reason == "length":
+            max_tokens_budget = payload.get("max_tokens", 0)
+            logger.error(
+                "Output truncated: finish_reason='length', output_tokens=%d, "
+                "budget=%d — report invalid",
+                output_tokens,
+                max_tokens_budget,
+            )
+            raise OutputTruncatedError(
+                finish_reason=choice.finish_reason,
+                output_tokens=output_tokens,
+                max_tokens_budget=max_tokens_budget,
+            )
 
         # Hallucination guard: model must return exactly one page entry per
         # input image. If JSON is malformed we skip the check here and let

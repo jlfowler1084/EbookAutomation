@@ -208,13 +208,8 @@ def test_no_frequency_penalty(provider: LocalVisionProvider) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_response_format_is_json_object(provider: LocalVisionProvider) -> None:
-    payload = provider.build_request(
-        page_images=[(1, PNG_FIXTURE)],
-        rubric_text=RUBRIC_FIXTURE,
-        model=MODEL_FIXTURE,
-    )
-    assert payload["response_format"] == {"type": "json_object"}
+# test_response_format_is_json_object renamed to test_response_format_is_json_schema
+# in Unit 2 (SCRUM-279 P1) — see Unit 2 block below.
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +372,149 @@ def test_schema_round_trips_json_dumps() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Unit 2: json_schema response_format wiring + OutputTruncatedError
+# ---------------------------------------------------------------------------
+
+
+def test_response_format_is_json_schema(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    rf = payload["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"] == "page_extraction_report"
+
+
+def test_response_format_strict_true(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["response_format"]["json_schema"]["strict"] is True
+
+
+@pytest.mark.parametrize("n_images", [1, 2, 8, 16])
+def test_response_format_schema_bounds_match_image_count(
+    provider: LocalVisionProvider, n_images: int
+) -> None:
+    payload = provider.build_request(
+        page_images=[(i, PNG_FIXTURE) for i in range(1, n_images + 1)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    schema = payload["response_format"]["json_schema"]["schema"]
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == n_images
+    assert pages["maxItems"] == n_images
+
+
+def test_build_request_single_image_schema_bounds(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    schema = payload["response_format"]["json_schema"]["schema"]
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 1
+    assert pages["maxItems"] == 1
+
+
+def test_frequency_penalty_still_absent_after_schema_change(provider: LocalVisionProvider) -> None:
+    """Schema change must not reintroduce frequency_penalty."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert "frequency_penalty" not in payload
+
+
+def test_enable_thinking_still_present_after_schema_change(provider: LocalVisionProvider) -> None:
+    """Schema change must not disturb the enable_thinking=False guard."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_call_raises_output_truncated_error_on_finish_reason_length(
+    provider: LocalVisionProvider,
+) -> None:
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content='{"pages": [',  # truncated JSON
+        finish_reason="length",
+        completion_tokens=16384,
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(OutputTruncatedError) as exc_info:
+            provider.call(payload)
+
+    assert exc_info.value.finish_reason == "length"
+    assert exc_info.value.output_tokens == 16384
+    assert exc_info.value.max_tokens_budget == 16384
+
+
+def test_call_does_not_raise_output_truncated_on_stop(provider: LocalVisionProvider) -> None:
+    """finish_reason='stop' must not raise OutputTruncatedError."""
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    fake_content = json.dumps({
+        "pages": [
+            {"page_number": 1, "page_type": "body", "score": 85, "pass": True, "issues": []},
+        ]
+    })
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content=fake_content,
+        finish_reason="stop",
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        result = provider.call(payload)
+
+    assert result.raw_text == fake_content
+
+
+def test_output_truncated_fires_before_json_loads(provider: LocalVisionProvider) -> None:
+    """Truncated JSON + finish_reason='length' must raise OutputTruncatedError,
+    not JSONDecodeError — truncation guard runs before any parsing.
+    """
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content="this is not json {{{",
+        finish_reason="length",
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(OutputTruncatedError):
+            provider.call(payload)
+
+
+# ---------------------------------------------------------------------------
 # LOAD-BEARING: page-count hallucination guard
 # SCRUM-275 smoke 2026-04-18 — Return of the Gods produced 221 sequential
 # page entries for 8 input images. Silent truncation would hide this and
@@ -385,11 +523,17 @@ def test_schema_round_trips_json_dumps() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_fake_completion(content: str, prompt_tokens: int = 100, completion_tokens: int = 500) -> MagicMock:
+def _make_fake_completion(
+    content: str,
+    prompt_tokens: int = 100,
+    completion_tokens: int = 500,
+    finish_reason: str = "stop",
+) -> MagicMock:
     """Helper: build a mock OpenAI ChatCompletion response."""
     fake = MagicMock()
     fake.choices = [MagicMock()]
     fake.choices[0].message.content = content
+    fake.choices[0].finish_reason = finish_reason
     fake.usage = MagicMock()
     fake.usage.prompt_tokens = prompt_tokens
     fake.usage.completion_tokens = completion_tokens
