@@ -1,12 +1,14 @@
 ---
 title: "feat(SCRUM-279 P1): vLLM guided_json schema for page-count hallucination"
 type: feat
-status: active
+status: complete
+completed: 2026-04-18
+merge_commit: ac033cd
 date: 2026-04-18
 origin: docs/plans/2026-04-18-002-local-llm-visual-qa-calibration.md
 ticket: SCRUM-279
 scope: P1 only (structural hallucination fix — P2 calibration is a separate follow-up plan)
-worktree: .worktrees/worktree-SCRUM-279-p1-guided-json
+worktree: .worktrees/worktree-SCRUM-279-p1-guided-json (removed post-merge)
 target_model: sonnet
 ---
 
