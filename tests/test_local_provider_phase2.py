@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from llm_providers import LocalVisionProvider  # noqa: E402
 from llm_providers.base import VisionResponse  # noqa: E402
+from llm_providers.local_provider import _build_page_extraction_schema  # noqa: E402
 
 
 PNG_FIXTURE = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
@@ -252,6 +253,127 @@ def test_default_base_url() -> None:
 def test_custom_base_url() -> None:
     p = LocalVisionProvider(base_url="http://192.168.1.50:9000/v1")
     assert p._base_url == "http://192.168.1.50:9000/v1"
+
+
+# ---------------------------------------------------------------------------
+# Unit 1: _build_page_extraction_schema helper
+# ---------------------------------------------------------------------------
+
+
+def _collect_objects(node: dict) -> list[dict]:
+    """Recursively collect all sub-dicts with type == 'object'."""
+    results = []
+    if isinstance(node, dict):
+        if node.get("type") == "object":
+            results.append(node)
+        for v in node.values():
+            results.extend(_collect_objects(v))
+    elif isinstance(node, list):
+        for item in node:
+            results.extend(_collect_objects(item))
+    return results
+
+
+def test_schema_pages_minItems_equals_page_count() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["properties"]["pages"]["minItems"] == 8
+
+
+def test_schema_pages_maxItems_equals_page_count() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["properties"]["pages"]["maxItems"] == 8
+
+
+def test_schema_top_level_type_and_required() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["type"] == "object"
+    required = schema["required"]
+    for key in ("pages", "overall_score", "overall_pass", "category_scores", "summary", "top_issues"):
+        assert key in required, f"'{key}' missing from top-level required"
+    assert schema["properties"]["pages"]["type"] == "array"
+
+
+def test_schema_all_objects_have_additionalProperties_false() -> None:
+    schema = _build_page_extraction_schema(8)
+    objects = _collect_objects(schema)
+    assert len(objects) > 0, "No objects found — schema is malformed"
+    for obj in objects:
+        assert obj.get("additionalProperties") is False, (
+            f"Object missing additionalProperties:false — properties: {list(obj.get('properties', {}).keys())}"
+        )
+
+
+def test_schema_per_page_properties_and_required() -> None:
+    schema = _build_page_extraction_schema(8)
+    page_items = schema["properties"]["pages"]["items"]
+    props = page_items["properties"]
+    for key in ("page_number", "page_type", "score", "pass", "issues"):
+        assert key in props, f"'{key}' missing from per-page properties"
+    required = page_items["required"]
+    for key in ("page_number", "page_type", "score", "pass", "issues"):
+        assert key in required, f"'{key}' missing from per-page required"
+
+
+def test_schema_page_type_enum_matches_rubric() -> None:
+    schema = _build_page_extraction_schema(8)
+    page_type_enum = schema["properties"]["pages"]["items"]["properties"]["page_type"]["enum"]
+    assert page_type_enum == ["cover", "toc", "front_matter", "chapter_start", "body", "back_matter"]
+
+
+def test_schema_issue_severity_enum() -> None:
+    schema = _build_page_extraction_schema(8)
+    issues_items = schema["properties"]["pages"]["items"]["properties"]["issues"]["items"]
+    severity_enum = issues_items["properties"]["severity"]["enum"]
+    assert severity_enum == ["critical", "moderate", "minor"]
+
+
+def test_schema_category_scores_has_six_keys_with_bounds() -> None:
+    schema = _build_page_extraction_schema(8)
+    cat_scores = schema["properties"]["category_scores"]
+    expected_keys = {
+        "text_integrity", "heading_formatting", "paragraph_flow",
+        "toc_navigation", "cover_images", "page_layout",
+    }
+    assert set(cat_scores["required"]) == expected_keys
+    for key in expected_keys:
+        prop = cat_scores["properties"][key]
+        assert prop == {"type": "integer", "minimum": 0, "maximum": 100}, (
+            f"category_scores.{key} has unexpected schema: {prop}"
+        )
+    assert cat_scores["additionalProperties"] is False
+
+
+def test_schema_top_issues_shape_has_affected_pages() -> None:
+    schema = _build_page_extraction_schema(8)
+    top_issue_items = schema["properties"]["top_issues"]["items"]
+    assert "affected_pages" in top_issue_items["properties"]
+    assert top_issue_items["properties"]["affected_pages"] == {
+        "type": "array",
+        "items": {"type": "integer"},
+    }
+    # per-page issues must NOT have affected_pages
+    per_page_issue_items = schema["properties"]["pages"]["items"]["properties"]["issues"]["items"]
+    assert "affected_pages" not in per_page_issue_items["properties"]
+
+
+def test_schema_boundary_single_image() -> None:
+    schema = _build_page_extraction_schema(1)
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 1
+    assert pages["maxItems"] == 1
+
+
+def test_schema_boundary_sixteen_images() -> None:
+    schema = _build_page_extraction_schema(16)
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 16
+    assert pages["maxItems"] == 16
+
+
+def test_schema_round_trips_json_dumps() -> None:
+    schema = _build_page_extraction_schema(8)
+    serialized = json.dumps(schema)
+    assert json.loads(serialized) == schema
 
 
 # ---------------------------------------------------------------------------

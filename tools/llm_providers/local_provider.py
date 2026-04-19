@@ -27,6 +27,170 @@ from .base import VisionResponse
 logger = logging.getLogger("visual_qa.local_provider")
 
 
+def _build_page_extraction_schema(page_count: int) -> dict:
+    """Build a strict JSON schema for a VQA page-extraction report.
+
+    The ``pages`` array is constrained to exactly ``page_count`` items via
+    ``minItems`` / ``maxItems``.  This makes it structurally impossible for
+    vLLM's guided-decoding backend to emit more (or fewer) page entries than
+    images were sent — the decoder masks disallowed tokens at generation time.
+
+    SCRUM-279 P1: direct response to the 2026-04-18 Return-of-the-Gods smoke
+    where Qwen3.5-MoE returned 221 sequential page entries for 8 input images
+    (10,661 output tokens).  ``minItems == maxItems == len(page_images)`` is
+    the load-bearing constraint.  See also ``PageCountMismatchError`` which
+    stays in place as belt-and-suspenders post-parse defense.
+
+    Enums mirror ``tools/visual_qa_rubric.md`` verbatim (line 59 for
+    page_type; lines 62-63 for category and severity).  Three distinct object
+    shapes are declared with ``additionalProperties: false`` throughout, as
+    required by OpenAI strict-mode:
+      1. per-page objects (items of ``pages[]``)
+      2. per-issue objects (items of ``pages[].issues[]``)
+      3. top-issue objects (items of ``top_issues[]``) — adds ``affected_pages``
+    """
+    per_issue_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["category", "severity", "description", "suggestion"],
+        "properties": {
+            "category": {
+                "type": "string",
+                "enum": [
+                    "text_integrity",
+                    "heading_formatting",
+                    "paragraph_flow",
+                    "toc_navigation",
+                    "cover_images",
+                    "page_layout",
+                ],
+            },
+            "severity": {
+                "type": "string",
+                "enum": ["critical", "moderate", "minor"],
+            },
+            "description": {"type": "string"},
+            "suggestion": {"type": "string"},
+        },
+    }
+
+    top_issue_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "category",
+            "severity",
+            "description",
+            "affected_pages",
+            "suggestion",
+        ],
+        "properties": {
+            "category": {
+                "type": "string",
+                "enum": [
+                    "text_integrity",
+                    "heading_formatting",
+                    "paragraph_flow",
+                    "toc_navigation",
+                    "cover_images",
+                    "page_layout",
+                ],
+            },
+            "severity": {
+                "type": "string",
+                "enum": ["critical", "moderate", "minor"],
+            },
+            "description": {"type": "string"},
+            "affected_pages": {
+                "type": "array",
+                "items": {"type": "integer"},
+            },
+            "suggestion": {"type": "string"},
+        },
+    }
+
+    per_page_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["page_number", "page_type", "score", "pass", "issues"],
+        "properties": {
+            "page_number": {"type": "integer"},
+            "page_type": {
+                "type": "string",
+                # Order matches tools/visual_qa_rubric.md line 59
+                "enum": [
+                    "cover",
+                    "toc",
+                    "front_matter",
+                    "chapter_start",
+                    "body",
+                    "back_matter",
+                ],
+            },
+            "score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "pass": {"type": "boolean"},
+            "issues": {
+                "type": "array",
+                "items": per_issue_schema,
+            },
+        },
+    }
+
+    category_scores_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "text_integrity",
+            "heading_formatting",
+            "paragraph_flow",
+            "toc_navigation",
+            "cover_images",
+            "page_layout",
+        ],
+        "properties": {
+            "text_integrity": {"type": "integer", "minimum": 0, "maximum": 100},
+            "heading_formatting": {"type": "integer", "minimum": 0, "maximum": 100},
+            "paragraph_flow": {"type": "integer", "minimum": 0, "maximum": 100},
+            "toc_navigation": {"type": "integer", "minimum": 0, "maximum": 100},
+            "cover_images": {"type": "integer", "minimum": 0, "maximum": 100},
+            "page_layout": {"type": "integer", "minimum": 0, "maximum": 100},
+        },
+    }
+
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "pages",
+            "overall_score",
+            "overall_pass",
+            "category_scores",
+            "summary",
+            "top_issues",
+        ],
+        "properties": {
+            "pages": {
+                "type": "array",
+                # SCRUM-279 P1 load-bearing constraint: prevents the 221-entry
+                # hallucination cascade seen in the 2026-04-18 Return-of-the-Gods
+                # smoke.  Both bounds must match exactly — minItems alone still
+                # allows over-generation that xgrammar would silently truncate.
+                "minItems": page_count,
+                "maxItems": page_count,
+                "items": per_page_schema,
+            },
+            "overall_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "overall_pass": {"type": "boolean"},
+            "category_scores": category_scores_schema,
+            "summary": {"type": "string"},
+            "top_issues": {
+                "type": "array",
+                "items": top_issue_schema,
+            },
+        },
+    }
+
+
 class PageCountMismatchError(RuntimeError):
     """Raised when the model returns a different number of page evaluations
     than images sent in the request.
