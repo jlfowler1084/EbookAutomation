@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from llm_providers import LocalVisionProvider  # noqa: E402
 from llm_providers.base import VisionResponse  # noqa: E402
+from llm_providers.local_provider import _build_page_extraction_schema  # noqa: E402
 
 
 PNG_FIXTURE = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
@@ -207,13 +208,8 @@ def test_no_frequency_penalty(provider: LocalVisionProvider) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_response_format_is_json_object(provider: LocalVisionProvider) -> None:
-    payload = provider.build_request(
-        page_images=[(1, PNG_FIXTURE)],
-        rubric_text=RUBRIC_FIXTURE,
-        model=MODEL_FIXTURE,
-    )
-    assert payload["response_format"] == {"type": "json_object"}
+# test_response_format_is_json_object renamed to test_response_format_is_json_schema
+# in Unit 2 (SCRUM-279 P1) — see Unit 2 block below.
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +251,318 @@ def test_custom_base_url() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Unit 1: _build_page_extraction_schema helper
+# ---------------------------------------------------------------------------
+
+
+def _collect_objects(node: dict) -> list[dict]:
+    """Recursively collect all sub-dicts with type == 'object'."""
+    results = []
+    if isinstance(node, dict):
+        if node.get("type") == "object":
+            results.append(node)
+        for v in node.values():
+            results.extend(_collect_objects(v))
+    elif isinstance(node, list):
+        for item in node:
+            results.extend(_collect_objects(item))
+    return results
+
+
+def test_schema_pages_minItems_equals_page_count() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["properties"]["pages"]["minItems"] == 8
+
+
+def test_schema_pages_maxItems_equals_page_count() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["properties"]["pages"]["maxItems"] == 8
+
+
+def test_schema_top_level_type_and_required() -> None:
+    schema = _build_page_extraction_schema(8)
+    assert schema["type"] == "object"
+    required = schema["required"]
+    for key in ("pages", "overall_score", "overall_pass", "category_scores", "summary", "top_issues"):
+        assert key in required, f"'{key}' missing from top-level required"
+    assert schema["properties"]["pages"]["type"] == "array"
+
+
+def test_schema_all_objects_have_additionalProperties_false() -> None:
+    schema = _build_page_extraction_schema(8)
+    objects = _collect_objects(schema)
+    assert len(objects) > 0, "No objects found — schema is malformed"
+    for obj in objects:
+        assert obj.get("additionalProperties") is False, (
+            f"Object missing additionalProperties:false — properties: {list(obj.get('properties', {}).keys())}"
+        )
+
+
+def test_schema_per_page_properties_and_required() -> None:
+    schema = _build_page_extraction_schema(8)
+    page_items = schema["properties"]["pages"]["items"]
+    props = page_items["properties"]
+    for key in ("page_number", "page_type", "score", "pass", "issues"):
+        assert key in props, f"'{key}' missing from per-page properties"
+    required = page_items["required"]
+    for key in ("page_number", "page_type", "score", "pass", "issues"):
+        assert key in required, f"'{key}' missing from per-page required"
+
+
+def test_schema_page_type_enum_matches_rubric() -> None:
+    schema = _build_page_extraction_schema(8)
+    page_type_enum = schema["properties"]["pages"]["items"]["properties"]["page_type"]["enum"]
+    assert page_type_enum == ["cover", "toc", "front_matter", "chapter_start", "body", "back_matter"]
+
+
+def test_schema_issue_severity_enum() -> None:
+    schema = _build_page_extraction_schema(8)
+    issues_items = schema["properties"]["pages"]["items"]["properties"]["issues"]["items"]
+    severity_enum = issues_items["properties"]["severity"]["enum"]
+    assert severity_enum == ["critical", "moderate", "minor"]
+
+
+def test_schema_category_scores_has_six_keys_with_bounds() -> None:
+    schema = _build_page_extraction_schema(8)
+    cat_scores = schema["properties"]["category_scores"]
+    expected_keys = {
+        "text_integrity", "heading_formatting", "paragraph_flow",
+        "toc_navigation", "cover_images", "page_layout",
+    }
+    assert set(cat_scores["required"]) == expected_keys
+    for key in expected_keys:
+        prop = cat_scores["properties"][key]
+        assert prop == {"type": "integer", "minimum": 0, "maximum": 100}, (
+            f"category_scores.{key} has unexpected schema: {prop}"
+        )
+    assert cat_scores["additionalProperties"] is False
+
+
+def test_schema_top_issues_shape_has_affected_pages() -> None:
+    schema = _build_page_extraction_schema(8)
+    top_issue_items = schema["properties"]["top_issues"]["items"]
+    assert "affected_pages" in top_issue_items["properties"]
+    assert top_issue_items["properties"]["affected_pages"] == {
+        "type": "array",
+        "items": {"type": "integer"},
+    }
+    # per-page issues must NOT have affected_pages
+    per_page_issue_items = schema["properties"]["pages"]["items"]["properties"]["issues"]["items"]
+    assert "affected_pages" not in per_page_issue_items["properties"]
+
+
+def test_schema_boundary_single_image() -> None:
+    schema = _build_page_extraction_schema(1)
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 1
+    assert pages["maxItems"] == 1
+
+
+def test_schema_boundary_sixteen_images() -> None:
+    schema = _build_page_extraction_schema(16)
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 16
+    assert pages["maxItems"] == 16
+
+
+def test_schema_round_trips_json_dumps() -> None:
+    schema = _build_page_extraction_schema(8)
+    serialized = json.dumps(schema)
+    assert json.loads(serialized) == schema
+
+
+# ---------------------------------------------------------------------------
+# Unit 2: json_schema response_format wiring + OutputTruncatedError
+# ---------------------------------------------------------------------------
+
+
+def test_response_format_is_json_schema(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    rf = payload["response_format"]
+    assert rf["type"] == "json_schema"
+    assert rf["json_schema"]["name"] == "page_extraction_report"
+
+
+def test_response_format_strict_true(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["response_format"]["json_schema"]["strict"] is True
+
+
+@pytest.mark.parametrize("n_images", [1, 2, 8, 16])
+def test_response_format_schema_bounds_match_image_count(
+    provider: LocalVisionProvider, n_images: int
+) -> None:
+    payload = provider.build_request(
+        page_images=[(i, PNG_FIXTURE) for i in range(1, n_images + 1)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    schema = payload["response_format"]["json_schema"]["schema"]
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == n_images
+    assert pages["maxItems"] == n_images
+
+
+def test_build_request_single_image_schema_bounds(provider: LocalVisionProvider) -> None:
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    schema = payload["response_format"]["json_schema"]["schema"]
+    pages = schema["properties"]["pages"]
+    assert pages["minItems"] == 1
+    assert pages["maxItems"] == 1
+
+
+def test_frequency_penalty_still_absent_after_schema_change(provider: LocalVisionProvider) -> None:
+    """Schema change must not reintroduce frequency_penalty."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert "frequency_penalty" not in payload
+
+
+def test_enable_thinking_still_present_after_schema_change(provider: LocalVisionProvider) -> None:
+    """Schema change must not disturb the enable_thinking=False guard."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_call_raises_output_truncated_error_on_finish_reason_length(
+    provider: LocalVisionProvider,
+) -> None:
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content='{"pages": [',  # truncated JSON
+        finish_reason="length",
+        completion_tokens=16384,
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(OutputTruncatedError) as exc_info:
+            provider.call(payload)
+
+    assert exc_info.value.finish_reason == "length"
+    assert exc_info.value.output_tokens == 16384
+    assert exc_info.value.max_tokens_budget == 16384
+
+
+def test_call_does_not_raise_output_truncated_on_stop(provider: LocalVisionProvider) -> None:
+    """finish_reason='stop' must not raise OutputTruncatedError."""
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    fake_content = json.dumps({
+        "pages": [
+            {"page_number": 1, "page_type": "body", "score": 85, "pass": True, "issues": []},
+        ]
+    })
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content=fake_content,
+        finish_reason="stop",
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        result = provider.call(payload)
+
+    assert result.raw_text == fake_content
+
+
+def test_output_truncated_fires_before_json_loads(provider: LocalVisionProvider) -> None:
+    """Truncated JSON + finish_reason='length' must raise OutputTruncatedError,
+    not JSONDecodeError — truncation guard runs before any parsing.
+    """
+    from llm_providers.local_provider import OutputTruncatedError
+
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        content="this is not json {{{",
+        finish_reason="length",
+    )
+    with patch("openai.OpenAI", return_value=mock_client):
+        with pytest.raises(OutputTruncatedError):
+            provider.call(payload)
+
+
+def test_repair_payload_strips_response_format() -> None:
+    """parse_qa_response must pop response_format from the repair payload.
+
+    Verifies sub-step 2c: if guided_json is active, the repair call has no
+    images and a strict N-page schema would force fabricated entries.
+    """
+    import visual_qa
+
+    captured_repair_payloads: list[dict] = []
+
+    def capturing_call(p: dict) -> VisionResponse:
+        captured_repair_payloads.append(dict(p))
+        return VisionResponse(
+            raw_text=json.dumps({
+                "overall_score": 80,
+                "pages": [{"page_number": 1, "score": 80}],
+                "category_scores": {},
+                "summary": "ok",
+                "top_issues": [],
+            }),
+            input_tokens=10,
+            output_tokens=20,
+        )
+
+    mock_provider = MagicMock()
+    mock_provider.call.side_effect = capturing_call
+
+    original_payload = {
+        "messages": [{"role": "user", "content": []}],
+        "model": MODEL_FIXTURE,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "page_extraction_report", "strict": True, "schema": {}},
+        },
+    }
+
+    visual_qa.parse_qa_response(
+        raw_text="not valid json {",
+        provider=mock_provider,
+        original_payload=original_payload,
+    )
+
+    assert len(captured_repair_payloads) == 1
+    assert "response_format" not in captured_repair_payloads[0], (
+        "response_format must be stripped from repair payload before the repair call"
+    )
+
+
+# ---------------------------------------------------------------------------
 # LOAD-BEARING: page-count hallucination guard
 # SCRUM-275 smoke 2026-04-18 — Return of the Gods produced 221 sequential
 # page entries for 8 input images. Silent truncation would hide this and
@@ -263,11 +571,17 @@ def test_custom_base_url() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_fake_completion(content: str, prompt_tokens: int = 100, completion_tokens: int = 500) -> MagicMock:
+def _make_fake_completion(
+    content: str,
+    prompt_tokens: int = 100,
+    completion_tokens: int = 500,
+    finish_reason: str = "stop",
+) -> MagicMock:
     """Helper: build a mock OpenAI ChatCompletion response."""
     fake = MagicMock()
     fake.choices = [MagicMock()]
     fake.choices[0].message.content = content
+    fake.choices[0].finish_reason = finish_reason
     fake.usage = MagicMock()
     fake.usage.prompt_tokens = prompt_tokens
     fake.usage.completion_tokens = completion_tokens
