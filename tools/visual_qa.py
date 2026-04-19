@@ -11,6 +11,11 @@ Usage:
     python visual_qa.py --input "book.kfx" --dpi 200 --max-pages 15
     python visual_qa.py --input "book.epub" --model claude-sonnet-4-6 --verbose
     python visual_qa.py --input "book.kfx" --provider local
+
+Production cost note (SCRUM-280 P2): --provider local uses two-pass VQA
+(LocalVisionProvider.two_pass_call: detection + scoring).  Measured overhead ~3× per
+8-page batch vs single-pass (~9s vs ~3s).  sb-chat is shared with SecondBrain and
+CareerPilot — avoid concurrent heavy local VQA workloads.
 """
 
 import argparse
@@ -561,9 +566,24 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         logger.info("  Batch %d/%d: %d pages [%s]",
                      batch_idx, len(batches), len(batch),
                      ", ".join(str(p) for p, _ in batch))
-        payload = provider.build_request(batch, rubric_text, model)
         try:
-            response = provider.call(payload)
+            # SCRUM-280 Unit 4 sub-unit 4b-ii two-pass routing.
+            # Duck-typing over Protocol extension is intentional — ClaudeVisionProvider
+            # does not use two-pass (detection cost asymmetry; scope boundary per the P2
+            # plan). Extending VisionProvider Protocol would require a stub on
+            # ClaudeVisionProvider for a method it never calls.
+            # Two-pass methods live on LocalVisionProvider only:
+            #   LocalVisionProvider.two_pass_call(page_images, rubric_text, model)
+            #   LocalVisionProvider.build_detection_request(page_images, rubric_text, model)
+            #   LocalVisionProvider.build_scoring_request(detected_pages, rubric_text, model)
+            # Unit 6 Protocol-contract test asserts these three are callable on
+            # LocalVisionProvider specifically — see tests/test_local_provider_phase2.py.
+            if hasattr(provider, "two_pass_call"):
+                response = provider.two_pass_call(batch, rubric_text, model)
+                original_payload = None
+            else:
+                original_payload = provider.build_request(batch, rubric_text, model)
+                response = provider.call(original_payload)
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
             logger.info("  Batch %d: %d input, %d output tokens",
@@ -572,7 +592,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
             batch_data = parse_qa_response(
                 response.raw_text,
                 provider=provider,
-                original_payload=payload,
+                original_payload=original_payload,
             )
             # Collect per-page results from this batch
             if isinstance(batch_data, dict):
