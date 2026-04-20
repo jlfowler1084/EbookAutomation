@@ -52,6 +52,24 @@ logger = logging.getLogger("visual_qa")
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_book_stem(stem: str) -> str:
+    """Normalize a filename stem for fuzzy KFX↔PDF matching.
+
+    Steps (order is load-bearing):
+    1. Lowercase
+    2. Strip ' - <author>' suffix via rfind (must precede non-alnum sub or
+       the ' - ' separator is destroyed in step 3)
+    3. Replace non-[a-z0-9] runs with a single space
+    4. Collapse/strip whitespace
+    """
+    s = stem.lower()
+    sep_idx = s.rfind(" - ")
+    if sep_idx >= 0:
+        s = s[:sep_idx]
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(s.split())
+
+
 def find_poppler_path(explicit_path=None):
     """Locate the poppler bin directory."""
     if explicit_path and os.path.isdir(explicit_path):
@@ -617,6 +635,24 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         pdf_path = str(input_path)
         logger.info("Input is already PDF, skipping Calibre conversion")
         capture_pipeline = "pdf-direct"
+
+        # Warn if a KFX with the same title exists — the baseline captured from
+        # PDF may not match a future KFX-sourced run due to page-count drift.
+        kfx_dir = Path(__file__).resolve().parent.parent / "output" / "kindle"
+        if kfx_dir.is_dir():
+            pdf_norm = _normalize_book_stem(input_path.stem)
+            kfx_matches = [
+                kfx for kfx in kfx_dir.glob("*.kfx")
+                if _normalize_book_stem(kfx.stem) == pdf_norm
+            ]
+            if kfx_matches:
+                logger.warning(
+                    "PDF input '%s' shadows KFX '%s' — baseline captured from "
+                    "PDF path may diverge from a KFX-sourced run. "
+                    "Re-capture from KFX to standardize.",
+                    input_path.name,
+                    kfx_matches[0].name,
+                )
     else:
         pdf_path = convert_to_pdf(input_path, calibre_path)
         capture_pipeline = "kfx-calibre"
