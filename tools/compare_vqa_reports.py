@@ -10,18 +10,39 @@ Gate thresholds (SCRUM-280 / SCRUM-283 R2):
     - R2(a): equal-weight corpus mean |Δ| < 15
     - R2(b): no per-book mean |Δ| > 20
 
-Exit codes:
+Subcommands:
+    compare (default): R2 gate comparison between candidate and baseline dirs.
+    audit:             Verify baseline source parity by comparing stored
+                       pages[].page_number arrays against a fresh
+                       select_sample_pages() run on the current KFX-derived PDF.
+
+Exit codes (compare):
     0 — R2(a) and R2(b) both pass
     1 — R2 gate fails
     2 — page-overlap guard hard-fails (< 50%% overlap on any book;
         Lesson-5 source-format drift fingerprint)
 
-Usage:
+Exit codes (audit):
+    0 — all baselines in parity
+    1 — one or more baselines skipped (no matching KFX), no mismatches
+    2 — one or more baselines mismatched (or missing page data)
+
+Usage (compare — default, backward-compatible):
     python tools/compare_vqa_reports.py \\
         --candidate data/scrum283_unit3_6book_smoke_a3b/ \\
         --baseline  data/vqa_baseline_post_274/ \\
         [--secondary data/scrum280_unit5_winning_smoke/] \\
         [--json-out  data/scrum283_unit4_gate_result_a3b.json]
+
+Usage (compare — explicit subcommand):
+    python tools/compare_vqa_reports.py compare \\
+        --candidate data/scrum283_unit3_6book_smoke_a3b/ \\
+        --baseline  data/vqa_baseline_post_274/
+
+Usage (audit):
+    python tools/compare_vqa_reports.py audit \\
+        [--baseline-dir data/vqa_baseline_post_274/] \\
+        [--kfx-dir output/kindle/]
 """
 
 from __future__ import annotations
@@ -34,6 +55,18 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+# Helpers imported for the audit subcommand.
+# Monkeypatch these names in compare_vqa_reports module namespace during unit tests
+# to avoid invoking Calibre.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from visual_qa import (  # noqa: E402
+    convert_to_pdf,
+    get_pdf_page_count,
+    get_pdf_bookmarks,
+    select_sample_pages,
+    load_settings_json,
+)
+
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
@@ -45,6 +78,41 @@ _R2_CORPUS_THRESHOLD = 15.0
 _R2_PER_BOOK_THRESHOLD = 20.0
 _OVERLAP_HARD_FAIL = 0.50  # any book below this fraction fails exit 2
 
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _get_stems(d: Path) -> set[str]:
+    """Return set of book stems from *_visual_qa_report.json in d (non-recursive)."""
+    return {
+        p.name[: -len(_REPORT_SUFFIX)]
+        for p in d.glob(f"*{_REPORT_SUFFIX}")
+    }
+
+
+def _load_report(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _index_pages(report: dict) -> dict[int, dict]:
+    """Return {page_number: page_dict}. First occurrence wins on duplicates."""
+    out: dict[int, dict] = {}
+    for page in report.get("pages", []):
+        pn = page.get("page_number")
+        if isinstance(pn, int) and pn not in out:
+            out[pn] = page
+    return out
+
+
+def _truncate(s: str, n: int) -> str:
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+# ---------------------------------------------------------------------------
+# Compare subcommand — dataclasses and logic
+# ---------------------------------------------------------------------------
 
 @dataclass
 class BookDelta:
@@ -74,21 +142,6 @@ class GateResult:
     overlap_hard_fail: bool = False
 
 
-def _load_report(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _index_pages(report: dict) -> dict[int, dict]:
-    """Return {page_number: page_dict}. First occurrence wins on duplicates."""
-    out: dict[int, dict] = {}
-    for page in report.get("pages", []):
-        pn = page.get("page_number")
-        if isinstance(pn, int) and pn not in out:
-            out[pn] = page
-    return out
-
-
 def _discover_books(
     candidate_dir: Path,
     baseline_dir: Path,
@@ -97,14 +150,8 @@ def _discover_books(
 
     A "stem" is the filename with the _visual_qa_report.json suffix stripped.
     """
-    def _stems(d: Path) -> set[str]:
-        return {
-            p.name[: -len(_REPORT_SUFFIX)]
-            for p in d.glob(f"*{_REPORT_SUFFIX}")
-        }
-
-    cand = _stems(candidate_dir)
-    base = _stems(baseline_dir)
+    cand = _get_stems(candidate_dir)
+    base = _get_stems(baseline_dir)
     only_cand = cand - base
     only_base = base - cand
     if only_cand:
@@ -198,8 +245,6 @@ def _aggregate(per_book: list[BookDelta]) -> GateResult:
         return gate
 
     equal_weight = statistics.mean(b.mean_abs_delta for b in valid)
-    # Page-weighted: reconstruct per-page deltas implicit from (mean, count)
-    # By (mean × overlap), sum, divide by sum(overlap). Equivalent to true per-page mean.
     total_weighted = sum(b.mean_abs_delta * b.overlap_pages for b in valid)
     total_pages = sum(b.overlap_pages for b in valid)
     page_weighted = total_weighted / total_pages if total_pages else None
@@ -213,10 +258,6 @@ def _aggregate(per_book: list[BookDelta]) -> GateResult:
     gate.overall_pass = gate.r2a_pass and gate.r2b_pass
     gate.overlap_hard_fail = any(b.overlap_fraction < _OVERLAP_HARD_FAIL for b in per_book)
     return gate
-
-
-def _truncate(s: str, n: int) -> str:
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 def _render_markdown(
@@ -301,28 +342,8 @@ def _render_json(
     }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Compare VQA report directories and evaluate R2 gate."
-    )
-    parser.add_argument("--candidate", required=True, type=Path,
-                        help="Directory of candidate *_visual_qa_report.json files")
-    parser.add_argument("--baseline", required=True, type=Path,
-                        help="Directory of baseline (oracle) reports to compare against")
-    parser.add_argument("--secondary", type=Path, default=None,
-                        help="Optional second reference (e.g. prior local run)")
-    parser.add_argument("--json-out", type=Path, default=None,
-                        help="Optional path to write the gate result as JSON")
-    parser.add_argument("--verbose", action="store_true")
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%H:%M:%S",
-        stream=sys.stderr,
-    )
-
+def _cmd_compare(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Handler for the compare subcommand (and legacy default invocation)."""
     for d in (args.candidate, args.baseline):
         if not d.is_dir():
             parser.error(f"Not a directory: {d}")
@@ -352,6 +373,208 @@ def main() -> int:
     if gate.overlap_hard_fail:
         return 2
     return 0 if gate.overall_pass else 1
+
+
+# ---------------------------------------------------------------------------
+# Audit subcommand
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BookAuditResult:
+    """Per-book audit result from the audit subcommand."""
+    stem: str
+    status: str          # "parity" | "mismatch" | "skipped"
+    baseline_pages: list[int]
+    expected_pages: list[int] | None   # None when skipped
+    note: str = ""
+
+
+def _cmd_audit(args: argparse.Namespace) -> int:
+    """Handler for the audit subcommand.
+
+    For each baseline JSON in --baseline-dir, find the matching KFX in --kfx-dir
+    by exact stem, derive a fresh select_sample_pages() result from that KFX, and
+    compare it to the baseline's pages[].page_number array.
+
+    Exit 0: all parity. Exit 1: any skipped, no mismatches. Exit 2: any mismatch.
+    """
+    baseline_dir = Path(args.baseline_dir)
+    kfx_dir = Path(args.kfx_dir)
+    calibre_path = args.calibre
+
+    if not baseline_dir.is_dir():
+        logger.error("Not a directory: %s", baseline_dir)
+        return 2
+
+    kfx_by_stem: dict[str, Path] = {}
+    if kfx_dir.is_dir():
+        kfx_by_stem = {p.stem: p for p in kfx_dir.glob("*.kfx")}
+    else:
+        logger.warning("kfx-dir not found: %s — all baselines will be skipped", kfx_dir)
+
+    stems = sorted(_get_stems(baseline_dir))
+    if not stems:
+        logger.error("No baseline reports found in %s", baseline_dir)
+        return 2
+
+    results: list[BookAuditResult] = []
+
+    for stem in stems:
+        baseline_path = baseline_dir / f"{stem}{_REPORT_SUFFIX}"
+
+        try:
+            report = _load_report(baseline_path)
+        except Exception as exc:
+            results.append(BookAuditResult(
+                stem=stem, status="mismatch",
+                baseline_pages=[], expected_pages=None,
+                note=f"load error: {exc}",
+            ))
+            continue
+
+        baseline_page_nums: list[int] = [
+            p["page_number"] for p in report.get("pages", [])
+            if isinstance(p.get("page_number"), int)
+        ]
+        if not baseline_page_nums:
+            results.append(BookAuditResult(
+                stem=stem, status="mismatch",
+                baseline_pages=[], expected_pages=None,
+                note="baseline missing pages[].page_number",
+            ))
+            continue
+
+        kfx_path = kfx_by_stem.get(stem)
+        if kfx_path is None:
+            results.append(BookAuditResult(
+                stem=stem, status="skipped",
+                baseline_pages=baseline_page_nums, expected_pages=None,
+                note="no matching KFX in kfx-dir",
+            ))
+            logger.warning("Skipping %s: no matching KFX found", stem)
+            continue
+
+        try:
+            pdf_path = convert_to_pdf(kfx_path, calibre_path)
+            total_pages = get_pdf_page_count(pdf_path)
+            bookmark_pages = get_pdf_bookmarks(pdf_path)
+            expected = select_sample_pages(total_pages, max_samples=8,
+                                           bookmark_pages=bookmark_pages)
+        except Exception as exc:
+            results.append(BookAuditResult(
+                stem=stem, status="skipped",
+                baseline_pages=baseline_page_nums, expected_pages=None,
+                note=f"KFX/PDF error: {exc}",
+            ))
+            logger.warning("Skipping %s: %s", stem, exc)
+            continue
+
+        if sorted(baseline_page_nums) == sorted(expected):
+            results.append(BookAuditResult(
+                stem=stem, status="parity",
+                baseline_pages=baseline_page_nums, expected_pages=expected,
+            ))
+        else:
+            results.append(BookAuditResult(
+                stem=stem, status="mismatch",
+                baseline_pages=baseline_page_nums, expected_pages=expected,
+                note="sampled-page mismatch",
+            ))
+
+    _print_audit_table(results)
+
+    any_mismatch = any(r.status == "mismatch" for r in results)
+    any_skipped = any(r.status == "skipped" for r in results)
+    if any_mismatch:
+        return 2
+    if any_skipped:
+        return 1
+    return 0
+
+
+def _print_audit_table(results: list[BookAuditResult]) -> None:
+    print("\n# VQA baseline audit")
+    print(f"| {'Book':<50} | {'Status':<9} | Baseline pages | Expected pages | Note |")
+    print(f"| {'-'*50} | {'-'*9} | {'-'*14} | {'-'*14} | --- |")
+    for r in results:
+        base_str = str(r.baseline_pages) if r.baseline_pages else "—"
+        exp_str = str(r.expected_pages) if r.expected_pages is not None else "—"
+        print(f"| {_truncate(r.stem, 50):<50} | {r.status:<9} | "
+              f"{_truncate(base_str, 14):<14} | {_truncate(exp_str, 14):<14} | {r.note} |")
+    parity = sum(1 for r in results if r.status == "parity")
+    mismatch = sum(1 for r in results if r.status == "mismatch")
+    skipped = sum(1 for r in results if r.status == "skipped")
+    print(f"\nSummary: {parity} parity / {mismatch} mismatch / {skipped} skipped")
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    # Inject "compare" as default subcommand for backward compat:
+    # `python compare_vqa_reports.py --candidate X --baseline Y` still works.
+    _known_subcmds = {"compare", "audit", "-h", "--help"}
+    argv = sys.argv[1:]
+    if argv and argv[0] not in _known_subcmds:
+        argv = ["compare"] + argv
+
+    parser = argparse.ArgumentParser(
+        description="Compare VQA report directories (R2 gate) or audit baseline source parity."
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # --- compare subcommand ---
+    compare_p = subparsers.add_parser(
+        "compare",
+        help="Compare candidate VQA run against baseline (R2 gate). Default when no subcommand given.",
+    )
+    compare_p.add_argument("--candidate", required=True, type=Path,
+                           help="Directory of candidate *_visual_qa_report.json files")
+    compare_p.add_argument("--baseline", required=True, type=Path,
+                           help="Directory of baseline (oracle) reports to compare against")
+    compare_p.add_argument("--secondary", type=Path, default=None,
+                           help="Optional second reference (e.g. prior local run)")
+    compare_p.add_argument("--json-out", type=Path, default=None,
+                           help="Optional path to write the gate result as JSON")
+    compare_p.add_argument("--verbose", action="store_true")
+
+    # --- audit subcommand ---
+    audit_p = subparsers.add_parser(
+        "audit",
+        help="Audit baseline source parity against fresh KFX-derived samples.",
+    )
+    _settings = load_settings_json()
+    _default_calibre = _settings.get("paths", {}).get(
+        "calibre", r"C:\Program Files\Calibre2\ebook-convert.exe"
+    )
+    audit_p.add_argument("--baseline-dir", type=Path,
+                         default=Path("data/vqa_baseline_post_274/"),
+                         help="Directory of baseline JSON files to audit "
+                              "(default: data/vqa_baseline_post_274/)")
+    audit_p.add_argument("--kfx-dir", type=Path,
+                         default=Path("output/kindle/"),
+                         help="Directory containing *.kfx files (default: output/kindle/)")
+    audit_p.add_argument("--calibre", default=_default_calibre,
+                         help="Path to Calibre ebook-convert.exe")
+    audit_p.add_argument("--verbose", action="store_true")
+
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
+
+    if args.command == "compare":
+        return _cmd_compare(args, parser)
+    elif args.command == "audit":
+        return _cmd_audit(args)
+    else:
+        parser.print_help()
+        return 1
 
 
 if __name__ == "__main__":

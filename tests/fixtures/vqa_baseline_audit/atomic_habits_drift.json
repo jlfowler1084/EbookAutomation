@@ -1,0 +1,21 @@
+{
+  "book": "atomic_habits_drift_test.pdf",
+  "timestamp": "2026-04-18T12:00:00+00:00",
+  "model": "claude-haiku-4-5",
+  "pages_sampled": 8,
+  "pages_total": 266,
+  "dpi": 150,
+  "overall_score": 82,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "pages": [
+    {"page_number": 1, "score": 90},
+    {"page_number": 2, "score": 88},
+    {"page_number": 3, "score": 85},
+    {"page_number": 73, "score": 82},
+    {"page_number": 92, "score": 80},
+    {"page_number": 145, "score": 78},
+    {"page_number": 158, "score": 76},
+    {"page_number": 232, "score": 74}
+  ]
+}
