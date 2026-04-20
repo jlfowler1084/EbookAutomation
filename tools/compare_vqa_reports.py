@@ -458,7 +458,8 @@ def _cmd_audit(args: argparse.Namespace) -> int:
             pdf_path = convert_to_pdf(kfx_path, calibre_path)
             total_pages = get_pdf_page_count(pdf_path)
             bookmark_pages = get_pdf_bookmarks(pdf_path)
-            expected = select_sample_pages(total_pages, max_samples=8,
+            max_samples = report.get('pages_sampled', 8)
+            expected = select_sample_pages(total_pages, max_samples=max_samples,
                                            bookmark_pages=bookmark_pages)
         except Exception as exc:
             results.append(BookAuditResult(
@@ -514,7 +515,8 @@ def _print_audit_table(results: list[BookAuditResult]) -> None:
 def main() -> int:
     # Inject "compare" as default subcommand for backward compat:
     # `python compare_vqa_reports.py --candidate X --baseline Y` still works.
-    _known_subcmds = {"compare", "audit", "-h", "--help"}
+    # Top-level flags (--verbose/-v/--help/-h) must NOT trigger the compare injection.
+    _known_subcmds = {"compare", "audit", "-h", "--help", "-v", "--verbose"}
     argv = sys.argv[1:]
     if argv and argv[0] not in _known_subcmds:
         argv = ["compare"] + argv
@@ -522,6 +524,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Compare VQA report directories (R2 gate) or audit baseline source parity."
     )
+    # --verbose hoisted to top-level so it exists regardless of subcommand (or no subcommand).
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="command")
 
     # --- compare subcommand ---
@@ -537,7 +542,6 @@ def main() -> int:
                            help="Optional second reference (e.g. prior local run)")
     compare_p.add_argument("--json-out", type=Path, default=None,
                            help="Optional path to write the gate result as JSON")
-    compare_p.add_argument("--verbose", action="store_true")
 
     # --- audit subcommand ---
     audit_p = subparsers.add_parser(
@@ -557,7 +561,6 @@ def main() -> int:
                          help="Directory containing *.kfx files (default: output/kindle/)")
     audit_p.add_argument("--calibre", default=_default_calibre,
                          help="Path to Calibre ebook-convert.exe")
-    audit_p.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args(argv)
 
@@ -568,13 +571,16 @@ def main() -> int:
         stream=sys.stderr,
     )
 
-    if args.command == "compare":
+    if args.command is None:
+        parser.print_help()
+        return 0
+    elif args.command == "compare":
         return _cmd_compare(args, parser)
     elif args.command == "audit":
         return _cmd_audit(args)
     else:
         parser.print_help()
-        return 1
+        return 0
 
 
 if __name__ == "__main__":

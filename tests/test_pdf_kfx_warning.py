@@ -51,9 +51,34 @@ import visual_qa as vqa
     ("Python in easy steps 2nd Edition", "python in easy steps 2nd edition"),
     # Subtitle with colon (no author)
     ("Decline of the West Volumes 1 and 2", "decline of the west volumes 1 and 2"),
+    # Fix #1a: Leading separator (' - Author') must not collapse to empty string
+    # sep_idx == 0 guard prevents stripping, leaving normalized author text
+    (" - Author", "author"),
+    # Fix #1b: Embedded subtitle separator ('Foo - A Subtitle') — Option A behavior:
+    # 'A Subtitle' passes the author-name heuristic (short, letters/spaces only),
+    # so it IS stripped. Pinned explicitly so future changes are visible.
+    ("Foo - A Subtitle", "foo"),
 ])
 def test_normalize_stem_values(stem, expected):
     assert vqa._normalize_book_stem(stem) == expected
+
+
+@pytest.mark.parametrize("stem", [
+    "東京の本 - 著者",
+    "Война и мир - Толстой",
+    "Ünlü Kitap - Ahmet Çelik",
+])
+def test_normalize_non_ascii_is_nonempty(stem):
+    """Non-ASCII titles must not normalize to an empty string (Fix #1a re.UNICODE)."""
+    result = vqa._normalize_book_stem(stem)
+    assert result, f"_normalize_book_stem({stem!r}) returned empty string"
+
+
+def test_normalize_non_ascii_books_are_distinct():
+    """Two different non-ASCII book titles must produce different normalized strings."""
+    r1 = vqa._normalize_book_stem("東京の本 - 著者")
+    r2 = vqa._normalize_book_stem("北京の本 - 著者")
+    assert r1 != r2, f"Expected distinct normalized stems but both are {r1!r}"
 
 
 def test_normalize_idempotent_simple():
@@ -133,62 +158,38 @@ def _run_vqa(input_path, provider, output_dir):
 
 
 def test_warning_fires_when_kfx_match_exists(monkeypatch, tmp_path, caplog):
-    """PDF input with a matching KFX stem in output/kindle/ must emit a WARNING."""
+    """PDF input with a matching KFX stem in output/kindle/ must emit a WARNING.
+
+    Uses _get_kfx_dir() monkeypatch so no real worktree files are touched.
+    """
     _patch_pipeline_internals(monkeypatch, tmp_path)
 
-    # Fake kfx_dir with a matching KFX
+    # Plant KFX in a hermetic tmp dir and redirect the seam
     kfx_dir = tmp_path / "output" / "kindle"
     kfx_dir.mkdir(parents=True)
-    (kfx_dir / "Atomic Habits - James Clear.kfx").touch()
-
-    # Redirect _normalize_book_stem's kfx_dir lookup to our tmp dir
-    project_root = tmp_path
-    monkeypatch.setattr(
-        vqa.Path,
-        "resolve",
-        lambda self: project_root / "tools" / "visual_qa.py"
-        if "visual_qa" in str(self) else self,
-    )
-    # Simpler: patch Path(__file__).resolve().parent.parent directly via monkeypatching
-    # the kfx_dir lookup inside the function by redirecting the parent chain.
-    # Instead, override is_dir() and glob() on the specific kfx_dir path.
-    # Easiest: monkeypatch the kfx_dir by patching Path.resolve to return a
-    # known location, or just use a real tmp structure and patch __file__ parent.
-
-    # Reset monkeypatch on Path.resolve — use a more targeted approach:
-    # override the kfx_dir logic by patching the module-level Path class
-    # resolution. Since Path(__file__) in visual_qa resolves to the tools dir,
-    # we create the output/kindle structure relative to the worktree root,
-    # not tmp_path. So use the real worktree path.
-    worktree = Path(__file__).resolve().parent.parent
-    real_kfx_dir = worktree / "output" / "kindle"
-    real_kfx_dir.mkdir(parents=True, exist_ok=True)
-    kfx_file = real_kfx_dir / "Atomic Habits - James Clear.kfx"
-    kfx_file.touch()
+    (kfx_dir / "Atomic Habits - James Clear.kfx").write_bytes(b"")
+    monkeypatch.setattr(vqa, "_get_kfx_dir", lambda: kfx_dir)
 
     pdf_input = tmp_path / "Atomic Habits - James Clear.pdf"
     pdf_input.touch()
 
-    try:
-        with caplog.at_level(logging.WARNING, logger="visual_qa"):
-            _run_vqa(pdf_input, _make_mock_provider(), tmp_path)
-        assert any(
-            "shadows" in record.message and "Atomic Habits" in record.message
-            for record in caplog.records
-        ), f"Expected shadow warning. Records: {[r.message for r in caplog.records]}"
-    finally:
-        if kfx_file.exists():
-            kfx_file.unlink()
+    with caplog.at_level(logging.WARNING, logger="visual_qa"):
+        _run_vqa(pdf_input, _make_mock_provider(), tmp_path)
+
+    assert any(
+        "shadows" in record.message and "Atomic Habits" in record.message
+        for record in caplog.records
+    ), f"Expected shadow warning. Records: {[r.message for r in caplog.records]}"
 
 
 def test_no_warning_when_no_kfx_match(monkeypatch, tmp_path, caplog):
     """PDF input with no matching KFX must not emit a shadow warning."""
     _patch_pipeline_internals(monkeypatch, tmp_path)
 
-    # Ensure output/kindle has no matching KFX for this stem
-    worktree = Path(__file__).resolve().parent.parent
-    real_kfx_dir = worktree / "output" / "kindle"
-    real_kfx_dir.mkdir(parents=True, exist_ok=True)
+    # Empty kfx_dir — no match possible
+    kfx_dir = tmp_path / "output" / "kindle"
+    kfx_dir.mkdir(parents=True)
+    monkeypatch.setattr(vqa, "_get_kfx_dir", lambda: kfx_dir)
 
     pdf_input = tmp_path / "Completely Unknown Book With No KFX Match Ever.pdf"
     pdf_input.touch()
@@ -196,16 +197,19 @@ def test_no_warning_when_no_kfx_match(monkeypatch, tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="visual_qa"):
         _run_vqa(pdf_input, _make_mock_provider(), tmp_path)
 
-    shadow_warnings = [
-        r for r in caplog.records
-        if "shadows" in r.message
-    ]
+    shadow_warnings = [r for r in caplog.records if "shadows" in r.message]
     assert not shadow_warnings, f"Unexpected shadow warning: {shadow_warnings}"
 
 
 def test_no_warning_for_kfx_input(monkeypatch, tmp_path, caplog):
     """KFX input (non-PDF) must never emit a KFX-shadow warning."""
     _patch_pipeline_internals(monkeypatch, tmp_path)
+
+    # Even if kfx_dir has a match, KFX input skips the shadow check entirely
+    kfx_dir = tmp_path / "output" / "kindle"
+    kfx_dir.mkdir(parents=True)
+    (kfx_dir / "Atomic Habits - James Clear.kfx").write_bytes(b"")
+    monkeypatch.setattr(vqa, "_get_kfx_dir", lambda: kfx_dir)
 
     kfx_input = tmp_path / "Atomic Habits - James Clear.kfx"
     kfx_input.touch()

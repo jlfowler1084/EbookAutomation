@@ -75,3 +75,6 @@ test-corpus/*
 
 # Git worktrees (INFRA-71)
 .worktrees/
+
+# Review agent context directories (generated, not source)
+.context/

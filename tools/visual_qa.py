@@ -57,17 +57,44 @@ def _normalize_book_stem(stem: str) -> str:
 
     Steps (order is load-bearing):
     1. Lowercase
-    2. Strip ' - <author>' suffix via rfind (must precede non-alnum sub or
-       the ' - ' separator is destroyed in step 3)
-    3. Replace non-[a-z0-9] runs with a single space
+    2. Strip ' - <author>' suffix via rfind, with heuristic guard so embedded
+       subtitle separators (e.g. "Foo - A Subtitle") are not stripped (Option A).
+       The suffix is only removed when it looks like an author name: 2-40 chars,
+       containing only letters, spaces, commas, periods, and hyphens, with no
+       other punctuation (colons, question marks, etc. indicate a subtitle).
+       Guard also rejects leading-separator case (sep_idx == 0).
+    3. Replace non-word character runs with a single space using re.UNICODE so
+       non-ASCII titles (Japanese, Cyrillic, accented Latin) survive and produce
+       distinct non-empty strings rather than collapsing to "".
     4. Collapse/strip whitespace
+
+    Heuristic limitation: author suffixes that contain unusual punctuation will
+    not be stripped. Caller is responsible for ensuring ' - ' does not appear in
+    the title portion when it would be misread as an author separator.
     """
     s = stem.lower()
     sep_idx = s.rfind(" - ")
-    if sep_idx >= 0:
-        s = s[:sep_idx]
-    s = re.sub(r"[^a-z0-9]+", " ", s)
+    if sep_idx > 0:
+        suffix = s[sep_idx + 3:]
+        # Accept suffix as an author name only when:
+        #   - 2–40 characters long
+        #   - contains only letters (unicode), spaces, commas, periods, hyphens
+        #   - no colon, question mark, exclamation mark, or other subtitle cues
+        if (2 <= len(suffix) <= 40
+                and re.match(r"^[\w\s,.\-]+$", suffix, flags=re.UNICODE)
+                and not re.search(r"[?!:;/\\()\[\]{}]", suffix)):
+            s = s[:sep_idx]
+    s = re.sub(r"[^\w]+", " ", s, flags=re.UNICODE)
     return " ".join(s.split())
+
+
+def _get_kfx_dir() -> Path:
+    """Resolve the conventional KFX output directory.
+
+    Isolated as a seam so tests can monkeypatch it to use a temp dir
+    instead of the live regression corpus.
+    """
+    return Path(__file__).resolve().parent.parent / "output" / "kindle"
 
 
 def find_poppler_path(explicit_path=None):
@@ -638,7 +665,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
 
         # Warn if a KFX with the same title exists — the baseline captured from
         # PDF may not match a future KFX-sourced run due to page-count drift.
-        kfx_dir = Path(__file__).resolve().parent.parent / "output" / "kindle"
+        kfx_dir = _get_kfx_dir()
         if kfx_dir.is_dir():
             pdf_norm = _normalize_book_stem(input_path.stem)
             kfx_matches = [

@@ -201,6 +201,37 @@ def test_existing_compare_mode_unchanged(monkeypatch, tmp_path):
     assert result in (0, 1)
 
 
+# ---------------------------------------------------------------------------
+# Fix #2: max_samples must be read from baseline's pages_sampled field
+# ---------------------------------------------------------------------------
+
+def test_audit_uses_pages_sampled_from_baseline(monkeypatch, tmp_path):
+    """_cmd_audit must pass max_samples=pages_sampled (not hardcoded 8) to
+    select_sample_pages so non-default corpus sizes don't false-flag mismatch."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("non_default_samples.json", baseline_dir, "non_default_samples_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "non_default_samples_test")
+
+    captured_max_samples = []
+
+    def fake_select_sample_pages(total_pages, max_samples=8, bookmark_pages=None):
+        captured_max_samples.append(max_samples)
+        # Return exactly what the baseline has so parity is achieved
+        return [1, 2, 100, 190]
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", lambda *a, **kw: "/fake/nd.pdf")
+    monkeypatch.setattr(cvqa, "get_pdf_page_count", lambda *a, **kw: 200)
+    monkeypatch.setattr(cvqa, "get_pdf_bookmarks", lambda *a, **kw: [100])
+    monkeypatch.setattr(cvqa, "select_sample_pages", fake_select_sample_pages)
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))
+    assert result == 0, "Expected parity exit (0)"
+    assert captured_max_samples == [4], (
+        f"Expected select_sample_pages called with max_samples=4 "
+        f"(from pages_sampled in baseline), got: {captured_max_samples}"
+    )
+
+
 def test_compare_subcommand_explicit(monkeypatch, tmp_path):
     """Explicit 'compare' subcommand also works."""
     cand_dir = tmp_path / "cand"
@@ -220,3 +251,27 @@ def test_compare_subcommand_explicit(monkeypatch, tmp_path):
 
     result = cvqa.main()
     assert result in (0, 1)
+
+
+# ---------------------------------------------------------------------------
+# Fix #3: bare invocation must not AttributeError and must exit cleanly
+# ---------------------------------------------------------------------------
+
+def test_bare_invocation_no_attribute_error(monkeypatch):
+    """Running with no args must not raise AttributeError and must return 0."""
+    monkeypatch.setattr(sys, "argv", ["compare_vqa_reports.py"])
+    try:
+        result = cvqa.main()
+    except AttributeError as exc:
+        pytest.fail(f"Bare invocation raised AttributeError: {exc}")
+    assert result == 0, f"Expected exit 0 (help), got {result}"
+
+
+def test_bare_invocation_verbose_flag_no_error(monkeypatch):
+    """--verbose at top level must work even without a subcommand."""
+    monkeypatch.setattr(sys, "argv", ["compare_vqa_reports.py", "--verbose"])
+    try:
+        result = cvqa.main()
+    except AttributeError as exc:
+        pytest.fail(f"--verbose without subcommand raised AttributeError: {exc}")
+    assert result == 0, f"Expected exit 0 (help), got {result}"
