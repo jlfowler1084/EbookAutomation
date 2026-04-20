@@ -61,6 +61,8 @@ data/vqa_baseline_post_274/
 # SCRUM smoke-test output (regenerable; cross-provider + sb-chat evolution drift)
 data/scrum*_smoke*/
 data/scrum*_6book/
+# Broader SCRUM-28x evidence-data catch-all (keeps top-level *.json summaries trackable)
+data/scrum28?_*/
 
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
