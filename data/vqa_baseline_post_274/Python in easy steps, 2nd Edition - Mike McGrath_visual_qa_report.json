@@ -1,0 +1,284 @@
+{
+  "book": "Python in easy steps, 2nd Edition - Mike McGrath.kfx",
+  "timestamp": "2026-04-18T15:41:27.196499+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 198,
+  "dpi": 100,
+  "overall_score": 60,
+  "overall_pass": false,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 88,
+    "heading_formatting": 92,
+    "paragraph_flow": 79,
+    "toc_navigation": 75,
+    "text_integrity": 90
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 92,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover renders correctly with all design elements intact. Author name text appears slightly spaced out ('Mike McGrath') which may be intentional typographic styling but could also reflect extraction artifact.",
+          "suggestion": "Verify source PDF to confirm whether letter-spaced author name is intentional design; no action needed if confirmed intentional."
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 66,
+      "pass": false,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "major",
+          "description": "Section labels such as 'Second Edition', 'Notice of Liability', and 'Trademarks' are not visually distinguished from body text — they render at the same size and weight as surrounding prose rather than as headings.",
+          "suggestion": "Apply bold or slightly larger font to section labels in the copyright/front-matter template so they stand apart from body text."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Address block runs together without line breaks: '16 Hamilton Terrace · Holly Walk · Leamington Spa Warwickshire · United Kingdom · CV32 4LY' appears as continuous inline text rather than structured address lines. 'Trademarks All trademarks...' merges label and body with no separator.",
+          "suggestion": "Ensure address components and section-label-plus-body pairs are separated by proper paragraph or line-break elements during conversion."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The liability disclaimer paragraph breaks awkwardly mid-sentence: 'of any information contained herein.' appears as a separate indented line, suggesting a spurious paragraph break was introduced mid-sentence.",
+          "suggestion": "Review the source paragraph boundaries around the liability section; merge the orphaned sentence fragment back into the preceding paragraph."
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 22,
+      "pass": false,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "critical",
+          "description": "The TOC page shows only the heading 'Contents' with no entries whatsoever. All chapter listings, section entries, and page references are entirely absent — the TOC body failed to render.",
+          "suggestion": "Investigate why TOC entries were not generated. Check if the source PDF TOC was embedded as vector/image rather than text, or if the conversion pipeline skipped TOC entry extraction. Re-run conversion with explicit TOC detection enabled."
+        }
+      ]
+    },
+    {
+      "page_number": 35,
+      "page_type": "body",
+      "score": 58,
+      "pass": false,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "critical",
+          "description": "The operator precedence table that should appear on this page is entirely missing. The page references 'the table below lists operator precedence in descending order' but only two isolated rows ('Operator:' / 'Description:') and two sparse entries ('**' / Exponent, '+' / Positive) rendered — the full multi-row table structure collapsed.",
+          "suggestion": "The source book uses a formatted table for operator precedence. Ensure table extraction and rendering is enabled in the conversion pipeline; review Calibre or KFX table-handling settings."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "What appears to be table content ('Operator:', 'Description:', '**', 'Exponent', '+', 'Positive') is rendered as a sequence of isolated bold labels and indented paragraphs with large whitespace gaps between them, rather than as a structured two-column table. The reading flow is confusing and content is incomplete.",
+          "suggestion": "Restore table rendering so operator and description columns appear side by side; alternatively, if table-to-list conversion is used, ensure all rows are included and formatted consistently."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The sentence 'multiplication is completed first, before the addition.' appears as an orphaned indented line separated from its logical paragraph ('The * multiply operator is on a higher row...'), suggesting a spurious paragraph break was inserted mid-thought.",
+          "suggestion": "Merge the orphaned continuation sentence back into the preceding paragraph during paragraph-boundary normalization."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "'Operator:' and 'Description:' render as bold bold-weight labels rather than structured table headers, which is acceptable as a fallback but loses the visual table context.",
+          "suggestion": "If full table rendering is not feasible, consider rendering table headers as a definition-list style with clear visual separation from entry pairs."
+        }
+      ]
+    },
+    {
+      "page_number": 68,
+      "page_type": "body",
+      "score": 72,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Bullet-point list items are inlined into paragraph text rather than rendered as a proper list. 'Variables created outside functions can be referenced... • Variables created inside functions cannot...' — the bullet character appears mid-paragraph, merging two distinct list items into continuous prose.",
+          "suggestion": "Extract bullet/list markup from the source and render as proper HTML list elements so each item begins on its own line with consistent indentation."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The code syntax block 'def function-name ( ) : statements-to-be-executed statements-to-be-executed' appears to have the two 'statements-to-be-executed' clauses run together on successive lines without a clear delimiter, and the formatting (bold italic) bleeds across a line break in a way that may indicate a missing newline in the original code example.",
+          "suggestion": "Verify the source code example formatting; ensure code blocks preserve internal line breaks as rendered in the original."
+        }
+      ]
+    },
+    {
+      "page_number": 108,
+      "page_type": "chapter_start",
+      "score": 55,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "The chapter's section listing ('Manipulating strings Formatting strings Modifying strings Converting strings Accessing files Reading and writing files Updating file strings Pickling data Summary') is rendered as a single run-on bold paragraph with no separation between items. These appear to be the chapter's sub-section navigation list, which should each appear on its own line or as a bulleted list.",
+          "suggestion": "Parse the chapter overview/navigation list from the source and render each entry as a separate list item or line. Check if source uses newline-separated entries that were collapsed during conversion."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The chapter sub-section list renders in the same bold weight as a heading rather than as navigational list items, creating ambiguity about whether this is a heading or a content list.",
+          "suggestion": "Apply appropriate styling (e.g., normal weight list or styled nav list) to distinguish the section listing from actual headings."
+        },
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "No chapter-opening image or decorative element visible; the large whitespace below the section list suggests images or sidebars from the original layout were not extracted.",
+          "suggestion": "Review source PDF for images on this chapter-opening page and ensure image extraction is enabled for chapter start pages."
+        }
+      ]
+    },
+    {
+      "page_number": 139,
+      "page_type": "body",
+      "score": 54,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Code examples and prose instructions are merged into continuous paragraphs without structural separation. Step-by-step instructional text ('Start a new Python script by declaring a class... Next, add a method... then save this file') runs inline with the code blocks rather than being separated as distinct instructional steps.",
+          "suggestion": "Separate instructional prose from code blocks using appropriate block-level elements. Each code listing should be in a distinct code block, and instructional steps should be in their own paragraphs."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Filename labels ('Songbird.py', 'garbage.py') appear inline within prose paragraphs rather than as captions or labeled code-block headers. This is a structural extraction failure where file labels lost their positional context.",
+          "suggestion": "Identify filename/caption elements in the source and render them as figure captions or labeled code-block headers adjacent to the relevant code listing."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The final code block merges multiple Python statements onto a single line: 'bird_1 = Songbird( ... ) print( bird_1.name , \\'ID:\\' , id(bird_1 ) ) bird_1.sing()' — these are distinct statements that should appear on separate lines in a code block.",
+          "suggestion": "Preserve line breaks within code blocks; ensure the conversion pipeline does not collapse newlines inside code/pre-formatted regions."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The section heading 'Collecting garbage' renders correctly as bold and centered, with appropriate visual distinction from body text. No heading hierarchy issues on this page.",
+          "suggestion": "No action required for heading formatting on this page."
+        }
+      ]
+    },
+    {
+      "page_number": 173,
+      "page_type": "body",
+      "score": 57,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Instructional step-by-step narrative is merged into a single continuous paragraph: 'Start a new Python program by making GUI features available and messagebox features available as a short alias Next, create a window object and specify a title Now, create a frame...' — each numbered/sequenced step should be a separate paragraph or list item.",
+          "suggestion": "Detect sequential instructional language ('Next,', 'Now,', 'Then,', 'Finally,') as paragraph boundaries, or preserve the original paragraph markup from the source PDF."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Filename label 'tk_entry.py' appears inline within body prose immediately before a code block, losing its identity as a code file caption. Additionally, narrative prose and code intermix without clear demarcation.",
+          "suggestion": "Render filename labels as styled captions preceding their associated code blocks, distinct from surrounding prose."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Multiple distinct Python code statements are collapsed onto single lines within what appears to be code blocks, e.g., 'frame = Frame( window ) entry = Entry( frame )' combines two separate assignment statements on one line.",
+          "suggestion": "Preserve internal newlines within code blocks during extraction and conversion to prevent statement collapsing."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "No section heading is visible on this body page, suggesting either this page continues mid-section (acceptable) or a sub-heading was lost during conversion. Given page context, mid-section continuation is likely.",
+          "suggestion": "Cross-reference with surrounding pages to confirm whether a sub-heading should appear at the top of this page."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 60/100.",
+  "top_issues": [
+    {
+      "category": "heading_formatting",
+      "severity": "major",
+      "description": "Section labels such as 'Second Edition', 'Notice of Liability', and 'Trademarks' are not visually distinguished from body text — they render at the same size and weight as surrounding prose rather than as headings.",
+      "suggestion": "Apply bold or slightly larger font to section labels in the copyright/front-matter template so they stand apart from body text."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Address block runs together without line breaks: '16 Hamilton Terrace · Holly Walk · Leamington Spa Warwickshire · United Kingdom · CV32 4LY' appears as continuous inline text rather than structured address lines. 'Trademarks All trademarks...' merges label and body with no separator.",
+      "suggestion": "Ensure address components and section-label-plus-body pairs are separated by proper paragraph or line-break elements during conversion."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The liability disclaimer paragraph breaks awkwardly mid-sentence: 'of any information contained herein.' appears as a separate indented line, suggesting a spurious paragraph break was introduced mid-sentence.",
+      "suggestion": "Review the source paragraph boundaries around the liability section; merge the orphaned sentence fragment back into the preceding paragraph."
+    },
+    {
+      "category": "toc_navigation",
+      "severity": "critical",
+      "description": "The TOC page shows only the heading 'Contents' with no entries whatsoever. All chapter listings, section entries, and page references are entirely absent — the TOC body failed to render.",
+      "suggestion": "Investigate why TOC entries were not generated. Check if the source PDF TOC was embedded as vector/image rather than text, or if the conversion pipeline skipped TOC entry extraction. Re-run conversion with explicit TOC detection enabled."
+    },
+    {
+      "category": "cover_images",
+      "severity": "critical",
+      "description": "The operator precedence table that should appear on this page is entirely missing. The page references 'the table below lists operator precedence in descending order' but only two isolated rows ('Operator:' / 'Description:') and two sparse entries ('**' / Exponent, '+' / Positive) rendered — the full multi-row table structure collapsed.",
+      "suggestion": "The source book uses a formatted table for operator precedence. Ensure table extraction and rendering is enabled in the conversion pipeline; review Calibre or KFX table-handling settings."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "What appears to be table content ('Operator:', 'Description:', '**', 'Exponent', '+', 'Positive') is rendered as a sequence of isolated bold labels and indented paragraphs with large whitespace gaps between them, rather than as a structured two-column table. The reading flow is confusing and content is incomplete.",
+      "suggestion": "Restore table rendering so operator and description columns appear side by side; alternatively, if table-to-list conversion is used, ensure all rows are included and formatted consistently."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The sentence 'multiplication is completed first, before the addition.' appears as an orphaned indented line separated from its logical paragraph ('The * multiply operator is on a higher row...'), suggesting a spurious paragraph break was inserted mid-thought.",
+      "suggestion": "Merge the orphaned continuation sentence back into the preceding paragraph during paragraph-boundary normalization."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Bullet-point list items are inlined into paragraph text rather than rendered as a proper list. 'Variables created outside functions can be referenced... • Variables created inside functions cannot...' — the bullet character appears mid-paragraph, merging two distinct list items into continuous prose.",
+      "suggestion": "Extract bullet/list markup from the source and render as proper HTML list elements so each item begins on its own line with consistent indentation."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "The chapter's section listing ('Manipulating strings Formatting strings Modifying strings Converting strings Accessing files Reading and writing files Updating file strings Pickling data Summary') is rendered as a single run-on bold paragraph with no separation between items. These appear to be the chapter's sub-section navigation list, which should each appear on its own line or as a bulleted list.",
+      "suggestion": "Parse the chapter overview/navigation list from the source and render each entry as a separate list item or line. Check if source uses newline-separated entries that were collapsed during conversion."
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The chapter sub-section list renders in the same bold weight as a heading rather than as navigational list items, creating ambiguity about whether this is a heading or a content list.",
+      "suggestion": "Apply appropriate styling (e.g., normal weight list or styled nav list) to distinguish the section listing from actual headings."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 3009,
+    "estimated_cost_usd": 0.0824
+  }
+}

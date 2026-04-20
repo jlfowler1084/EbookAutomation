@@ -1,0 +1,207 @@
+{
+  "book": "The Return of the Gods - Jonathan Cahn.kfx",
+  "timestamp": "2026-04-18T15:38:39.122837+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 253,
+  "dpi": 100,
+  "overall_score": 82,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "heading_formatting": 94,
+    "paragraph_flow": 95,
+    "toc_navigation": 75,
+    "page_layout": 85,
+    "text_integrity": 95
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 93,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image shows very slight compression artifacts around the lightning effects and high-contrast edges, but overall renders clearly and professionally",
+          "suggestion": "If source allows, re-export cover at higher quality JPEG setting or lossless PNG to eliminate minor compression artifacts"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 79,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "No visual heading or title distinguishes this copyright/imprint page from body text; all text renders at the same size with no hierarchy",
+          "suggestion": "Add a small-caps or bold section label if the source document contains one; ensure copyright page heading is preserved in conversion"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Some bibliographic entries (ISBN lines) are not separated clearly from the preceding paragraph, creating a slightly compressed reading experience",
+          "suggestion": "Ensure paragraph spacing is preserved between distinct copyright blocks during conversion"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 42,
+      "pass": false,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "critical",
+          "description": "The TOC page shows only the word 'CONTENTS' as a heading with the entire body of the table of contents missing — no chapter entries, page numbers, or navigation links are rendered",
+          "suggestion": "Investigate TOC generation in the conversion pipeline; the NCX or HTML TOC entries are not being rendered. Re-run conversion with explicit TOC population from document structure"
+        },
+        {
+          "category": "page_layout",
+          "severity": "major",
+          "description": "Page is almost entirely blank below the 'CONTENTS' heading, indicating a significant content rendering failure rather than an intentionally sparse layout",
+          "suggestion": "Check whether TOC entries exist in the source document and are being passed through the converter; verify that the TOC spine item is correctly linked"
+        }
+      ]
+    },
+    {
+      "page_number": 70,
+      "page_type": "chapter_start",
+      "score": 89,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading '17 THE ENCHANTRESS' is bold and centered and clearly distinct from body text, which is good. Sub-headings 'The Goddess' and 'The Transgressor' are bold-left-aligned and visually distinct, though slightly less prominent than might be ideal relative to the chapter title",
+          "suggestion": "Consider increasing sub-heading font size slightly relative to body text for stronger visual hierarchy if source styles allow"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Slightly excessive blank space between the opening paragraph and the 'The Goddess' sub-section, and again between 'The Goddess' section and 'The Transgressor' section, but this appears consistent with the book's design intent",
+          "suggestion": "Verify that inter-section spacing is consistent across all chapters; if so, this is intentional design and acceptable"
+        }
+      ]
+    },
+    {
+      "page_number": 87,
+      "page_type": "body",
+      "score": 88,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Large blank space occupies the lower half of the page after the final paragraph, suggesting this is a chapter-end page with remaining whitespace; this is expected behavior but worth noting",
+          "suggestion": "Confirm this is a genuine chapter end; if content was truncated, investigate whether the following page continues a different chapter or if text was dropped"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Em-dash spacing inconsistency: 'it— that' appears with a space before the em-dash but not after, which may reflect a conversion artifact rather than intentional punctuation",
+          "suggestion": "Normalize em-dash spacing during post-processing to match the source document's intended style"
+        }
+      ]
+    },
+    {
+      "page_number": 138,
+      "page_type": "body",
+      "score": 87,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Footnote reference superscripts (e.g., superscript '4' after the block quote and superscript '5' after '4,515 percent') are rendered inline and appear as linked characters, which is acceptable for ebook format but should be verified as functional hyperlinks",
+          "suggestion": "Confirm that footnote superscript anchors link correctly to endnote targets in the ebook navigation"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The block quote ('exuberant young man' or a 'noble young man.') is rendered in italic and indented, which is appropriate, but the indentation level is only slightly different from body paragraph indentation, making the block quote less visually distinct",
+          "suggestion": "Increase block quote left margin to more clearly differentiate it from regular paragraph indentation"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Sub-headings 'The Vulnerable' and 'Suffer the Little Children' are bold and left-aligned, consistent with other section headings observed on page 70; hierarchy appears maintained",
+          "suggestion": "No action required if consistent with overall document heading style"
+        }
+      ]
+    },
+    {
+      "page_number": 154,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Ellipsis in '…mounted the great wall of Uruk' is rendered with a Unicode ellipsis character, which appears correct; footnote superscript '1' is visible after 'Uruk' and appears properly placed",
+          "suggestion": "Verify footnote anchor '1' links correctly to the endnote section"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading '37 THE STONEWALL' and sub-headings 'The Goddess on the Wall' and 'The Wall of Uruk' are well-formatted with clear hierarchy; consistent with earlier chapters",
+          "suggestion": "No action required"
+        }
+      ]
+    },
+    {
+      "page_number": 221,
+      "page_type": "body",
+      "score": 86,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Em-dash spacing inconsistency again present: 'hunted down— the days of Baal' has a space before the em-dash but not after, consistent with the same artifact noted on page 87",
+          "suggestion": "Apply consistent em-dash normalization across the full document during post-processing"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Page begins mid-paragraph without a chapter or section heading visible, which is expected for a body continuation page; the section heading 'The Opening and the Closing' appears mid-page with appropriate formatting",
+          "suggestion": "No action required; continuation pages beginning mid-paragraph are expected behavior"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 82/100.",
+  "top_issues": [
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "No visual heading or title distinguishes this copyright/imprint page from body text; all text renders at the same size with no hierarchy",
+      "suggestion": "Add a small-caps or bold section label if the source document contains one; ensure copyright page heading is preserved in conversion"
+    },
+    {
+      "category": "toc_navigation",
+      "severity": "critical",
+      "description": "The TOC page shows only the word 'CONTENTS' as a heading with the entire body of the table of contents missing — no chapter entries, page numbers, or navigation links are rendered",
+      "suggestion": "Investigate TOC generation in the conversion pipeline; the NCX or HTML TOC entries are not being rendered. Re-run conversion with explicit TOC population from document structure"
+    },
+    {
+      "category": "page_layout",
+      "severity": "major",
+      "description": "Page is almost entirely blank below the 'CONTENTS' heading, indicating a significant content rendering failure rather than an intentionally sparse layout",
+      "suggestion": "Check whether TOC entries exist in the source document and are being passed through the converter; verify that the TOC spine item is correctly linked"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 2014,
+    "estimated_cost_usd": 0.0674
+  }
+}

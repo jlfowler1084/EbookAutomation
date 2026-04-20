@@ -54,9 +54,9 @@ data/covers/
 # Pipeline cache (local run data)
 tools/data/pipeline_cache.db
 
-# VQA baseline artifacts (regenerable; Claude free-form text drifts per run)
+# VQA pre-274 baselines (legacy PDF-sourced, uncontrolled — not reproducible)
 data/vqa_baseline_pre_274/
-data/vqa_baseline_post_274/
+# data/vqa_baseline_post_274/ — tracked; standardized to KFX→Calibre source (SCRUM-282)
 
 # SCRUM smoke-test output (regenerable; cross-provider + sb-chat evolution drift)
 data/scrum*_smoke*/

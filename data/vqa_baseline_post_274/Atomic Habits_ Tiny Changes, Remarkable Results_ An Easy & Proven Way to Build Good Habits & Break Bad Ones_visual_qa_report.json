@@ -1,0 +1,212 @@
+{
+  "book": "Atomic Habits_ Tiny Changes, Remarkable Results_ An Easy & Proven Way to Build Good Habits & Break Bad Ones.pdf",
+  "timestamp": "2026-04-18T15:39:17.096625+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 266,
+  "dpi": 100,
+  "overall_score": 83,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "paragraph_flow": 95,
+    "text_integrity": 90,
+    "page_layout": 82,
+    "heading_formatting": 80
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 93,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "The decorative dot-matrix title 'Atomic Habits' has a slightly scattered dot pattern at the edges, which appears consistent with the original design intent but renders with minor visual noise around the letter boundaries.",
+          "suggestion": "Verify source resolution; if dot scatter is beyond the original design, re-render cover at higher DPI."
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "The decorative dot graphic at the top of the title page renders in a very light gray with low contrast, appearing somewhat washed out compared to the cover version.",
+          "suggestion": "Check whether the dot graphic color value was preserved correctly during conversion; may need color profile adjustment."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The subtitle 'An Easy & Proven Way to Build Good Habits & Break Bad Ones' is broken across three lines rather than two, resulting in slightly awkward line breaks ('to Build Good Habits &' / 'Break Bad Ones'). This may be a rendering width issue.",
+          "suggestion": "Adjust text container width for the title page subtitle to allow two-line rendering consistent with the cover."
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 50,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "critical",
+          "description": "Page appears completely blank — no text or content is visible. This page should contain copyright/legal information (copyright page) but renders as entirely white with no content.",
+          "suggestion": "Investigate whether the copyright page content was dropped during conversion. Check source extraction and re-run conversion ensuring this page's content is captured."
+        },
+        {
+          "category": "page_layout",
+          "severity": "critical",
+          "description": "Page is entirely blank with no layout elements visible.",
+          "suggestion": "Re-examine source PDF page 3 to confirm content exists; if so, debug rendering pipeline for this page."
+        }
+      ]
+    },
+    {
+      "page_number": 73,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "The decorative dot graphic used as a chapter divider at the top renders with low contrast (light gray on white), appearing faint but consistent with the book's design language.",
+          "suggestion": "Confirm this matches intended design; if not, adjust graphic rendering contrast."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The drop-cap 'I' at the start of the chapter opening paragraph appears slightly oversized relative to the cap height of surrounding small-caps text ('N 1971'), creating a minor visual misalignment between the drop cap and the inline small-cap text.",
+          "suggestion": "Verify drop-cap and small-caps CSS/styling interaction in the ebook renderer to ensure proper baseline alignment."
+        }
+      ]
+    },
+    {
+      "page_number": 92,
+      "page_type": "body",
+      "score": 92,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Page ends mid-sentence ('It's') with no continuation visible, which is expected for a mid-book body page. However, the truncation appears abrupt with no visual cue. This is standard pagination behavior and not a defect.",
+          "suggestion": "No action needed; standard page break behavior."
+        }
+      ]
+    },
+    {
+      "page_number": 145,
+      "page_type": "body",
+      "score": 82,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The sub-section heading 'HOW TO KEEP YOUR HABITS ON TRACK' is bold and centered but uses the same approximate font size as body text (only differentiated by bold weight and all-caps styling). It lacks the visual weight hierarchy expected for a section heading — no size increase over body text is apparent.",
+          "suggestion": "Increase font size for section-level headings to at least 1.2x body text size to establish clearer visual hierarchy."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The sub-section label 'Benefit #1: Habit tracking is obvious.' appears to be formatted identically to body text with no bold, italic, or size differentiation, making it nearly indistinguishable from a regular paragraph opening.",
+          "suggestion": "Apply bold or italic styling, or a slight font size increase, to benefit sub-headings to distinguish them from body prose."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "There is inconsistent spacing: extra blank line appears between 'Let's break down each one.' and 'Benefit #1: Habit tracking is obvious.' compared to inter-paragraph spacing elsewhere on the page.",
+          "suggestion": "Normalize paragraph spacing values so section transitions use consistent spacing throughout the document."
+        }
+      ]
+    },
+    {
+      "page_number": 158,
+      "page_type": "chapter_start",
+      "score": 91,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "The decorative dot graphic at the top of the chapter renders faintly in light gray, consistent with other chapter starts but with low contrast against white background.",
+          "suggestion": "Confirm intentional design; if graphic should be darker, adjust rendering."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The drop-cap 'M' combined with small-caps 'ANY PEOPLE ARE' at chapter opening shows slight visual crowding between the drop cap and the inline small-caps text, similar to page 73.",
+          "suggestion": "Adjust drop-cap margin/padding to ensure comfortable spacing between the initial capital and the following small-caps run."
+        }
+      ]
+    },
+    {
+      "page_number": 232,
+      "page_type": "body",
+      "score": 78,
+      "pass": true,
+      "issues": [
+        {
+          "category": "page_layout",
+          "severity": "moderate",
+          "description": "Page contains only a short footnote/endnote block (5 lines of text) in the upper portion with the remainder of the page entirely blank. While footnote-only pages can occur in ebook conversion, this leaves approximately 80% of the page empty, suggesting a pagination or content-flow issue.",
+          "suggestion": "Investigate whether the footnote was separated from its parent body text during pagination. Ideally footnotes should appear on the same page as their reference or be converted to endnotes collected in back matter."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The footnote anchor marker '*' appears in blue (hyperlink style) at the start of the footnote text, suggesting it is rendered as an active hyperlink. Consistency with other footnote markers in the document should be verified.",
+          "suggestion": "Ensure footnote back-link markers use consistent styling (either all linked or all plain text) throughout the document."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 83/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "severity": "critical",
+      "description": "Page appears completely blank — no text or content is visible. This page should contain copyright/legal information (copyright page) but renders as entirely white with no content.",
+      "suggestion": "Investigate whether the copyright page content was dropped during conversion. Check source extraction and re-run conversion ensuring this page's content is captured."
+    },
+    {
+      "category": "page_layout",
+      "severity": "critical",
+      "description": "Page is entirely blank with no layout elements visible.",
+      "suggestion": "Re-examine source PDF page 3 to confirm content exists; if so, debug rendering pipeline for this page."
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The sub-section heading 'HOW TO KEEP YOUR HABITS ON TRACK' is bold and centered but uses the same approximate font size as body text (only differentiated by bold weight and all-caps styling). It lacks the visual weight hierarchy expected for a section heading — no size increase over body text is apparent.",
+      "suggestion": "Increase font size for section-level headings to at least 1.2x body text size to establish clearer visual hierarchy."
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The sub-section label 'Benefit #1: Habit tracking is obvious.' appears to be formatted identically to body text with no bold, italic, or size differentiation, making it nearly indistinguishable from a regular paragraph opening.",
+      "suggestion": "Apply bold or italic styling, or a slight font size increase, to benefit sub-headings to distinguish them from body prose."
+    },
+    {
+      "category": "page_layout",
+      "severity": "moderate",
+      "description": "Page contains only a short footnote/endnote block (5 lines of text) in the upper portion with the remainder of the page entirely blank. While footnote-only pages can occur in ebook conversion, this leaves approximately 80% of the page empty, suggesting a pagination or content-flow issue.",
+      "suggestion": "Investigate whether the footnote was separated from its parent body text during pagination. Ideally footnotes should appear on the same page as their reference or be converted to endnotes collected in back matter."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12569,
+    "output_tokens": 1978,
+    "estimated_cost_usd": 0.0674
+  }
+}
