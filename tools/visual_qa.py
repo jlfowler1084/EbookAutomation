@@ -423,6 +423,62 @@ def parse_qa_response(raw_text, provider=None, original_payload=None):
 
 
 # ---------------------------------------------------------------------------
+# Step 4b: Claude fallback helper (SCRUM-281)
+# ---------------------------------------------------------------------------
+
+def run_claude_fallback(
+    flagged_page_numbers: set,
+    page_images: list,
+    rubric_text: str,
+    claude_model: str,
+    api_key,
+) -> tuple:
+    """Re-evaluate flagged pages with Claude in a single batched call.
+
+    Returns (claude_pages: list[dict], input_tokens: int, output_tokens: int).
+    Returns ([], 0, 0) when flagged_page_numbers is empty or api_key is missing.
+    Never raises — on any failure, logs the error and returns partial/empty results
+    so the outer run_visual_qa can continue with primary-provider results.
+
+    SCRUM-281 R5: missing ANTHROPIC_API_KEY degrades gracefully.
+    SCRUM-281 R6: ONE batched call for all flagged pages, never N per-page calls.
+    """
+    if not flagged_page_numbers:
+        return ([], 0, 0)
+
+    if not api_key:
+        logger.warning(
+            "ANTHROPIC_API_KEY not set — skipping fallback for %d flagged page(s)",
+            len(flagged_page_numbers),
+        )
+        return ([], 0, 0)
+
+    filtered_images = [(n, img) for n, img in page_images if n in flagged_page_numbers]
+    if not filtered_images:
+        return ([], 0, 0)
+
+    response = None
+    try:
+        claude_provider = ClaudeVisionProvider(api_key=api_key)
+        payload = claude_provider.build_request(filtered_images, rubric_text, claude_model)
+        response = claude_provider.call(payload)
+
+        batch_data = parse_qa_response(
+            response.raw_text,
+            provider=claude_provider,
+            original_payload=payload,
+        )
+        pages = batch_data.get("pages", []) if isinstance(batch_data, dict) else []
+        return (pages, response.input_tokens, response.output_tokens)
+
+    except Exception as exc:
+        logger.error("Claude fallback call failed: %s", exc)
+        if response is not None:
+            return ([], response.input_tokens, response.output_tokens)
+        return ([], 0, 0)
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Assemble final report
 # ---------------------------------------------------------------------------
 
