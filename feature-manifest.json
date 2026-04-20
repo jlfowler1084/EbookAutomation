@@ -186,7 +186,7 @@
     {
       "script": "tools/visual_qa.py",
       "mode": "direct",
-      "flags": ["--input", "--api-key", "--calibre", "--poppler", "--output-dir", "--dpi", "--max-pages", "--full", "--model", "--rubric", "--pass-threshold", "--verbose"],
+      "flags": ["--input", "--provider", "--cloud-host", "--api-key", "--calibre", "--poppler", "--output-dir", "--dpi", "--max-pages", "--full", "--model", "--rubric", "--pass-threshold", "--fallback-enabled", "--fallback-claude-model", "--fallback-corpus-path", "--verbose"],
       "description": "Automated visual quality assurance"
     },
     {

@@ -1,18 +1,27 @@
 ---
 date: 2026-04-13
-amended: 2026-04-18
+amended: 2026-04-20
 plan_id: 2026-04-13-001
 title: Full-book visual QA via local sb-chat Qwen3.5-35B (amended from Qwen3-VL)
-status: amended
+status: closed-partial
 parent_brainstorm: docs/brainstorms/2026-04-13-local-llm-integration-opportunities.md
 ticket: SCRUM-274
 phase_2_ticket: SCRUM-275
-related_tickets: [SB-34]
+related_tickets: [SB-34, SCRUM-281, SCRUM-282, SCRUM-283, SCRUM-288, SCRUM-289]
+closeout_doc: docs/solutions/scrum-274-phase5-closeout.md
 owner: Joe
 estimated_sessions: 2–3 (Sonnet for implementation, Opus for review)
 ---
 
 # Plan — Full-Book Visual QA via Local sb-chat (Qwen3.5-35B-A3B-FP8)
+
+## Amendment — 2026-04-20 — Phase 5 closed partial, Phases 3–4 superseded
+
+This plan is closed as **partial**. Phases 1–2 shipped as originally designed. Phases 3 (`--all-pages` full-book mode) and 4 (`--escalate-below` score-threshold escalation) did not ship as planned — a different mechanism, fingerprint-matched Claude fallback on top of a cloud-primary provider, landed via SCRUM-281/282/283 and solves the same operational problem (cheap primary + judicious expensive re-evaluation). Phase 5's original go/no-go gate ("promote local as default") is moot: `provider: cloud` is already the default, with local retained as a tier option.
+
+- Full close-out: `docs/solutions/scrum-274-phase5-closeout.md` — acceptance-criteria-level status, residual tickets, what this close-out does not do.
+- Residuals filed: **SCRUM-288** (local grader-leniency R2 from SCRUM-280), **SCRUM-289** (full-book `--all-pages` backlog).
+- Sections below (original plan + 2026-04-17/18 amendments) preserved verbatim for historical context.
 
 ## Amendment — 2026-04-18 — Phase 1 corpus rebuild
 
