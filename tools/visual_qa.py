@@ -486,7 +486,8 @@ def run_claude_fallback(
 def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  input_tokens, output_tokens, provider=None, pass_threshold=70,
                  fallback_tokens=None, fallback_provider_name=None,
-                 fallback_cost_usd=None, fallback_model=None):
+                 fallback_cost_usd=None, fallback_model=None,
+                 capture_pipeline=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -538,6 +539,11 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
             "estimated_cost_usd": round(estimated_cost, 4),
         }
     }
+
+    # Additive provenance field — omitted on legacy baselines where the branch
+    # that ran cannot be determined (e.g. reports produced before SCRUM-282).
+    if capture_pipeline is not None:
+        report["capture_pipeline"] = capture_pipeline
 
     # Append fallback token/cost fields when the hybrid routing fired
     if fallback_tokens is not None:
@@ -610,8 +616,10 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         # Already a PDF, skip conversion
         pdf_path = str(input_path)
         logger.info("Input is already PDF, skipping Calibre conversion")
+        capture_pipeline = "pdf-direct"
     else:
         pdf_path = convert_to_pdf(input_path, calibre_path)
+        capture_pipeline = "kfx-calibre"
 
     # --- Get page info ---
     total_pages = get_pdf_page_count(pdf_path)
@@ -831,6 +839,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         fallback_provider_name=fallback_provider_name,
         fallback_cost_usd=fallback_cost_usd,
         fallback_model=fallback_model_used,
+        capture_pipeline=capture_pipeline,
     )
 
     # --- Write report ---
