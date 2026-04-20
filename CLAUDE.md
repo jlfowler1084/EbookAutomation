@@ -167,6 +167,9 @@ Checks: heading hierarchy, TOC accuracy, footnote rendering, page breaks, image 
 Default provider: `cloud` (Qwen3-VL-A3B via OpenRouter). Requires `OPENROUTER_API_KEY` env var.
 Fallback: pages with known-fallback fingerprints re-evaluated by Claude (`ANTHROPIC_API_KEY`).
 See `.env.example` for the full list of required env vars. Config: `config/settings.json` `visual_qa` block.
+Baselines in `data/vqa_baseline_post_274/` are standardized to KFX→Calibre source (SCRUM-282).
+`capture_pipeline` field in VQA baselines records the code branch that ran (`kfx-calibre` or `pdf-direct`); distinct from `source_format` in extraction-pipeline sidecars, which is extension-derived.
+Use `compare_vqa_reports.py audit` to verify baseline page-sample parity against the current KFX corpus.
 
 ## Chapter Alignment Verification
 Cross-references detected chapters against source PDF TOC/bookmarks.

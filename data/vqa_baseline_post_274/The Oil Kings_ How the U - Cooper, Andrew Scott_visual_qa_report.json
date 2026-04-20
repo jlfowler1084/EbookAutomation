@@ -251,5 +251,6 @@
     "input_tokens": 12409,
     "output_tokens": 2141,
     "estimated_cost_usd": 0.0693
-  }
+  },
+  "capture_pipeline": "kfx-calibre"
 }
