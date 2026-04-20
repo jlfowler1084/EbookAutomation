@@ -1,11 +1,12 @@
 """Tests for hybrid routing: run_claude_fallback helper + run_visual_qa integration.
 
-SCRUM-281 Units 2 and 3.
+SCRUM-281 Units 2, 3, 4, and 5.
 
 Test classes:
   TestRunClaudeFallback        -- Unit 2: the standalone fallback helper
   TestRunVisualQAHybridRouting -- Unit 3: detector + helper wired into run_visual_qa
   TestConfigRoundTrip          -- Unit 4: config -> runtime, CLI override, legacy compat
+  TestRegressionContract       -- Unit 5: frozen fixtures that lock detector+merge behavior
 """
 
 from __future__ import annotations
@@ -622,3 +623,139 @@ class TestConfigRoundTrip:
         captured = self._run_main_capture_kwargs(tmp_path, settings_override=settings_override)
         assert captured.get("fallback_enabled") is True
         assert captured.get("fallback_claude_model") == "claude-sonnet-4-6"
+
+
+# ---------------------------------------------------------------------------
+# Unit 5: TestRegressionContract
+# ---------------------------------------------------------------------------
+# Frozen fixtures derived from SCRUM-283 corpus smoke artifacts:
+#   - Python Max (scrum283_unit5b): all pages score 85-95, no issues -> Matcher 3
+#   - Oil Kings A3B (scrum283_unit3): page 119 has 2 real non-fingerprint issues
+#   - Borderline batch: mixed pages, one empty+85 score -> Matcher 1 only
+#
+# These fixtures lock detector+threshold behavior. Changing the fingerprint corpus
+# or the 80-threshold requires deliberate acknowledgment via these assertions.
+# ---------------------------------------------------------------------------
+
+_PYTHON_MAX_PAGES_BATCH = [
+    # All 8 pages from Python Max smoke: empty issues, scores 85-95
+    # Source: scrum283_unit5b_6book_smoke_qwen_vl_max Python report
+    {"page_number": 1,   "page_type": "cover",  "score": 95, "pass": True, "issues": []},
+    {"page_number": 2,   "page_type": "body",   "score": 95, "pass": True, "issues": []},
+    {"page_number": 3,   "page_type": "body",   "score": 85, "pass": True, "issues": []},
+    {"page_number": 35,  "page_type": "body",   "score": 95, "pass": True, "issues": []},
+    {"page_number": 68,  "page_type": "body",   "score": 95, "pass": True, "issues": []},
+    {"page_number": 108, "page_type": "body",   "score": 95, "pass": True, "issues": []},
+    {"page_number": 139, "page_type": "body",   "score": 95, "pass": True, "issues": []},
+    {"page_number": 173, "page_type": "body",   "score": 95, "pass": True, "issues": []},
+]
+
+_OIL_KINGS_A3B_PAGE_119 = {
+    # Oil Kings A3B page 119: 2 specific structural issues, no fingerprint phrases
+    # Source: scrum283_unit3_6book_smoke_a3b Oil Kings report
+    "page_number": 119,
+    "page_type": "chapter_start",
+    "score": 85,
+    "pass": True,
+    "issues": [
+        {
+            "category": "heading_formatting",
+            "description": "Chapter heading uses all caps, inconsistent with other chapter headings",
+            "severity": "minor",
+            "suggestion": "Standardize heading case across all chapters",
+        },
+        {
+            "category": "paragraph_flow",
+            "description": "Some paragraphs have inconsistent indentation",
+            "severity": "minor",
+            "suggestion": "Apply consistent paragraph formatting rules",
+        },
+    ],
+}
+
+_BORDERLINE_BATCH = [
+    # Page with real findings (issues non-empty) — Matcher 3 gate stays closed
+    {
+        "page_number": 10,
+        "page_type": "body",
+        "score": 80,
+        "pass": True,
+        "issues": [{"category": "text_integrity", "description": "OCR artifact in footnote",
+                    "severity": "minor", "suggestion": "Review OCR"}],
+    },
+    # Borderline page: empty issues, score exactly at threshold -> Matcher 1 fires
+    {
+        "page_number": 20,
+        "page_type": "body",
+        "score": 85,
+        "pass": True,
+        "issues": [],
+    },
+]
+
+
+class TestRegressionContract:
+    """Frozen detector behavior against corpus-derived artifacts.
+
+    These tests freeze the threshold+corpus semantics so that future fingerprint
+    corpus changes that alter detection must explicitly update these assertions.
+    Tests run entirely offline — no API calls.
+    """
+
+    def _make_detector_with_real_corpus(self):
+        from tools.llm_providers.fingerprint_detector import (
+            FallbackFingerprintDetector, FingerprintSettings,
+        )
+        detector = FallbackFingerprintDetector.from_corpus(CORPUS_PATH)
+        settings = FingerprintSettings(
+            empty_issues_score_threshold=80,
+            substring_corpus=tuple(detector._fingerprints),
+            match_category_scores_collapse=True,
+        )
+        return detector, settings
+
+    def test_fixture1_python_max_all_empty_batch_flags_all(self):
+        """Matcher 3 fires on all-empty-issues Python Max batch: all 8 pages flagged."""
+        detector, settings = self._make_detector_with_real_corpus()
+        flagged = detector.detect(_PYTHON_MAX_PAGES_BATCH, settings)
+        expected = {1, 2, 3, 35, 68, 108, 139, 173}
+        assert flagged == expected, (
+            f"Expected all Python Max pages flagged. Got {flagged}. "
+            "If threshold or corpus changed, update this frozen fixture."
+        )
+
+    def test_fixture2_oil_kings_real_issues_not_flagged(self):
+        """Oil Kings page 119 with 2 real non-fingerprint issues: detector does NOT flag."""
+        detector, settings = self._make_detector_with_real_corpus()
+        flagged = detector.detect([_OIL_KINGS_A3B_PAGE_119], settings)
+        assert flagged == set(), (
+            f"Expected Oil Kings page 119 clean. Got {flagged}. "
+            "Check if a new fingerprint substring accidentally matches real findings."
+        )
+
+    def test_fixture3_borderline_mixed_batch_flags_empty_page(self):
+        """Mixed batch: Matcher 3 gate stays closed; Matcher 1 flags the empty-issues page."""
+        detector, settings = self._make_detector_with_real_corpus()
+        flagged = detector.detect(_BORDERLINE_BATCH, settings)
+        # Only page 20 (empty issues, score 85 >= 80) should be flagged
+        assert flagged == {20}, (
+            f"Expected only page 20 flagged from borderline batch. Got {flagged}. "
+            "Threshold or Matcher 3 logic may have changed."
+        )
+
+    def test_fixture1_with_collapse_disabled_still_flags_high_score_pages(self):
+        """Without Matcher 3, Matcher 1 still flags individual Python pages >= 80."""
+        from tools.llm_providers.fingerprint_detector import (
+            FallbackFingerprintDetector, FingerprintSettings,
+        )
+        detector = FallbackFingerprintDetector.from_corpus(CORPUS_PATH)
+        settings = FingerprintSettings(
+            empty_issues_score_threshold=80,
+            substring_corpus=tuple(detector._fingerprints),
+            match_category_scores_collapse=False,  # disable Matcher 3
+        )
+        flagged = detector.detect(_PYTHON_MAX_PAGES_BATCH, settings)
+        # page 3 (score=85) and all 95-score pages (>=80) still flagged by Matcher 1
+        high_score_pages = {p["page_number"] for p in _PYTHON_MAX_PAGES_BATCH
+                            if p["score"] >= 80 and not p["issues"]}
+        assert flagged == high_score_pages

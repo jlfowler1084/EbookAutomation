@@ -162,8 +162,11 @@ Dev/test dependencies: `py -3.12 -m pip install -r dev-requirements.txt`
 Microsoft Online voices ONLY — do not suggest cloud TTS services.
 
 ## Visual QA System
-KFX → PDF (via Calibre) → PNG (via Poppler) → Claude Vision API for layout verification.
+KFX → PDF (via Calibre) → PNG (via Poppler) → Cloud VLM primary + Claude fallback (SCRUM-281).
 Checks: heading hierarchy, TOC accuracy, footnote rendering, page breaks, image placement.
+Default provider: `cloud` (Qwen3-VL-A3B via OpenRouter). Requires `OPENROUTER_API_KEY` env var.
+Fallback: pages with known-fallback fingerprints re-evaluated by Claude (`ANTHROPIC_API_KEY`).
+See `.env.example` for the full list of required env vars. Config: `config/settings.json` `visual_qa` block.
 
 ## Chapter Alignment Verification
 Cross-references detected chapters against source PDF TOC/bookmarks.

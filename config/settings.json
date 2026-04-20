@@ -57,9 +57,17 @@
     "max_pages":      8,
     "pass_threshold": 70,
     "rubric_path":    "tools\\visual_qa_rubric.md",
-    "provider":       "claude",
+    "provider":       "cloud",
+    "cloud_host":     "openrouter",
+    "cloud_model":    "qwen/qwen3-vl-30b-a3b-instruct",
     "local_model":    "qwen3.5-35b-a3b-fp8",
-    "local_base_url": "http://localhost:8000/v1"
+    "local_base_url": "http://localhost:8000/v1",
+    "fallback": {
+      "enabled":                       true,
+      "claude_model":                  "claude-sonnet-4-6",
+      "empty_issues_score_threshold":  80,
+      "corpus_path":                   "tools\\visual_qa_fallback_fingerprints.json"
+    }
   },
   "classify": {
     "enabled": true,
