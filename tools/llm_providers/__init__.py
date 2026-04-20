@@ -10,6 +10,7 @@ server, or a future provider without changes to the orchestration layer.
 from .base import VisionProvider, VisionResponse
 from .claude_provider import ClaudeVisionProvider
 from .cloud_vl_provider import CloudVLProvider
+from .fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings
 from .local_provider import LocalVisionProvider, PageCountMismatchError
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "VisionResponse",
     "ClaudeVisionProvider",
     "CloudVLProvider",
+    "FallbackFingerprintDetector",
+    "FingerprintSettings",
     "LocalVisionProvider",
     "PageCountMismatchError",
 ]

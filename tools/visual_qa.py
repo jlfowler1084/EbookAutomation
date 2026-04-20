@@ -37,6 +37,7 @@ from pathlib import Path
 # no longer contains provider-specific payload or pricing logic.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, VisionProvider, VisionResponse  # noqa: E402
+from llm_providers.fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
@@ -423,16 +424,78 @@ def parse_qa_response(raw_text, provider=None, original_payload=None):
 
 
 # ---------------------------------------------------------------------------
+# Step 4b: Claude fallback helper (SCRUM-281)
+# ---------------------------------------------------------------------------
+
+def run_claude_fallback(
+    flagged_page_numbers: set,
+    page_images: list,
+    rubric_text: str,
+    claude_model: str,
+    api_key,
+) -> tuple:
+    """Re-evaluate flagged pages with Claude in a single batched call.
+
+    Returns (claude_pages: list[dict], input_tokens: int, output_tokens: int).
+    Returns ([], 0, 0) when flagged_page_numbers is empty or api_key is missing.
+    Never raises — on any failure, logs the error and returns partial/empty results
+    so the outer run_visual_qa can continue with primary-provider results.
+
+    SCRUM-281 R5: missing ANTHROPIC_API_KEY degrades gracefully.
+    SCRUM-281 R6: ONE batched call for all flagged pages, never N per-page calls.
+    """
+    if not flagged_page_numbers:
+        return ([], 0, 0)
+
+    if not api_key:
+        logger.warning(
+            "ANTHROPIC_API_KEY not set — skipping fallback for %d flagged page(s)",
+            len(flagged_page_numbers),
+        )
+        return ([], 0, 0)
+
+    filtered_images = [(n, img) for n, img in page_images if n in flagged_page_numbers]
+    if not filtered_images:
+        return ([], 0, 0)
+
+    response = None
+    try:
+        claude_provider = ClaudeVisionProvider(api_key=api_key)
+        payload = claude_provider.build_request(filtered_images, rubric_text, claude_model)
+        response = claude_provider.call(payload)
+
+        batch_data = parse_qa_response(
+            response.raw_text,
+            provider=claude_provider,
+            original_payload=payload,
+        )
+        pages = batch_data.get("pages", []) if isinstance(batch_data, dict) else []
+        return (pages, response.input_tokens, response.output_tokens)
+
+    except Exception as exc:
+        logger.error("Claude fallback call failed: %s", exc)
+        if response is not None:
+            return ([], response.input_tokens, response.output_tokens)
+        return ([], 0, 0)
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Assemble final report
 # ---------------------------------------------------------------------------
 
 def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
-                 input_tokens, output_tokens, provider=None, pass_threshold=70):
+                 input_tokens, output_tokens, provider=None, pass_threshold=70,
+                 fallback_tokens=None, fallback_provider_name=None,
+                 fallback_cost_usd=None, fallback_model=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
     is supplied. When provider is None (legacy call path), falls back to the
     inline Sonnet-tier pricing that predates the provider abstraction.
+
+    fallback_tokens: (input_tokens, output_tokens) from the Claude fallback call,
+        or None when no fallback fired. When set, adds fallback_* fields to
+        token_usage. Omitted entirely when fallback did not fire.
     """
     if provider is not None:
         estimated_cost = provider.estimate_cost(model, input_tokens, output_tokens)
@@ -476,6 +539,19 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         }
     }
 
+    # Append fallback token/cost fields when the hybrid routing fired
+    if fallback_tokens is not None:
+        fb_in, fb_out = fallback_tokens
+        report["token_usage"]["fallback_input_tokens"] = fb_in
+        report["token_usage"]["fallback_output_tokens"] = fb_out
+        report["token_usage"]["fallback_estimated_cost_usd"] = round(
+            fallback_cost_usd or 0.0, 4
+        )
+        if fallback_provider_name:
+            report["token_usage"]["fallback_provider"] = fallback_provider_name
+        if fallback_model:
+            report["token_usage"]["fallback_model"] = fallback_model
+
     return report
 
 
@@ -485,12 +561,22 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
 
 def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   output_dir, dpi, max_pages, model, rubric_path,
-                  pass_threshold=70):
+                  pass_threshold=70,
+                  fallback_enabled=True,
+                  fallback_claude_model="claude-sonnet-4-6",
+                  fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
+                  fallback_empty_issues_score_threshold=80):
     """Execute the full visual QA pipeline.
 
     provider is a VisionProvider instance. Pass a ClaudeVisionProvider for
     the Anthropic path or a LocalVisionProvider for the sb-chat / local
     vLLM path. The orchestration loop is provider-agnostic.
+
+    fallback_enabled: when True and provider is not Claude, runs the fingerprint
+        detector after the batch loop and re-routes flagged pages to Claude.
+    fallback_claude_model: Claude model for the fallback re-evaluation call.
+    fallback_corpus_path: path to visual_qa_fallback_fingerprints.json.
+    fallback_empty_issues_score_threshold: Matcher 1 + 3 score threshold.
     """
 
     input_path = Path(input_path).resolve()
@@ -607,6 +693,72 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     input_tokens = total_input_tokens
     output_tokens = total_output_tokens
 
+    # --- Hybrid fingerprint routing (SCRUM-281) ---
+    # Short-circuit for Claude primary (no self-fallback) and when disabled.
+    fallback_tokens = None
+    fallback_provider_name = None
+    fallback_cost_usd = None
+    fallback_model_used = None
+
+    if provider.name != "claude" and fallback_enabled and all_pages_results:
+        try:
+            corpus_path = Path(fallback_corpus_path)
+            if not corpus_path.is_absolute():
+                corpus_path = Path(__file__).resolve().parent.parent / fallback_corpus_path
+
+            detector = FallbackFingerprintDetector.from_corpus(corpus_path)
+            settings = FingerprintSettings(
+                empty_issues_score_threshold=fallback_empty_issues_score_threshold,
+                substring_corpus=tuple(
+                    json.loads(corpus_path.read_text(encoding="utf-8"))
+                    .get("substring_fingerprints", [])
+                ),
+                match_category_scores_collapse=True,
+            )
+            flagged = detector.detect(all_pages_results, settings)
+
+            if flagged:
+                logger.info(
+                    "Fingerprint detector flagged %d/%d page(s) — routing to Claude (%s)",
+                    len(flagged), len(all_pages_results), fallback_claude_model,
+                )
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
+                claude_pages, fb_in, fb_out = run_claude_fallback(
+                    flagged, page_images, rubric_text,
+                    fallback_claude_model, api_key,
+                )
+                # Merge Claude results by page_number (replace primary entries)
+                if claude_pages:
+                    claude_by_pn = {cp["page_number"]: cp for cp in claude_pages
+                                    if isinstance(cp, dict)}
+                    for i, ap in enumerate(all_pages_results):
+                        pn = ap.get("page_number") if isinstance(ap, dict) else None
+                        if pn in claude_by_pn:
+                            all_pages_results[i] = claude_by_pn[pn]
+
+                fallback_tokens = (fb_in, fb_out)
+                fallback_provider_name = "claude"
+                fallback_model_used = fallback_claude_model
+                # Cost: use ClaudeVisionProvider's pricing (sonnet tier for sonnet-4-6)
+                from llm_providers.claude_provider import _resolve_pricing_tier
+                tier = _resolve_pricing_tier(fallback_claude_model)
+                fallback_cost_usd = (
+                    (fb_in / 1_000_000) * tier["input"]
+                    + (fb_out / 1_000_000) * tier["output"]
+                )
+                logger.info(
+                    "Claude fallback complete: %d input, %d output tokens (est. $%.4f)",
+                    fb_in, fb_out, fallback_cost_usd,
+                )
+            else:
+                logger.debug("Fingerprint detector: no pages flagged for fallback.")
+
+        except Exception as exc:
+            logger.error(
+                "Hybrid routing block failed (%s) — shipping primary-only results: %s",
+                type(exc).__name__, exc,
+            )
+
     # --- Merge batch results ---
     # Build a merged qa_data from all batch results
     # Re-score based on all collected page results
@@ -674,7 +826,11 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     # --- Build report ---
     report = build_report(
         str(input_path), qa_data, total_pages, len(page_images),
-        dpi, model, input_tokens, output_tokens, provider, pass_threshold
+        dpi, model, input_tokens, output_tokens, provider, pass_threshold,
+        fallback_tokens=fallback_tokens,
+        fallback_provider_name=fallback_provider_name,
+        fallback_cost_usd=fallback_cost_usd,
+        fallback_model=fallback_model_used,
     )
 
     # --- Write report ---
@@ -743,6 +899,13 @@ def main():
     # SCRUM-283: cloud-hosted VLM via OpenAI-compatible endpoints (OpenRouter/Fireworks/Together).
     default_cloud_host = vqa_settings.get("cloud_host", "openrouter")
     default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
+    # SCRUM-281: fallback fingerprint routing config
+    fallback_cfg = vqa_settings.get("fallback", {})
+    default_fallback_enabled = fallback_cfg.get("enabled", True)
+    default_fallback_claude_model = fallback_cfg.get("claude_model", "claude-sonnet-4-6")
+    default_fallback_threshold = fallback_cfg.get("empty_issues_score_threshold", 80)
+    default_fallback_corpus = fallback_cfg.get("corpus_path", r"tools\visual_qa_fallback_fingerprints.json")
+
     # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
     # This setting is used as a fallback only.
     default_rubric = vqa_settings.get("rubric_path", "")
@@ -807,6 +970,20 @@ def main():
     parser.add_argument(
         "--pass-threshold", type=int, default=default_threshold,
         help=f"Minimum score to pass (default: {default_threshold})"
+    )
+    parser.add_argument(
+        "--fallback-enabled", type=lambda x: x.lower() != "false",
+        default=default_fallback_enabled,
+        help=f"Enable hybrid fallback routing to Claude for fingerprinted pages "
+             f"(default: {default_fallback_enabled})"
+    )
+    parser.add_argument(
+        "--fallback-claude-model", default=default_fallback_claude_model,
+        help=f"Claude model for fallback re-evaluation (default: {default_fallback_claude_model})"
+    )
+    parser.add_argument(
+        "--fallback-corpus-path", default=default_fallback_corpus,
+        help=f"Path to fallback fingerprint corpus JSON (default: {default_fallback_corpus})"
     )
     parser.add_argument(
         "--verbose", action="store_true",
@@ -896,6 +1073,9 @@ def main():
             model=args.model,
             rubric_path=args.rubric,
             pass_threshold=args.pass_threshold,
+            fallback_enabled=args.fallback_enabled,
+            fallback_claude_model=args.fallback_claude_model,
+            fallback_corpus_path=args.fallback_corpus_path,
         )
 
         # Print summary to stdout
