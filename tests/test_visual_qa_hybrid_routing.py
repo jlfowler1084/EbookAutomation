@@ -503,3 +503,122 @@ class TestRunVisualQAHybridRouting:
         token_usage = report["token_usage"]
         assert token_usage.get("fallback_input_tokens") == 350
         assert token_usage.get("fallback_output_tokens") == 150
+
+
+# ---------------------------------------------------------------------------
+# Unit 4: TestConfigRoundTrip
+# ---------------------------------------------------------------------------
+
+class TestConfigRoundTrip:
+    """Verify fallback config flows from settings.json → main() → run_visual_qa().
+
+    Strategy: mock load_settings_json and run_visual_qa, then call main() with
+    sys.argv patched. Inspect the kwargs passed to run_visual_qa.
+    """
+
+    _BASE_SETTINGS = {
+        "paths": {
+            "calibre": r"C:\Program Files\Calibre2\ebook-convert.exe",
+            "poppler": "",
+        },
+        "api_models": {"sonnet_latest": "claude-sonnet-4-6"},
+        "visual_qa": {
+            "dpi": 100,
+            "max_pages": 8,
+            "pass_threshold": 70,
+            "provider": "cloud",
+            "cloud_host": "openrouter",
+            "cloud_model": "qwen/qwen3-vl-30b-a3b-instruct",
+            "local_model": "qwen3.5-35b-a3b-fp8",
+            "local_base_url": "http://localhost:8000/v1",
+            "rubric_path": "",
+            "fallback": {
+                "enabled": True,
+                "claude_model": "claude-sonnet-4-6",
+                "empty_issues_score_threshold": 80,
+                "corpus_path": r"tools\visual_qa_fallback_fingerprints.json",
+            },
+        },
+    }
+
+    def _run_main_capture_kwargs(self, tmp_path, settings_override=None,
+                                 extra_argv=None, extra_env=None):
+        """Call main() and capture kwargs passed to run_visual_qa."""
+        import copy
+        settings = copy.deepcopy(self._BASE_SETTINGS)
+        if settings_override:
+            # Shallow merge of visual_qa sub-dict
+            vqa = settings_override.get("visual_qa", {})
+            settings["visual_qa"].update(vqa)
+            if "fallback" in settings_override.get("visual_qa", {}):
+                settings["visual_qa"]["fallback"] = settings_override["visual_qa"]["fallback"]
+
+        input_file = tmp_path / "book.kfx"
+        input_file.write_bytes(b"dummy")
+
+        captured = {}
+
+        def fake_run_visual_qa(**kwargs):
+            captured.update(kwargs)
+            return {
+                "book": "test", "overall_score": 90, "overall_pass": True,
+                "pages_sampled": 1, "pages_total": 100, "summary": "ok",
+                "token_usage": {"estimated_cost_usd": 0.001},
+            }
+
+        argv = ["visual_qa.py", "--input", str(input_file),
+                "--provider", "claude", "--api-key", "sk-fake"]
+        if extra_argv:
+            argv.extend(extra_argv)
+
+        env = {"ANTHROPIC_API_KEY": "sk-fake"}
+        if extra_env:
+            env.update(extra_env)
+
+        with (
+            patch("visual_qa.load_settings_json", return_value=settings),
+            patch("visual_qa.run_visual_qa", side_effect=fake_run_visual_qa),
+            patch("visual_qa.ClaudeVisionProvider"),
+            patch.object(sys, "argv", argv),
+            patch.dict(os.environ, env, clear=True),
+        ):
+            try:
+                visual_qa.main()
+            except SystemExit:
+                pass
+
+        return captured
+
+    def test_fallback_config_flows_to_run_visual_qa(self, tmp_path):
+        """Config values from settings.json reach run_visual_qa as kwargs."""
+        captured = self._run_main_capture_kwargs(tmp_path)
+        assert captured.get("fallback_enabled") is True
+        assert captured.get("fallback_claude_model") == "claude-sonnet-4-6"
+        assert captured.get("fallback_corpus_path") == r"tools\visual_qa_fallback_fingerprints.json"
+
+    def test_cli_flag_overrides_config_fallback_enabled(self, tmp_path):
+        """--fallback-enabled false disables routing even when config says enabled."""
+        captured = self._run_main_capture_kwargs(tmp_path,
+                                                 extra_argv=["--fallback-enabled", "false"])
+        assert captured.get("fallback_enabled") is False
+
+    def test_cli_flag_overrides_fallback_claude_model(self, tmp_path):
+        """--fallback-claude-model overrides config model."""
+        captured = self._run_main_capture_kwargs(tmp_path,
+                                                 extra_argv=["--fallback-claude-model",
+                                                             "claude-haiku-4-5-20251001"])
+        assert captured.get("fallback_claude_model") == "claude-haiku-4-5-20251001"
+
+    def test_cli_flag_overrides_corpus_path(self, tmp_path):
+        """--fallback-corpus-path overrides config corpus path."""
+        captured = self._run_main_capture_kwargs(tmp_path,
+                                                 extra_argv=["--fallback-corpus-path",
+                                                             r"custom\fingerprints.json"])
+        assert captured.get("fallback_corpus_path") == r"custom\fingerprints.json"
+
+    def test_legacy_config_no_fallback_block(self, tmp_path):
+        """Settings without a fallback block uses hardcoded defaults (graceful degradation)."""
+        settings_override = {"visual_qa": {"fallback": {}}}
+        captured = self._run_main_capture_kwargs(tmp_path, settings_override=settings_override)
+        assert captured.get("fallback_enabled") is True
+        assert captured.get("fallback_claude_model") == "claude-sonnet-4-6"

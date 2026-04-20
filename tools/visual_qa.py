@@ -899,6 +899,13 @@ def main():
     # SCRUM-283: cloud-hosted VLM via OpenAI-compatible endpoints (OpenRouter/Fireworks/Together).
     default_cloud_host = vqa_settings.get("cloud_host", "openrouter")
     default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
+    # SCRUM-281: fallback fingerprint routing config
+    fallback_cfg = vqa_settings.get("fallback", {})
+    default_fallback_enabled = fallback_cfg.get("enabled", True)
+    default_fallback_claude_model = fallback_cfg.get("claude_model", "claude-sonnet-4-6")
+    default_fallback_threshold = fallback_cfg.get("empty_issues_score_threshold", 80)
+    default_fallback_corpus = fallback_cfg.get("corpus_path", r"tools\visual_qa_fallback_fingerprints.json")
+
     # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
     # This setting is used as a fallback only.
     default_rubric = vqa_settings.get("rubric_path", "")
@@ -963,6 +970,20 @@ def main():
     parser.add_argument(
         "--pass-threshold", type=int, default=default_threshold,
         help=f"Minimum score to pass (default: {default_threshold})"
+    )
+    parser.add_argument(
+        "--fallback-enabled", type=lambda x: x.lower() != "false",
+        default=default_fallback_enabled,
+        help=f"Enable hybrid fallback routing to Claude for fingerprinted pages "
+             f"(default: {default_fallback_enabled})"
+    )
+    parser.add_argument(
+        "--fallback-claude-model", default=default_fallback_claude_model,
+        help=f"Claude model for fallback re-evaluation (default: {default_fallback_claude_model})"
+    )
+    parser.add_argument(
+        "--fallback-corpus-path", default=default_fallback_corpus,
+        help=f"Path to fallback fingerprint corpus JSON (default: {default_fallback_corpus})"
     )
     parser.add_argument(
         "--verbose", action="store_true",
@@ -1052,6 +1073,9 @@ def main():
             model=args.model,
             rubric_path=args.rubric,
             pass_threshold=args.pass_threshold,
+            fallback_enabled=args.fallback_enabled,
+            fallback_claude_model=args.fallback_claude_model,
+            fallback_corpus_path=args.fallback_corpus_path,
         )
 
         # Print summary to stdout
