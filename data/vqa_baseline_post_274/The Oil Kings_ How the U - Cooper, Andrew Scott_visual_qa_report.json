@@ -1,0 +1,256 @@
+{
+  "book": "The Oil Kings_ How the U - Cooper, Andrew Scott.kfx",
+  "timestamp": "2026-04-18T15:36:36.672890+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 655,
+  "dpi": 100,
+  "overall_score": 76,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "paragraph_flow": 76,
+    "toc_navigation": 75,
+    "page_layout": 85,
+    "heading_formatting": 90,
+    "text_integrity": 95
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 91,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Photographic montage at top shows slight sepia toning inconsistency between left and right portrait images, though this may be intentional design",
+          "suggestion": "Verify source cover image fidelity; if consistent with original design, no action needed"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 72,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Copyright page text runs multiple distinct data fields together without line breaks (publisher address, copyright notice, edition info all merged into two run-on lines at top)",
+          "suggestion": "Ensure copyright page metadata is broken into separate lines or paragraphs matching original print layout"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Library of Congress Cataloging-in-Publication Data block merges bibliographic fields into continuous prose without standard line breaks between entries",
+          "suggestion": "Preserve line-break formatting in CIP block to match standard bibliographic display"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Printer's key sequence '1 3 5 7 9 10 8 6 4 2' runs inline with 'Designed by Ruth Lee-Mui Manufactured in the United States of America' without separation",
+          "suggestion": "Add line break before printer's key sequence to match standard copyright page formatting"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 34,
+      "pass": false,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "critical",
+          "description": "TOC page shows only the 'CONTENTS' heading with no entries — the entire table of contents body is missing. All chapter titles, page numbers, and front/back matter entries are absent",
+          "suggestion": "Re-run conversion ensuring TOC entries are extracted and rendered; check if TOC data was lost during EPUB generation or if NCX/Nav document is empty"
+        },
+        {
+          "category": "page_layout",
+          "severity": "major",
+          "description": "Page is almost entirely blank white space below the heading, indicating a content rendering failure rather than intentional design",
+          "suggestion": "Investigate whether TOC HTML content was generated but not rendered, or if source TOC was not parsed correctly"
+        }
+      ]
+    },
+    {
+      "page_number": 119,
+      "page_type": "chapter_start",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Chapter heading 'Chapter Four CONTINGENCIES' renders chapter ordinal and chapter title in the same font weight and size with no visual separation — the word 'CONTINGENCIES' is not differentiated from 'Chapter Four' as a distinct title element",
+          "suggestion": "Apply separate styling to chapter number label vs. chapter title text, e.g., chapter number in regular weight and title in bold or larger size"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Epigraph block (two quotes attributed to The Shah and Henry Kissinger) runs as a single merged paragraph without visual separation between the two distinct quotations",
+          "suggestion": "Add paragraph break or em-dash separator between the two epigraph quotes to clarify they are distinct attributions"
+        }
+      ]
+    },
+    {
+      "page_number": 229,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Ellipsis formatting uses '. . .' (spaced periods) consistently, which is a valid typographic style but may indicate source formatting carried over literally rather than using proper ellipsis character",
+          "suggestion": "Verify ellipsis character rendering is intentional style choice from original text; if so, no action needed"
+        }
+      ]
+    },
+    {
+      "page_number": 354,
+      "page_type": "chapter_start",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Chapter heading 'Chapter Eleven ROYAL FLUSH' renders chapter ordinal and title in the same line with identical weight/size, matching the same issue seen on page 119 — no visual hierarchy between label and title",
+          "suggestion": "Apply consistent fix across all chapter headings to differentiate chapter number from chapter title typographically"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Epigraph block merges two distinct quotes (Ford 1976 and The Shah 1976) into a single paragraph without a line break between them",
+          "suggestion": "Separate epigraph quotations into distinct paragraphs to clarify attribution boundaries"
+        }
+      ]
+    },
+    {
+      "page_number": 360,
+      "page_type": "body",
+      "score": 92,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Spaced ellipsis style '. . .' used throughout quoted material, consistent with page 229 — likely intentional authorial/editorial style",
+          "suggestion": "No action needed if this matches source document style"
+        }
+      ]
+    },
+    {
+      "page_number": 573,
+      "page_type": "back_matter",
+      "score": 65,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Endnotes entries are split mid-citation across paragraphs in multiple instances: '313 Alan Greenspan, had gone before Congress: Edwin L. Dale Jr., \"Economy Will' ends as a paragraph, then 'Outperform Forecast, Greenspan Says,\"' begins a new non-italic paragraph — the citation is broken across a paragraph boundary",
+          "suggestion": "Ensure endnote citation text is not split across paragraph elements; each note entry should be a single unbroken block"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Entry for '314 the steepest fall in consumer retail spending' citation is split: italic text ends with 'Last Month to' then '$52.64 Billion,' Wall Street Journal...' continues as a separate non-italic paragraph, breaking the citation",
+          "suggestion": "Merge split citation paragraphs; check source HTML for erroneous paragraph tags inserted mid-sentence in notes section"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Entry for '314 \"Temporary pauses of this kind aren't uncommon\"' is split: italic text ends mid-citation with 'Burns Is Optimistic About the' and continues in a new non-italic paragraph — same pattern of broken citations",
+          "suggestion": "Audit entire endnotes section for mid-citation paragraph splits; likely a systematic extraction artifact from source PDF"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Entry for '314 \"unsuitable entertainment\"' citation split: italic text ends with 'The Times of My Life (New' and resumes in separate non-italic paragraph 'York: Harper & Row, 1978), 223.'",
+          "suggestion": "Same fix as above — endnote paragraph splitting is a systematic issue throughout the notes section requiring global remediation"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Italic formatting for note citation lead-ins (page number + quoted phrase) appears correct, but the alternation between italic and non-italic across broken paragraphs creates visual confusion about what is quoted vs. bibliographic",
+          "suggestion": "Once paragraph splits are resolved, verify italic scoping covers only the intended quoted text portions"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 76/100.",
+  "top_issues": [
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Copyright page text runs multiple distinct data fields together without line breaks (publisher address, copyright notice, edition info all merged into two run-on lines at top)",
+      "suggestion": "Ensure copyright page metadata is broken into separate lines or paragraphs matching original print layout"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Library of Congress Cataloging-in-Publication Data block merges bibliographic fields into continuous prose without standard line breaks between entries",
+      "suggestion": "Preserve line-break formatting in CIP block to match standard bibliographic display"
+    },
+    {
+      "category": "toc_navigation",
+      "severity": "critical",
+      "description": "TOC page shows only the 'CONTENTS' heading with no entries — the entire table of contents body is missing. All chapter titles, page numbers, and front/back matter entries are absent",
+      "suggestion": "Re-run conversion ensuring TOC entries are extracted and rendered; check if TOC data was lost during EPUB generation or if NCX/Nav document is empty"
+    },
+    {
+      "category": "page_layout",
+      "severity": "major",
+      "description": "Page is almost entirely blank white space below the heading, indicating a content rendering failure rather than intentional design",
+      "suggestion": "Investigate whether TOC HTML content was generated but not rendered, or if source TOC was not parsed correctly"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Chapter heading 'Chapter Four CONTINGENCIES' renders chapter ordinal and chapter title in the same font weight and size with no visual separation — the word 'CONTINGENCIES' is not differentiated from 'Chapter Four' as a distinct title element",
+      "suggestion": "Apply separate styling to chapter number label vs. chapter title text, e.g., chapter number in regular weight and title in bold or larger size"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Chapter heading 'Chapter Eleven ROYAL FLUSH' renders chapter ordinal and title in the same line with identical weight/size, matching the same issue seen on page 119 — no visual hierarchy between label and title",
+      "suggestion": "Apply consistent fix across all chapter headings to differentiate chapter number from chapter title typographically"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Endnotes entries are split mid-citation across paragraphs in multiple instances: '313 Alan Greenspan, had gone before Congress: Edwin L. Dale Jr., \"Economy Will' ends as a paragraph, then 'Outperform Forecast, Greenspan Says,\"' begins a new non-italic paragraph — the citation is broken across a paragraph boundary",
+      "suggestion": "Ensure endnote citation text is not split across paragraph elements; each note entry should be a single unbroken block"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Entry for '314 the steepest fall in consumer retail spending' citation is split: italic text ends with 'Last Month to' then '$52.64 Billion,' Wall Street Journal...' continues as a separate non-italic paragraph, breaking the citation",
+      "suggestion": "Merge split citation paragraphs; check source HTML for erroneous paragraph tags inserted mid-sentence in notes section"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Entry for '314 \"Temporary pauses of this kind aren't uncommon\"' is split: italic text ends mid-citation with 'Burns Is Optimistic About the' and continues in a new non-italic paragraph — same pattern of broken citations",
+      "suggestion": "Audit entire endnotes section for mid-citation paragraph splits; likely a systematic extraction artifact from source PDF"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Entry for '314 \"unsuitable entertainment\"' citation split: italic text ends with 'The Times of My Life (New' and resumes in separate non-italic paragraph 'York: Harper & Row, 1978), 223.'",
+      "suggestion": "Same fix as above — endnote paragraph splitting is a systematic issue throughout the notes section requiring global remediation"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 2141,
+    "estimated_cost_usd": 0.0693
+  },
+  "capture_pipeline": "kfx-calibre"
+}

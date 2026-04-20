@@ -1,0 +1,17 @@
+{
+  "book": "non_default_samples_test.kfx",
+  "timestamp": "2026-04-18T12:00:00+00:00",
+  "model": "claude-haiku-4-5",
+  "pages_sampled": 4,
+  "pages_total": 200,
+  "dpi": 150,
+  "overall_score": 88,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "pages": [
+    {"page_number": 1, "score": 95},
+    {"page_number": 2, "score": 93},
+    {"page_number": 100, "score": 85},
+    {"page_number": 190, "score": 78}
+  ]
+}

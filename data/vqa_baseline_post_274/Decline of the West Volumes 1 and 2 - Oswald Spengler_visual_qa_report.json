@@ -1,0 +1,236 @@
+{
+  "book": "Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx",
+  "timestamp": "2026-04-18T15:40:16.538968+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 1087,
+  "dpi": 100,
+  "overall_score": 80,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "heading_formatting": 94,
+    "paragraph_flow": 91,
+    "text_integrity": 91
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 91,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover background texture appears slightly pixelated in places, though overall the design renders clearly with legible title and author text",
+          "suggestion": "If source image permits, re-render cover at higher DPI to smooth background texture"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 78,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Volume 1, the ampersand, and Volume 2 are each rendered as separate bold lines with large spacing between them, creating an awkward fragmented title block rather than a unified title page presentation. The hierarchy between the book title heading at the top and these sub-elements is inconsistent.",
+          "suggestion": "Group Volume 1 and Volume 2 with the ampersand as a cohesive unit; reduce excessive vertical spacing between these elements"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The publisher note lines (Random Shack 2016) run directly after the URL on the previous line without a clear paragraph break, making the attribution block slightly ambiguous",
+          "suggestion": "Ensure publisher attribution lines are separated with consistent paragraph spacing"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 82,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Volume 1 at the top, FORM AND ACTUALITY, and Oswald Spengler appear as separate heading-level elements with inconsistent visual hierarchy. FORM AND ACTUALITY is in bold caps but Oswald Spengler below it is in bold mixed case, making the structural relationship between these elements unclear.",
+          "suggestion": "Establish clearer hierarchy: volume label, then part title, then author attribution should each have distinct and consistent styling"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The Goethe epigraph is rendered in italics as a block quote, which is appropriate, but the attribution (Goethe) runs inline at the end of the last line rather than on its own line, which is slightly unconventional for epigraph formatting",
+          "suggestion": "Place the epigraph attribution on its own line, right-aligned or centered, for standard formatting"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The last paragraph on the page ends mid-sentence with 'or thrust them out' — the text is cut off at the page boundary without continuation. Additionally, the sentence ending 'indeed the only, nor Spengler's was not the most \"popular,\"' followed immediately by 'philosophical product of the German revolution' appears to represent a paragraph break mid-sentence, suggesting a paragraph flow error where the sentence continuation was incorrectly split into a new paragraph.",
+          "suggestion": "Review the paragraph break between 'popular,' and 'philosophical product' — this appears to be a mid-sentence paragraph break that should be corrected"
+        }
+      ]
+    },
+    {
+      "page_number": 310,
+      "page_type": "chapter_start",
+      "score": 72,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "The page opens with 'EVERY PROFESSED PHILOSOPHER' as a standalone capitalized line, followed immediately on the next line by 'examination, in the existence of a Something...' — this appears to be a truncated sentence where the beginning of the paragraph is missing ('EVERY PROFESSED PHILOSOPHER avoids...') or the text has been split mid-sentence between pages. The abrupt start strongly suggests a paragraph-continuation error from the previous page.",
+          "suggestion": "Verify the text at the page boundary with the preceding page to ensure no content was dropped; the opening appears to be mid-sentence"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The sub-heading 'ON THE FORM OF THE SOUL' is italicized and left-indented but not centered, creating slight visual asymmetry relative to the centered chapter heading above it",
+          "suggestion": "Center the sub-heading to match the visual alignment of the chapter title, or ensure consistent sub-heading alignment style throughout"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The chapter opens cleanly and paragraph indentation is consistent throughout the page",
+          "suggestion": "No action needed"
+        }
+      ]
+    },
+    {
+      "page_number": 380,
+      "page_type": "body",
+      "score": 65,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Multiple instances of italicized text fragments appear as standalone indented lines that interrupt the paragraph flow, appearing to be inline italic passages that have been incorrectly broken out as separate block-level elements. Examples: 'society.' appears alone as an indented italic line after 'a critique of'; 'it replaced mathematics as the basis of thought about the world — hence the importance of Cousin, Bentham, Comte, Mill and Spencer.' is set off as an indented italic block; 'being and posed by it. Alles Vergängliche ist nur ein Gleichnis applies also to' is similarly broken out; and 'choice of them, therefore, is subject to strict necessity. Each epoch has its' ends the page as a dangling italic fragment. These appear to be passages that should flow inline within paragraphs but have been formatted as block quotes or separate paragraphs.",
+          "suggestion": "Review the source markup for these italic passages; they appear to be inline italic text that was incorrectly converted to block-level indented elements. Restore them to inline formatting within their parent paragraphs."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The word 'thisbeing' appears without a space ('the intellectual expression of thisbeing') — a word fusion error from PDF extraction",
+          "suggestion": "Correct 'thisbeing' to 'this being' — review extraction pipeline for similar word-fusion errors"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The page ends mid-sentence with 'Each epoch has its' — while page boundary truncation is expected, the preceding broken italic block fragments make it unclear whether content has been lost or merely continues on the next page",
+          "suggestion": "Verify page continuity to ensure no content was dropped at this page boundary"
+        }
+      ]
+    },
+    {
+      "page_number": 597,
+      "page_type": "body",
+      "score": 78,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Superscript footnote/endnote reference numbers (15, 16, 17, 18) are visible inline in the text. These appear correctly placed as reference markers, consistent with the editor's note on page 2 that footnotes were converted to endnotes. The Greek characters σῶμα render correctly.",
+          "suggestion": "No action needed — endnote markers and Greek characters are rendering correctly"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The page opens mid-paragraph ('old towers upon the sea of houses...') which is expected for a body page, but the paragraph break between 'blocks astounded Herodotus in' and 'Babylon and Cortez in Tenochtitlan.' appears to be a mid-sentence paragraph break — 'Herodotus in' ends a paragraph and the next paragraph begins 'Babylon and Cortez' completing the sentence. This suggests an incorrect paragraph split.",
+          "suggestion": "Merge the paragraph ending 'blocks astounded Herodotus in' with the following paragraph beginning 'Babylon and Cortez' — this appears to be a single sentence incorrectly split across paragraphs"
+        }
+      ]
+    },
+    {
+      "page_number": 656,
+      "page_type": "chapter_start",
+      "score": 88,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The sub-heading '(C) PRIMITIVES, CULTURE PEOPLES, FELLAHEEN' is italicized and slightly left-indented rather than centered, creating minor asymmetry relative to the centered bold chapter title above. This is consistent with the formatting seen on page 310 and may be intentional.",
+          "suggestion": "If this sub-heading style is intentional and consistent throughout, no action needed. If alignment should match the chapter title, center the sub-heading."
+        }
+      ]
+    },
+    {
+      "page_number": 951,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Superscript endnote reference numbers (6, 7) appear inline in the text and render correctly. Text integrity is otherwise clean throughout the page.",
+          "suggestion": "No action needed — endnote markers are rendering correctly"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Paragraph indentation and flow are consistent and clean throughout. The page ends mid-paragraph as expected for a body page with no apparent truncation issues.",
+          "suggestion": "No action needed"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 80/100.",
+  "top_issues": [
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Volume 1, the ampersand, and Volume 2 are each rendered as separate bold lines with large spacing between them, creating an awkward fragmented title block rather than a unified title page presentation. The hierarchy between the book title heading at the top and these sub-elements is inconsistent.",
+      "suggestion": "Group Volume 1 and Volume 2 with the ampersand as a cohesive unit; reduce excessive vertical spacing between these elements"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "The last paragraph on the page ends mid-sentence with 'or thrust them out' — the text is cut off at the page boundary without continuation. Additionally, the sentence ending 'indeed the only, nor Spengler's was not the most \"popular,\"' followed immediately by 'philosophical product of the German revolution' appears to represent a paragraph break mid-sentence, suggesting a paragraph flow error where the sentence continuation was incorrectly split into a new paragraph.",
+      "suggestion": "Review the paragraph break between 'popular,' and 'philosophical product' — this appears to be a mid-sentence paragraph break that should be corrected"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "The page opens with 'EVERY PROFESSED PHILOSOPHER' as a standalone capitalized line, followed immediately on the next line by 'examination, in the existence of a Something...' — this appears to be a truncated sentence where the beginning of the paragraph is missing ('EVERY PROFESSED PHILOSOPHER avoids...') or the text has been split mid-sentence between pages. The abrupt start strongly suggests a paragraph-continuation error from the previous page.",
+      "suggestion": "Verify the text at the page boundary with the preceding page to ensure no content was dropped; the opening appears to be mid-sentence"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Multiple instances of italicized text fragments appear as standalone indented lines that interrupt the paragraph flow, appearing to be inline italic passages that have been incorrectly broken out as separate block-level elements. Examples: 'society.' appears alone as an indented italic line after 'a critique of'; 'it replaced mathematics as the basis of thought about the world — hence the importance of Cousin, Bentham, Comte, Mill and Spencer.' is set off as an indented italic block; 'being and posed by it. Alles Vergängliche ist nur ein Gleichnis applies also to' is similarly broken out; and 'choice of them, therefore, is subject to strict necessity. Each epoch has its' ends the page as a dangling italic fragment. These appear to be passages that should flow inline within paragraphs but have been formatted as block quotes or separate paragraphs.",
+      "suggestion": "Review the source markup for these italic passages; they appear to be inline italic text that was incorrectly converted to block-level indented elements. Restore them to inline formatting within their parent paragraphs."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "The word 'thisbeing' appears without a space ('the intellectual expression of thisbeing') — a word fusion error from PDF extraction",
+      "suggestion": "Correct 'thisbeing' to 'this being' — review extraction pipeline for similar word-fusion errors"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The page ends mid-sentence with 'Each epoch has its' — while page boundary truncation is expected, the preceding broken italic block fragments make it unclear whether content has been lost or merely continues on the next page",
+      "suggestion": "Verify page continuity to ensure no content was dropped at this page boundary"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The page opens mid-paragraph ('old towers upon the sea of houses...') which is expected for a body page, but the paragraph break between 'blocks astounded Herodotus in' and 'Babylon and Cortez in Tenochtitlan.' appears to be a mid-sentence paragraph break — 'Herodotus in' ends a paragraph and the next paragraph begins 'Babylon and Cortez' completing the sentence. This suggests an incorrect paragraph split.",
+      "suggestion": "Merge the paragraph ending 'blocks astounded Herodotus in' with the following paragraph beginning 'Babylon and Cortez' — this appears to be a single sentence incorrectly split across paragraphs"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 2502,
+    "estimated_cost_usd": 0.0748
+  },
+  "capture_pipeline": "kfx-calibre"
+}

@@ -1,0 +1,279 @@
+{
+  "book": "Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.kfx",
+  "timestamp": "2026-04-20T15:24:35.247842+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 272,
+  "dpi": 100,
+  "overall_score": 67,
+  "overall_pass": false,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 85,
+    "page_layout": 92,
+    "text_integrity": 83,
+    "heading_formatting": 95,
+    "paragraph_flow": 91
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 72,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "major",
+          "description": "Cover title is truncated — 'An Easy & Proven Way to' is visible but the remainder of the subtitle ('Build Good Habits & Break Bad Ones') is cut off entirely. The lower half of the cover is a blank beige area with no subtitle completion.",
+          "suggestion": "Regenerate the cover image or adjust the cover template to ensure the full title and subtitle are rendered within the viewable area."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "The two-tone background (tan upper block, cream lower block) creates an awkward visual split that makes the cover look unfinished where the title text ends.",
+          "suggestion": "Verify the source cover asset includes the full subtitle and that the crop/resize step does not clip content."
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 78,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The decorative image at the top of the title page renders as a scattered field of grey dots rather than a recognizable graphic (likely an atom or habit-loop illustration). The source image has degraded significantly.",
+          "suggestion": "Check the source image asset embedded in the original file and ensure it is embedded at sufficient resolution. Re-run conversion with higher image quality settings."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The hierarchy between 'ATOMIC HABITS' (large), the subtitle block, 'JAMES CLEAR', and 'Tiny Changes, Remarkable Results' is slightly ambiguous — 'Tiny Changes, Remarkable Results' appears below the author name in a bold serif that competes visually with the subtitle above.",
+          "suggestion": "Review stylesheet to ensure the tagline below the author name is clearly subordinate in weight and size."
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 68,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The copyright notice runs 'Copyright © 2018 by James Clear Penguin supports copyright.' — the sentence break between the copyright line and the publisher boilerplate is missing, causing two distinct sentences to merge into one without punctuation separation.",
+          "suggestion": "Inspect the paragraph delimiter extraction for the copyright page; ensure a line break or paragraph separator is preserved between 'James Clear' and 'Penguin supports copyright.'"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Multiple distinct paragraphs on the copyright page are merged into a single undifferentiated block. The ISBN line, the internet-addresses disclaimer, and the version stamp are not separated by proper paragraph breaks — they run on continuously.",
+          "suggestion": "Preserve paragraph-level markup from the source during extraction; do not strip intermediate newlines on legal/front-matter pages."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "'AN IMPRINT OF PENGUIN RANDOM HOUSE LLC' and '375 Hudson Street New York, New York 10014' are styled as bold headings, which is slightly unconventional but may reflect the source; not penalized heavily as it appears intentional.",
+          "suggestion": "Verify against source to confirm these are styled as headers in the original; if not, demote to body text styling."
+        }
+      ]
+    },
+    {
+      "page_number": 91,
+      "page_type": "chapter_start",
+      "score": 70,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The chapter opening contains a running-header bleed: 'The Role of Family and Friends in Shaping Your Habits' appears as a standalone line of body text immediately after the chapter heading, before the story begins. This is a extracted running header that was not filtered.",
+          "suggestion": "Add a running-header suppression step in the extraction pipeline to remove repeated chapter-title lines that appear at the top of body pages."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "'N 1965' with '1965' rendered as a superscript appears at the start of the chapter narrative. This is a corrupted rendering of 'IN 1965' — the letter 'I' was dropped and '1965' was incorrectly tagged as a superscript.",
+          "suggestion": "Audit footnote/superscript detection logic; years embedded in narrative prose should not be converted to superscripts. Restore 'IN 1965' as plain body text."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading '9: The Role of Family and Friends in Shaping Your Habits' is clearly formatted and visually distinct. Minor note: the chapter number prefix format ('9:') is functional but slightly informal compared to typical typeset chapter headings.",
+          "suggestion": "No action required unless style guide mandates a different chapter number format."
+        }
+      ]
+    },
+    {
+      "page_number": 94,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The final italic passage 'We are musicians. We are cyclists. The shared identity begins to' breaks mid-sentence at the bottom of the page, which is a normal page-break orphan but the italic styling appears to end abruptly mid-clause, potentially indicating a missed continuation tag.",
+          "suggestion": "Verify that the italic span continues correctly onto the following page and that the style tag is not closed prematurely at the page boundary."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Em-dash spacing in 'in some way— say, your mutual love' has a space before the em-dash but not after, which is inconsistent. Similarly 'at least, not in any noticeable sense' uses an em-dash with a leading space ('faster— at least') suggesting inconsistent dash normalization.",
+          "suggestion": "Apply consistent em-dash formatting (either spaced or unspaced) across the document during post-processing."
+        }
+      ]
+    },
+    {
+      "page_number": 149,
+      "page_type": "body",
+      "score": 82,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Em-dash formatting is inconsistent throughout the page: 'faster— at least', 'here— when we're discussing', 'rewards— is the ending' all show a space before but not after the em-dash, matching the same pattern seen on page 94.",
+          "suggestion": "Normalize em-dash spacing globally during the conversion post-processing step."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Page begins mid-sentence ('and that the work was worth the effort.') which is normal cross-page flow, but there is no top margin or visual cue distinguishing this as a continuation. This is acceptable for ebook format.",
+          "suggestion": "No action required; standard ebook body page behavior."
+        }
+      ]
+    },
+    {
+      "page_number": 152,
+      "page_type": "chapter_start",
+      "score": 65,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Same running-header bleed as page 91: '16: How to Stick with Good Habits Every Day' appears as a duplicate line of body text directly below the chapter heading before the narrative begins.",
+          "suggestion": "This is a systemic issue — the running-header suppression fix recommended for page 91 will resolve this page as well."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "'N 1993' with '1993' as superscript appears at the start of the chapter narrative, identical corruption pattern to page 91 ('IN 1993' with 'I' dropped and year incorrectly superscripted).",
+          "suggestion": "Apply the same fix recommended for page 91: audit superscript detection to exclude years in narrative context."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading is clearly formatted and visually distinct. No significant heading issues beyond the above.",
+          "suggestion": "No additional action required for the heading itself."
+        }
+      ]
+    },
+    {
+      "page_number": 238,
+      "page_type": "back_matter",
+      "score": 18,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "critical",
+          "description": "Raw HTML anchor tags and URL-encoded strings are rendered as visible text throughout the entire page. Strings such as '<a href=\"https://cdn2.hubspot.net/hubfs/304927/Downloads/GWI%20Social%20Summary%20Q3%202017.pdf\">', '</a>', and 'CHAPTER 15 <a href=\"#heading_116_15-the-cardinal-rule-of-behavior-change\">' are printed literally rather than being parsed as markup. The entire notes/references section is unreadable as citation text.",
+          "suggestion": "The HTML-to-ebook conversion pipeline is failing to parse or strip anchor tags in the endnotes section. Ensure the notes section is processed through the HTML parser before rendering; do not pass raw HTML strings to the text layer."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "critical",
+          "description": "URL-encoded percent sequences ('%20', '%3A', etc.) appear as literal text throughout the page instead of being decoded to human-readable characters. This makes citation URLs completely unreadable.",
+          "suggestion": "Decode percent-encoded URL strings before rendering reference URLs in the endnotes section."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "The citation entries are not formatted as discrete bibliographic paragraphs — they run together with HTML tag noise making it impossible to distinguish where one citation ends and another begins.",
+          "suggestion": "After fixing the HTML rendering issue, verify that each citation entry is separated by a proper paragraph break."
+        },
+        {
+          "category": "page_layout",
+          "severity": "moderate",
+          "description": "The page begins with a partial URL line that appears to be a continuation from the previous page without context, suggesting the back-matter section break handling is also malformed.",
+          "suggestion": "Verify page break and section boundary logic for the endnotes/references back matter section."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 67/100.",
+  "top_issues": [
+    {
+      "category": "cover_images",
+      "severity": "major",
+      "description": "Cover title is truncated — 'An Easy & Proven Way to' is visible but the remainder of the subtitle ('Build Good Habits & Break Bad Ones') is cut off entirely. The lower half of the cover is a blank beige area with no subtitle completion.",
+      "suggestion": "Regenerate the cover image or adjust the cover template to ensure the full title and subtitle are rendered within the viewable area."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "The decorative image at the top of the title page renders as a scattered field of grey dots rather than a recognizable graphic (likely an atom or habit-loop illustration). The source image has degraded significantly.",
+      "suggestion": "Check the source image asset embedded in the original file and ensure it is embedded at sufficient resolution. Re-run conversion with higher image quality settings."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "The copyright notice runs 'Copyright © 2018 by James Clear Penguin supports copyright.' — the sentence break between the copyright line and the publisher boilerplate is missing, causing two distinct sentences to merge into one without punctuation separation.",
+      "suggestion": "Inspect the paragraph delimiter extraction for the copyright page; ensure a line break or paragraph separator is preserved between 'James Clear' and 'Penguin supports copyright.'"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Multiple distinct paragraphs on the copyright page are merged into a single undifferentiated block. The ISBN line, the internet-addresses disclaimer, and the version stamp are not separated by proper paragraph breaks — they run on continuously.",
+      "suggestion": "Preserve paragraph-level markup from the source during extraction; do not strip intermediate newlines on legal/front-matter pages."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "The chapter opening contains a running-header bleed: 'The Role of Family and Friends in Shaping Your Habits' appears as a standalone line of body text immediately after the chapter heading, before the story begins. This is a extracted running header that was not filtered.",
+      "suggestion": "Add a running-header suppression step in the extraction pipeline to remove repeated chapter-title lines that appear at the top of body pages."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "'N 1965' with '1965' rendered as a superscript appears at the start of the chapter narrative. This is a corrupted rendering of 'IN 1965' — the letter 'I' was dropped and '1965' was incorrectly tagged as a superscript.",
+      "suggestion": "Audit footnote/superscript detection logic; years embedded in narrative prose should not be converted to superscripts. Restore 'IN 1965' as plain body text."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Same running-header bleed as page 91: '16: How to Stick with Good Habits Every Day' appears as a duplicate line of body text directly below the chapter heading before the narrative begins.",
+      "suggestion": "This is a systemic issue — the running-header suppression fix recommended for page 91 will resolve this page as well."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "'N 1993' with '1993' as superscript appears at the start of the chapter narrative, identical corruption pattern to page 91 ('IN 1993' with 'I' dropped and year incorrectly superscripted).",
+      "suggestion": "Apply the same fix recommended for page 91: audit superscript detection to exclude years in narrative context."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "critical",
+      "description": "Raw HTML anchor tags and URL-encoded strings are rendered as visible text throughout the entire page. Strings such as '<a href=\"https://cdn2.hubspot.net/hubfs/304927/Downloads/GWI%20Social%20Summary%20Q3%202017.pdf\">', '</a>', and 'CHAPTER 15 <a href=\"#heading_116_15-the-cardinal-rule-of-behavior-change\">' are printed literally rather than being parsed as markup. The entire notes/references section is unreadable as citation text.",
+      "suggestion": "The HTML-to-ebook conversion pipeline is failing to parse or strip anchor tags in the endnotes section. Ensure the notes section is processed through the HTML parser before rendering; do not pass raw HTML strings to the text layer."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "critical",
+      "description": "URL-encoded percent sequences ('%20', '%3A', etc.) appear as literal text throughout the page instead of being decoded to human-readable characters. This makes citation URLs completely unreadable.",
+      "suggestion": "Decode percent-encoded URL strings before rendering reference URLs in the endnotes section."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 2806,
+    "estimated_cost_usd": 0.0793
+  },
+  "capture_pipeline": "kfx-calibre"
+}

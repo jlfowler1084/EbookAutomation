@@ -1,0 +1,21 @@
+{
+  "book": "partial_overlap_test.kfx",
+  "timestamp": "2026-04-18T12:00:00+00:00",
+  "model": "claude-haiku-4-5",
+  "pages_sampled": 8,
+  "pages_total": 200,
+  "dpi": 150,
+  "overall_score": 84,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "pages": [
+    {"page_number": 1, "score": 92},
+    {"page_number": 2, "score": 90},
+    {"page_number": 3, "score": 88},
+    {"page_number": 50, "score": 85},
+    {"page_number": 100, "score": 82},
+    {"page_number": 150, "score": 80},
+    {"page_number": 175, "score": 78},
+    {"page_number": 190, "score": 76}
+  ]
+}

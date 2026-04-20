@@ -52,6 +52,51 @@ logger = logging.getLogger("visual_qa")
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_book_stem(stem: str) -> str:
+    """Normalize a filename stem for fuzzy KFX↔PDF matching.
+
+    Steps (order is load-bearing):
+    1. Lowercase
+    2. Strip ' - <author>' suffix via rfind, with heuristic guard so embedded
+       subtitle separators (e.g. "Foo - A Subtitle") are not stripped (Option A).
+       The suffix is only removed when it looks like an author name: 2-40 chars,
+       containing only letters, spaces, commas, periods, and hyphens, with no
+       other punctuation (colons, question marks, etc. indicate a subtitle).
+       Guard also rejects leading-separator case (sep_idx == 0).
+    3. Replace non-word character runs with a single space using re.UNICODE so
+       non-ASCII titles (Japanese, Cyrillic, accented Latin) survive and produce
+       distinct non-empty strings rather than collapsing to "".
+    4. Collapse/strip whitespace
+
+    Heuristic limitation: author suffixes that contain unusual punctuation will
+    not be stripped. Caller is responsible for ensuring ' - ' does not appear in
+    the title portion when it would be misread as an author separator.
+    """
+    s = stem.lower()
+    sep_idx = s.rfind(" - ")
+    if sep_idx > 0:
+        suffix = s[sep_idx + 3:]
+        # Accept suffix as an author name only when:
+        #   - 2–40 characters long
+        #   - contains only letters (unicode), spaces, commas, periods, hyphens
+        #   - no colon, question mark, exclamation mark, or other subtitle cues
+        if (2 <= len(suffix) <= 40
+                and re.match(r"^[\w\s,.\-]+$", suffix, flags=re.UNICODE)
+                and not re.search(r"[?!:;/\\()\[\]{}]", suffix)):
+            s = s[:sep_idx]
+    s = re.sub(r"[^\w]+", " ", s, flags=re.UNICODE)
+    return " ".join(s.split())
+
+
+def _get_kfx_dir() -> Path:
+    """Resolve the conventional KFX output directory.
+
+    Isolated as a seam so tests can monkeypatch it to use a temp dir
+    instead of the live regression corpus.
+    """
+    return Path(__file__).resolve().parent.parent / "output" / "kindle"
+
+
 def find_poppler_path(explicit_path=None):
     """Locate the poppler bin directory."""
     if explicit_path and os.path.isdir(explicit_path):
@@ -486,7 +531,8 @@ def run_claude_fallback(
 def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  input_tokens, output_tokens, provider=None, pass_threshold=70,
                  fallback_tokens=None, fallback_provider_name=None,
-                 fallback_cost_usd=None, fallback_model=None):
+                 fallback_cost_usd=None, fallback_model=None,
+                 capture_pipeline=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -538,6 +584,11 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
             "estimated_cost_usd": round(estimated_cost, 4),
         }
     }
+
+    # Additive provenance field — omitted on legacy baselines where the branch
+    # that ran cannot be determined (e.g. reports produced before SCRUM-282).
+    if capture_pipeline is not None:
+        report["capture_pipeline"] = capture_pipeline
 
     # Append fallback token/cost fields when the hybrid routing fired
     if fallback_tokens is not None:
@@ -610,8 +661,28 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         # Already a PDF, skip conversion
         pdf_path = str(input_path)
         logger.info("Input is already PDF, skipping Calibre conversion")
+        capture_pipeline = "pdf-direct"
+
+        # Warn if a KFX with the same title exists — the baseline captured from
+        # PDF may not match a future KFX-sourced run due to page-count drift.
+        kfx_dir = _get_kfx_dir()
+        if kfx_dir.is_dir():
+            pdf_norm = _normalize_book_stem(input_path.stem)
+            kfx_matches = [
+                kfx for kfx in kfx_dir.glob("*.kfx")
+                if _normalize_book_stem(kfx.stem) == pdf_norm
+            ]
+            if kfx_matches:
+                logger.warning(
+                    "PDF input '%s' shadows KFX '%s' — baseline captured from "
+                    "PDF path may diverge from a KFX-sourced run. "
+                    "Re-capture from KFX to standardize.",
+                    input_path.name,
+                    kfx_matches[0].name,
+                )
     else:
         pdf_path = convert_to_pdf(input_path, calibre_path)
+        capture_pipeline = "kfx-calibre"
 
     # --- Get page info ---
     total_pages = get_pdf_page_count(pdf_path)
@@ -831,6 +902,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         fallback_provider_name=fallback_provider_name,
         fallback_cost_usd=fallback_cost_usd,
         fallback_model=fallback_model_used,
+        capture_pipeline=capture_pipeline,
     )
 
     # --- Write report ---

@@ -1,0 +1,278 @@
+{
+  "book": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones.kfx",
+  "timestamp": "2026-04-18T15:47:12.901863+00:00",
+  "model": "claude-sonnet-4-6",
+  "pages_sampled": 8,
+  "pages_total": 268,
+  "dpi": 100,
+  "overall_score": 72,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 87,
+    "paragraph_flow": 90,
+    "heading_formatting": 92
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 92,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image renders clearly and title text is bold and legible, but slight compression artifacts visible at image edges",
+          "suggestion": "Re-render cover at higher DPI if source allows for crisper edge detail"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 62,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Page contains a repeated half-title and title sequence that should be on separate pages ('This page intentionally left blank' appears embedded between title elements rather than on its own page, and the full title block is duplicated). The copyright block is also truncated — the sentence ending 'without' is cut off and continues on the next page mid-sentence.",
+          "suggestion": "Check PDF extraction logic for front matter page boundaries; the half-title, blank page, full title page, and copyright page appear to have been merged into a single rendering"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Copyright block sentence breaks mid-sentence at 'without' with an artificial paragraph break before 'permission in writing from the publisher.' This should be a single continuous sentence.",
+          "suggestion": "Ensure paragraph-level text extraction does not split sentences at page column boundaries or mid-paragraph soft breaks"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The repeated title lines 'MEXICO'S ILLICIT DRUG NETWORKS' and 'AND THE STATE REACTION' appear in bold but at the same visual weight as body-level bold text; no typographic hierarchy distinguishes half-title from full-title from author name effectively",
+          "suggestion": "Apply distinct heading levels (H1 for title, H2 for subtitle) with appropriate font sizing rather than relying solely on bold weight"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 74,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "URL for Shutterstock credit is split as 'shutt erstock.com' — a word-split artifact from PDF extraction inserting a space mid-word",
+          "suggestion": "Apply post-processing to rejoin split URLs and hyphenated words extracted from PDF"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Bibliographic entries such as 'American National' and 'Standard for Permanence...' appear as separate paragraphs when they should be a single continuous sentence ('printed on acid-free paper meeting the requirements of the American National Standard for Permanence...')",
+          "suggestion": "Improve paragraph boundary detection to avoid splitting mid-sentence at source-PDF line wraps"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "CIP data block runs together without standard line separations (e.g., 'author Mexico's illicit drug networks' missing comma after 'author'), indicating minor extraction artifacts in bibliographic metadata",
+          "suggestion": "CIP data formatting artifacts are low priority; consider normalizing punctuation in bibliographic blocks post-extraction"
+        }
+      ]
+    },
+    {
+      "page_number": 33,
+      "page_type": "chapter_start",
+      "score": 63,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Raw HTML superscript markup leaked into body text: 'to little>3</sup avail.' appears verbatim instead of rendering as a superscript footnote reference. This is a critical extraction/conversion artifact where HTML tags were not processed.",
+          "suggestion": "Ensure HTML superscript tags from the source are converted to proper ebook footnote anchors and not passed through as raw markup strings"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "The chapter body text begins immediately after the heading with no introductory context — the first paragraph appears to start mid-argument ('illicit networks include insurgent networks such as Al Qaeda...') without any chapter introduction or topic sentence. This strongly suggests the opening paragraph of the chapter (including the book's introduction to the argument) was dropped during extraction.",
+          "suggestion": "Verify that the first paragraph of Chapter 1 was fully extracted from the source PDF; the visible text reads as if it begins partway through the opening paragraph"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph indentation: the first paragraph after the heading has a left margin indent while subsequent paragraphs are flush left, creating visual inconsistency",
+          "suggestion": "Normalize paragraph indentation style — either apply consistent first-line indent or consistent block paragraph spacing throughout"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading '1 The State Reaction and Illicit-Network Resilience' is clearly formatted and appropriately sized; no significant issues",
+          "suggestion": "No action needed for heading formatting on this page"
+        }
+      ]
+    },
+    {
+      "page_number": 93,
+      "page_type": "body",
+      "score": 78,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent line spacing within paragraphs: some footnote reference numbers (134, 135, 136, etc.) cause irregular line spacing when they appear at line endings, creating visual gaps mid-paragraph. Some references use hyperlink formatting (underlined) while others are plain text (135, 136, 102), creating inconsistent footnote reference styling.",
+          "suggestion": "Standardize all footnote superscript references to use consistent formatting — either all hyperlinked or all plain superscript"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Footnote reference '134' at the start of a line appears as a full-size number rather than a superscript, breaking from the expected superscript formatting used elsewhere on the page",
+          "suggestion": "Ensure all footnote anchors are wrapped in superscript tags consistently during conversion"
+        }
+      ]
+    },
+    {
+      "page_number": 147,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent footnote reference formatting: some references are hyperlinked superscripts (101, 103, 104, 105, 106) while others are plain text full-size numbers (102, 107), matching the same inconsistency seen on page 93",
+          "suggestion": "Apply consistent superscript and hyperlinking treatment to all footnote references throughout the document in a single post-processing pass"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "'Disruptive Events for Los Zetas' sub-heading is formatted in italics at body text size, which is a relatively subtle visual distinction for a section heading",
+          "suggestion": "Consider using bold or a slightly larger font size for section headings to improve hierarchy visibility, though italic-only styling may be intentional academic formatting"
+        }
+      ]
+    },
+    {
+      "page_number": 166,
+      "page_type": "body",
+      "score": 60,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Raw HTML superscript markup leaked into body text again: 'territorial>1</sup lines.' appears verbatim instead of rendering as footnote superscript '1'. Same class of defect as page 33.",
+          "suggestion": "Fix superscript HTML tag conversion pipeline-wide; this is a systematic issue affecting at minimum pages 33 and 166 and likely others"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "'Lessons Learned from the Cases' sub-heading appears in plain body-weight text with no bold, italic, or size differentiation from the surrounding paragraph text, making it nearly invisible as a heading",
+          "suggestion": "Apply bold formatting or size increase to section headings; this heading is indistinguishable from body text"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "As with other body pages, the Conclusion chapter body text appears to begin mid-argument without an opening framing sentence, suggesting the first sentence or sentences of the conclusion section were dropped",
+          "suggestion": "Verify completeness of chapter-opening text extraction for the Conclusion chapter"
+        }
+      ]
+    },
+    {
+      "page_number": 234,
+      "page_type": "back_matter",
+      "score": 70,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Multiple URLs are split with spaces inserted mid-word or mid-path: 'htt p://' (instead of 'http://'), 'htt ps://' (instead of 'https://'), 'pdffi les' (instead of 'pdffiles'), 'htt ples/pub940.pdf' (truncated/corrupted URL). These are PDF extraction word-split artifacts.",
+          "suggestion": "Apply URL reconstruction post-processing to rejoin broken URLs in bibliographic sections; identify and repair 'htt p' -> 'http' pattern systematically"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The italicized book entry for Manwaring is split across two paragraph blocks with 'Mexico,' ending one block and 'Jamaica and Brazil . Strategic Studies Institute...' beginning the next, breaking the bibliographic entry across paragraphs mid-title",
+          "suggestion": "Improve paragraph boundary detection in bibliography sections to keep single reference entries together"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Bibliographic formatting shows extra spaces around punctuation throughout (e.g., 'Semanario Zeta , October 2010 .' and 'no. 1 ( 1996 ): 21 – 48 .'), consistent with PDF extraction spacing artifacts",
+          "suggestion": "Apply punctuation normalization to bibliography entries to remove spurious spaces around commas, periods, and parentheses"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 72/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "Page contains a repeated half-title and title sequence that should be on separate pages ('This page intentionally left blank' appears embedded between title elements rather than on its own page, and the full title block is duplicated). The copyright block is also truncated — the sentence ending 'without' is cut off and continues on the next page mid-sentence.",
+      "suggestion": "Check PDF extraction logic for front matter page boundaries; the half-title, blank page, full title page, and copyright page appear to have been merged into a single rendering"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Copyright block sentence breaks mid-sentence at 'without' with an artificial paragraph break before 'permission in writing from the publisher.' This should be a single continuous sentence.",
+      "suggestion": "Ensure paragraph-level text extraction does not split sentences at page column boundaries or mid-paragraph soft breaks"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The repeated title lines 'MEXICO'S ILLICIT DRUG NETWORKS' and 'AND THE STATE REACTION' appear in bold but at the same visual weight as body-level bold text; no typographic hierarchy distinguishes half-title from full-title from author name effectively",
+      "suggestion": "Apply distinct heading levels (H1 for title, H2 for subtitle) with appropriate font sizing rather than relying solely on bold weight"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "URL for Shutterstock credit is split as 'shutt erstock.com' — a word-split artifact from PDF extraction inserting a space mid-word",
+      "suggestion": "Apply post-processing to rejoin split URLs and hyphenated words extracted from PDF"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "Raw HTML superscript markup leaked into body text: 'to little>3</sup avail.' appears verbatim instead of rendering as a superscript footnote reference. This is a critical extraction/conversion artifact where HTML tags were not processed.",
+      "suggestion": "Ensure HTML superscript tags from the source are converted to proper ebook footnote anchors and not passed through as raw markup strings"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "The chapter body text begins immediately after the heading with no introductory context — the first paragraph appears to start mid-argument ('illicit networks include insurgent networks such as Al Qaeda...') without any chapter introduction or topic sentence. This strongly suggests the opening paragraph of the chapter (including the book's introduction to the argument) was dropped during extraction.",
+      "suggestion": "Verify that the first paragraph of Chapter 1 was fully extracted from the source PDF; the visible text reads as if it begins partway through the opening paragraph"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Inconsistent paragraph indentation: the first paragraph after the heading has a left margin indent while subsequent paragraphs are flush left, creating visual inconsistency",
+      "suggestion": "Normalize paragraph indentation style — either apply consistent first-line indent or consistent block paragraph spacing throughout"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Inconsistent line spacing within paragraphs: some footnote reference numbers (134, 135, 136, etc.) cause irregular line spacing when they appear at line endings, creating visual gaps mid-paragraph. Some references use hyperlink formatting (underlined) while others are plain text (135, 136, 102), creating inconsistent footnote reference styling.",
+      "suggestion": "Standardize all footnote superscript references to use consistent formatting — either all hyperlinked or all plain superscript"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "Raw HTML superscript markup leaked into body text again: 'territorial>1</sup lines.' appears verbatim instead of rendering as footnote superscript '1'. Same class of defect as page 33.",
+      "suggestion": "Fix superscript HTML tag conversion pipeline-wide; this is a systematic issue affecting at minimum pages 33 and 166 and likely others"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "'Lessons Learned from the Cases' sub-heading appears in plain body-weight text with no bold, italic, or size differentiation from the surrounding paragraph text, making it nearly invisible as a heading",
+      "suggestion": "Apply bold formatting or size increase to section headings; this heading is indistinguishable from body text"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12409,
+    "output_tokens": 2742,
+    "estimated_cost_usd": 0.0784
+  },
+  "capture_pipeline": "kfx-calibre"
+}

@@ -190,6 +190,13 @@
       "description": "Automated visual quality assurance"
     },
     {
+      "script": "tools/compare_vqa_reports.py",
+      "mode": "direct",
+      "subcommands": ["compare", "audit"],
+      "flags": ["--candidate", "--baseline", "--audit", "--baseline-dir", "--kfx-dir", "--calibre", "--verbose"],
+      "description": "Compare VQA report pairs and audit baseline page-sample parity"
+    },
+    {
       "script": "tools/preflight_analysis.py",
       "mode": "direct",
       "flags": ["--input", "--db-path", "--settings", "--verbose"],
@@ -211,7 +218,7 @@
     {"path": "tools/pattern_db.py", "type": "python_script", "min_lines": 2704},
     {"path": "tools/batch_qa.py", "type": "python_script", "min_lines": 1800},
     {"path": "tools/fix_engine.py", "type": "python_script", "min_lines": 705},
-    {"path": "tools/visual_qa.py", "type": "python_script", "min_lines": 696},
+    {"path": "tools/visual_qa.py", "type": "python_script", "min_lines": 1100},
     {"path": "tools/test_pipeline.py", "type": "test_harness", "min_lines": 1320},
     {"path": "tools/classify_source.py", "type": "python_script", "min_lines": 391},
     {"path": "tools/detect_headings_font.py", "type": "python_script", "min_lines": 916},
