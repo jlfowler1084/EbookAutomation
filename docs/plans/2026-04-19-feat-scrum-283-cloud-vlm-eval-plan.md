@@ -1,7 +1,7 @@
 ---
 title: "feat(SCRUM-283): cloud-hosted VLM evaluation for VQA grader-leniency ceiling"
 type: feat
-status: active
+status: complete-partial
 date: 2026-04-19
 origin: docs/plans/2026-04-18-004-feat-scrum-280-p2-calibration-grounding-plan.md
 predecessor: docs/solutions/scrum-280-local-vqa-calibration-patterns.md
@@ -10,6 +10,7 @@ parent_ticket: SCRUM-280
 related_tickets: [SCRUM-275, SCRUM-279, SCRUM-281, SCRUM-282]
 scope: Cloud VLM R2-gate smoke across 6-book corpus; model-class escalation ladder if A3B fails; routing recommendation vs SCRUM-281 Option D.
 target_model: sonnet
+outcome: Partial close. Cloud Qwen3-VL-30B-A3B-Instruct cleared the SCRUM-280 academic-book ceiling (detection misses 7→1, 6→0, 7→0 on Oil Kings/Mexico/RotG) but failed formal R2 (corpus mean |Δ| 18.48) due to Python-in-Easy-Steps technical-layout blind spot. Unit 5b dense Qwen-VL-Max probe was worse than A3B broadly (20.62 |Δ|, 7-8 detection misses every book) — dense-vs-MoE hypothesis falsified. Recommendation: cloud-A3B primary + response-level fingerprint fallback to Claude (hybrid). SCRUM-281 Option D promoted from optional to required. See docs/solutions/scrum-283-cloud-vlm-evaluation.md.
 ---
 
 # feat(SCRUM-283): cloud-hosted VLM evaluation for VQA grader-leniency ceiling

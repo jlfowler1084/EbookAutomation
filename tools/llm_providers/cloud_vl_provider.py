@@ -68,13 +68,16 @@ class CloudVLProvider:
     API with image_url content blocks and json_schema response_format
     works without code changes.
 
-    The request payload mirrors LocalVisionProvider so the rubric text
-    and cardinality-enforcing schema flow through unchanged. The only
-    intentional divergence is the omission of
-    `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` —
-    that kwarg is load-bearing for local sb-chat running Qwen3 with the
-    qwen3 reasoning parser, but hosted Qwen3-VL endpoints do not expose
-    the control and will 400 if it is sent.
+    The request payload mirrors LocalVisionProvider including the
+    `extra_body={"chat_template_kwargs": {"enable_thinking": False}}`
+    kwarg, sent on every call. SCRUM-283 Unit 1 auth smoke (2 pages on
+    OpenRouter qwen3-vl-30b-a3b-instruct) showed that without this kwarg
+    the endpoint emits chain-of-thought reasoning tokens ahead of the
+    JSON body — 4062 input / 16384 output tokens for 2 pages, tripping
+    OutputTruncatedError. The pre-landed docstring had claimed hosted
+    endpoints 400 on this kwarg; empirically they accept it and it
+    correctly suppresses reasoning. If a future host rejects it with
+    400, make the kwarg host-conditional here.
     """
 
     name = "cloud_vl"
@@ -202,7 +205,10 @@ class CloudVLProvider:
 
         for attempt in range(max_retries + 1):
             try:
-                response = client.chat.completions.create(**payload)
+                response = client.chat.completions.create(
+                    **payload,
+                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                )
                 break
             except openai.RateLimitError as exc:
                 if attempt < max_retries:

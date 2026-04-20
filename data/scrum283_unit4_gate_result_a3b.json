@@ -1,0 +1,79 @@
+{
+  "candidate_dir": "data\\scrum283_unit3_6book_smoke_a3b",
+  "baseline_dir": "F:\\Projects\\EbookAutomation\\data\\vqa_baseline_post_274",
+  "secondary_dir": "F:\\Projects\\EbookAutomation\\data\\scrum280_unit5_winning_smoke",
+  "thresholds": {
+    "r2a_corpus_mean": 15.0,
+    "r2b_per_book_mean": 20.0,
+    "overlap_hard_fail_fraction": 0.5
+  },
+  "per_book": [
+    {
+      "book_stem": "Decline of the West Volumes 1 and 2 - Oswald Spengler",
+      "baseline_pages": 8,
+      "candidate_pages": 8,
+      "overlap_pages": 8,
+      "overlap_fraction": 1.0,
+      "mean_abs_delta": 10.375,
+      "max_page_abs_delta": 20,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": 7,
+      "note": ""
+    },
+    {
+      "book_stem": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones",
+      "baseline_pages": 8,
+      "candidate_pages": 8,
+      "overlap_pages": 8,
+      "overlap_fraction": 1.0,
+      "mean_abs_delta": 20,
+      "max_page_abs_delta": 33,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": 20.875,
+      "note": ""
+    },
+    {
+      "book_stem": "Python in easy steps, 2nd Edition - Mike McGrath",
+      "baseline_pages": 8,
+      "candidate_pages": 8,
+      "overlap_pages": 8,
+      "overlap_fraction": 1.0,
+      "mean_abs_delta": 36.625,
+      "max_page_abs_delta": 78,
+      "detection_misses": 2,
+      "secondary_mean_abs_delta": 24.125,
+      "note": ""
+    },
+    {
+      "book_stem": "The Oil Kings_ How the U - Cooper, Andrew Scott",
+      "baseline_pages": 8,
+      "candidate_pages": 8,
+      "overlap_pages": 8,
+      "overlap_fraction": 1.0,
+      "mean_abs_delta": 14.625,
+      "max_page_abs_delta": 61,
+      "detection_misses": 1,
+      "secondary_mean_abs_delta": 12.5,
+      "note": ""
+    },
+    {
+      "book_stem": "The Return of the Gods - Jonathan Cahn",
+      "baseline_pages": 8,
+      "candidate_pages": 8,
+      "overlap_pages": 8,
+      "overlap_fraction": 1.0,
+      "mean_abs_delta": 10.75,
+      "max_page_abs_delta": 53,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": 15,
+      "note": ""
+    }
+  ],
+  "corpus_mean_equal_weight": 18.475,
+  "corpus_mean_page_weighted": 18.475,
+  "max_per_book_mean": 36.625,
+  "r2a_pass": false,
+  "r2b_pass": false,
+  "overall_pass": false,
+  "overlap_hard_fail": false
+}
