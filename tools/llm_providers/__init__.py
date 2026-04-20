@@ -9,12 +9,14 @@ server, or a future provider without changes to the orchestration layer.
 
 from .base import VisionProvider, VisionResponse
 from .claude_provider import ClaudeVisionProvider
+from .cloud_vl_provider import CloudVLProvider
 from .local_provider import LocalVisionProvider, PageCountMismatchError
 
 __all__ = [
     "VisionProvider",
     "VisionResponse",
     "ClaudeVisionProvider",
+    "CloudVLProvider",
     "LocalVisionProvider",
     "PageCountMismatchError",
 ]

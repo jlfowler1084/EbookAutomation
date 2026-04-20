@@ -36,7 +36,7 @@ from pathlib import Path
 # calls through a pluggable backend so the orchestration code in this module
 # no longer contains provider-specific payload or pricing logic.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_providers import ClaudeVisionProvider, LocalVisionProvider, VisionProvider, VisionResponse  # noqa: E402
+from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, VisionProvider, VisionResponse  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
@@ -740,6 +740,9 @@ def main():
     default_provider = vqa_settings.get("provider", "claude")
     default_local_base_url = vqa_settings.get("local_base_url", "http://localhost:8000/v1")
     default_local_model = vqa_settings.get("local_model", "qwen3.5-35b-a3b-fp8")
+    # SCRUM-283: cloud-hosted VLM via OpenAI-compatible endpoints (OpenRouter/Fireworks/Together).
+    default_cloud_host = vqa_settings.get("cloud_host", "openrouter")
+    default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
     # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
     # This setting is used as a fallback only.
     default_rubric = vqa_settings.get("rubric_path", "")
@@ -756,8 +759,14 @@ def main():
         help="Path to KFX, AZW3, EPUB, or PDF file"
     )
     parser.add_argument(
-        "--provider", default=default_provider, choices=["claude", "local"],
+        "--provider", default=default_provider, choices=["claude", "local", "cloud"],
         help=f"Vision provider backend (default: {default_provider})"
+    )
+    parser.add_argument(
+        "--cloud-host", default=default_cloud_host,
+        choices=["openrouter", "fireworks", "together"],
+        help=f"Cloud VLM host when --provider=cloud (default: {default_cloud_host}). "
+             f"API key read from <HOST>_API_KEY env var (e.g. OPENROUTER_API_KEY)."
     )
     parser.add_argument(
         "--api-key", default=None,
@@ -815,6 +824,11 @@ def main():
                 os.environ.get("LOCAL_LLM_VISION_MODEL")
                 or settings_reload.get("visual_qa", {}).get("local_model", default_local_model)
             )
+        elif args.provider == "cloud":
+            args.model = (
+                os.environ.get("CLOUD_VL_MODEL")
+                or settings_reload.get("visual_qa", {}).get("cloud_model", default_cloud_model)
+            )
         else:
             args.model = settings_reload.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
 
@@ -848,6 +862,18 @@ def main():
         )
         provider = LocalVisionProvider(base_url=local_base_url)
         logger.info("Using local vision provider at %s (model: %s)", local_base_url, args.model)
+    elif args.provider == "cloud":
+        env_var = f"{args.cloud_host.upper()}_API_KEY"
+        api_key = os.environ.get(env_var)
+        if not api_key:
+            parser.error(
+                f"No API key for cloud host '{args.cloud_host}'. "
+                f"Set {env_var} env var or add it to .env."
+            )
+        provider = CloudVLProvider(host=args.cloud_host, api_key=api_key)
+        logger.info(
+            "Using cloud VL provider: host=%s, model=%s", args.cloud_host, args.model,
+        )
     else:
         # claude (default)
         api_key = args.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
