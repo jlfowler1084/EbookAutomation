@@ -63,10 +63,13 @@
     "local_model":    "qwen3.5-35b-a3b-fp8",
     "local_base_url": "http://localhost:8000/v1",
     "fallback": {
-      "enabled":                       true,
-      "claude_model":                  "claude-sonnet-4-6",
-      "empty_issues_score_threshold":  80,
-      "corpus_path":                   "tools\\visual_qa_fallback_fingerprints.json"
+      "enabled":                           true,
+      "claude_model":                      "claude-sonnet-4-6",
+      "empty_issues_score_threshold":      80,
+      "corpus_path":                       "tools\\visual_qa_fallback_fingerprints.json",
+      "match_uniform_score_responses":     true,
+      "uniform_score_page_ratio":          0.75,
+      "uniform_score_min_pages":           3
     }
   },
   "classify": {

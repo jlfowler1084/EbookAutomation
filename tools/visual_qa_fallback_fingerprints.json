@@ -8,5 +8,5 @@
     "no visible artifacts",
     "no significant issues"
   ],
-  "notes": "Matched case-insensitively against issues[i].description. Add new entries only when grounded in a captured response from data/scrum283_unit*/ or later production smoke runs — not speculatively. The empty-issues+high-score (Matcher 1) and category_scores collapse (Matcher 3) matchers are defined in FingerprintSettings and applied in FallbackFingerprintDetector.detect()."
+  "notes": "Matched case-insensitively against issues[i].description. Add new entries only when grounded in a captured response from data/scrum283_unit*/ or later production smoke runs — not speculatively. The empty-issues+high-score (Matcher 1), category_scores collapse (Matcher 3), and dominant-score uniform response (Matcher 4, SCRUM-292) matchers are defined in FingerprintSettings and applied in FallbackFingerprintDetector.detect()."
 }

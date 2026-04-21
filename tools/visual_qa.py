@@ -616,7 +616,10 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   fallback_enabled=True,
                   fallback_claude_model="claude-sonnet-4-6",
                   fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
-                  fallback_empty_issues_score_threshold=80):
+                  fallback_empty_issues_score_threshold=80,
+                  fallback_match_uniform_score_responses=True,
+                  fallback_uniform_score_page_ratio=0.75,
+                  fallback_uniform_score_min_pages=3):
     """Execute the full visual QA pipeline.
 
     provider is a VisionProvider instance. Pass a ClaudeVisionProvider for
@@ -785,6 +788,9 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                     .get("substring_fingerprints", [])
                 ),
                 match_category_scores_collapse=True,
+                match_uniform_score_responses=fallback_match_uniform_score_responses,
+                uniform_score_page_ratio=fallback_uniform_score_page_ratio,
+                uniform_score_min_pages=fallback_uniform_score_min_pages,
             )
             flagged = detector.detect(all_pages_results, settings)
 
@@ -977,6 +983,10 @@ def main():
     default_fallback_claude_model = fallback_cfg.get("claude_model", "claude-sonnet-4-6")
     default_fallback_threshold = fallback_cfg.get("empty_issues_score_threshold", 80)
     default_fallback_corpus = fallback_cfg.get("corpus_path", r"tools\visual_qa_fallback_fingerprints.json")
+    # SCRUM-292: Matcher 4 (uniform-score response) tuning
+    default_fallback_uniform_enabled = fallback_cfg.get("match_uniform_score_responses", True)
+    default_fallback_uniform_ratio = fallback_cfg.get("uniform_score_page_ratio", 0.75)
+    default_fallback_uniform_min_pages = fallback_cfg.get("uniform_score_min_pages", 3)
 
     # Note: visual_qa.py now prefers agents/qa-evaluation/system-prompt.md over this path.
     # This setting is used as a fallback only.
@@ -1148,6 +1158,9 @@ def main():
             fallback_enabled=args.fallback_enabled,
             fallback_claude_model=args.fallback_claude_model,
             fallback_corpus_path=args.fallback_corpus_path,
+            fallback_match_uniform_score_responses=default_fallback_uniform_enabled,
+            fallback_uniform_score_page_ratio=default_fallback_uniform_ratio,
+            fallback_uniform_score_min_pages=default_fallback_uniform_min_pages,
         )
 
         # Print summary to stdout
