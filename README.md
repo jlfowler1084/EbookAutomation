@@ -1,143 +1,274 @@
 # EbookAutomation
 
-Personal automation pipeline for converting PDF and EPUB books into TTS-ready text files for Balabolka, with Kindle HTML output for e-readers.
+Personal automation pipeline that converts PDF / EPUB / MOBI / AZW3 / DJVU books into Kindle-ready files and TTS-ready text, with a self-improving quality-assurance loop built on top.
 
-## What It Does
+Primary use cases:
 
-EbookAutomation takes PDF and EPUB files and produces two kinds of output:
+- **Kindle delivery** — PDF or EPUB in, KFX/AZW3 out, emailed to a Kindle device or side-loaded via USB.
+- **Audiobook pipeline** — extract → clean → voice-tag → render per-chapter MP3s via Balabolka + Microsoft Online neural voices.
+- **Batch quality assurance** — drop a folder of ebooks in, get a ranked diagnostic report with visual-QA screenshots per book.
 
-- **Balabolka mode** extracts text from PDF/EPUB, cleans OCR artifacts, detects chapters, strips front/back matter and footnotes, and outputs clean plaintext with ALL CAPS chapter headings. Balabolka uses these headings to split the text into separate MP3 tracks per chapter.
-- **Kindle mode** runs the same extraction pipeline but outputs semantic HTML optimized for Kindle reading — proper heading hierarchy, blockquotes, and formatting that Calibre converts to KFX.
+---
 
-## Key Features
+## Highlights
 
-The extraction pipeline handles real-world PDFs that simple text extraction mangles. It detects PDF bookmarks and aligns them to paragraph positions, runs dual extraction via pypdf and pdfminer with automatic quality-based selection, and uses PyMuPDF for two-column academic PDFs. The HTML path uses font metadata for heading detection; the plaintext path uses heuristic chapter detection with scholarly footnote filtering.
+| Area | What's in the repo |
+|---|---|
+| **Extraction** | Four-tier PDF text engine (pypdf → pdfminer.six → PyMuPDF column-aware → Tesseract/Gemini OCR), with pre-flight classification that picks the right tier per book |
+| **Heading & structure detection** | Font-metadata heading detection (pdfplumber), scholarly-footnote filtering, bookmark-to-paragraph alignment, optional Claude-assisted chapter boundary classification |
+| **Output formats** | Voice-tagged Balabolka TXT, Kindle HTML (Calibre-ready), KFX/AZW3 via Calibre, per-chapter MP3 via balcon + FFmpeg |
+| **Visual QA** | VLM-based post-conversion scoring (Qwen3-VL via OpenRouter → Claude Sonnet fallback on known-ambiguous pages) with JSON reports and HTML dashboards |
+| **Learning loop** | SQLite pattern database tracks fix patterns, extraction cache hits, and score trends; converge loop iterates extract → score → fix until quality plateaus |
+| **Regression discipline** | 6-book baseline test suite (`test_pipeline.py`) + 75-test voice-tag regression suite (`test_voice_tags.py`) + machine-readable feature manifest verified on each run |
+| **Integrations** | Anthropic Claude (Haiku / Sonnet), Google Gemini 2.5 Flash, OpenRouter (cloud VLMs), local vLLM, Gmail SMTP (email-to-Kindle), Calibre, Balabolka, FFmpeg, Tesseract, Poppler |
+| **Automation** | Windows Scheduled Task, inbox-driven batch processing, toast notifications, end-to-end PowerShell orchestration |
 
-Text cleanup covers the artifacts that OCR and PDF encoding leave behind: ligature splits (`ﬁ` → `fi`), merged word splitting, orphaned fragments, and hyphen rejoining across line breaks. Running headers and footers are detected and removed. Front matter (title pages, copyright, TOC) and back matter (indices, bibliographies) are trimmed automatically. Footnotes are stripped — both inline reference markers and trailing endnote text.
+## What this project demonstrates
 
-A 6-book baseline validation test suite catches regressions across all of these systems, since heading detection, TOC generation, footnote linking, and OCR cleanup are tightly coupled.
+- **Multi-provider AI routing** with graceful degradation — each tier has a cheaper fallback, and the system prefers the cheapest tier that clears a quality gate.
+- **Production-style regression testing** against real artifacts — every pipeline change runs against a fixed 6-book corpus, with a feature manifest that catches deleted exports before they ship.
+- **Persistent learning** via a SQLite pattern database that tracks which fixes work, which books are in which extraction tier, and when to invalidate an extraction cache entry.
+- **Cross-language orchestration** — PowerShell 5.1+ drives the user-facing pipeline; Python 3.12 does the heavy lifting for text/vision work; both share a single `config/settings.json`.
+- **Pragmatic scope discipline** — this is a personal tool, so the codebase picks its battles: regression tests where the pain has been highest, quality gates where the cost of a bad output is highest, and plain scripts everywhere else.
 
-## Pipeline Components
+---
 
-- `tools/pdf_to_balabolka.py` — Main converter (GUI + CLI)
-- `tools/test_pipeline.py` — Baseline validation test runner
-- `EbookAutomation.psm1` — PowerShell module for inbox scanning, Calibre routing, scheduled task support
-- `config/settings.json` — All paths and configuration
+## Architecture
+
+```
+inbox/                                   ← drop a PDF / EPUB / MOBI / AZW3 / DJVU here
+  │
+  ▼
+preflight_analysis.py                    ← classify source (digital / scan / OCR),
+                                           pick extraction strategy + recipe
+  │
+  ▼
+pdf_to_balabolka.py                      ← tiered extraction:
+  │                                        pypdf → pdfminer.six → PyMuPDF → OCR
+  │                                        (Tesseract → Gemini Flash)
+  ▼
+heading / structure classification       ← font metadata + heuristics +
+                                           optional Claude chapter-boundary pass
+  │
+  ├──▶  balabolka-txt/   (voice-tagged TXT)  ──▶  balcon.exe  ──▶  audiobooks/*.mp3
+  │
+  └──▶  kindle HTML       ──▶  ebook-convert.exe (Calibre)  ──▶  kindle/*.kfx
+                                                                      │
+                                                                      ▼
+                                                          visual_qa.py  ← VLM scoring
+                                                             │             (Qwen3-VL
+                                                             │              → Claude)
+                                                             ▼
+                                                     pattern_db.py         ← learned
+                                                     (SQLite cache          fix patterns,
+                                                      + scores)             trend data
+```
+
+The PowerShell module (`module/EbookAutomation.psm1`) orchestrates this end-to-end and exposes it as cmdlets: `Invoke-EbookPipeline`, `Convert-ToTTS`, `Convert-ToKindle`, `Merge-ToKindle`, `Send-ToKindle`, `Invoke-BatchQA`, `Invoke-ConvergeLoop`, etc.
+
+---
 
 ## Directory Structure
 
 ```
 EbookAutomation/
 ├── config/
-│   └── settings.json           # All paths and configuration
+│   └── settings.json           # All paths and pipeline configuration
 ├── dictionaries/               # Pronunciation .dic files for Balabolka TTS
 ├── inbox/                      # Drop ebooks here — pipeline picks them up
-├── logs/                       # Daily log files + processed.txt manifest
-├── module/
-│   ├── EbookAutomation.psm1    # PowerShell automation module
-│   ├── EbookAutomation.psd1    # Module manifest
-│   └── launch.bat              # Quick-launch wrapper
-├── output/
-│   ├── audiobooks/             # Final MP3 audiobook files
-│   ├── balabolka-txt/          # Balabolka-ready TXT files with voice tags
-│   └── kindle/                 # KFX/AZW3 Kindle conversions
 ├── processing/                 # Temp work area during conversion
 ├── archive/                    # Originals moved here after successful conversion
-├── tests/                      # Baseline validation test suite
-└── tools/
-    ├── balcon/                 # Balabolka CLI engine (balcon.exe)
-    ├── pdf_to_balabolka.py     # Main converter (GUI + CLI)
-    ├── visual_qa.py            # Visual QA tool
-    └── test_pipeline.py        # Pipeline test runner
+├── logs/                       # Daily log files + processed.txt manifest
+├── output/
+│   └── kindle/                 # KFX/AZW3 Kindle conversions
+│                                # (audiobooks/, balabolka-txt/, episodes/ created on demand)
+├── module/
+│   ├── EbookAutomation.psm1    # Main PowerShell module (cmdlet surface)
+│   ├── EbookAutomation.psd1    # Module manifest
+│   ├── Run-Pipeline.ps1        # Scheduled-task entry point
+│   └── launch.bat              # Quick-launch wrapper
+├── tools/
+│   ├── pdf_to_balabolka.py     # Core extraction engine (GUI + CLI)
+│   ├── preflight_analysis.py   # Source classification + strategy recipe
+│   ├── classify_source.py      # Digital / scan / OCR detection
+│   ├── gemini_ocr.py           # Tier 2.5 OCR via Gemini Flash
+│   ├── visual_qa.py            # VLM-based conversion scoring
+│   ├── batch_qa.py             # Multi-book diagnostic pipeline
+│   ├── pattern_db.py           # SQLite learning store
+│   ├── chapter_alignment.py    # TOC / bookmark / heading cross-check
+│   ├── fix_engine.py           # Pattern-driven remediation
+│   ├── email_to_kindle.py      # Gmail SMTP delivery
+│   ├── send_to_kindle.py       # Calibre USB delivery
+│   ├── foh_scraper.py          # FOH forum scraper (standalone feature)
+│   ├── foh_parser.py           # FOH daily-brief generator
+│   ├── test_pipeline.py        # 6-book baseline regression harness
+│   ├── test_voice_tags.py      # 75-test SAPI XML regression suite
+│   ├── balcon/                 # Balabolka CLI engine (balcon.exe)
+│   ├── poppler/                # Bundled Poppler utilities
+│   ├── llm_providers/          # Vision-provider abstraction (cloud / local / Claude)
+│   └── hooks/                  # Post-edit auto-test hook
+├── tests/
+│   ├── validate_against_baseline.py   # Baseline validator
+│   ├── recapture_baselines.py         # Refresh baselines when intentionally changing
+│   └── fixtures/
+├── data/                       # SQLite pattern DB + VQA baselines
+├── docs/                       # Design docs, plans, API registry
+├── agents/                     # Claude agent prompts (structure, QA)
+├── feature-manifest.json       # Machine-readable inventory of exported APIs
+└── requirements.txt            # Python dependencies (Python 3.12)
 ```
 
-## TTS Voice Configuration
-
-All TTS output uses Microsoft Online voices via Balabolka/balcon. These are high-quality neural voices — older SAPI/offline voices (Zira, Hazel, etc.) are never used.
-
-| Voice | Role |
-|---|---|
-| Microsoft Steffan Online | Main narrator (default) |
-| Microsoft Guy Online | Male quotes / dialogue |
-| Microsoft Aria Online | Female official / formal |
-| Microsoft Jenny Online | Female conversational / warm |
-
-Voice switching is handled through Balabolka SSML tags embedded in the output TXT files. The converter inserts appropriate voice tags, silence pauses between chapters, and rate adjustments automatically.
-
-## MP3 / Audiobook Generation
-
-The full pipeline from PDF to MP3 audiobook:
-
-1. **Extract & clean** — `pdf_to_balabolka.py` produces a voice-tagged TXT file with chapter headings
-2. **TTS render** — `balcon.exe` (Balabolka CLI) converts text to WAV using Microsoft Online voices
-3. **Encode** — FFmpeg converts WAV segments to MP3
-4. **Split** — Balabolka splits on ALL CAPS chapter headings, producing one MP3 per chapter
-
-The PowerShell module orchestrates this end-to-end:
-
-```powershell
-# Convert a single PDF to TTS-ready text
-Convert-ToTTS -InputFile "book.pdf"
-
-# Run the full inbox pipeline (scans inbox/, converts all files, archives originals)
-Invoke-EbookPipeline
-```
-
-### Tools involved
-
-| Tool | Purpose |
-|---|---|
-| balcon.exe | Balabolka command-line TTS engine — renders text to WAV |
-| FFmpeg | WAV → MP3 encoding, audio segment joining |
-| Calibre (ebook-convert.exe) | EPUB/MOBI → intermediate format conversion |
-| Balabolka (GUI) | Manual TTS preview, split-and-convert to MP3 per chapter |
+---
 
 ## Usage
 
-Balabolka mode (plaintext output):
+### Balabolka mode (plaintext with voice tags)
 
-```
-python tools/pdf_to_balabolka.py --input book.pdf --output-dir output/
-```
-
-Kindle HTML mode:
-
-```
-python tools/pdf_to_balabolka.py --input book.pdf --mode kindle --html-extraction --output-dir output/
+```powershell
+py -3.12 tools\pdf_to_balabolka.py --input "book.pdf" --output-dir output\balabolka-txt
 ```
 
-Run tests:
+Output: `<title>_balabolka.txt` with ALL CAPS chapter headings, embedded SAPI voice tags, and silence markers. Feed it to Balabolka to split into per-chapter MP3s.
+
+### Kindle HTML mode
+
+```powershell
+py -3.12 tools\pdf_to_balabolka.py --input "book.pdf" --mode kindle --html-extraction --output-dir output\kindle
+```
+
+Output: semantic HTML with proper heading hierarchy, blockquotes, and endnote links. Calibre converts it to KFX/AZW3.
+
+### End-to-end via PowerShell
+
+```powershell
+Import-Module .\module\EbookAutomation.psd1
+
+# Convert a single PDF to TTS-ready text
+Convert-ToTTS -InputFile "book.pdf"
+
+# Convert to Kindle (KFX) and email it
+Convert-ToKindle -InputFile "book.pdf"
+Send-ToKindle    -InputFile "output\kindle\book.kfx"
+
+# Merge multiple markdown notes into one KFX
+Merge-ToKindle -InputFiles note1.md, note2.md, note3.md -Title "My Collected Notes"
+
+# Run the full inbox pipeline (scans inbox/, converts, archives originals)
+Invoke-EbookPipeline
+
+# Batch QA across a folder of ebooks
+Invoke-BatchQA -FolderPath "test-corpus" -IncludeVQA
+```
+
+### Visual QA (post-conversion scoring)
+
+```powershell
+py -3.12 tools\visual_qa.py --input "output\kindle\book.kfx"
+```
+
+Produces a JSON report scoring heading hierarchy, TOC accuracy, footnote rendering, page breaks, and image placement. Uses Qwen3-VL (via OpenRouter) by default; falls back to Claude Sonnet for pages with known-ambiguous fingerprints.
+
+---
+
+## Requirements
+
+### Runtime
+
+- **Windows 10/11** — required for Microsoft Online neural voices, Scheduled Task integration
+- **PowerShell 5.1+** — ships with Windows
+- **Python 3.12** — all dependencies pinned in `requirements.txt`
+- **Calibre** with KFX Output plugin — `winget install calibre`
+- **Balabolka + balcon.exe** — [cross-plus-a.com/balabolka.htm](http://cross-plus-a.com/balabolka.htm)
+- **FFmpeg** — `winget install ffmpeg`
+- **Tesseract OCR** (optional, for Tier 2 image-PDFs) — [UB-Mannheim releases](https://github.com/UB-Mannheim/tesseract/wiki)
+- **Poppler** — bundled in `tools/poppler/`
+
+### Python packages
+
+Install all dependencies:
+
+```powershell
+py -3.12 -m pip install -r requirements.txt
+```
+
+Dev / test dependencies (pytest):
+
+```powershell
+py -3.12 -m pip install -r dev-requirements.txt
+```
+
+Core packages: `pypdf`, `pdfminer.six`, `PyMuPDF`, `pdfplumber`, `pdf2image`, `pytesseract`, `EbookLib`, `beautifulsoup4`, `pyspellchecker`, `google-genai`, `openai`, `requests`, `python-dotenv`, `pillow`, `lxml`.
+
+### Environment variables
+
+Copy `.env.example` to `.env` and fill in the keys you plan to use:
 
 ```
-python tests/validate_against_baseline.py
+ANTHROPIC_API_KEY    # Claude (chapter detection, VQA fallback)
+OPENROUTER_API_KEY   # Qwen3-VL cloud VQA primary
+GEMINI_API_KEY       # Gemini 2.5 Flash — Tier 2.5 OCR
+EBOOK_SMTP_PASSWORD  # Email-to-Kindle delivery
 ```
 
-## Setup
+All AI integrations degrade gracefully: extraction works without any API keys (local tiers only), and Visual QA / OCR fallback silently skip when keys are absent.
 
-### Requirements
+---
 
-- Python 3.8+ with packages: `pypdf`, `pdfminer.six`, `pymupdf`
-- PowerShell 5.1+ (ships with Windows 10/11)
-- [Calibre](https://calibre-ebook.com) with KFX Output plugin
-- [Balabolka](https://cross-plus-a.com/balabolka.htm) + `balcon.exe` CLI
-- [FFmpeg](https://ffmpeg.org)
-- Windows 10/11 (for Scheduled Task integration and Microsoft Online TTS voices)
+## First-time setup
 
-### First-time setup
-
-1. Clone the repo and open PowerShell in the project directory
-2. Install Python dependencies:
-   ```
-   python -m pip install pypdf pdfminer.six pymupdf
-   ```
-3. Edit `config/settings.json` — verify the Calibre path and choose your Kindle output format (`kfx` or `azw3`)
-4. Run the setup wizard:
+1. Clone the repo and open PowerShell in the project root.
+2. Install Python dependencies: `py -3.12 -m pip install -r requirements.txt`.
+3. Copy `.env.example` → `.env` and set any API keys you want to use.
+4. Edit `config/settings.json` — verify Calibre / Tesseract paths and choose Kindle output format (`kfx` or `azw3`).
+5. Run the setup wizard:
    ```powershell
    Import-Module .\module\EbookAutomation.psd1
    Initialize-EbookAutomation
    ```
-   This checks all dependencies, creates required folders, and optionally installs the Windows Scheduled Task.
+   Verifies dependencies, creates runtime folders, and optionally installs the Windows Scheduled Task.
+
+---
+
+## Testing
+
+Full regression suite (6-book baseline, takes several minutes):
+
+```powershell
+py -3.12 tools\test_pipeline.py
+```
+
+Quick check (HTML pipeline only, fast):
+
+```powershell
+py -3.12 tools\test_pipeline.py --quick
+```
+
+Single book:
+
+```powershell
+py -3.12 tools\test_pipeline.py "Oil Kings"
+```
+
+Voice tag regression suite (SAPI XML format contract with SecondBrain):
+
+```powershell
+py -3.12 tools\test_voice_tags.py
+```
+
+Feature manifest verification (confirms no exported function / CLI mode / config key has been removed):
+
+```powershell
+pwsh -File tools\verify-manifest.ps1 -Verbose
+```
+
+Unit tests via pytest:
+
+```powershell
+py -3.12 -m pytest tests/
+```
+
+---
 
 ## Status
 
-Active development. Private repo — may go public eventually.
+Active personal project. Not accepting contributions, but feel free to browse the code — the interesting bits are in `tools/pdf_to_balabolka.py` (tiered extraction), `tools/visual_qa.py` + `tools/llm_providers/` (multi-provider VLM routing), `tools/pattern_db.py` (the learning store), and `module/EbookAutomation.psm1` (the orchestration surface).
