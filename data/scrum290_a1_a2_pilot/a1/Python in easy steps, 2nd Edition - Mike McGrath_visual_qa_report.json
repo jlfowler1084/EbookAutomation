@@ -1,0 +1,318 @@
+{
+  "book": "Python in easy steps, 2nd Edition - Mike McGrath.kfx",
+  "timestamp": "2026-04-21T01:37:25.585319+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 198,
+  "dpi": 150,
+  "overall_score": 90,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 94
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in copyright notice",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Missing content on page 3 - only 'Contents' header visible",
+          "severity": "critical",
+          "suggestion": "Verify source file integrity and reprocess"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "toc",
+      "pass": false,
+      "score": 30
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in preface section",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 4,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in chapter title",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 5,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in introductory paragraph",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 6,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in introductory paragraph",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 7,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text wrapping issues in installation instructions",
+          "severity": "minor",
+          "suggestion": "Adjust line breaks to prevent awkward hyphenation"
+        }
+      ],
+      "page_number": 8,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'aft er' appears as a split word on page 11",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix spacing issues"
+        },
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'be cause' appears as a split word on page 11",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix spacing issues"
+        }
+      ],
+      "page_number": 11,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 12,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 14,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 17,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 19,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 21,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 22,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'DeveLopment' appears with inconsistent capitalization on page 21",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on source PDF to fix capitalization issues"
+        }
+      ],
+      "page_number": 23,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor spacing inconsistency in the table of operators on page 25",
+          "severity": "minor",
+          "suggestion": "Adjust spacing between operator and example columns for consistency"
+        }
+      ],
+      "page_number": 25,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor spacing inconsistency in the table of operators on page 28",
+          "severity": "minor",
+          "suggestion": "Adjust spacing between operator and description columns for consistency"
+        }
+      ],
+      "page_number": 28,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor spacing inconsistency in the table of operators on page 31",
+          "severity": "minor",
+          "suggestion": "Adjust spacing between operator and operation columns for consistency"
+        }
+      ],
+      "page_number": 31,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor spacing inconsistency in the table of operators on page 33",
+          "severity": "minor",
+          "suggestion": "Adjust spacing between operator and example columns for consistency"
+        }
+      ],
+      "page_number": 33,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    }
+  ],
+  "summary": "Evaluated 20 pages across 3 batch(es). Average page score: 90/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "description": "Missing content on page 3 - only 'Contents' header visible",
+      "severity": "critical",
+      "suggestion": "Verify source file integrity and reprocess"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48395,
+    "output_tokens": 2909,
+    "estimated_cost_usd": 0.0078
+  },
+  "capture_pipeline": "kfx-calibre"
+}

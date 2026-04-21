@@ -1,0 +1,345 @@
+{
+  "book": "The Return of the Gods - Jonathan Cahn.kfx",
+  "timestamp": "2026-04-21T01:51:45.164590+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 253,
+  "dpi": 150,
+  "overall_score": 88,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 95,
+    "toc_navigation": 75,
+    "heading_formatting": 95,
+    "paragraph_flow": 95
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor spacing irregularities in copyright text",
+          "severity": "minor",
+          "suggestion": "Check text extraction for consistent spacing"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "description": "TOC page is blank, no content visible",
+          "severity": "critical",
+          "suggestion": "Ensure TOC is generated and rendered correctly"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "toc",
+      "pass": false,
+      "score": 30
+    },
+    {
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "description": "Heading formatting is consistent and clear",
+          "severity": "minor",
+          "suggestion": "No action needed"
+        }
+      ],
+      "page_number": 4,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in paragraph text",
+          "severity": "minor",
+          "suggestion": "Run text cleanup process to remove artifacts"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Consistent paragraph breaks and indentation",
+          "severity": "minor",
+          "suggestion": "No action needed"
+        }
+      ],
+      "page_number": 5,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in paragraph text",
+          "severity": "minor",
+          "suggestion": "Run text cleanup process to remove artifacts"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Consistent paragraph breaks and indentation",
+          "severity": "minor",
+          "suggestion": "No action needed"
+        }
+      ],
+      "page_number": 7,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in paragraph text",
+          "severity": "minor",
+          "suggestion": "Run text cleanup process to remove artifacts"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Consistent paragraph breaks and indentation",
+          "severity": "minor",
+          "suggestion": "No action needed"
+        }
+      ],
+      "page_number": 10,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in paragraph text",
+          "severity": "minor",
+          "suggestion": "Run text cleanup process to remove artifacts"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Consistent paragraph breaks and indentation",
+          "severity": "minor",
+          "suggestion": "No action needed"
+        }
+      ],
+      "page_number": 14,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "page_number": 18,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in 'Judean multitudes' line",
+          "suggestion": "Adjust line spacing to ensure consistent word spacing"
+        }
+      ]
+    },
+    {
+      "page_number": 24,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Footnote marker '1' appears slightly misaligned",
+          "suggestion": "Reposition footnote marker to align with paragraph baseline"
+        }
+      ]
+    },
+    {
+      "page_number": 29,
+      "page_type": "chapter_start",
+      "score": 92,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Slight inconsistency in hyphenation of 'watchman's alarm'",
+          "suggestion": "Standardize hyphenation across similar terms"
+        }
+      ]
+    },
+    {
+      "page_number": 31,
+      "page_type": "chapter_start",
+      "score": 93,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing issue in 'unabated, deepening, widening'",
+          "suggestion": "Ensure consistent spacing between commas in lists"
+        }
+      ]
+    },
+    {
+      "page_number": 35,
+      "page_type": "chapter_start",
+      "score": 94,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Slight inconsistency in capitalization of 'Baals' in list",
+          "suggestion": "Standardize capitalization of proper nouns in lists"
+        }
+      ]
+    },
+    {
+      "page_number": 38,
+      "page_type": "chapter_start",
+      "score": 91,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing issue in 'mid-twentieth century'",
+          "suggestion": "Ensure consistent spacing in compound terms"
+        }
+      ]
+    },
+    {
+      "page_number": 44,
+      "page_type": "chapter_start",
+      "score": 93,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in 'progressive closing of'",
+          "suggestion": "Adjust spacing to ensure consistent word separation"
+        }
+      ]
+    },
+    {
+      "page_number": 47,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Slight inconsistency in hyphenation of 'monetized'",
+          "suggestion": "Standardize hyphenation across similar terms"
+        }
+      ]
+    },
+    {
+      "page_number": 52,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in paragraph breaks",
+          "suggestion": "Review paragraph spacing settings for consistency"
+        }
+      ]
+    },
+    {
+      "page_number": 58,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading 'The Identity of a God' not visually distinct from body text",
+          "suggestion": "Increase font size or weight for headings to improve hierarchy"
+        }
+      ]
+    },
+    {
+      "page_number": 63,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text 'BEYOND THE molten bull' has inconsistent capitalization and spacing",
+          "suggestion": "Standardize capitalization and spacing in chapter titles"
+        }
+      ]
+    },
+    {
+      "page_number": 67,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor OCR artifact in 'BEFORE WE move' with inconsistent spacing",
+          "suggestion": "Check OCR processing for consistent spacing in chapter titles"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 20 pages across 3 batch(es). Average page score: 88/100.",
+  "top_issues": [
+    {
+      "category": "toc_navigation",
+      "description": "TOC page is blank, no content visible",
+      "severity": "critical",
+      "suggestion": "Ensure TOC is generated and rendered correctly"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text 'BEYOND THE molten bull' has inconsistent capitalization and spacing",
+      "suggestion": "Standardize capitalization and spacing in chapter titles"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48393,
+    "output_tokens": 2673,
+    "estimated_cost_usd": 0.0077
+  },
+  "capture_pipeline": "kfx-calibre"
+}

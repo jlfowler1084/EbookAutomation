@@ -1,0 +1,158 @@
+{
+  "book": "The Oil Kings_ How the U - Cooper, Andrew Scott.kfx",
+  "timestamp": "2026-04-21T02:03:38.281380+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 655,
+  "dpi": 100,
+  "overall_score": 84,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 95,
+    "toc_navigation": 75,
+    "heading_formatting": 90
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in Library of Congress data",
+          "severity": "minor",
+          "suggestion": "Verify source PDF for OCR quality"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "description": "TOC page is blank, no content visible",
+          "severity": "critical",
+          "suggestion": "Reprocess TOC generation, ensure content is extracted"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "toc",
+      "pass": false,
+      "score": 30
+    },
+    {
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "description": "Chapter heading uses all caps, inconsistent with other chapters",
+          "severity": "moderate",
+          "suggestion": "Standardize heading case across all chapters"
+        },
+        {
+          "category": "text_integrity",
+          "description": "Minor split words in quote: 'inaction, or possibly America's impotence'",
+          "severity": "minor",
+          "suggestion": "Check PDF extraction for line break issues"
+        }
+      ],
+      "page_number": 119,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "OCR artifacts in 'The Economist' reference",
+          "severity": "minor",
+          "suggestion": "Verify source text for clean extraction"
+        }
+      ],
+      "page_number": 229,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "description": "Chapter heading uses all caps, inconsistent with other chapters",
+          "severity": "moderate",
+          "suggestion": "Standardize heading case across all chapters"
+        }
+      ],
+      "page_number": 354,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor split words in 'Cottrell moved a hand'",
+          "severity": "minor",
+          "suggestion": "Check PDF extraction for line break issues"
+        }
+      ],
+      "page_number": 360,
+      "page_type": "body",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in bibliographic entries",
+          "severity": "minor",
+          "suggestion": "Verify source PDF for OCR quality"
+        }
+      ],
+      "page_number": 573,
+      "page_type": "back_matter",
+      "pass": true,
+      "score": 90
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 84/100.",
+  "top_issues": [
+    {
+      "category": "toc_navigation",
+      "description": "TOC page is blank, no content visible",
+      "severity": "critical",
+      "suggestion": "Reprocess TOC generation, ensure content is extracted"
+    },
+    {
+      "category": "heading_formatting",
+      "description": "Chapter heading uses all caps, inconsistent with other chapters",
+      "severity": "moderate",
+      "suggestion": "Standardize heading case across all chapters"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9625,
+    "output_tokens": 1177,
+    "estimated_cost_usd": 0.0019
+  },
+  "capture_pipeline": "kfx-calibre"
+}

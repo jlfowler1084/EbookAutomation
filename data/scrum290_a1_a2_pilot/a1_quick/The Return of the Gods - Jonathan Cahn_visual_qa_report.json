@@ -1,0 +1,195 @@
+{
+  "book": "The Return of the Gods - Jonathan Cahn.kfx",
+  "timestamp": "2026-04-21T02:05:11.663106+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 253,
+  "dpi": 100,
+  "overall_score": 91,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 95,
+    "toc_navigation": 95,
+    "heading_formatting": 90,
+    "paragraph_flow": 90
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Slight pixelation at the edges of the cover image",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in copyright text",
+          "suggestion": "Ensure consistent line spacing in legal text blocks"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "minor",
+          "description": "TOC page is blank except for title, no entries visible",
+          "suggestion": "Verify TOC generation process to ensure entries are included"
+        }
+      ]
+    },
+    {
+      "page_number": 70,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Heading '17 THE ENCHANTRESS' not visually distinct from body text",
+          "suggestion": "Increase heading font size or weight to improve hierarchy"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph spacing after subheadings",
+          "suggestion": "Standardize paragraph spacing after section breaks"
+        }
+      ]
+    },
+    {
+      "page_number": 87,
+      "page_type": "body",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor OCR artifact in 'the prostitute' phrase",
+          "suggestion": "Verify source text for correct punctuation and spacing"
+        }
+      ]
+    },
+    {
+      "page_number": 138,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent indentation in 'Suffer the Little Children' section",
+          "suggestion": "Apply uniform indentation to all body paragraphs"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing issue in 'Young women were now seeking to become young men'",
+          "suggestion": "Check for proper word spacing in complex sentences"
+        }
+      ]
+    },
+    {
+      "page_number": 154,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Heading '37 THE STONEWALL' not visually distinct from body text",
+          "suggestion": "Increase heading font size or weight to improve hierarchy"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph spacing after subheadings",
+          "suggestion": "Standardize paragraph spacing after section breaks"
+        }
+      ]
+    },
+    {
+      "page_number": 221,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Heading 'The Opening and the Closing' not visually distinct from body text",
+          "suggestion": "Increase heading font size or weight to improve hierarchy"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph spacing after subheadings",
+          "suggestion": "Standardize paragraph spacing after section breaks"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 91/100.",
+  "top_issues": [
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Heading '17 THE ENCHANTRESS' not visually distinct from body text",
+      "suggestion": "Increase heading font size or weight to improve hierarchy"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Inconsistent paragraph spacing after subheadings",
+      "suggestion": "Standardize paragraph spacing after section breaks"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Inconsistent indentation in 'Suffer the Little Children' section",
+      "suggestion": "Apply uniform indentation to all body paragraphs"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Heading '37 THE STONEWALL' not visually distinct from body text",
+      "suggestion": "Increase heading font size or weight to improve hierarchy"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "Heading 'The Opening and the Closing' not visually distinct from body text",
+      "suggestion": "Increase heading font size or weight to improve hierarchy"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9620,
+    "output_tokens": 1175,
+    "estimated_cost_usd": 0.0019
+  },
+  "capture_pipeline": "kfx-calibre"
+}

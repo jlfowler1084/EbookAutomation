@@ -1,0 +1,91 @@
+{
+  "candidate_dir": "data\\scrum290_a1_a2_pilot\\a1",
+  "baseline_dir": "data\\vqa_baseline_post_274",
+  "secondary_dir": null,
+  "thresholds": {
+    "r2a_corpus_mean": 15.0,
+    "r2b_per_book_mean": 20.0,
+    "overlap_hard_fail_fraction": 0.5
+  },
+  "per_book": [
+    {
+      "book_stem": "Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear",
+      "baseline_pages": 8,
+      "candidate_pages": 20,
+      "overlap_pages": 4,
+      "overlap_fraction": 0.2,
+      "mean_abs_delta": 15,
+      "max_page_abs_delta": 22,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 4/20 pages"
+    },
+    {
+      "book_stem": "Decline of the West Volumes 1 and 2 - Oswald Spengler",
+      "baseline_pages": 8,
+      "candidate_pages": 20,
+      "overlap_pages": 5,
+      "overlap_fraction": 0.25,
+      "mean_abs_delta": 11.4,
+      "max_page_abs_delta": 13,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 5/20 pages"
+    },
+    {
+      "book_stem": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones",
+      "baseline_pages": 8,
+      "candidate_pages": 20,
+      "overlap_pages": 5,
+      "overlap_fraction": 0.25,
+      "mean_abs_delta": 17.6,
+      "max_page_abs_delta": 30,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 5/20 pages"
+    },
+    {
+      "book_stem": "Python in easy steps, 2nd Edition - Mike McGrath",
+      "baseline_pages": 8,
+      "candidate_pages": 20,
+      "overlap_pages": 3,
+      "overlap_fraction": 0.15,
+      "mean_abs_delta": 11.333333333333334,
+      "max_page_abs_delta": 24,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 3/20 pages"
+    },
+    {
+      "book_stem": "The Oil Kings_ How the U - Cooper, Andrew Scott",
+      "baseline_pages": 8,
+      "candidate_pages": 16,
+      "overlap_pages": 4,
+      "overlap_fraction": 0.25,
+      "mean_abs_delta": 9,
+      "max_page_abs_delta": 18,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 4/16 pages"
+    },
+    {
+      "book_stem": "The Return of the Gods - Jonathan Cahn",
+      "baseline_pages": 8,
+      "candidate_pages": 20,
+      "overlap_pages": 3,
+      "overlap_fraction": 0.15,
+      "mean_abs_delta": 8.333333333333334,
+      "max_page_abs_delta": 12,
+      "detection_misses": 0,
+      "secondary_mean_abs_delta": null,
+      "note": "partial overlap \u2014 3/20 pages"
+    }
+  ],
+  "corpus_mean_equal_weight": 12.11111111111111,
+  "corpus_mean_page_weighted": 12.5,
+  "max_per_book_mean": 17.6,
+  "r2a_pass": true,
+  "r2b_pass": true,
+  "overall_pass": true,
+  "overlap_hard_fail": true
+}
