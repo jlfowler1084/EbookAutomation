@@ -701,6 +701,15 @@ def run_kfx_conversion_for_book(pdf_path):
         kfx_path = kfx_match.group(1) if kfx_match else None
         success = result.returncode == 0 and kfx_path is not None
 
+        # SCRUM-294: Calibre's exit 0 + path match does not guarantee a valid
+        # artifact. A missing or 0-byte KFX (seen on Drug War Zone, 2009) must
+        # be treated as a conversion failure so the batch classifier cannot
+        # mark the book PASS while VQA silently skips the empty file.
+        if success and (
+            not os.path.isfile(kfx_path) or os.path.getsize(kfx_path) == 0
+        ):
+            success = False
+
         return success, kfx_path, duration
     except subprocess.TimeoutExpired:
         return False, None, time.time() - t0
@@ -1138,9 +1147,12 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         kfx_ok, kfx_path, kfx_dur = run_kfx_conversion_for_book(file_path)
         diag["kindle_conversion"]["success"] = kfx_ok
         diag["kindle_conversion"]["duration_seconds"] = round(kfx_dur, 1)
-        if kfx_ok and kfx_path and os.path.isfile(kfx_path):
+        # Record size whenever the file exists so a 0-byte artifact shows up
+        # in the diagnostic JSON (evidence the classifier and report render).
+        if kfx_path and os.path.isfile(kfx_path):
             diag["kindle_conversion"]["kfx_size_bytes"] = os.path.getsize(kfx_path)
 
+        if kfx_ok and kfx_path and os.path.isfile(kfx_path):
             # ── Phase 4: Visual QA (only if requested and KFX exists) ───
             if include_vqa:
                 diag["visual_qa"]["attempted"] = True
