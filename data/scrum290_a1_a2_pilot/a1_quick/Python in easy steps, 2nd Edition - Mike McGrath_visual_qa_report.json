@@ -1,0 +1,243 @@
+{
+  "book": "Python in easy steps, 2nd Edition - Mike McGrath.kfx",
+  "timestamp": "2026-04-21T02:02:47.472960+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 198,
+  "dpi": 100,
+  "overall_score": 77,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "paragraph_flow": 89,
+    "heading_formatting": 92,
+    "text_integrity": 92,
+    "page_layout": 90,
+    "toc_navigation": 75
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image slightly pixelated at edges",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 62,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Section labels such as 'Notice of Liability' and 'Trademarks' are run directly into the body text of their respective sections rather than being separated as distinct headings or paragraphs. For example, 'Trademarks All trademarks are acknowledged...' merges the label and content into a single line.",
+          "suggestion": "Ensure section labels are rendered as separate paragraphs or headings, not concatenated with the body text that follows."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The publisher address block ('16 Hamilton Terrace · Holly Walk · Leamington Spa Warwickshire · United Kingdom · CV32 4LY www.ineasysteps.com') flows as continuous inline text with line wraps determined by column width rather than being formatted as a structured address block. This reduces legibility of the address.",
+          "suggestion": "Format the address block with intentional line breaks at logical address boundaries rather than relying on paragraph reflow."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "major",
+          "description": "Section labels 'Second Edition', 'Notice of Liability', and 'Trademarks' are rendered at the same size and weight as the surrounding body text with only an indent to distinguish them. They lack any visual differentiation (bold, larger size, or spacing) that would identify them as section labels.",
+          "suggestion": "Apply distinct formatting (bold, slightly larger font, or extra preceding whitespace) to section labels to visually separate them from body text."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Text is readable and characters are correct with no encoding artifacts or garbled content. Minor concern: the address line runs together without clear delimiters between street, city, and postcode segments beyond the interpunct character, which is present and rendering correctly.",
+          "suggestion": "No action needed for text integrity specifically; interpuncts are rendering correctly."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "The content is concentrated in the upper third of the page with the bottom two-thirds entirely blank. While copyright pages are often short, the large empty space below may indicate missing content or a layout issue.",
+          "suggestion": "Verify that no content from this page was dropped during conversion. If content is complete, consider whether vertical centering or additional spacing adjustments are appropriate."
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 28,
+      "pass": false,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "critical",
+          "description": "The Table of Contents page renders only the 'Contents' heading with the entire body of the TOC missing. No chapter entries, section titles, or page numbers are visible. The page is almost entirely blank below the heading.",
+          "suggestion": "Investigate why TOC entries were not rendered. Check whether the source TOC was structured as a navigational NCX/Nav element that was not converted to visible body content, or whether a stylesheet is hiding the TOC entries. Re-run conversion with explicit TOC body generation."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The 'Contents' heading is bold and appropriately sized, rendering correctly as a distinct heading. No issues with the heading itself.",
+          "suggestion": "No action needed for the heading formatting specifically."
+        },
+        {
+          "category": "page_layout",
+          "severity": "major",
+          "description": "The page is almost entirely blank due to the missing TOC entries, leaving only the heading visible in the upper portion and a large empty white space filling the remainder of the page.",
+          "suggestion": "Restore TOC entry content so the page layout reflects a properly populated table of contents."
+        }
+      ]
+    },
+    {
+      "page_number": 35,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor formatting inconsistency in operator precedence table layout",
+          "suggestion": "Ensure consistent spacing and alignment in code tables"
+        }
+      ]
+    },
+    {
+      "page_number": 68,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent indentation in function definition syntax example",
+          "suggestion": "Standardize indentation in code examples"
+        }
+      ]
+    },
+    {
+      "page_number": 108,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter title slightly misaligned from center",
+          "suggestion": "Adjust horizontal alignment for consistent heading placement"
+        }
+      ]
+    },
+    {
+      "page_number": 139,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Code example contains syntax error: missing closing parenthesis in print statement",
+          "suggestion": "Correct syntax in code examples to ensure executable correctness"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Code block not visually distinguished from surrounding text",
+          "suggestion": "Apply consistent formatting (e.g., background color, border) to code blocks"
+        }
+      ]
+    },
+    {
+      "page_number": 173,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Code example contains syntax error: missing closing parenthesis in button.pack()",
+          "suggestion": "Ensure all code examples are syntactically correct"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent spacing between code and explanatory text",
+          "suggestion": "Standardize spacing around code blocks"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 77/100.",
+  "top_issues": [
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Section labels such as 'Notice of Liability' and 'Trademarks' are run directly into the body text of their respective sections rather than being separated as distinct headings or paragraphs. For example, 'Trademarks All trademarks are acknowledged...' merges the label and content into a single line.",
+      "suggestion": "Ensure section labels are rendered as separate paragraphs or headings, not concatenated with the body text that follows."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The publisher address block ('16 Hamilton Terrace · Holly Walk · Leamington Spa Warwickshire · United Kingdom · CV32 4LY www.ineasysteps.com') flows as continuous inline text with line wraps determined by column width rather than being formatted as a structured address block. This reduces legibility of the address.",
+      "suggestion": "Format the address block with intentional line breaks at logical address boundaries rather than relying on paragraph reflow."
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "major",
+      "description": "Section labels 'Second Edition', 'Notice of Liability', and 'Trademarks' are rendered at the same size and weight as the surrounding body text with only an indent to distinguish them. They lack any visual differentiation (bold, larger size, or spacing) that would identify them as section labels.",
+      "suggestion": "Apply distinct formatting (bold, slightly larger font, or extra preceding whitespace) to section labels to visually separate them from body text."
+    },
+    {
+      "category": "toc_navigation",
+      "severity": "critical",
+      "description": "The Table of Contents page renders only the 'Contents' heading with the entire body of the TOC missing. No chapter entries, section titles, or page numbers are visible. The page is almost entirely blank below the heading.",
+      "suggestion": "Investigate why TOC entries were not rendered. Check whether the source TOC was structured as a navigational NCX/Nav element that was not converted to visible body content, or whether a stylesheet is hiding the TOC entries. Re-run conversion with explicit TOC body generation."
+    },
+    {
+      "category": "page_layout",
+      "severity": "major",
+      "description": "The page is almost entirely blank due to the missing TOC entries, leaving only the heading visible in the upper portion and a large empty white space filling the remainder of the page.",
+      "suggestion": "Restore TOC entry content so the page layout reflects a properly populated table of contents."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Code example contains syntax error: missing closing parenthesis in print statement",
+      "suggestion": "Correct syntax in code examples to ensure executable correctness"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Code block not visually distinguished from surrounding text",
+      "suggestion": "Apply consistent formatting (e.g., background color, border) to code blocks"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Code example contains syntax error: missing closing parenthesis in button.pack()",
+      "suggestion": "Ensure all code examples are syntactically correct"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9620,
+    "output_tokens": 949,
+    "estimated_cost_usd": 0.0017,
+    "fallback_input_tokens": 4909,
+    "fallback_output_tokens": 1026,
+    "fallback_estimated_cost_usd": 0.0301,
+    "fallback_provider": "claude",
+    "fallback_model": "claude-sonnet-4-6"
+  },
+  "capture_pipeline": "kfx-calibre"
+}

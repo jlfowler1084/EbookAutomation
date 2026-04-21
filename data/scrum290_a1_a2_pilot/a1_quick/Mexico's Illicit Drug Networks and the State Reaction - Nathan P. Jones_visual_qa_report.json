@@ -1,0 +1,144 @@
+{
+  "book": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones.kfx",
+  "timestamp": "2026-04-21T02:04:29.733411+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 268,
+  "dpi": 100,
+  "overall_score": 55,
+  "overall_pass": false,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 75
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "front_matter",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "front_matter",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 4,
+      "page_type": "chapter_start",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 5,
+      "page_type": "body",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 6,
+      "page_type": "body",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 7,
+      "page_type": "body",
+      "pass": false,
+      "score": 50
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Text is duplicated from previous page",
+          "severity": "critical",
+          "suggestion": "Fix rendering engine to prevent page content duplication"
+        }
+      ],
+      "page_number": 8,
+      "page_type": "back_matter",
+      "pass": false,
+      "score": 50
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 55/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "description": "Text is duplicated from previous page",
+      "severity": "critical",
+      "suggestion": "Fix rendering engine to prevent page content duplication"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9620,
+    "output_tokens": 948,
+    "estimated_cost_usd": 0.0017
+  },
+  "capture_pipeline": "kfx-calibre"
+}

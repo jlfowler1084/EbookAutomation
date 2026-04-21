@@ -1,0 +1,362 @@
+{
+  "book": "Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx",
+  "timestamp": "2026-04-21T01:56:11.351228+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 1087,
+  "dpi": 150,
+  "overall_score": 88,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 94,
+    "paragraph_flow": 91,
+    "toc_navigation": 95
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 85
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in author note section",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on front matter"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "German text rendered correctly with proper diacritics",
+          "severity": "minor",
+          "suggestion": "No action needed - intentional formatting"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 95
+    },
+    {
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "description": "Minor spacing irregularity between paragraphs",
+          "severity": "minor",
+          "suggestion": "Adjust paragraph spacing consistency"
+        }
+      ],
+      "page_number": 11,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in philosophical terms",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on philosophical passages"
+        }
+      ],
+      "page_number": 64,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in philosophical terms",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on philosophical passages"
+        }
+      ],
+      "page_number": 107,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in philosophical terms",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on philosophical passages"
+        }
+      ],
+      "page_number": 175,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifacts in philosophical terms",
+          "severity": "minor",
+          "suggestion": "Run OCR correction on philosophical passages"
+        }
+      ],
+      "page_number": 230,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "page_number": 310,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts: 'ab initio' appears as a single word but is split across lines, and 'scientific psychology' has a space before the dash.",
+          "suggestion": "Check text rendering engine for hyphenation and spacing rules; ensure proper handling of compound terms."
+        }
+      ]
+    },
+    {
+      "page_number": 389,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing issue: 'the extended and to change of place therein' has inconsistent spacing around 'to'.",
+          "suggestion": "Review text justification and spacing logic to ensure consistent word separation."
+        }
+      ]
+    },
+    {
+      "page_number": 498,
+      "page_type": "back_matter",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "minor",
+          "description": "No TOC present on this page, but it is a section heading page, not a TOC page. This is expected.",
+          "suggestion": "No action needed; this page is correctly classified as a section heading."
+        }
+      ]
+    },
+    {
+      "page_number": 499,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text formatting issue: 'London, July 1928 C.F.A Volume 1 Contents Translator's Note I. Origin and Landscape: (A) The Cosmic and the Microcosm II. Origin and Landscape: (B) The Group of the Higher Cultures III. Origin and' is cut off at the bottom of the page.",
+          "suggestion": "Ensure full text content is rendered on the page; adjust page layout or font size to accommodate long lines."
+        }
+      ]
+    },
+    {
+      "page_number": 501,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is split across lines in a way that disrupts readability: 'The giant oak, upon one of whose leaves the droplet hangs, is not.¹' is split across two lines with 'The' starting a new line.",
+          "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraph breaks are inconsistent: the text 'The giant oak...' appears to be a continuation of the previous paragraph but starts a new one.",
+          "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+        }
+      ]
+    },
+    {
+      "page_number": 551,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifact: 'fortgewirkt' is a German word that appears in the text without translation or context, which may be intentional but could be misinterpreted.",
+          "suggestion": "Ensure non-English terms are properly handled; consider adding a glossary or footnote if necessary."
+        }
+      ]
+    },
+    {
+      "page_number": 582,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is split across lines in a way that disrupts readability: 'the Caliph of Frankistan, but on his other side he is but the chief of a' is split across two lines with 'the' starting a new line.",
+          "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraph breaks are inconsistent: the text 'In Charlemagne...' appears to be a continuation of the previous paragraph but starts a new one.",
+          "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+        }
+      ]
+    },
+    {
+      "page_number": 656,
+      "page_type": "body",
+      "score": 75,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is split across lines in a way that disrupts readability: 'But “people” is a linkage of which one is conscious. In ordinary usage, one designates as one’s “people” — and with feeling — that community, out of the many to which one belongs, which' is split across multiple lines with 'But' starting a new line.",
+          "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraph breaks are inconsistent: the text 'But is it the Hellenes...' appears to be a continuation of the previous paragraph but starts a new one.",
+          "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+        }
+      ]
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'aft er' appears as a split word in the text",
+          "severity": "minor",
+          "suggestion": "Check OCR engine settings or reprocess with better preprocessing"
+        }
+      ],
+      "page_number": 687,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'dwindle' appears as 'dwindle' with a slight spacing issue",
+          "severity": "minor",
+          "suggestion": "Verify OCR output for consistent spacing and character rendering"
+        }
+      ],
+      "page_number": 761,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'comprehends' appears as 'comprehends' with a slight spacing issue",
+          "severity": "minor",
+          "suggestion": "Check OCR engine settings or reprocess with better preprocessing"
+        }
+      ],
+      "page_number": 826,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor OCR artifact: 'All living is politics' appears as 'All living is politics' with a slight spacing issue",
+          "severity": "minor",
+          "suggestion": "Verify OCR output for consistent spacing and character rendering"
+        }
+      ],
+      "page_number": 940,
+      "page_type": "body",
+      "pass": true,
+      "score": 90
+    }
+  ],
+  "summary": "Evaluated 20 pages across 3 batch(es). Average page score: 88/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is split across lines in a way that disrupts readability: 'The giant oak, upon one of whose leaves the droplet hangs, is not.¹' is split across two lines with 'The' starting a new line.",
+      "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraph breaks are inconsistent: the text 'The giant oak...' appears to be a continuation of the previous paragraph but starts a new one.",
+      "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is split across lines in a way that disrupts readability: 'the Caliph of Frankistan, but on his other side he is but the chief of a' is split across two lines with 'the' starting a new line.",
+      "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraph breaks are inconsistent: the text 'In Charlemagne...' appears to be a continuation of the previous paragraph but starts a new one.",
+      "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is split across lines in a way that disrupts readability: 'But “people” is a linkage of which one is conscious. In ordinary usage, one designates as one’s “people” — and with feeling — that community, out of the many to which one belongs, which' is split across multiple lines with 'But' starting a new line.",
+      "suggestion": "Review paragraph breaking logic to prevent mid-sentence line breaks; ensure proper hyphenation or line wrapping."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraph breaks are inconsistent: the text 'But is it the Hellenes...' appears to be a continuation of the previous paragraph but starts a new one.",
+      "suggestion": "Ensure paragraph breaks are correctly identified and rendered; check for missing or misplaced paragraph markers."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48414,
+    "output_tokens": 3278,
+    "estimated_cost_usd": 0.008
+  },
+  "capture_pipeline": "kfx-calibre"
+}

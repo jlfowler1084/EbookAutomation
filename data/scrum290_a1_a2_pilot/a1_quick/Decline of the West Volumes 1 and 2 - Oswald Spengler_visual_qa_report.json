@@ -1,0 +1,152 @@
+{
+  "book": "Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx",
+  "timestamp": "2026-04-21T02:06:27.040096+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 1087,
+  "dpi": 100,
+  "overall_score": 90,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 94,
+    "paragraph_flow": 92,
+    "heading_formatting": 95
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image has slight pixelation and texture artifacts, possibly from compression",
+          "suggestion": "Re-render at higher DPI or use lossless compression to preserve texture clarity"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor OCR artifact: 'tedious)' appears as a standalone parenthetical without context",
+          "suggestion": "Review OCR output for punctuation and spacing consistency in footnotes and parentheticals"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "German text block contains non-English characters that are correctly rendered but may be misread by some OCR systems",
+          "suggestion": "Ensure font support for non-English characters; no correction needed as rendering is accurate"
+        }
+      ]
+    },
+    {
+      "page_number": 310,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "One paragraph ends with 'ab initio unnecessary' and continues on the next line, creating a mid-sentence break",
+          "suggestion": "Check line-breaking logic to prevent splitting of phrases across lines"
+        }
+      ]
+    },
+    {
+      "page_number": 380,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "German phrase 'Alles Vergängliche ist nur ein Gleichnis' is present but not translated or marked, potentially confusing for readers",
+          "suggestion": "Consider adding a footnote or translation for non-English phrases in body text"
+        }
+      ]
+    },
+    {
+      "page_number": 597,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Footnote markers (15, 16, 17, 18) are present but not linked to footnotes on the same page",
+          "suggestion": "Ensure footnote references are properly linked or placed at the bottom of the page"
+        }
+      ]
+    },
+    {
+      "page_number": 656,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading 'CITIES AND PEOPLES: 3' is bold and centered, but '(C) PRIMITIVES, CULTURE PEOPLES, FELLAHEEN' is in parentheses and less prominent",
+          "suggestion": "Ensure subheadings maintain consistent visual hierarchy with main headings"
+        }
+      ]
+    },
+    {
+      "page_number": 951,
+      "page_type": "body",
+      "score": 88,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraphs are long and lack clear breaks; some sentences run across multiple lines without visual separation",
+          "suggestion": "Consider adding paragraph breaks or indentation to improve readability"
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 90/100.",
+  "top_issues": [
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "German phrase 'Alles Vergängliche ist nur ein Gleichnis' is present but not translated or marked, potentially confusing for readers",
+      "suggestion": "Consider adding a footnote or translation for non-English phrases in body text"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraphs are long and lack clear breaks; some sentences run across multiple lines without visual separation",
+      "suggestion": "Consider adding paragraph breaks or indentation to improve readability"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9622,
+    "output_tokens": 1117,
+    "estimated_cost_usd": 0.0018
+  },
+  "capture_pipeline": "kfx-calibre"
+}

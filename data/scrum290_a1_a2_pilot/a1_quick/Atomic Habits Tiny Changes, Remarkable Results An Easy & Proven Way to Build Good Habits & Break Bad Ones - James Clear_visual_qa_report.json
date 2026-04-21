@@ -1,0 +1,194 @@
+{
+  "book": "Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.kfx",
+  "timestamp": "2026-04-21T02:05:43.061737+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 8,
+  "pages_total": 272,
+  "dpi": 100,
+  "overall_score": 84,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 93,
+    "heading_formatting": 90,
+    "paragraph_flow": 90
+  },
+  "pages": [
+    {
+      "issues": [
+        {
+          "category": "cover_images",
+          "description": "Cover image slightly pixelated at edges",
+          "severity": "minor",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ],
+      "page_number": 1,
+      "page_type": "cover",
+      "pass": true,
+      "score": 85
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor encoding artifacts in URL text on page 238",
+          "severity": "minor",
+          "suggestion": "Check source PDF encoding and reprocess if needed"
+        }
+      ],
+      "page_number": 2,
+      "page_type": "cover",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor encoding artifacts in URL text on page 238",
+          "severity": "minor",
+          "suggestion": "Check source PDF encoding and reprocess if needed"
+        }
+      ],
+      "page_number": 3,
+      "page_type": "front_matter",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "description": "Heading formatting inconsistent with body text on page 91",
+          "severity": "moderate",
+          "suggestion": "Ensure heading styles are properly applied and consistent"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Inconsistent paragraph spacing on page 91",
+          "severity": "moderate",
+          "suggestion": "Standardize paragraph spacing and indentation"
+        }
+      ],
+      "page_number": 91,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 80
+    },
+    {
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "description": "Inconsistent paragraph spacing on page 94",
+          "severity": "moderate",
+          "suggestion": "Standardize paragraph spacing and indentation"
+        }
+      ],
+      "page_number": 94,
+      "page_type": "body",
+      "pass": true,
+      "score": 85
+    },
+    {
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "description": "Inconsistent paragraph spacing on page 149",
+          "severity": "moderate",
+          "suggestion": "Standardize paragraph spacing and indentation"
+        }
+      ],
+      "page_number": 149,
+      "page_type": "body",
+      "pass": true,
+      "score": 85
+    },
+    {
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "description": "Heading formatting inconsistent with body text on page 152",
+          "severity": "moderate",
+          "suggestion": "Ensure heading styles are properly applied and consistent"
+        },
+        {
+          "category": "paragraph_flow",
+          "description": "Inconsistent paragraph spacing on page 152",
+          "severity": "moderate",
+          "suggestion": "Standardize paragraph spacing and indentation"
+        }
+      ],
+      "page_number": 152,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 80
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "URL text contains encoding artifacts on page 238",
+          "severity": "moderate",
+          "suggestion": "Check source PDF encoding and reprocess if needed"
+        }
+      ],
+      "page_number": 238,
+      "page_type": "back_matter",
+      "pass": true,
+      "score": 75
+    }
+  ],
+  "summary": "Evaluated 8 pages across 1 batch(es). Average page score: 84/100.",
+  "top_issues": [
+    {
+      "category": "heading_formatting",
+      "description": "Heading formatting inconsistent with body text on page 91",
+      "severity": "moderate",
+      "suggestion": "Ensure heading styles are properly applied and consistent"
+    },
+    {
+      "category": "paragraph_flow",
+      "description": "Inconsistent paragraph spacing on page 91",
+      "severity": "moderate",
+      "suggestion": "Standardize paragraph spacing and indentation"
+    },
+    {
+      "category": "paragraph_flow",
+      "description": "Inconsistent paragraph spacing on page 94",
+      "severity": "moderate",
+      "suggestion": "Standardize paragraph spacing and indentation"
+    },
+    {
+      "category": "paragraph_flow",
+      "description": "Inconsistent paragraph spacing on page 149",
+      "severity": "moderate",
+      "suggestion": "Standardize paragraph spacing and indentation"
+    },
+    {
+      "category": "heading_formatting",
+      "description": "Heading formatting inconsistent with body text on page 152",
+      "severity": "moderate",
+      "suggestion": "Ensure heading styles are properly applied and consistent"
+    },
+    {
+      "category": "paragraph_flow",
+      "description": "Inconsistent paragraph spacing on page 152",
+      "severity": "moderate",
+      "suggestion": "Standardize paragraph spacing and indentation"
+    },
+    {
+      "category": "text_integrity",
+      "description": "URL text contains encoding artifacts on page 238",
+      "severity": "moderate",
+      "suggestion": "Check source PDF encoding and reprocess if needed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9623,
+    "output_tokens": 1218,
+    "estimated_cost_usd": 0.0019
+  },
+  "capture_pipeline": "kfx-calibre"
+}

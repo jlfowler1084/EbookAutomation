@@ -1,0 +1,294 @@
+{
+  "book": "The Oil Kings_ How the U - Cooper, Andrew Scott.kfx",
+  "timestamp": "2026-04-21T01:47:23.807325+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 655,
+  "dpi": 150,
+  "overall_score": 87,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 95,
+    "toc_navigation": 75,
+    "paragraph_flow": 85,
+    "heading_formatting": 90
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image slightly pixelated at edges",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in copyright line",
+          "suggestion": "Ensure consistent line spacing in metadata blocks"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "toc",
+      "score": 38,
+      "pass": false,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "critical",
+          "description": "TOC page shows only the 'CONTENTS' heading with no entries beneath it. The entire list of chapters, parts, and sections is missing.",
+          "suggestion": "Investigate whether the TOC entries failed to extract from the source PDF or were dropped during conversion. Re-run conversion with explicit TOC extraction enabled and verify the NCX/nav document is populated."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "critical",
+          "description": "No content follows the heading — the page is nearly blank below 'CONTENTS', indicating a complete content rendering failure for this page.",
+          "suggestion": "Check the source document's TOC structure and ensure the converter is not truncating the TOC section prematurely."
+        }
+      ]
+    },
+    {
+      "page_number": 4,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Quotation mark formatting inconsistent at start of quote",
+          "suggestion": "Standardize quotation mark usage in introductory quotes"
+        }
+      ]
+    },
+    {
+      "page_number": 16,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in quote attribution",
+          "suggestion": "Ensure consistent spacing around quote attributions"
+        }
+      ]
+    },
+    {
+      "page_number": 17,
+      "page_type": "chapter_start",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The Part heading 'Part One GLADIATOR 1969–1974' renders as a single merged string with no visual or typographic separation between 'Part One' and the part title 'GLADIATOR 1969–1974'. These appear to be two distinct semantic elements that should be formatted differently or on separate lines.",
+          "suggestion": "Ensure the part label and part title are split into separate styled elements in the HTML/CSS so they can be visually distinguished, e.g., 'Part One' on one line and 'GLADIATOR 1969–1974' on a second line with appropriate hierarchy."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The epigraph quote and attribution are rendered with acceptable spacing, but the quote text runs across multiple lines in a slightly cramped block. The line breaks appear natural, though the italic block quote is not visually inset or distinguished from a standard paragraph beyond the italic styling alone.",
+          "suggestion": "Consider adding a left margin indent or CSS block-quote styling to visually distinguish the epigraph from body text, making the formatting intent clearer to the reader."
+        }
+      ]
+    },
+    {
+      "page_number": 18,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Quotation mark formatting inconsistent at start of quote",
+          "suggestion": "Standardize quotation mark usage in introductory quotes"
+        }
+      ]
+    },
+    {
+      "page_number": 56,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text runs into margin on right side of page",
+          "suggestion": "Adjust line wrapping to prevent text overflow"
+        }
+      ]
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 87",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 87,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 119",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 119,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 152",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 152,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 187",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 187,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 219",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 219,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 220",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 220,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 254",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 254,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    },
+    {
+      "issues": [
+        {
+          "category": "text_integrity",
+          "description": "Minor text splitting in quotes: 'aft er' and 'be cause' are visible in the quote on page 288",
+          "severity": "minor",
+          "suggestion": "Check OCR settings for better word boundary detection"
+        }
+      ],
+      "page_number": 288,
+      "page_type": "chapter_start",
+      "pass": true,
+      "score": 90
+    }
+  ],
+  "summary": "Evaluated 16 pages across 3 batch(es). Average page score: 87/100.",
+  "top_issues": [
+    {
+      "category": "toc_navigation",
+      "severity": "critical",
+      "description": "TOC page shows only the 'CONTENTS' heading with no entries beneath it. The entire list of chapters, parts, and sections is missing.",
+      "suggestion": "Investigate whether the TOC entries failed to extract from the source PDF or were dropped during conversion. Re-run conversion with explicit TOC extraction enabled and verify the NCX/nav document is populated."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "critical",
+      "description": "No content follows the heading — the page is nearly blank below 'CONTENTS', indicating a complete content rendering failure for this page.",
+      "suggestion": "Check the source document's TOC structure and ensure the converter is not truncating the TOC section prematurely."
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The Part heading 'Part One GLADIATOR 1969–1974' renders as a single merged string with no visual or typographic separation between 'Part One' and the part title 'GLADIATOR 1969–1974'. These appear to be two distinct semantic elements that should be formatted differently or on separate lines.",
+      "suggestion": "Ensure the part label and part title are split into separate styled elements in the HTML/CSS so they can be visually distinguished, e.g., 'Part One' on one line and 'GLADIATOR 1969–1974' on a second line with appropriate hierarchy."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text runs into margin on right side of page",
+      "suggestion": "Adjust line wrapping to prevent text overflow"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37838,
+    "output_tokens": 1993,
+    "estimated_cost_usd": 0.006,
+    "fallback_input_tokens": 5421,
+    "fallback_output_tokens": 610,
+    "fallback_estimated_cost_usd": 0.0254,
+    "fallback_provider": "claude",
+    "fallback_model": "claude-sonnet-4-6"
+  },
+  "capture_pipeline": "kfx-calibre"
+}

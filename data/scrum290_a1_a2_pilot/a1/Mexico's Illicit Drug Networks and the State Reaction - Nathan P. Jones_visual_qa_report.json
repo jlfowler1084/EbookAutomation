@@ -1,0 +1,458 @@
+{
+  "book": "Mexico's Illicit Drug Networks and the State Reaction - Nathan P. Jones.kfx",
+  "timestamp": "2026-04-21T01:50:04.136004+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 268,
+  "dpi": 150,
+  "overall_score": 80,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "text_integrity": 90,
+    "paragraph_flow": 88,
+    "toc_navigation": 95,
+    "heading_formatting": 95
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image slightly pixelated at edges",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Text appears duplicated due to formatting error",
+          "suggestion": "Check for double-page spread or OCR duplication in source"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 74,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The sentence 'This book is printed on acid-free paper meeting the requirements of the American National' is split mid-phrase, with 'Standard for Permanence in Paper for Printed Library Materials.' appearing as a separate paragraph. This is a mid-sentence paragraph break.",
+          "suggestion": "Merge these two fragments into a single paragraph: 'This book is printed on acid-free paper meeting the requirements of the American National Standard for Permanence in Paper for Printed Library Materials.'"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "'shutt erstock.com' appears with an erroneous space splitting the word, likely a PDF extraction artifact.",
+          "suggestion": "Correct 'shutt erstock.com' to 'shutterstock.com' during text post-processing."
+        }
+      ]
+    },
+    {
+      "page_number": 4,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "minor",
+          "description": "TOC entries are not hyperlinked or functional",
+          "suggestion": "Ensure TOC entries are properly linked to page numbers"
+        }
+      ]
+    },
+    {
+      "page_number": 5,
+      "page_type": "front_matter",
+      "score": 76,
+      "pass": true,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "The Acknowledgments section begins mid-sentence ('along the way a young scholar writing his dissertation...'), indicating the opening of the acknowledgments text is missing or the first portion of the page was cut off. No introductory sentence or greeting precedes this fragment.",
+          "suggestion": "Verify the preceding page content and ensure the opening lines of the Acknowledgments section are not missing from the conversion output."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "'abetter' appears as a single word where 'a better' is intended, likely a space-loss artifact from PDF extraction.",
+          "suggestion": "Correct 'abetter' to 'a better' in text post-processing."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "'forgetting' is used where 'for getting' or 'for guiding' was likely intended ('You both made me abetter scholar and person. Thank you both forgetting me through the rigorous process'), suggesting a word merge or OCR artifact.",
+          "suggestion": "Review source text around 'forgetting me through the rigorous process' to determine correct phrasing and correct accordingly."
+        }
+      ]
+    },
+    {
+      "page_number": 8,
+      "page_type": "front_matter",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Some abbreviations are split across lines (e.g., 'CIS' and 'EN')",
+          "suggestion": "Ensure proper line wrapping and spacing for abbreviations"
+        }
+      ]
+    },
+    {
+      "page_number": 10,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text contains split words ('i will' instead of 'I will') and inconsistent capitalization",
+          "suggestion": "Correct OCR errors and ensure consistent capitalization"
+        }
+      ]
+    },
+    {
+      "page_number": 33,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor encoding artifacts in text (e.g., 'd’être')",
+          "suggestion": "Verify encoding consistency and correct any mojibake"
+        }
+      ]
+    },
+    {
+      "page_number": 69,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts: 'the arellano félix organization (AFO)' appears with inconsistent capitalization and spacing.",
+          "suggestion": "Ensure consistent capitalization and spacing in heading text during conversion."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '2 The Arellano Félix Organization’s Resilience' is bold and large, but the subheading 'The First Phase: Pax Padrino' lacks consistent formatting.",
+          "suggestion": "Apply consistent heading hierarchy formatting to all section titles."
+        }
+      ]
+    },
+    {
+      "page_number": 80,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor OCR artifacts: footnote reference '65' appears slightly offset from the main text.",
+          "suggestion": "Adjust footnote positioning to align cleanly with the main text."
+        }
+      ]
+    },
+    {
+      "page_number": 104,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '3 The State Reaction' is well-formatted, but the subheading 'The preconditions for the successful state reaction...' is not clearly distinguished.",
+          "suggestion": "Use a consistent subheading style to differentiate from body text."
+        }
+      ]
+    },
+    {
+      "page_number": 120,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is generally readable, but 'Tijuana was considered such a success that President Calderón took Baja California leader Francisco Blake Mora as his new interior minister— a position equivalent in importance to the US vice presidency.' contains a long sentence that may affect readability.",
+          "suggestion": "Consider breaking long sentences into shorter ones for improved readability."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraphs are generally well-separated, but the transition between the first and second paragraphs is abrupt, with no clear break.",
+          "suggestion": "Ensure consistent paragraph breaks and spacing between distinct ideas."
+        }
+      ]
+    },
+    {
+      "page_number": 131,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios' is well-formatted, but the subheading 'Case Study 1: The Sinaloa Cartel Resilience' lacks visual distinction.",
+          "suggestion": "Apply consistent subheading formatting to improve hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 160,
+      "page_type": "back_matter",
+      "score": 75,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Footnote references are present but some are incomplete or misaligned (e.g., '72. Astorga and Shirk, Drug Trafficking Organizations ; Astorga, Seguridad, traﬁcantes').",
+          "suggestion": "Ensure all footnotes are fully rendered and properly formatted."
+        }
+      ]
+    },
+    {
+      "page_number": 166,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts: 'Persistent kingpin strikes in the 2000s by the Mexican state with US support led to the splitting of Mexican drug networks along transactional and territorial>1</sup> lines.' contains a malformed HTML tag '<sup>1</sup>' instead of a proper footnote.",
+          "suggestion": "Correct HTML formatting for footnotes to ensure proper rendering."
+        }
+      ]
+    },
+    {
+      "page_number": 189,
+      "page_type": "back_matter",
+      "score": 70,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is generally readable, but 'Appendix: Comparison of Territorial versus Transactional Drug-Trafficking Networks' has inconsistent spacing and alignment in the list items.",
+          "suggestion": "Ensure consistent formatting and spacing in list items for better readability."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraphs are not clearly separated, and the text appears as a block, reducing readability.",
+          "suggestion": "Add clear paragraph breaks and spacing between distinct sections."
+        }
+      ]
+    },
+    {
+      "page_number": 202,
+      "page_type": "back_matter",
+      "score": 63,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Multiple bibliography entries are broken mid-entry with line wrapping that creates false paragraph breaks. Specifically, 'Allison, Graham T. Essence of Decision: Explaining the Cuban Missile Crisis . Bos-' ends a paragraph with a hyphenated word break, and 'ton : Little, Brown , 1971 .' begins the next paragraph — a clear mid-entry split from PDF extraction.",
+          "suggestion": "Rejoin hyphenated cross-paragraph word breaks and merge continuation lines with their parent bibliography entry."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "URLs are split across lines and paragraphs in a way that merges distinct bibliography entries into a single block. For example, the Gonzalez Ruiz entry is merged into the URL block for 'The Globalization of Crime' report, making two separate entries appear as one.",
+          "suggestion": "Ensure bibliography entries are delimited correctly; URL line-wrapping should not merge separate entries."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Extra spaces appear within several tokens: 'htt p://', 'March 3 , 2015', 'December 15 , 2010', 'Ahmed , Azam', indicating PDF extraction inserted spaces around punctuation and within URLs.",
+          "suggestion": "Apply post-processing to remove spurious spaces around commas, within URLs, and between author name components."
+        }
+      ]
+    },
+    {
+      "page_number": 223,
+      "page_type": "back_matter",
+      "score": 62,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "At least two bibliography entries are split mid-title across paragraphs: 'Gambetta, Diego. The Sicilian Mafia: The Business of Private Protection . Cam-' ends one paragraph with a hyphenated word break, and 'bridge, MA : Harvard University Press , 1996 .' begins the next. Similarly, 'Gray, J. P. Why Our Drug Laws Have Failed and What We Can Do about It: A Judicial' ends a paragraph and 'Indictment of the War on Drugs . Philadelphia : Temple University Press , 2001 .' starts the next.",
+          "suggestion": "Rejoin hyphenated word breaks at paragraph boundaries and merge continuation lines with their parent bibliography entries."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Multiple entries show distinct bibliography items merged into a single paragraph block (e.g., the UNODC entry and the Gonzalez Ruiz conference paper entry run together without separation). Also 'Granovett er , Mark' shows a spurious space splitting the author surname.",
+          "suggestion": "Correct 'Granovett er' to 'Granovetter' and ensure entry-level paragraph breaks are preserved during PDF extraction."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Extra spaces around punctuation throughout: 'Gambetta , Diego', 'Cam-' followed by 'bridge', 'Harvard University Press , 1996 .', etc. These are consistent PDF extraction artifacts.",
+          "suggestion": "Apply regex-based post-processing to normalize spaces around commas, periods, and colons in bibliographic data."
+        }
+      ]
+    },
+    {
+      "page_number": 245,
+      "page_type": "back_matter",
+      "score": 60,
+      "pass": false,
+      "issues": [
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Two entries are split mid-title across paragraph boundaries: 'Rothstein, Hy S. Afghanistan and the Troubled Future of Unconventional Warfare .' ends one paragraph, and 'Annapolis, MD : Naval Institute Press , 2006 .' begins the next as a separate paragraph — a continuation fragment with no author attribution visible. Similarly, 'Sadiq, Kamal. Paper Citizens: How Illegal Immigrants Acquire Citizenship in Devel-' ends a paragraph with a hyphenated break, and 'oping Countries . Oxford/New York : Oxford University Press , 2009 .' begins the next.",
+          "suggestion": "Rejoin split bibliography entries, merging continuation paragraphs with their parent entries and removing mid-word hyphens introduced by PDF line-breaking."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "The Rubin/Cave entry and Sabet entry are merged into a single dense paragraph without separation. Multiple distinct bibliography entries are combined, making individual references hard to distinguish.",
+          "suggestion": "Restore paragraph-level separation between bibliography entries; ensure each entry starts a new paragraph."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Spurious spaces throughout: 'Rothstein , Hy S.', 'Naval Institute Press , 2006 .', 'htt p://', 'Sánchez Valdéz , Victor Manuel', etc. Consistent PDF extraction artifact.",
+          "suggestion": "Apply post-processing normalization to remove spaces incorrectly inserted around punctuation and within URLs."
+        }
+      ]
+    },
+    {
+      "page_number": 257,
+      "page_type": "back_matter",
+      "score": 55,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "The index entries are severely mangled: multiple distinct index entries are merged into continuous prose-like blocks with no consistent formatting. Index entries for different terms (e.g., entries for 'Abraham', 'Ackerman', 'adaptability', 'Agencia Federal de Investigación', etc.) are run together without clear line breaks, making the index nearly unusable. Page numbers, cross-references, and sub-entries intermix across what should be separate lines.",
+          "suggestion": "Re-extract the index section with structure-aware parsing; each index entry should be on its own line. Consider flagging this section for manual review or a dedicated index extraction pass."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Index entries that belong on separate lines are merged into large undifferentiated paragraphs. The second paragraph merges entries for 'Aryan Brotherhood', 'Arzate García', 'Buscaglia', 'Bush', 'business models', 'Burnett', and others into a single block, eliminating the alphabetical line-by-line structure of a proper index.",
+          "suggestion": "Ensure index entries are separated by line breaks rather than merged into paragraphs. This likely requires a different extraction strategy for the index section."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "'Itt y' appears in 'Abraham, Itt y, 3' — likely a split of the name 'Itty' from PDF extraction.",
+          "suggestion": "Correct 'Itt y' to 'Itty' in post-processing."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 20 pages across 3 batch(es). Average page score: 80/100.",
+  "top_issues": [
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The sentence 'This book is printed on acid-free paper meeting the requirements of the American National' is split mid-phrase, with 'Standard for Permanence in Paper for Printed Library Materials.' appearing as a separate paragraph. This is a mid-sentence paragraph break.",
+      "suggestion": "Merge these two fragments into a single paragraph: 'This book is printed on acid-free paper meeting the requirements of the American National Standard for Permanence in Paper for Printed Library Materials.'"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "The Acknowledgments section begins mid-sentence ('along the way a young scholar writing his dissertation...'), indicating the opening of the acknowledgments text is missing or the first portion of the page was cut off. No introductory sentence or greeting precedes this fragment.",
+      "suggestion": "Verify the preceding page content and ensure the opening lines of the Acknowledgments section are not missing from the conversion output."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Some abbreviations are split across lines (e.g., 'CIS' and 'EN')",
+      "suggestion": "Ensure proper line wrapping and spacing for abbreviations"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text contains split words ('i will' instead of 'I will') and inconsistent capitalization",
+      "suggestion": "Correct OCR errors and ensure consistent capitalization"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is generally readable, but 'Tijuana was considered such a success that President Calderón took Baja California leader Francisco Blake Mora as his new interior minister— a position equivalent in importance to the US vice presidency.' contains a long sentence that may affect readability.",
+      "suggestion": "Consider breaking long sentences into shorter ones for improved readability."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraphs are generally well-separated, but the transition between the first and second paragraphs is abrupt, with no clear break.",
+      "suggestion": "Ensure consistent paragraph breaks and spacing between distinct ideas."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Footnote references are present but some are incomplete or misaligned (e.g., '72. Astorga and Shirk, Drug Trafficking Organizations ; Astorga, Seguridad, traﬁcantes').",
+      "suggestion": "Ensure all footnotes are fully rendered and properly formatted."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is generally readable, but 'Appendix: Comparison of Territorial versus Transactional Drug-Trafficking Networks' has inconsistent spacing and alignment in the list items.",
+      "suggestion": "Ensure consistent formatting and spacing in list items for better readability."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraphs are not clearly separated, and the text appears as a block, reducing readability.",
+      "suggestion": "Add clear paragraph breaks and spacing between distinct sections."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Multiple bibliography entries are broken mid-entry with line wrapping that creates false paragraph breaks. Specifically, 'Allison, Graham T. Essence of Decision: Explaining the Cuban Missile Crisis . Bos-' ends a paragraph with a hyphenated word break, and 'ton : Little, Brown , 1971 .' begins the next paragraph — a clear mid-entry split from PDF extraction.",
+      "suggestion": "Rejoin hyphenated cross-paragraph word breaks and merge continuation lines with their parent bibliography entry."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48403,
+    "output_tokens": 4137,
+    "estimated_cost_usd": 0.0084,
+    "fallback_input_tokens": 11445,
+    "fallback_output_tokens": 2492,
+    "fallback_estimated_cost_usd": 0.0717,
+    "fallback_provider": "claude",
+    "fallback_model": "claude-sonnet-4-6"
+  },
+  "capture_pipeline": "kfx-calibre"
+}

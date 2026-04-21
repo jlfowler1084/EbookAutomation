@@ -1,0 +1,440 @@
+{
+  "book": "Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.kfx",
+  "timestamp": "2026-04-21T01:53:54.960900+00:00",
+  "model": "qwen/qwen3-vl-30b-a3b-instruct",
+  "pages_sampled": 20,
+  "pages_total": 272,
+  "dpi": 150,
+  "overall_score": 84,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 95,
+    "heading_formatting": 93,
+    "text_integrity": 88,
+    "toc_navigation": 80,
+    "paragraph_flow": 88
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "Cover image slightly pixelated at edges",
+          "suggestion": "Re-render at higher DPI if source allows"
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 88,
+      "pass": true,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "minor",
+          "description": "The decorative dot-pattern graphic at the top of the page renders as faint, low-contrast grey dots that appear slightly blurry/pixelated, potentially due to rasterization resolution",
+          "suggestion": "Re-render the decorative graphic element at higher DPI or ensure vector source is used during conversion"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The subtitle 'Tiny Changes, Remarkable Results' is styled in a bold grey serif that visually competes with the author name 'JAMES CLEAR' in terms of visual weight, creating a slight hierarchy ambiguity between author name and tagline",
+          "suggestion": "Ensure subtitle/tagline is clearly subordinate in weight or size to the book title and author name in the stylesheet"
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts in copyright notice, likely due to OCR processing",
+          "suggestion": "Verify source PDF for clean text extraction"
+        }
+      ]
+    },
+    {
+      "page_number": 6,
+      "page_type": "toc",
+      "score": 75,
+      "pass": true,
+      "issues": [
+        {
+          "category": "toc_navigation",
+          "severity": "moderate",
+          "description": "TOC entries contain HTML anchor tags instead of clean text links",
+          "suggestion": "Remove HTML tags and ensure proper hyperlink formatting"
+        },
+        {
+          "category": "toc_navigation",
+          "severity": "moderate",
+          "description": "Some TOC entries have incorrect chapter numbers (e.g., '5' instead of '1')",
+          "suggestion": "Verify chapter numbering consistency in source"
+        }
+      ]
+    },
+    {
+      "page_number": 7,
+      "page_type": "body",
+      "score": 65,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "critical",
+          "description": "Severe text corruption: 'N THE FINAL day...' missing initial 'O' in 'On'",
+          "suggestion": "Re-extract text from source PDF to fix encoding/OCR errors"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "critical",
+          "description": "Garbled text: 'O' appears as standalone character, likely a page break artifact",
+          "suggestion": "Check for proper paragraph handling at page boundaries"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph breaks: 'O' appears as separate paragraph",
+          "suggestion": "Ensure proper paragraph structure during conversion"
+        }
+      ]
+    },
+    {
+      "page_number": 15,
+      "page_type": "chapter_start",
+      "score": 62,
+      "pass": false,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "major",
+          "description": "The section heading 'THE FUNDAMENTALS: Why Tiny Changes Make a Big Difference' appears to have been duplicated and split: it renders once as a large combined heading at the top, then re-appears as two separate bold lines ('FUNDAMENTALS' and 'Why Tiny Changes Make a Big Difference') lower on the page. This duplication suggests a conversion artifact where part/chapter metadata was rendered both as a combined heading and as individual structural elements",
+          "suggestion": "Audit the heading extraction logic for part/chapter dividers; ensure part label and chapter title are not being emitted twice from separate CSS rules or structural tags"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "The page contains only headings and no body text, leaving the majority of the page blank. While a chapter opener can begin on a new page, the duplication of heading content and the absence of any lead-in text suggests content was not properly flowed after the heading elements",
+          "suggestion": "Verify that the body content following this section opener is correctly linked and flowing into subsequent pages; check for broken spine or split-file issues in the EPUB structure"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "The two repeated sub-headings ('FUNDAMENTALS' and 'Why Tiny Changes Make a Big Difference') are both bold and similar in size, providing no visual hierarchy differentiation between what should be a part label and a chapter title",
+          "suggestion": "Apply distinct font sizes and weights to part labels vs. chapter titles in the CSS stylesheet to establish clear visual hierarchy"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The repeated heading text is not garbled but its duplication constitutes a content integrity issue — the reader sees the same heading information three times in slightly different forms",
+          "suggestion": "De-duplicate heading emission in the conversion pipeline; one canonical heading element per structural unit should be output"
+        }
+      ]
+    },
+    {
+      "page_number": 16,
+      "page_type": "body",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text corruption: 'HE FATE OF' instead of 'THE FATE OF' at start of paragraph",
+          "suggestion": "Verify OCR accuracy for initial words"
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '1: The Surprising Power of Atomic Habits' appears twice, causing redundancy",
+          "suggestion": "Ensure heading structure is unique and properly formatted"
+        }
+      ]
+    },
+    {
+      "page_number": 30,
+      "page_type": "body",
+      "score": 70,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text corruption: 'HY IS IT' instead of 'WHY IS IT' at start of paragraph",
+          "suggestion": "Correct OCR error in initial sentence"
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text corruption: 'W' appears as standalone character, likely a page break artifact",
+          "suggestion": "Check for proper paragraph handling at page boundaries"
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Inconsistent paragraph breaks: 'W' appears as separate paragraph",
+          "suggestion": "Ensure proper paragraph structure during conversion"
+        }
+      ]
+    },
+    {
+      "page_number": 42,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text duplication: 'How to Build Better Habits in 4 Simple Steps' appears twice at the top of the page.",
+          "suggestion": "Ensure consistent header formatting to avoid duplication."
+        }
+      ]
+    },
+    {
+      "page_number": 54,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading 'THE 1ST LAW: Make It Obvious' is slightly misaligned and not perfectly centered.",
+          "suggestion": "Adjust horizontal alignment to ensure perfect centering of chapter titles."
+        }
+      ]
+    },
+    {
+      "page_number": 55,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '4: The Man Who Didn’t Look Right' is not visually distinct from the body text due to similar font size and weight.",
+          "suggestion": "Increase font size or weight of chapter headings to improve visual hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 61,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '5: The Best Way to Start a New Habit' is not visually distinct from the body text due to similar font size and weight.",
+          "suggestion": "Increase font size or weight of chapter headings to improve visual hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 69,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text duplication: '6: Motivation Is Overrated; Environment Often Matters More' appears twice at the top of the page.",
+          "suggestion": "Ensure consistent header formatting to avoid duplication."
+        }
+      ]
+    },
+    {
+      "page_number": 77,
+      "page_type": "body",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '7: The Secret to Self-Control' is not visually distinct from the body text due to similar font size and weight.",
+          "suggestion": "Increase font size or weight of chapter headings to improve visual hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 81,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading 'THE 2ND LAW: Make It Attractive' is slightly misaligned and not perfectly centered.",
+          "suggestion": "Adjust horizontal alignment to ensure perfect centering of chapter titles."
+        }
+      ]
+    },
+    {
+      "page_number": 82,
+      "page_type": "body",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading '8: How to Make a Habit Irresistible' is not visually distinct from the body text due to similar font size and weight.",
+          "suggestion": "Increase font size or weight of chapter headings to improve visual hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 91,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts: 'N 1965' appears as a line break instead of 'In 1965'.",
+          "suggestion": "Correct OCR parsing of date formatting to avoid line break artifacts."
+        }
+      ]
+    },
+    {
+      "page_number": 99,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text artifacts: 'N LATE 2012' appears as a line break instead of 'In late 2012'.",
+          "suggestion": "Correct OCR parsing of date formatting to avoid line break artifacts."
+        }
+      ]
+    },
+    {
+      "page_number": 107,
+      "page_type": "body",
+      "score": 75,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text formatting issue: HTML link tag '<a href=\"http://atomic habits.com/cheatsheet\">atomic habits.com/cheatsheet</a>' is visible in rendered text.",
+          "suggestion": "Remove or properly render HTML tags in text content."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "moderate",
+          "description": "Heading hierarchy inconsistent: 'Inversion of the 2nd Law: Make It Unattractive' is styled as a main heading, but '2.4: Reframe your mind-set...' is styled as a subheading, creating confusion in hierarchy.",
+          "suggestion": "Standardize heading styles to reflect proper document structure."
+        }
+      ]
+    },
+    {
+      "page_number": 108,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Minor inconsistency: 'THE 3RD LAW: Make It Easy' is in all caps, while 'Make It Easy' below is not, creating slight visual inconsistency.",
+          "suggestion": "Apply consistent capitalization and styling to headings."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 20 pages across 3 batch(es). Average page score: 84/100.",
+  "top_issues": [
+    {
+      "category": "toc_navigation",
+      "severity": "moderate",
+      "description": "TOC entries contain HTML anchor tags instead of clean text links",
+      "suggestion": "Remove HTML tags and ensure proper hyperlink formatting"
+    },
+    {
+      "category": "toc_navigation",
+      "severity": "moderate",
+      "description": "Some TOC entries have incorrect chapter numbers (e.g., '5' instead of '1')",
+      "suggestion": "Verify chapter numbering consistency in source"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "critical",
+      "description": "Severe text corruption: 'N THE FINAL day...' missing initial 'O' in 'On'",
+      "suggestion": "Re-extract text from source PDF to fix encoding/OCR errors"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "critical",
+      "description": "Garbled text: 'O' appears as standalone character, likely a page break artifact",
+      "suggestion": "Check for proper paragraph handling at page boundaries"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Inconsistent paragraph breaks: 'O' appears as separate paragraph",
+      "suggestion": "Ensure proper paragraph structure during conversion"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "major",
+      "description": "The section heading 'THE FUNDAMENTALS: Why Tiny Changes Make a Big Difference' appears to have been duplicated and split: it renders once as a large combined heading at the top, then re-appears as two separate bold lines ('FUNDAMENTALS' and 'Why Tiny Changes Make a Big Difference') lower on the page. This duplication suggests a conversion artifact where part/chapter metadata was rendered both as a combined heading and as individual structural elements",
+      "suggestion": "Audit the heading extraction logic for part/chapter dividers; ensure part label and chapter title are not being emitted twice from separate CSS rules or structural tags"
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "The page contains only headings and no body text, leaving the majority of the page blank. While a chapter opener can begin on a new page, the duplication of heading content and the absence of any lead-in text suggests content was not properly flowed after the heading elements",
+      "suggestion": "Verify that the body content following this section opener is correctly linked and flowing into subsequent pages; check for broken spine or split-file issues in the EPUB structure"
+    },
+    {
+      "category": "heading_formatting",
+      "severity": "moderate",
+      "description": "The two repeated sub-headings ('FUNDAMENTALS' and 'Why Tiny Changes Make a Big Difference') are both bold and similar in size, providing no visual hierarchy differentiation between what should be a part label and a chapter title",
+      "suggestion": "Apply distinct font sizes and weights to part labels vs. chapter titles in the CSS stylesheet to establish clear visual hierarchy"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text corruption: 'HY IS IT' instead of 'WHY IS IT' at start of paragraph",
+      "suggestion": "Correct OCR error in initial sentence"
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text corruption: 'W' appears as standalone character, likely a page break artifact",
+      "suggestion": "Check for proper paragraph handling at page boundaries"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48393,
+    "output_tokens": 3184,
+    "estimated_cost_usd": 0.0079,
+    "fallback_input_tokens": 5421,
+    "fallback_output_tokens": 828,
+    "fallback_estimated_cost_usd": 0.0287,
+    "fallback_provider": "claude",
+    "fallback_model": "claude-sonnet-4-6"
+  },
+  "capture_pipeline": "kfx-calibre"
+}

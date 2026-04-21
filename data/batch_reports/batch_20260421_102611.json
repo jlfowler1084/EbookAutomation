@@ -1,0 +1,289 @@
+{
+  "run_id": "batch_20260421_102611",
+  "generated_at": "2026-04-21T14:27:32.080024+00:00",
+  "summary": {
+    "books_total": 1,
+    "books_passed": 0,
+    "books_warned": 1,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 80.8,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": false,
+      "vqa": true,
+      "limit": null,
+      "format_filter": null,
+      "parallel": 1,
+      "folder_path": "F:\\Projects\\EbookAutomation\\test-corpus\\a2-canary"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "CHAPTER_DETECTION_ZERO",
+      "severity": "high",
+      "label": "No chapters detected",
+      "description": "Chapter detection found zero real chapters. May be finding only back-matter headings.",
+      "recommendation": "Fix Get-ChapterStructure prompt hierarchy rules and increase text window size",
+      "book_count": 1,
+      "books": [
+        "Umberto Eco - Foucault's Pendulum - libgen.li.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    },
+    {
+      "pattern_id": "NO_FORMATTING_PRESERVED",
+      "severity": "medium",
+      "label": "No bold/italic formatting preserved",
+      "description": "Source likely had formatting but none was preserved in output",
+      "recommendation": "Check if extraction path supports inline formatting; may need HTML extraction mode",
+      "book_count": 1,
+      "books": [
+        "Umberto Eco - Foucault's Pendulum - libgen.li.pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    }
+  ],
+  "observations": [
+    "Chapter detection affects 100% of all books (1/1). Fixing this could improve batch pass rate from 0% to ~100%."
+  ],
+  "books": [
+    {
+      "filename": "Umberto Eco - Foucault's Pendulum - libgen.li.pdf",
+      "file_size_bytes": 1146171,
+      "format": "pdf",
+      "batch_run_id": "batch_20260421_102611",
+      "timestamp": "2026-04-21T14:26:11.302653+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 0.5,
+        "html_produced": true,
+        "html_size_bytes": 1255524,
+        "errors": [],
+        "warnings": [],
+        "chunked": false,
+        "chunk_count": 1,
+        "completeness": {
+          "total_pages": 383,
+          "pages_with_text": 383,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 0,
+        "h1_count": 0,
+        "h2_count": 0,
+        "h3_count": 0,
+        "heading_labels": [],
+        "headings_look_like_backmatter": false,
+        "word_count": 212637,
+        "page_count": 0,
+        "total_pages": 383,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 0,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 0,
+        "text_layer_score": 97,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 100.0,
+          "std_dev": 0.0,
+          "segment_scores": [
+            100,
+            100,
+            100,
+            100,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 100,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.694,
+            "words_sampled": 500,
+            "hits": 347
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.35,
+            "stddev": 2.24,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0
+          },
+          "repeated_lines": {
+            "score": 80,
+            "ratio": 0.0,
+            "total_lines": 9
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 93
+              },
+              {
+                "position": 0.75,
+                "score": 93
+              },
+              {
+                "position": 0.9,
+                "score": 97
+              }
+            ],
+            "variance": 4,
+            "min_score": 93,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 4,
+        "min_region": 93,
+        "max_region": 97,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": true,
+        "success": true,
+        "kfx_size_bytes": 1866425,
+        "duration_seconds": 44.3
+      },
+      "visual_qa": {
+        "attempted": true,
+        "score": 89,
+        "pass_threshold": 70,
+        "passed": true,
+        "category_scores": {
+          "text_integrity": 95
+        },
+        "api_cost_usd": 0,
+        "duration_seconds": 35.6
+      },
+      "metadata": {
+        "pdf_producer": "Acrobat Distiller 9.0.0 (Windows)",
+        "pdf_creator": "PScript5.dll Version 5.2.2",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 1.1,
+        "image_density": {
+          "total_images": 0,
+          "pages_sampled": 10,
+          "images_per_page": 0.0,
+          "likely_scan": false
+        }
+      },
+      "fonts": {
+        "total_unique": 2,
+        "names": [
+          "CFGCBN+CourierNewPSMT",
+          "CFGCCO+CourierNewPSMT"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.9,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.1,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "chapter_detection_zero",
+          "severity": "high",
+          "description": "Chapter detection found zero real chapters. May be finding only back-matter headings."
+        },
+        {
+          "category": "no_formatting_preserved",
+          "severity": "medium",
+          "description": "Source likely had formatting but none was preserved in output"
+        }
+      ],
+      "overall_status": "WARN",
+      "status_reason": "Chapter detection found zero real chapters. May be finding o",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 0.5,
+        "analysis": 0.4,
+        "calibre": 44.3,
+        "vqa": 35.6
+      }
+    }
+  ]
+}
