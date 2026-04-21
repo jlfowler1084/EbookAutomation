@@ -609,8 +609,9 @@ def run_kfx_conversion(pdf_path):
     timeout = max(900, 900 + int((file_size_mb - 20) * 15)) if file_size_mb > 20 else 900
 
     try:
+        # pwsh (PS 7): PS 5.1 default execution policy blocks Import-Module
         result = subprocess.run(
-            ["powershell", "-Command", ps_cmd],
+            ["pwsh", "-Command", ps_cmd],
             capture_output=True, text=True,
             encoding='utf-8', errors='replace', timeout=timeout
         )

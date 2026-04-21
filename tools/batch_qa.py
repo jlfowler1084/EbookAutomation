@@ -689,8 +689,9 @@ def run_kfx_conversion_for_book(pdf_path):
 
     t0 = time.time()
     try:
+        # pwsh (PS 7): PS 5.1 default execution policy blocks Import-Module
         result = subprocess.run(
-            ["powershell", "-Command", ps_cmd],
+            ["pwsh", "-Command", ps_cmd],
             capture_output=True, text=True,
             encoding='utf-8', errors='replace', timeout=timeout
         )
