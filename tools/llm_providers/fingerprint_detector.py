@@ -4,10 +4,12 @@ SCRUM-281 Unit 1 — identifies parsed VQA pages where the primary provider
 emitted a detectable default response instead of real findings. Flagged pages
 are routed to Claude for re-evaluation in a single batched call.
 
-Three matcher categories (OR-combined):
+Four matcher categories (OR-combined):
   1. empty issues + score >= threshold per page (hardest signal)
   2. known-fallback substring in issues[i].description (case-insensitive)
   3. report-level category_scores collapse (all pages empty-issues + any >= threshold)
+  4. dominant-score uniform response (SCRUM-292) — a single integer score
+     dominates a batch at >= uniform_score_page_ratio with count >= uniform_score_min_pages
 
 Operates on parsed pages (post-schema-validation list[dict]) — not raw text.
 Detection is a response-layer concern; the VisionProvider Protocol is untouched.
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,11 +38,23 @@ class FingerprintSettings:
     match_category_scores_collapse: when True, Matcher 3 fires — if ALL pages
         have issues==[] and any page hits the score threshold, every page is
         flagged regardless of individual score.
+    match_uniform_score_responses: when True (SCRUM-292), Matcher 4 fires —
+        flags pages that share a dominant integer score when the VLM returned
+        a stuck response across the batch (seen in Foucault 8x65, MapReduce
+        8x85, Mexico Illicit body 7x50 during SCRUM-290 A1/A2 pilots).
+    uniform_score_page_ratio: fraction of valid pages that must share one
+        integer score for Matcher 4 to fire (inclusive). Default 0.75.
+    uniform_score_min_pages: minimum count of pages sharing the dominant
+        score (inclusive). Guards against false positives on tiny batches.
+        Default 3.
     """
 
     empty_issues_score_threshold: int
     substring_corpus: tuple[str, ...]
     match_category_scores_collapse: bool
+    match_uniform_score_responses: bool = True
+    uniform_score_page_ratio: float = 0.75
+    uniform_score_min_pages: int = 3
 
 
 class FallbackFingerprintDetector:
@@ -168,6 +183,40 @@ class FallbackFingerprintDetector:
                     if any(fp in desc for fp in self._fingerprints):
                         flagged.add(pn)
                         break
+
+        # Matcher 4 (SCRUM-292): dominant-score uniform response. When the VLM
+        # emits the same numeric score across most of a batch, it's almost
+        # certainly a stuck response (Foucault 8x65, MapReduce 8x85, Mexico
+        # Illicit body 7x50). Flag every page whose score matches the dominant
+        # value — pages at other scores are left alone (e.g., a differing
+        # cover in the Mexico case).
+        if settings.match_uniform_score_responses:
+            pages_with_scores = [
+                p for p in valid_pages
+                if p.get("page_number") is not None
+                and isinstance(p.get("score"), (int, float))
+            ]
+            if len(pages_with_scores) >= settings.uniform_score_min_pages:
+                score_counts = Counter(int(p["score"]) for p in pages_with_scores)
+                dominant_score, dominant_count = score_counts.most_common(1)[0]
+                ratio = dominant_count / len(pages_with_scores)
+                if (
+                    dominant_count >= settings.uniform_score_min_pages
+                    and ratio >= settings.uniform_score_page_ratio
+                ):
+                    for page in pages_with_scores:
+                        if int(page["score"]) == dominant_score:
+                            flagged.add(page["page_number"])
+                    logger.debug(
+                        "Matcher 4 fired: %d/%d pages share score %d (ratio %.2f, "
+                        "thresholds ratio>=%.2f count>=%d)",
+                        dominant_count,
+                        len(pages_with_scores),
+                        dominant_score,
+                        ratio,
+                        settings.uniform_score_page_ratio,
+                        settings.uniform_score_min_pages,
+                    )
 
         if flagged:
             logger.debug(
