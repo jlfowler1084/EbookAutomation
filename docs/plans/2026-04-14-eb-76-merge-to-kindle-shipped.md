@@ -1,3 +1,8 @@
+> **[SHIPPED]** — `Merge-ToKindle` is implemented and exported from `module/EbookAutomation.psd1` (see `FunctionsToExport`).
+> This document is preserved as the original design spec for reference. Moved from project root during SCRUM-297 (docs modernization) on 2026-04-21.
+
+---
+
 # EB-76 — Merge-ToKindle: Multi-File Merge + KFX Conversion
 
 ## Session Name
