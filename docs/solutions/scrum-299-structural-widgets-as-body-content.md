@@ -1,12 +1,15 @@
 ---
 title: SCRUM-299 Structural widgets emitted as body content
 type: solution
-status: phase-1-diagnostic
+status: phase-2-diagnostic
 date: 2026-04-22
 origin_ticket: SCRUM-299
 related_tickets: [SCRUM-290, SCRUM-292, SCRUM-298]
 tags: [pipeline, extraction, running-headers, page-anchors, calibre, kfx, diagnostic]
 ---
+
+> **Phase 2 supersedes Phase 1 on root-cause assignment.** The original Phase 1 text below is preserved for traceability; see the **Phase 2 — Render-check findings** section at the end for the corrected diagnosis. Do not act on the B1 recommendation in Phase 1.
+
 
 # SCRUM-299 — Structural widgets emitted as body content
 
@@ -133,3 +136,82 @@ Maps to the SCRUM-299 acceptance criteria:
 - [SCRUM-290](https://jlfowler1084.atlassian.net/browse/SCRUM-290) — A1/A2 pilot that provided the VQA baseline reports consulted here.
 - [SCRUM-292](https://jlfowler1084.atlassian.net/browse/SCRUM-292) — Matcher 4 post-merge run that surfaced the Variant B icon-widget signal on Dionysius.
 - [SCRUM-298](https://jlfowler1084.atlassian.net/browse/SCRUM-298) — VQA batch truncation; blocks the Variant A page-range fixture acceptance criterion only.
+
+---
+
+## Phase 2 — Render-check findings supersede Phase 1 root-cause assignment
+
+*Added 2026-04-22. Resolves both Phase 1 "Open questions" and revises the fix strategy for both variants.*
+
+### What changed
+
+Phase 1 assumed the SCRUM-299 VQA observations came from artifacts our pipeline produced. Three new pieces of evidence refute that assumption for both variants.
+
+### New evidence
+
+**1. `visual_qa.py` with PDF input skips Calibre entirely.** [`tools/visual_qa.py:663`](../../tools/visual_qa.py#L663):
+
+```python
+if input_ext == ".pdf":
+    # Already a PDF, skip conversion
+    pdf_path = str(input_path)
+    logger.info("Input is already PDF, skipping Calibre conversion")
+    capture_pipeline = "pdf-direct"
+```
+
+The SCRUM-299 ticket's run command points at `archive/C. E. Rolt - Dionysius….pdf` (the source PDF), not a KFX. The VQA therefore rasterized the source PDF directly via Poppler and sent those PNGs to the VLM. **Our extraction, HTML generation, and Calibre conversion were not exercised.** Every visual anomaly the VLM described came from the source PDF's own rendering.
+
+**2. Our extracted HTML of Dionysius has zero mid-paragraph running headers.**
+
+```
+Standalone <p>header</p> occurrences:      145
+Mid-paragraph (text before AND after):       0
+Header at START then body glued:             0
+Header at END after body glued:              0
+```
+
+The Variant A "mid-body injection" symptom does not exist in `output/kindle/C_E_Rolt…_test_dionysius.html`. All 145 occurrences are clean standalone `<p>` tags — one per page — which means the pipeline correctly identifies the header as a discrete unit during extraction and simply fails to strip it at the Phase 0 filter (the gate analysis from Phase 1 still holds).
+
+**3. Atomic Habits KFX rendered through Calibre → PDF → PNG shows:**
+- Mid-chapter body pages (46, 48, 96): clean margins, no icon widgets, no raw markup, no header bleed.
+- End-matter pages (206, 207, 263, 266): **separate unknown bug** — raw HTML anchor markup (`<a href="#heading_11_how-this-book-will-benefit-you">We all deal with setbacks</a>`) rendering as literal visible body text. Concentrated in acknowledgments, further-reading, index, and about-the-author sections. Class-of-bug family ("structural element rendered as content") but a different mechanism than either SCRUM-299 variant.
+
+**4. Source Dionysius PDF page 20 shows the anchor-icon widgets rendered into the page itself** — small rectangular markers with print-edition page numbers ("16", "18") in the left margin. The PDF metadata `Producer: XEP PDF Generator – RenderX, Inc.` with Creator `XEP 3.7.3 Client Academic` is a known XSL-FO publishing toolchain that embeds "Index of Pages of the Print Edition" widgets visibly on each page for archival cross-reference. Dionysius's TOC (page iv) explicitly lists `"Index of Pages of the Print Edition… p. 144"` — a feature of this specific publisher's build.
+
+### Revised root-cause assignment
+
+| Variant | Phase 1 said | Phase 2 says | Evidence |
+|---|---|---|---|
+| A (running header) | Extraction introduces the symptom at `pdf_to_balabolka.py:3341/3404/6574`; filters have envelope gaps | Filter envelope gaps are real but the **symptom is far milder than reported** — the pipeline emits 145 clean standalone `<p>` tags, not mid-paragraph injections. The "mid-body cutting through prose" image the ticket showed is the **source PDF's own rendering**, not our output. | 0 mid-paragraph matches in our extracted HTML; source PDF renders normally top-header on sampled body pages |
+| B (page-anchor icon) | Anchor emission form `<a id="page_N"></a>` lacks `epub:type="pagebreak"` → fix via B1 semantic change | Source-PDF artifact. XEP RenderX embeds print-edition page markers as visible widgets in each page. Our pipeline was never exercised by the VQA run. **B1 is superseded.** | `visual_qa.py:663` skips Calibre on PDF input; Atomic Habits KFX (which did go through our pipeline) renders clean on 3 mid-chapter pages |
+
+### Revised fix strategy
+
+**Variant A — keep A2, drop the "corruption" framing.** Our pipeline produces 145 unwanted header paragraphs that will pass through to the KFX if we ever run Dionysius through extraction. The A2 format-agnostic, page-grouped frequency filter (described in Phase 1) remains the correct fix for this gap. What changes is the validation target: the acceptance criterion becomes "A2 strips the 145 header `<p>` tags in Dionysius extraction and does not false-positive-strip Atomic Habits's 85-char repeating body line."
+
+**Variant B — remove from scope.** No pipeline change is warranted. The icons are in the source PDF. Options to discuss:
+1. Accept as source-quality limitation and close the B portion of SCRUM-299.
+2. Separately consider an image-stripping heuristic for PyMuPDF extraction if Dionysius is ever put through our pipeline and the icons get extracted as figure elements. Deferred until that scenario exists.
+
+**New finding — Atomic Habits end-matter raw HTML.** Separate bug. Recommend a new Jira ticket. Not SCRUM-299.
+
+### Acceptance criteria — revised for SCRUM-299 A2-only
+
+- [ ] A2 filter implemented in `pdf_to_balabolka.py` post-Phase-0, grouped by PDF page number.
+- [ ] Dionysius extraction (via `pdf_to_balabolka.py`) produces a KFX with 0 occurrences of the running-header `<p>` tag.
+- [ ] Atomic Habits extraction does not strip the legitimate repeating cheat-sheet lines (false-positive canary).
+- [ ] Python in Easy Steps extraction does not strip the repeating code literals (`window.mainloop()` etc.) — secondary canary.
+- [ ] Full regression suite (`python tools/test_pipeline.py`) passes with zero drops in existing metrics.
+
+Dropped from SCRUM-299:
+- ~~"Dionysius re-run under VQA shows zero widget-bleed flags"~~ — the flags are source-PDF artifacts; cannot be fixed here.
+- ~~B1 anchor-semantic change~~ — superseded.
+- ~~Fixture for running-header-mid-body case~~ — symptom does not exist in our output.
+
+### Files and evidence artifacts
+
+- Source Dionysius PDF (visible anchor-icon widgets): `archive/C. E. Rolt - Dionysius the Areopagite, On the Divine Names and the Mystical Theology (1992) - libgen.li.pdf`
+- Our Dionysius extracted HTML (145 clean standalone headers, zero bleed): `output/kindle/C_E_Rolt_…_test_dionysius.html`
+- Atomic Habits KFX (end-matter raw-HTML bleed observed): `output/kindle/Atomic Habits … James Clear.kfx`
+- Calibre ebook-convert version used: 9.7.0 (logged earlier in this session)
+
