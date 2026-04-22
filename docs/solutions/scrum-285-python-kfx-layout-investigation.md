@@ -15,9 +15,9 @@ Phase 1 diagnostic. The ticket framed the low VQA score (~58) as a pipeline-outp
 ## TL;DR
 
 1. **Premise challenge** — SCRUM-285 cites cross-grader convergence (|Δ|=1.9 between Claude and Qwen-A3B, both ~58). This is not reproducible from the 19 archived VQA reports for this book. Mean Qwen-family score is ~86 across local, cloud A3B, and cloud Max. Mean Claude-Sonnet score is ~60. The real delta is ~26 points, not 1.9. Every non-Claude grader currently passes this book.
-2. **Real quality finding (independent of grader)** — the KFX *does* have structural degradation: zero `<table>`, `<ul>`, `<ol>`, `<pre>`, or `<code>` elements in the 340 KB extracted HTML. Tables, bulleted lists, and code blocks were flattened to paragraph text during the original KFX production. Headings and text content are intact (93 `<h2>` + 185 `<h3>`).
-3. **Root cause for the structural loss** — the current KFX was produced by an old Calibre version (`publisher="calibre 3.26.1"` embedded in KFX metadata). The installed Calibre is 9.7. The semantic-markup loss is consistent with older Calibre KFX profiles flattening tables/lists into paragraphs.
-4. **Recommendation** — re-convert on Calibre 9.7 with `--output-profile kindle_pw3 --embed-all-fonts` and compare. This is a bounded experiment, not a refactor.
+2. **Real quality finding (independent of grader)** — the KFX *does* have structural degradation: zero `<table>`, `<ul>`, `<ol>`, `<pre>`, or `<code>` elements in the 340 KB extracted HTML. Tables, bulleted lists, and code blocks were flattened to paragraph text. Headings and text content are intact (93 `<h2>` + 185 `<h3>`).
+3. **Root cause** — **extraction-side, not Calibre-side.** Phase 2 re-converted the PDF on the current pipeline (Calibre 9.7, pdfminer) and the structural loss reproduces identically. The `publisher="calibre 3.26.1"` string in KFX metadata is inherited from the source PDF's own metadata and is **not** a reliable signal of the conversion tool. `pdfminer` — the default extraction path on this pipeline — flattens multi-cell table rows into single paragraphs (observed: `<p>** Exponent</p>` in place of a table row).
+4. **Recommendation** — pilot a table-aware extraction path (PyMuPDF `find_tables`, or camelot/tabula) for technical books and compare structural preservation vs. the pdfminer baseline. This is a bounded experiment with a clear success metric (table count in extracted HTML > 0).
 5. **Secondary recommendation** — investigate Claude-Sonnet's unique strictness on technical books. Either Claude is correctly seeing what other graders miss (grader-floor argument) or Claude is mis-weighting structural failures on technical content (grader-bias argument). SCRUM-283's methodology already treats Claude as the oracle; this book is a test case where the oracle may be miscalibrated.
 
 ## Evidence
@@ -70,24 +70,33 @@ The current KFX metadata reports `publisher="calibre 3.26.1 [https://calibre-ebo
 
 The KFX in `output/kindle/` is dated `Mar 24 2026`. The file predates SCRUM-274's pipeline work and has not been re-converted since.
 
-## Hypothesis matrix
+## Hypothesis matrix (post-Phase-2)
 
 | Hypothesis | Status | Evidence |
 |---|---|---|
-| H1 — Upstream extraction (pdfminer/pypdf/pymupdf) is losing structure before Calibre | Unlikely on its own | Source PDF has 106-entry outline and rich structure; textual content survives extraction; headings were preserved into HTML |
-| H2 — Calibre 3.26.1 KFX output profile flattens tables/lists/code into paragraphs | **Likely** | HTML from current KFX has zero structural elements despite text survival; consistent with older Calibre KFX behavior |
-| H3 — Claude-Sonnet grader is uniquely strict on technical content | **Likely** | 19-report trend shows Claude is an outlier; every Qwen grader passes this book; Claude's page-3 "only 'Contents' heading renders" finding coexists with 'Contents' appearing 22 times in the underlying HTML |
-| H4 — Font embedding fails on monospace code | Not directly tested | `--embed-all-fonts` is active; no `<code>` markup means fonts couldn't have been applied even if embedded |
-| H5 — VQA sample page selection hits uniquely-bad pages | Not strongly supported | Both A3B and A3B-cloud score the same 8-page sample much higher than Claude; same pages would produce similar scores if the pages were simply bad |
+| H1 — Upstream extraction (pdfminer) flattens tables/lists/code into paragraphs before Calibre | **Confirmed** | Phase 2 re-conversion on Calibre 9.7 + pdfminer produces identical structural loss (0 tables, 0 lists, 0 pre/code); extracted HTML shows `<p>** Exponent</p>` where a table row should be |
+| H2 — Calibre 3.26.1 KFX output profile flattens structural markup | **Refuted** | Both old KFX (pre-Phase-2) and new KFX (Calibre 9.7) have identical zero counts for table/list/code elements; `publisher="calibre 3.26.1"` string is sourced from PDF metadata, not conversion tool |
+| H3 — Claude-Sonnet grader is uniquely strict on technical content | **Likely** | 19-report trend shows Claude is an outlier by ~26 points; every Qwen grader passes this book; Claude's page-3 "only 'Contents' heading renders" finding coexists with 'Contents' appearing 22 times in the underlying HTML |
+| H4 — Font embedding fails on monospace code | Not directly tested, likely moot | `--embed-all-fonts` is active; no `<code>` markup from extraction means fonts have no semantic hook to attach to regardless |
+| H5 — VQA sample page selection hits uniquely-bad pages | Not supported | Both A3B-local and A3B-cloud score the same 8-page sample much higher than Claude; same pages would produce similar scores if they were simply bad |
 
-**Most likely combined cause:** H2 (old Calibre KFX profile flattened structural markup) × H3 (Claude is the only grader that penalizes the result hard enough to fail it).
+**Confirmed combined cause:** H1 (pdfminer flattens tables into `<p>` sequences at extraction time) × H3 (Claude is the only grader that penalizes the result hard enough to fail it).
 
 ## Recommendations
 
-### R1 — Re-convert with Calibre 9.7 and measure
-Bounded experiment. Drop the fresh source PDF into the pipeline and run full conversion on current tooling. Compare KFX-extracted HTML structural audit (this doc's method) between old and new output. Expected outcome: `<table>`, `<ul>`, `<ol>`, `<pre>` counts rise from zero. If they do, the book's VQA score across all graders should recover; if not, the loss is deeper than Calibre 3.26.1.
+### R1 — ~~Re-convert with Calibre 9.7 and measure~~ (REFUTED by Phase 2)
+Executed. Re-conversion on Calibre 9.7 with pdfminer extraction produces identical structural loss (0 tables, 0 lists, 0 pre/code in KFX-extracted HTML). The Calibre-version hypothesis is not supported. See Phase 2 section.
 
-Open as a follow-up implementation ticket.
+### R1b — Pilot a table-aware extraction path for technical books
+Replacement for R1. The root cause is `pdfminer` flattening tabular text into paragraph sequences. Pilot options:
+
+1. **PyMuPDF `page.find_tables()`** — already a dependency (`PyMuPDF column-aware` is extraction path #3). Used today for multi-column layouts; extend to table detection on technical books and emit `<table>`/`<tr>`/`<td>` during HTML generation.
+2. **camelot-py / tabula-py** — purpose-built table extractors. Heavier dependency footprint; better accuracy on bordered tables.
+3. **Post-extraction heuristic reconstruction** — detect `<p>` sequences where content matches `<short-token> <word>` at consistent positions and rewrite as `<table>`. Cheap, imperfect, language-agnostic.
+
+Success metric for the pilot: re-extracted HTML has `<table>` count > 0 on this book, and the operator precedence section renders as a structured table in the subsequent KFX.
+
+Open as a follow-up implementation ticket. Scope one extraction path per ticket, not all three at once.
 
 ### R2 — Claude-Sonnet grader calibration on technical books
 Claude is the SCRUM-283 oracle but is an outlier on this book by ~26 points vs. the Qwen family. Two possible readings:
@@ -113,3 +122,60 @@ See also the memory note: *"Plan data-dir git-tracking check"* — before design
 1. **If re-conversion on Calibre 9.7 recovers structure** → R1 is the fix; SCRUM-285 closes with a note to re-baseline VQA after re-conversion; optionally open a follow-up to audit all 6 books for Calibre-version drift in their KFX output.
 2. **If re-conversion does not recover structure** → the loss is upstream (our extraction engine); re-open a deeper investigation with pdfminer/pypdf/pymupdf diagnostics on the raw PDF.
 3. **In either case** → R2 (Claude-grader calibration) is a separate concern worth filing distinct from the book-quality issue.
+
+## Phase 2 — Re-conversion experiment (2026-04-22)
+
+### Method
+
+1. Backed up existing KFX (`/tmp/scrum285/python_calibre_3.26.1.kfx`, 940 KB, Mar 24 2026).
+2. Copied source PDF from `C:\Users\Joe\Downloads\...\Python in easy steps...pdf` to `inbox/Python in easy steps, 2nd Edition - Mike McGrath.pdf`.
+3. Ran `Convert-ToKindle -InputFile ... -UsePdfminer` via the EbookAutomation module on Calibre 9.7.
+4. Re-extracted the new KFX via `ebook-convert` → HTMLZ → `index.html` using the same method as Phase 1.
+
+### Pipeline log highlights
+
+- Text extraction: 15.1 s (pdfminer), 331 KB clean HTML
+- Rule-based fixes applied: 755 whitespace, 214 heading, 4 orphan-fragment
+- Calibre conversion: 27.1 s (`--output-profile kindle_pw3 --embed-all-fonts`, `--level1-toc //h:h2`)
+- 193 images extracted from PDF (vs 0 in old KFX — pipeline has improved image handling since Mar 24)
+- New KFX: 7.9 MB (vs 940 KB old — 8× increase driven by 193 embedded page images)
+
+### Structural audit — side by side
+
+| Element | Old KFX (Calibre 3.26.1 `publisher` tag) | New KFX (Calibre 9.7, pdfminer) | Delta |
+|---|---|---|---|
+| HTML size | 340 KB | 371 KB | +9% |
+| `<h2>` | 93 | 93 | 0 |
+| `<h3>` | 185 | 121 | -64 (re-classification) |
+| `<table>` | **0** | **0** | no change |
+| `<ul>`/`<ol>`/`<li>` | **0** | **0** | no change |
+| `<pre>`/`<code>` | **0** | **0** | no change |
+| `<img>` | 0 | 193 | +193 (images preserved) |
+
+### Smoking gun — operator precedence table
+
+In both old and new KFX, the extracted HTML contains this sequence:
+
+```html
+<p class="class_sn1">// Floor division</p>
+<p class="class_sn1">** Exponent</p>
+<p class="class_sn1">The operators for addition, subtraction, multiplication...</p>
+```
+
+Each row of the source PDF's operator table (`**` column 1, `Exponent` column 2) has been concatenated into a single paragraph string and emitted as `<p>`. This is pdfminer's default behavior: it extracts positioned text boxes and emits them in reading order without table-row awareness. Neither Calibre version creates or destroys the table structure — it is never emitted by the extraction stage.
+
+### Refuted hypothesis
+
+The `publisher="calibre 3.26.1"` string embedded in the old KFX's metadata does not indicate the conversion tool. It is passed through from the source PDF's own metadata (the PDF was DRM-stripped with calibre 3.26.1 long before it reached this pipeline). Both the old KFX and the new KFX carry the same publisher tag despite being produced by different Calibre versions.
+
+### Conclusion for SCRUM-285
+
+- The VQA-measured "layout degradation" is the downstream effect of pdfminer extraction flattening tables (and likely code blocks / bullet lists by the same mechanism).
+- Calibre is *not* the layer that loses structure, so profile-tuning Calibre will not improve the output.
+- The fix lives in the extraction stage. See R1b.
+- SCRUM-285 can close as diagnosed: confirmed root cause (extraction-side flattening), recommended path forward (pilot table-aware extraction for technical books), and surfaced a secondary concern (R2 — Claude-grader outlier behavior on this corpus).
+
+### Follow-up tickets to open
+
+1. **R1b implementation** — evaluate PyMuPDF `find_tables()` on Python in Easy Steps; gate on whether extracted HTML has `<table>` count > 0.
+2. **R2 investigation** — link to SCRUM-284 (DocVQA-shaped failures). Concrete repro case: Python in Easy Steps with ~26-point Claude-vs-Qwen split. Either confirms Claude's strictness is correct (and we need to act on it across the corpus) or surfaces Claude-specific VQA-render artifacts that need filtering.
