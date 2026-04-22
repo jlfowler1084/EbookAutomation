@@ -6164,6 +6164,82 @@ def rejoin_html_fragments(para_dicts, body_size, log):
     return para_dicts
 
 
+def _mark_a2_running_headers(para_dicts, log):
+    """Mark para_dicts entries that are A2 running headers.
+
+    Format-agnostic frequency filter: groups paragraphs by normalized text,
+    counts distinct page_number values, and marks all occurrences of any
+    pattern that appears on >=5 distinct pages AND on >=10% of total pages.
+
+    The dual threshold (absolute + density) is necessary:
+    - Absolute >=5 protects Atomic Habits's 4-page repeating cheat-sheet line.
+    - Density >=10% prevents false-positive stripping of tutorial step-instructions
+      in short-chapter books (e.g., Python in Easy Steps has steps appearing on
+      5-7 of 260 pages, a ~2% density, which is content not a running header).
+
+    Mirrors the column-path filter at line 6574 but covers ALL extraction paths
+    (not just _is_running_header_candidate entries).
+
+    Code-literal exclusion: no is_code flag exists on para_dicts; text
+    heuristic (word-then-open-paren pattern) guards against stripping code
+    literals like window.mainloop() that appear on 6+ distinct pages.
+    """
+    _TRAILING_NUM = re.compile(r'\s+\d{1,4}\s*$')
+    _LEADING_NUM = re.compile(r'^\d{1,4}\s+')
+    _CODE_LITERAL = re.compile(r'\w\(')  # function-call pattern: word then open-paren
+
+    total_pages = max((p.get('page_number', 0) for p in para_dicts), default=1) or 1
+    min_density = 0.10  # Phase 3 discovery: Python in Easy Steps step-instructions repeat 5-7×
+    # on ~260 pages (~2% density); Atomic Habits cheat-sheet ~4/300 (~1.3%). Both are content.
+    # True running headers (e.g. Dionysius) hit ~99%. 10% is the safe lower bound for headers.
+
+    candidates = {}  # normalized_text -> [(idx, page_number), ...]
+
+    for idx, p in enumerate(para_dicts):
+        if p.get('is_page_marker'):
+            continue
+        text = p.get('text', '').strip()
+        if not text or len(text) < 15 or len(text) > 150:
+            continue
+        if p.get('heading_level'):
+            continue
+        if _CODE_LITERAL.search(text):
+            continue
+
+        norm = re.sub(r'\s+', ' ', text).strip()
+        if norm not in candidates:
+            candidates[norm] = []
+        candidates[norm].append((idx, p.get('page_number', 0)))
+
+        norm_nonum = _TRAILING_NUM.sub('', norm).strip()
+        if len(norm_nonum) >= 15 and norm_nonum != norm:
+            if norm_nonum not in candidates:
+                candidates[norm_nonum] = []
+            candidates[norm_nonum].append((idx, p.get('page_number', 0)))
+
+        norm_leadnum = _LEADING_NUM.sub('', norm).strip()
+        if len(norm_leadnum) >= 15 and norm_leadnum != norm:
+            if norm_leadnum not in candidates:
+                candidates[norm_leadnum] = []
+            candidates[norm_leadnum].append((idx, p.get('page_number', 0)))
+
+    strip_count = 0
+    pattern_count = 0
+    for norm, occurrences in candidates.items():
+        distinct_pages = {pg for _, pg in occurrences}
+        if (len(distinct_pages) >= 5
+                and len(distinct_pages) / total_pages >= min_density):
+            pattern_count += 1
+            for idx, _ in occurrences:
+                if not para_dicts[idx].get('_is_a2_running_header'):
+                    para_dicts[idx]['_is_a2_running_header'] = True
+                    strip_count += 1
+
+    if strip_count:
+        log(f"  A2 filter: stripped {strip_count} running-header paragraphs "
+            f"across {pattern_count} normalized patterns")
+
+
 def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Untitled',
                               skip_footnotes=False, page_images=None):
     """
@@ -6607,6 +6683,10 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     for p in para_dicts:
         p.pop('_is_running_header_candidate', None)
 
+    # A2 filter: format-agnostic frequency filter for long mixed-case running headers
+    # that slip Phase 0's ALL-CAPS envelope and the column-path's candidate gate.
+    _mark_a2_running_headers(para_dicts, log)
+
     html_parts = []
     html_parts.append(f'''<!DOCTYPE html>
 <html><head>
@@ -6725,6 +6805,11 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
 
         # Skip running header candidates identified by pre-scan
         if i in _rh_strip_indices:
+            running_header_skipped += 1
+            continue
+
+        # Skip A2 running headers (long mixed-case headers that slip Phase 0 envelope)
+        if p.get('_is_a2_running_header'):
             running_header_skipped += 1
             continue
 
