@@ -67,12 +67,11 @@ focus. Stored in `output/kindle/`.
 | Long chapters + footnotes | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | TOC depth, footnote pairing on long-form historical prose |
 | Simple structure canary | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured chapters — baseline sanity |
 
-### Baseline Coverage Policy (SCRUM-303)
+### Baseline Coverage Policy (SCRUM-303 + SCRUM-304)
 
-`tests/expected_baselines.json` covers a 5-book partial slice of the 6-book
-test corpus, plus Dionysius retained as the SCRUM-299 running-header
-regression anchor. Source-PDF availability — not corpus membership — is the
-gating factor.
+`tests/expected_baselines.json` covers the full CLAUDE.md 6-book test
+corpus plus Dionysius (retained as the SCRUM-299 running-header regression
+anchor) — 7 books total, all with source PDFs in `archive/`.
 
 | Book | In CLAUDE.md corpus | Source PDF | In baseline |
 |---|---|---|---|
@@ -80,8 +79,8 @@ gating factor.
 | Mexico Illicit | yes | `archive/` | yes |
 | Return of the Gods | yes | `archive/` | yes |
 | Python in Easy Steps | yes | `archive/` | yes |
-| Atomic Habits | yes | KFX-only (no PDF) | **no — see SCRUM-304** |
-| Decline of the West | yes | KFX-only (no PDF) | **no — see SCRUM-304** |
+| Atomic Habits | yes | `archive/` | yes |
+| Decline of the West | yes | `archive/` | yes |
 | Dionysius | no | `archive/` | yes (regression anchor) |
 
 The baseline file's `__metadata__` block records the capture date, pipeline
@@ -238,6 +237,7 @@ Run `python tools/test_voice_tags.py` to verify.
 - Heading classification changes can break Calibre TOC generation
 - Don't suggest cloud TTS unless explicitly asked
 - Don't confuse `settings.json` (pipeline config) with `.claude/settings.json` (Claude Code config)
+- **Never use `mklink /J` junctions inside a worktree to give it access to gitignored data dirs (`archive/`, `output/`, `inbox/`, `processing/`).** Windows `rmdir /s` and `Remove-Item -Recurse` traverse junctions and delete the *target* contents. When ExitWorktree (or any recursive delete of the worktree directory) runs, the linked source data is destroyed. **Recovered from this on 2026-04-22 during SCRUM-301**: the SCRUM-303 worktree's junctions caused archive/output/inbox/processing in the main repo to be wiped on cleanup. Recovery was possible because PDFs were available in `F:\books`. Safer pattern: run pipeline scripts from the main working tree (`F:\Projects\EbookAutomation\`), and keep worktrees scoped to code-only edits. If you must run scripts from a worktree, set an environment override on `ARCHIVE_DIR`/`OUTPUT_DIR` rather than creating filesystem junctions.
 
 ## MCP Servers
 Allowed: Atlassian Rovo, Context7

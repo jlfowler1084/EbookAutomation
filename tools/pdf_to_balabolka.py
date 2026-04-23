@@ -1448,7 +1448,32 @@ def _resolve_internal_links(html, heading_registry, log):
     (page_number → [heading_id, ...]) to resolve each to the first heading
     anchor on the target page.  Unresolvable links are stripped (tag removed,
     text preserved).
+
+    Also strips escaped <a href="...">text</a> markup that PyMuPDF / pdfminer
+    emit when source PDFs (typically Markdown→HTML→PDF authored) embed
+    literal anchor markup as visible text characters. Without this pass the
+    markup surfaces as literal `<a href="...">label</a>` strings in
+    KFX/browser output (SCRUM-301).
     """
+    # Strip escaped anchor markup unconditionally — independent of internal
+    # cross-reference placeholders. PyMuPDF/pdfminer can emit this markup on
+    # books that have no #__goto_page_ placeholders at all (SCRUM-301).
+    _escaped_stripped = 0
+    def _strip_escaped_link(m):
+        nonlocal _escaped_stripped
+        _escaped_stripped += 1
+        return m.group(1)
+    html = re.sub(
+        r'&lt;a href="[^"]*"&gt;(.*?)&lt;/a&gt;',
+        _strip_escaped_link,
+        html,
+        flags=re.DOTALL,
+    )
+    if _escaped_stripped:
+        # Collapse double spaces left by stripped tag boundaries
+        html = re.sub(r'  +', ' ', html)
+        log(f"  Stripped {_escaped_stripped} escaped <a href> markup instances (SCRUM-301)")
+
     if '#__goto_page_' not in html:
         return html
 
@@ -1468,20 +1493,10 @@ def _resolve_internal_links(html, heading_registry, log):
 
     html = re.sub(r'href="#__goto_page_(\d+)"', _resolve, html)
 
-    # Remove <a> tags with empty href (unresolvable links) — keep the text.
-    # Two forms: actual HTML tags and HTML-escaped entity tags (from PyMuPDF
-    # extraction where link annotations are emitted inside paragraph text).
+    # Remove <a> tags with empty href (unresolvable internal links from the
+    # resolver above) — keep the text. Escaped variants are already handled
+    # by the generalized strip above.
     html = re.sub(r'<a href="">(.*?)</a>', r'\1', html, flags=re.DOTALL)
-    _escaped_stripped = 0
-    def _strip_escaped_link(m):
-        nonlocal _escaped_stripped
-        _escaped_stripped += 1
-        return m.group(1)
-    html = re.sub(r'&lt;a href=""&gt;(.*?)&lt;/a&gt;', _strip_escaped_link, html, flags=re.DOTALL)
-    if _escaped_stripped:
-        # Collapse double spaces left by stripped tag boundaries
-        html = re.sub(r'  +', ' ', html)
-        log(f"  Stripped {_escaped_stripped} escaped empty-href links")
 
     # Strip <a> tags from inside heading elements — Calibre's TOC XPath
     # picks up <a> text content and shows raw HTML in the TOC sidebar.
