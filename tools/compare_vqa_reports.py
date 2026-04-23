@@ -24,8 +24,16 @@ Exit codes (compare):
 
 Exit codes (audit):
     0 — all baselines in parity
-    1 — one or more baselines skipped (no matching KFX), no mismatches
-    2 — one or more baselines mismatched (or missing page data)
+    1 — one or more baselines skipped (no matching KFX only), no mismatches, no infra errors
+    2 — one or more baselines mismatched (real sampled-page drift)
+    3 — one or more baselines hit an infrastructure or data error (conversion_error,
+        schema_error, or load_error). Operator should investigate before re-capturing.
+
+Skip reasons surfaced per row (audit):
+    no_matching_kfx — baseline present, no *.kfx in --kfx-dir with the same stem
+    load_error       — baseline JSON unreadable or invalid (OSError, JSONDecodeError)
+    schema_error     — baseline JSON valid but missing pages[].page_number
+    conversion_error — Calibre/pypdf failure converting KFX or reading the resulting PDF
 
 Usage (compare — default, backward-compatible):
     python tools/compare_vqa_reports.py \\
@@ -51,6 +59,7 @@ import argparse
 import json
 import logging
 import statistics
+import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -387,6 +396,9 @@ class BookAuditResult:
     baseline_pages: list[int]
     expected_pages: list[int] | None   # None when skipped
     note: str = ""
+    # One of: None (parity/mismatch), "no_matching_kfx", "load_error",
+    # "schema_error", "conversion_error". Drives exit-code taxonomy.
+    skip_reason: str | None = None
 
 
 def _cmd_audit(args: argparse.Namespace) -> int:
@@ -396,7 +408,18 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     by exact stem, derive a fresh select_sample_pages() result from that KFX, and
     compare it to the baseline's pages[].page_number array.
 
-    Exit 0: all parity. Exit 1: any skipped, no mismatches. Exit 2: any mismatch.
+    Exit codes:
+        0 — all parity
+        1 — only no_matching_kfx skips, no mismatches or infra errors
+        2 — real sampled-page drift on at least one book
+        3 — conversion_error / schema_error / load_error on at least one book
+            (operator should investigate before re-capturing)
+
+    Exit 3 takes precedence over 2 (infra/data problems mask real drift signal).
+    Exit 2 takes precedence over 1 (real drift beats no-KFX skip).
+
+    Unexpected exceptions (AttributeError, ValueError, etc.) are not caught here
+    and will propagate — they signal a programming bug that should fail loudly.
     """
     baseline_dir = Path(args.baseline_dir)
     kfx_dir = Path(args.kfx_dir)
@@ -424,12 +447,14 @@ def _cmd_audit(args: argparse.Namespace) -> int:
 
         try:
             report = _load_report(baseline_path)
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError) as exc:
             results.append(BookAuditResult(
-                stem=stem, status="mismatch",
+                stem=stem, status="skipped",
                 baseline_pages=[], expected_pages=None,
                 note=f"load error: {exc}",
+                skip_reason="load_error",
             ))
+            logger.warning("Skipping %s: load_error: %s", stem, exc)
             continue
 
         baseline_page_nums: list[int] = [
@@ -438,10 +463,12 @@ def _cmd_audit(args: argparse.Namespace) -> int:
         ]
         if not baseline_page_nums:
             results.append(BookAuditResult(
-                stem=stem, status="mismatch",
+                stem=stem, status="skipped",
                 baseline_pages=[], expected_pages=None,
                 note="baseline missing pages[].page_number",
+                skip_reason="schema_error",
             ))
+            logger.warning("Skipping %s: schema_error: missing pages[].page_number", stem)
             continue
 
         kfx_path = kfx_by_stem.get(stem)
@@ -450,6 +477,7 @@ def _cmd_audit(args: argparse.Namespace) -> int:
                 stem=stem, status="skipped",
                 baseline_pages=baseline_page_nums, expected_pages=None,
                 note="no matching KFX in kfx-dir",
+                skip_reason="no_matching_kfx",
             ))
             logger.warning("Skipping %s: no matching KFX found", stem)
             continue
@@ -461,13 +489,14 @@ def _cmd_audit(args: argparse.Namespace) -> int:
             max_samples = report.get('pages_sampled', 8)
             expected = select_sample_pages(total_pages, max_samples=max_samples,
                                            bookmark_pages=bookmark_pages)
-        except Exception as exc:
+        except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
             results.append(BookAuditResult(
                 stem=stem, status="skipped",
                 baseline_pages=baseline_page_nums, expected_pages=None,
                 note=f"KFX/PDF error: {exc}",
+                skip_reason="conversion_error",
             ))
-            logger.warning("Skipping %s: %s", stem, exc)
+            logger.warning("Skipping %s: conversion_error: %s", stem, exc)
             continue
 
         if sorted(baseline_page_nums) == sorted(expected):
@@ -484,28 +513,41 @@ def _cmd_audit(args: argparse.Namespace) -> int:
 
     _print_audit_table(results)
 
+    _INFRA_REASONS = {"conversion_error", "schema_error", "load_error"}
+    any_infra = any(r.skip_reason in _INFRA_REASONS for r in results)
     any_mismatch = any(r.status == "mismatch" for r in results)
-    any_skipped = any(r.status == "skipped" for r in results)
+    any_no_kfx = any(r.skip_reason == "no_matching_kfx" for r in results)
+    if any_infra:
+        return 3
     if any_mismatch:
         return 2
-    if any_skipped:
+    if any_no_kfx:
         return 1
     return 0
 
 
 def _print_audit_table(results: list[BookAuditResult]) -> None:
     print("\n# VQA baseline audit")
-    print(f"| {'Book':<50} | {'Status':<9} | Baseline pages | Expected pages | Note |")
-    print(f"| {'-'*50} | {'-'*9} | {'-'*14} | {'-'*14} | --- |")
+    print(f"| {'Book':<50} | {'Status':<9} | {'Skip reason':<16} | Baseline pages | Expected pages | Note |")
+    print(f"| {'-'*50} | {'-'*9} | {'-'*16} | {'-'*14} | {'-'*14} | --- |")
     for r in results:
         base_str = str(r.baseline_pages) if r.baseline_pages else "—"
         exp_str = str(r.expected_pages) if r.expected_pages is not None else "—"
-        print(f"| {_truncate(r.stem, 50):<50} | {r.status:<9} | "
+        reason_str = r.skip_reason or "—"
+        print(f"| {_truncate(r.stem, 50):<50} | {r.status:<9} | {reason_str:<16} | "
               f"{_truncate(base_str, 14):<14} | {_truncate(exp_str, 14):<14} | {r.note} |")
     parity = sum(1 for r in results if r.status == "parity")
     mismatch = sum(1 for r in results if r.status == "mismatch")
     skipped = sum(1 for r in results if r.status == "skipped")
-    print(f"\nSummary: {parity} parity / {mismatch} mismatch / {skipped} skipped")
+    by_reason: dict[str, int] = {}
+    for r in results:
+        if r.skip_reason:
+            by_reason[r.skip_reason] = by_reason.get(r.skip_reason, 0) + 1
+    reason_breakdown = ""
+    if by_reason:
+        parts = [f"{n} {reason}" for reason, n in sorted(by_reason.items())]
+        reason_breakdown = "  (skip reasons: " + ", ".join(parts) + ")"
+    print(f"\nSummary: {parity} parity / {mismatch} mismatch / {skipped} skipped{reason_breakdown}")
 
 
 # ---------------------------------------------------------------------------
