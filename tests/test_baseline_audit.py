@@ -96,10 +96,11 @@ def test_atomic_habits_drift_exits_two(monkeypatch, tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------
-# Edge case: baseline missing pages[].page_number → exit 2, no silent pass
+# Edge case: baseline missing pages[].page_number → exit 3, skip_reason=schema_error
+# (SCRUM-287: reclassified from exit 2/mismatch to exit 3/skipped as infra/data error)
 # ---------------------------------------------------------------------------
 
-def test_missing_page_numbers_exits_two(monkeypatch, tmp_path, capsys):
+def test_missing_page_numbers_exits_three_schema_error(monkeypatch, tmp_path, capsys):
     baseline_dir = tmp_path / "baseline"
     baseline_dir.mkdir()
     kfx_dir = _make_kfx_dir(tmp_path, "malformed_test")
@@ -114,10 +115,11 @@ def test_missing_page_numbers_exits_two(monkeypatch, tmp_path, capsys):
     )
 
     result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))
-    assert result == 2
+    assert result == 3, f"Expected exit 3 (infra/data error), got {result}"
 
     out = capsys.readouterr().out
     assert "malformed_test" in out
+    assert "schema_error" in out
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +277,110 @@ def test_bare_invocation_verbose_flag_no_error(monkeypatch):
     except AttributeError as exc:
         pytest.fail(f"--verbose without subcommand raised AttributeError: {exc}")
     assert result == 0, f"Expected exit 0 (help), got {result}"
+
+
+# ---------------------------------------------------------------------------
+# SCRUM-287: narrow exception handling so operators can distinguish
+# infrastructure/data errors from real drift.
+# ---------------------------------------------------------------------------
+
+import subprocess  # noqa: E402 — kept next to SCRUM-287 tests to make dep obvious
+
+
+def test_conversion_error_exits_three_with_skip_reason(monkeypatch, tmp_path, capsys):
+    """AC #5: convert_to_pdf raises CalledProcessError → exit 3, skip_reason=conversion_error."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("clean_parity.json", baseline_dir, "clean_parity_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "clean_parity_test")
+
+    def _raise_called_process_error(*_a, **_kw):
+        raise subprocess.CalledProcessError(1, ["ebook-convert"], "Calibre failed")
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", _raise_called_process_error)
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))
+    assert result == 3, f"Expected exit 3 (conversion_error), got {result}"
+
+    out = capsys.readouterr().out
+    assert "conversion_error" in out
+    assert "skipped" in out
+
+
+def test_load_error_exits_three_with_skip_reason(tmp_path, capsys):
+    """Invalid JSON in baseline file → exit 3, skip_reason=load_error."""
+    baseline_dir = tmp_path / "baseline"
+    baseline_dir.mkdir()
+    (baseline_dir / f"broken_test{cvqa._REPORT_SUFFIX}").write_text(
+        "not valid json {{{", encoding="utf-8"
+    )
+    kfx_dir = _make_kfx_dir(tmp_path, "broken_test")
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))
+    assert result == 3, f"Expected exit 3 (load_error), got {result}"
+
+    out = capsys.readouterr().out
+    assert "load_error" in out
+    assert "skipped" in out
+
+
+def test_conversion_error_beats_mismatch(monkeypatch, tmp_path):
+    """Exit-code priority: any conversion_error (3) supersedes any mismatch (2).
+
+    Even when another book mismatches, operator must see the infra error first
+    because re-capturing drift data before fixing infra wastes Claude API spend.
+    """
+    baseline_dir = tmp_path / "baseline"
+    kfx_dir = tmp_path / "kindle"
+    kfx_dir.mkdir()
+
+    # Book 1: matching KFX but convert_to_pdf will raise → conversion_error
+    _install_fixture("clean_parity.json", baseline_dir, "infra_broken_test")
+    (kfx_dir / "infra_broken_test.kfx").touch()
+
+    # Book 2: matching KFX, real drift → mismatch
+    _install_fixture("atomic_habits_drift.json", baseline_dir, "atomic_habits_drift_test")
+    (kfx_dir / "atomic_habits_drift_test.kfx").touch()
+
+    call_count = {"n": 0}
+
+    def _selective_raise(*_a, **_kw):
+        call_count["n"] += 1
+        # first call = infra_broken_test alphabetically, raise
+        # (stems sorted, so "atomic_..." comes before "infra_..."; actually invert)
+        raise subprocess.CalledProcessError(1, ["ebook-convert"])
+
+    # Only convert_to_pdf raises; other helpers are patched to return valid shapes
+    # for the drift-test path (which we want to reach and mismatch).
+    def _maybe_raise(input_path, *_a, **_kw):
+        stem = Path(input_path).stem if hasattr(input_path, "stem") or isinstance(input_path, str) else ""
+        if "infra_broken" in str(input_path):
+            raise subprocess.CalledProcessError(1, ["ebook-convert"])
+        return "/fake/drift.pdf"
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", _maybe_raise)
+    monkeypatch.setattr(cvqa, "get_pdf_page_count", lambda *a, **kw: 272)
+    monkeypatch.setattr(cvqa, "get_pdf_bookmarks", lambda *a, **kw: [91, 94, 149, 152])
+    monkeypatch.setattr(cvqa, "select_sample_pages", lambda *a, **kw: list(_DRIFT_EXPECTED_PAGES))
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))
+    assert result == 3, (
+        f"Expected exit 3 (conversion_error beats mismatch), got {result}. "
+        "Infra/data errors must surface before drift so operators investigate "
+        "before triggering an expensive re-capture."
+    )
+
+
+def test_programming_bugs_propagate(monkeypatch, tmp_path):
+    """Narrowing means unexpected exceptions (e.g. AttributeError) propagate
+    instead of being swallowed as skipped. Protects against silent bugs."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("clean_parity.json", baseline_dir, "clean_parity_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "clean_parity_test")
+
+    def _raise_attribute_error(*_a, **_kw):
+        raise AttributeError("typo in helper chain")
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", _raise_attribute_error)
+
+    with pytest.raises(AttributeError, match="typo in helper chain"):
+        cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir))

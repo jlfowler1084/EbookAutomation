@@ -191,6 +191,7 @@ See `.env.example` for the full list of required env vars. Config: `config/setti
 Baselines in `data/vqa_baseline_post_274/` are standardized to KFX→Calibre source (SCRUM-282).
 `capture_pipeline` field in VQA baselines records the code branch that ran (`kfx-calibre` or `pdf-direct`); distinct from `source_format` in extraction-pipeline sidecars, which is extension-derived.
 Use `compare_vqa_reports.py audit` to verify baseline page-sample parity against the current KFX corpus.
+Audit exit codes (SCRUM-287): `0` all parity, `1` only `no_matching_kfx` skips, `2` real sampled-page drift, `3` infrastructure/data error (`conversion_error`, `schema_error`, or `load_error`) — investigate before triggering a Claude re-capture. Skip reasons surface per-row in the markdown table and summary.
 
 ## Chapter Alignment Verification
 Cross-references detected chapters against source PDF TOC/bookmarks.
