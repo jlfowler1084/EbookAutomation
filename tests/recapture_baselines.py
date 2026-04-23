@@ -32,16 +32,18 @@ import test_pipeline as _tp  # noqa: E402
 
 
 # Books to recapture (pdf_pattern matches archive/ glob).
-# Corpus policy (SCRUM-303): five books with available source PDFs from the
-# CLAUDE.md regression corpus, plus Dionysius retained as the SCRUM-299
-# running-header regression anchor. Atomic Habits and Decline of the West
-# are CLAUDE.md corpus members but exist only as KFX artifacts; PDF
-# acquisition is tracked in SCRUM-304.
+# Corpus policy (SCRUM-303 + SCRUM-304): full CLAUDE.md 6-book regression
+# corpus plus Dionysius (retained as the SCRUM-299 running-header
+# regression anchor). Atomic Habits and Decline of the West source PDFs
+# were re-acquired under SCRUM-304 and added here; their KFX-only
+# carve-out from SCRUM-303 is removed.
 BOOK_PATTERNS = {
     "Oil Kings":             "*Oil*Kings*",
     "Mexico":                "*Mexico*Illicit*",
     "Return of the Gods":    "*Return*Gods*",
     "Python in Easy Steps":  "*Python*easy*steps*",
+    "Atomic Habits":         "*Atomic*Habits*",
+    "Decline of the West":   "*Decline*West*",
     "Dionysius":             "*Dionysius*",
 }
 
@@ -165,12 +167,7 @@ def recapture(books_filter: list[str] | None = None) -> int:
 
     # Build the known-issues comment block as a JSON comment workaround:
     # JSON doesn't support comments; we add a "__known_issues__" key instead.
-    known_issues: list[str] = [
-        # SCRUM-304: two CLAUDE.md corpus books are KFX-only (no source PDF
-        # in archive/), so they cannot be baselined by this script.
-        "Atomic Habits: KFX-only in output/kindle/, no source PDF — text-extraction baseline N/A (SCRUM-304)",
-        "Decline of the West: KFX-only in output/kindle/, no source PDF — text-extraction baseline N/A (SCRUM-304)",
-    ]
+    known_issues: list[str] = []
 
     # Check for suspicious Mexico h2 headings (running headers / body promoted to heading)
     mexico = new_baselines.get("Mexico", {})
@@ -198,13 +195,13 @@ def recapture(books_filter: list[str] | None = None) -> int:
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "git_head_sha": _git_head_sha(),
         "corpus_policy": (
-            "5 books with available source PDFs from CLAUDE.md regression "
-            "corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy "
-            "Steps) plus Dionysius (SCRUM-299 running-header regression "
-            "anchor). Atomic Habits and Decline of the West are deferred "
-            "to SCRUM-304 pending PDF acquisition."
+            "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, "
+            "Return of the Gods, Python in Easy Steps, Atomic Habits, "
+            "Decline of the West) plus Dionysius (SCRUM-299 running-header "
+            "regression anchor). Atomic Habits + Decline of the West "
+            "source PDFs were re-acquired under SCRUM-304."
         ),
-        "scrum_ticket": "SCRUM-303",
+        "scrum_tickets": ["SCRUM-303", "SCRUM-304"],
     }
 
     with open(BASELINES_FILE, "w", encoding="utf-8") as f:
