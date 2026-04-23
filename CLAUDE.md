@@ -67,6 +67,28 @@ focus. Stored in `output/kindle/`.
 | Long chapters + footnotes | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | TOC depth, footnote pairing on long-form historical prose |
 | Simple structure canary | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured chapters — baseline sanity |
 
+### Baseline Coverage Policy (SCRUM-303)
+
+`tests/expected_baselines.json` covers a 5-book partial slice of the 6-book
+test corpus, plus Dionysius retained as the SCRUM-299 running-header
+regression anchor. Source-PDF availability — not corpus membership — is the
+gating factor.
+
+| Book | In CLAUDE.md corpus | Source PDF | In baseline |
+|---|---|---|---|
+| Oil Kings | yes | `archive/` | yes |
+| Mexico Illicit | yes | `archive/` | yes |
+| Return of the Gods | yes | `archive/` | yes |
+| Python in Easy Steps | yes | `archive/` | yes |
+| Atomic Habits | yes | KFX-only (no PDF) | **no — see SCRUM-304** |
+| Decline of the West | yes | KFX-only (no PDF) | **no — see SCRUM-304** |
+| Dionysius | no | `archive/` | yes (regression anchor) |
+
+The baseline file's `__metadata__` block records the capture date, pipeline
+commit SHA, and current corpus policy. Re-baseline with
+`python tests/recapture_baselines.py` after intentional pipeline changes;
+verify with `python tests/validate_against_baseline.py` before committing.
+
 ### Regression Prevention (Project-Specific)
 The #1 time sink is fix-then-regression cycles. Changes to heading levels cascade into TOC
 nesting and Calibre compatibility. A fix for one book has broken 4 others multiple times.

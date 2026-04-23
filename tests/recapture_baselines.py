@@ -31,13 +31,18 @@ sys.path.insert(0, str(TOOLS_DIR))
 import test_pipeline as _tp  # noqa: E402
 
 
-# Books to recapture (pdf_pattern matches the existing baseline)
+# Books to recapture (pdf_pattern matches archive/ glob).
+# Corpus policy (SCRUM-303): five books with available source PDFs from the
+# CLAUDE.md regression corpus, plus Dionysius retained as the SCRUM-299
+# running-header regression anchor. Atomic Habits and Decline of the West
+# are CLAUDE.md corpus members but exist only as KFX artifacts; PDF
+# acquisition is tracked in SCRUM-304.
 BOOK_PATTERNS = {
-    "Oil Kings":      "*Oil*Kings*",
-    "Genesis":        "*Genesis*",
-    "Mexico":         "*Mexico*Illicit*",
-    "Brother of Jesus": "*Brother*Jesus*",
-    "Dionysius":      "*Dionysius*",
+    "Oil Kings":             "*Oil*Kings*",
+    "Mexico":                "*Mexico*Illicit*",
+    "Return of the Gods":    "*Return*Gods*",
+    "Python in Easy Steps":  "*Python*easy*steps*",
+    "Dionysius":             "*Dionysius*",
 }
 
 
@@ -65,8 +70,23 @@ def baseline_from_actual(raw: dict) -> dict:
     }
 
 
+def _git_head_sha() -> str:
+    """Return the short SHA of the current git HEAD, or 'unknown'."""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(PROJECT_ROOT),
+            stderr=subprocess.DEVNULL,
+        )
+        return out.decode("ascii", "replace").strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def recapture(books_filter: list[str] | None = None) -> int:
-    # Load existing baselines so we can keep kfx_size_kb and pdf_pattern from them
+    # Load existing baselines so we can keep kfx_size_kb (captured separately
+    # from KFX builds) when re-capturing.
     existing: dict = {}
     if BASELINES_FILE.is_file():
         with open(BASELINES_FILE, "r", encoding="utf-8") as f:
@@ -82,7 +102,13 @@ def recapture(books_filter: list[str] | None = None) -> int:
         print(f"ERROR: no book matched {books_filter!r}", file=sys.stderr)
         return 2
 
-    new_baselines: dict = dict(existing)  # start from existing, update in place
+    # Full recapture (no filter): start from an empty baseline so books no
+    # longer in BOOK_PATTERNS are pruned. Single-book recapture: preserve
+    # existing entries for other books.
+    if books_filter:
+        new_baselines: dict = dict(existing)
+    else:
+        new_baselines = {}
 
     total = len(to_capture)
     ok = 0
@@ -139,9 +165,14 @@ def recapture(books_filter: list[str] | None = None) -> int:
 
     # Build the known-issues comment block as a JSON comment workaround:
     # JSON doesn't support comments; we add a "__known_issues__" key instead.
-    known_issues: list[str] = []
+    known_issues: list[str] = [
+        # SCRUM-304: two CLAUDE.md corpus books are KFX-only (no source PDF
+        # in archive/), so they cannot be baselined by this script.
+        "Atomic Habits: KFX-only in output/kindle/, no source PDF — text-extraction baseline N/A (SCRUM-304)",
+        "Decline of the West: KFX-only in output/kindle/, no source PDF — text-extraction baseline N/A (SCRUM-304)",
+    ]
 
-    # Check for suspicious Mexico h2 headings
+    # Check for suspicious Mexico h2 headings (running headers / body promoted to heading)
     mexico = new_baselines.get("Mexico", {})
     mexico_h2 = mexico.get("h2_headings", [])
     suspicious_mexico = [h for h in mexico_h2 if len(h) > 80 or h.islower() or h[0].islower() if h]
@@ -159,18 +190,22 @@ def recapture(books_filter: list[str] | None = None) -> int:
             "known limitation of footnote linking on this book's PDF layout"
         )
 
-    # Check Brother of Jesus low link rate
-    boj = new_baselines.get("Brother of Jesus", {})
-    boj_linked = boj.get("footnote_linked_pairs", 0)
-    boj_unlinked = boj.get("footnote_unlinked", 0)
-    if boj_unlinked > 0 and boj_linked / max(boj_linked + boj_unlinked, 1) < 0.1:
-        known_issues.append(
-            f"Brother of Jesus: low footnote link rate "
-            f"({boj_linked} linked / {boj_unlinked} unlinked) — known issue"
-        )
+    new_baselines["__known_issues__"] = known_issues
 
-    if known_issues:
-        new_baselines["__known_issues__"] = known_issues
+    # Capture metadata header so future readers can see when this baseline
+    # was taken and against which pipeline commit.
+    new_baselines["__metadata__"] = {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "git_head_sha": _git_head_sha(),
+        "corpus_policy": (
+            "5 books with available source PDFs from CLAUDE.md regression "
+            "corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy "
+            "Steps) plus Dionysius (SCRUM-299 running-header regression "
+            "anchor). Atomic Habits and Decline of the West are deferred "
+            "to SCRUM-304 pending PDF acquisition."
+        ),
+        "scrum_ticket": "SCRUM-303",
+    }
 
     with open(BASELINES_FILE, "w", encoding="utf-8") as f:
         json.dump(new_baselines, f, indent=2, ensure_ascii=False)
