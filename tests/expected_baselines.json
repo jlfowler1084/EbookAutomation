@@ -428,7 +428,9 @@
     "pdf_pattern": "*Dionysius*",
     "captured_at": "2026-04-23T00:25:43.267994+00:00"
   },
-  "__known_issues__": [],
+  "__known_issues__": [
+    "Mexico: footnote_linked_pairs=256 is the pipeline's actual output across every commit in this repo (bisected 3b3e4b8, ebec5d0, e7efd8e, 6372280, 2757116). The prior 377 figure in tools/test_cases.json originated in the initial commit (9b76f33) and was never produced by code in this history. SCRUM-305 confirmed no regression; 256 is the true floor. Future linker enhancements to handle italicized <p><em>N.</em> footnote bodies and inline-joined footnote paragraphs may legitimately raise this number."
+  ],
   "__metadata__": {
     "captured_at": "2026-04-23T01:49:29.707867+00:00",
     "git_head_sha": "f310d64",
