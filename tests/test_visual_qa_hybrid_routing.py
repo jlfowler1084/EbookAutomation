@@ -478,8 +478,12 @@ class TestRunVisualQAHybridRouting:
         ]})
         cloud_provider = _make_mock_cloud_provider(primary_raw, input_tokens=300, output_tokens=100)
 
-        # Claude returns data for pages 35 and 68 only
+        # SCRUM-291: providers must return one entry per image in input order;
+        # the page-count guards (PageCountMismatchError) enforce equal length.
+        # Mock Claude returning 3 entries for 3 flagged pages — page 2 gets a
+        # benign re-evaluation (empty issues), pages 35 and 68 get real findings.
         claude_pages = [
+            _make_page(2, score=95),  # Claude confirms page 2 still clean
             _make_page(35, score=65, issues=[{
                 "category": "text_integrity", "severity": "moderate",
                 "description": "Code block unreadable", "suggestion": "Fix font."}]),
