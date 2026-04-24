@@ -469,6 +469,60 @@ def parse_qa_response(raw_text, provider=None, original_payload=None):
 
 
 # ---------------------------------------------------------------------------
+# Step 4a: Page-number alignment (SCRUM-291)
+# ---------------------------------------------------------------------------
+
+def _align_pages_to_batch_order(
+    response_pages: list,
+    batch_page_numbers: list,
+) -> list:
+    """Override VLM-supplied page_number with the renderer's actual page index.
+
+    The renderer is the authoritative source for which page each image
+    represents (we passed those numbers in via the batch tuples). VLMs
+    occasionally renumber the response sequentially (e.g., 1..N) instead
+    of echoing our page numbers — see SCRUM-291 for the Mexico Illicit
+    case where this silently broke compare_vqa_reports page-overlap.
+
+    Returns a new list with each page dict's `page_number` set to
+    `batch_page_numbers[i]`. All other fields preserved verbatim. Position
+    alignment is safe because the per-provider page-count guards
+    (PageCountMismatchError) enforce len(response) == len(batch) before
+    this point — VLMs respond in input order by convention.
+
+    When lengths still diverge (e.g., a provider that doesn't enforce
+    the guard), only the overlapping prefix is aligned and a warning is
+    logged rather than crashing. A warning also fires when any override
+    actually changed a value, so renumbering events are observable in
+    batch logs going forward.
+    """
+    aligned: list = []
+    n_overrides = 0
+    for i, page in enumerate(response_pages):
+        if i >= len(batch_page_numbers) or not isinstance(page, dict):
+            aligned.append(page)
+            continue
+        rendered_pn = batch_page_numbers[i]
+        if page.get("page_number") != rendered_pn:
+            n_overrides += 1
+            page = {**page, "page_number": rendered_pn}
+        aligned.append(page)
+    if len(response_pages) != len(batch_page_numbers):
+        logger.warning(
+            "Page alignment length mismatch: response=%d, batch=%d "
+            "(provider guard should have caught this)",
+            len(response_pages), len(batch_page_numbers),
+        )
+    if n_overrides > 0:
+        logger.warning(
+            "VLM renumbered %d/%d page_number(s); overriding with rendered indices "
+            "(SCRUM-291). Batch pages: %s",
+            n_overrides, len(batch_page_numbers), batch_page_numbers,
+        )
+    return aligned
+
+
+# ---------------------------------------------------------------------------
 # Step 4b: Claude fallback helper (SCRUM-281)
 # ---------------------------------------------------------------------------
 
@@ -515,6 +569,9 @@ def run_claude_fallback(
             original_payload=payload,
         )
         pages = batch_data.get("pages", []) if isinstance(batch_data, dict) else []
+        pages = _align_pages_to_batch_order(
+            pages, [pn for pn, _ in filtered_images],
+        )
         return (pages, response.input_tokens, response.output_tokens)
 
     except Exception as exc:
@@ -757,6 +814,14 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
             # Collect per-page results from this batch
             if isinstance(batch_data, dict):
                 pages = batch_data.get("pages", [])
+                # SCRUM-291: VLMs occasionally renumber response pages
+                # sequentially (1..N) instead of echoing our rendered page
+                # indices. Override with the renderer's authoritative numbers
+                # so downstream report consumers (compare_vqa_reports,
+                # fingerprint detector, Claude fallback merge) see truth.
+                pages = _align_pages_to_batch_order(
+                    pages, [pn for pn, _ in batch],
+                )
                 all_pages_results.extend(pages)
         except Exception as e:
             logger.error("  Batch %d failed: %s", batch_idx, e)
