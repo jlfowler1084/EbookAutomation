@@ -193,7 +193,7 @@
       "script": "tools/compare_vqa_reports.py",
       "mode": "direct",
       "subcommands": ["compare", "audit"],
-      "flags": ["--candidate", "--baseline", "--audit", "--baseline-dir", "--kfx-dir", "--calibre", "--verbose"],
+      "flags": ["--candidate", "--baseline", "--audit", "--baseline-dir", "--kfx-dir", "--calibre", "--verbose", "--json"],
       "description": "Compare VQA report pairs and audit baseline page-sample parity"
     },
     {
