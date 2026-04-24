@@ -33,12 +33,13 @@ _PARTIAL_BASELINE_PAGES = [1, 2, 3, 50, 100, 150, 175, 190]
 _PARTIAL_EXPECTED_PAGES = [1, 2, 3, 50, 100, 160, 180, 195]
 
 
-def _make_args(baseline_dir, kfx_dir, calibre="fake_calibre_path"):
+def _make_args(baseline_dir, kfx_dir, calibre="fake_calibre_path", json=False):
     return argparse.Namespace(
         baseline_dir=Path(baseline_dir),
         kfx_dir=Path(kfx_dir),
         calibre=calibre,
         verbose=False,
+        json=json,
     )
 
 
@@ -368,6 +369,106 @@ def test_conversion_error_beats_mismatch(monkeypatch, tmp_path):
         "Infra/data errors must surface before drift so operators investigate "
         "before triggering an expensive re-capture."
     )
+
+
+# ---------------------------------------------------------------------------
+# SCRUM-286: --json structured output for agent consumption
+# ---------------------------------------------------------------------------
+
+def _parse_json_stdout(captured_out: str) -> dict:
+    """Find and parse the JSON object emitted by --json. Logging on stderr is fine."""
+    return json.loads(captured_out.strip())
+
+
+def test_json_parity_emits_valid_json_exit_zero(monkeypatch, tmp_path, capsys):
+    """AC #5: --json on all-parity fixture → valid JSON, exit_code 0, status=parity."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("clean_parity.json", baseline_dir, "clean_parity_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "clean_parity_test")
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", lambda *a, **kw: "/fake/clean.pdf")
+    monkeypatch.setattr(cvqa, "get_pdf_page_count", lambda *a, **kw: 150)
+    monkeypatch.setattr(cvqa, "get_pdf_bookmarks", lambda *a, **kw: [30, 60, 90, 120])
+    monkeypatch.setattr(cvqa, "select_sample_pages", lambda *a, **kw: list(_PARITY_PAGES))
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir, json=True))
+    assert result == 0
+
+    payload = _parse_json_stdout(capsys.readouterr().out)
+    assert payload["exit_code"] == 0
+    assert payload["summary"] == {"total": 1, "parity": 1, "skipped": 0, "mismatch": 0}
+    assert len(payload["books"]) == 1
+    book = payload["books"][0]
+    assert book["book"] == "clean_parity_test"
+    assert book["status"] == "parity"
+    assert book["sampled_actual"] == _PARITY_PAGES
+    assert book["sampled_expected"] == _PARITY_PAGES
+    assert book["skip_reason"] is None
+
+
+def test_json_drift_emits_mismatch_exit_two(monkeypatch, tmp_path, capsys):
+    """AC #5: --json on drift fixture → valid JSON, exit_code 2, status=mismatch."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("atomic_habits_drift.json", baseline_dir, "atomic_habits_drift_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "atomic_habits_drift_test")
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", lambda *a, **kw: "/fake/ah.pdf")
+    monkeypatch.setattr(cvqa, "get_pdf_page_count", lambda *a, **kw: 272)
+    monkeypatch.setattr(cvqa, "get_pdf_bookmarks", lambda *a, **kw: [91, 94, 149, 152])
+    monkeypatch.setattr(cvqa, "select_sample_pages", lambda *a, **kw: list(_DRIFT_EXPECTED_PAGES))
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir, json=True))
+    assert result == 2
+
+    payload = _parse_json_stdout(capsys.readouterr().out)
+    assert payload["exit_code"] == 2
+    assert payload["summary"] == {"total": 1, "parity": 0, "skipped": 0, "mismatch": 1}
+    book = payload["books"][0]
+    assert book["status"] == "mismatch"
+    assert book["sampled_actual"] == _DRIFT_BASELINE_PAGES
+    assert book["sampled_expected"] == _DRIFT_EXPECTED_PAGES
+    assert book["skip_reason"] is None
+
+
+def test_json_missing_kfx_emits_skipped_exit_one(tmp_path, capsys):
+    """AC #5: --json with missing KFX → valid JSON, exit_code 1,
+    status=skipped, skip_reason=no_matching_kfx."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("clean_parity.json", baseline_dir, "clean_parity_test")
+    kfx_dir = tmp_path / "empty_kindle"
+    kfx_dir.mkdir()
+
+    result = cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir, json=True))
+    assert result == 1
+
+    payload = _parse_json_stdout(capsys.readouterr().out)
+    assert payload["exit_code"] == 1
+    assert payload["summary"] == {"total": 1, "parity": 0, "skipped": 1, "mismatch": 0}
+    book = payload["books"][0]
+    assert book["status"] == "skipped"
+    assert book["skip_reason"] == "no_matching_kfx"
+    assert book["sampled_expected"] is None
+    assert book["sampled_actual"] == _PARITY_PAGES
+
+
+def test_json_suppresses_markdown_table(monkeypatch, tmp_path, capsys):
+    """When --json is set, the markdown table header must NOT appear on stdout.
+    Guards against the dispatch falling through to both renderers."""
+    baseline_dir = tmp_path / "baseline"
+    _install_fixture("clean_parity.json", baseline_dir, "clean_parity_test")
+    kfx_dir = _make_kfx_dir(tmp_path, "clean_parity_test")
+
+    monkeypatch.setattr(cvqa, "convert_to_pdf", lambda *a, **kw: "/fake/clean.pdf")
+    monkeypatch.setattr(cvqa, "get_pdf_page_count", lambda *a, **kw: 150)
+    monkeypatch.setattr(cvqa, "get_pdf_bookmarks", lambda *a, **kw: [30, 60, 90, 120])
+    monkeypatch.setattr(cvqa, "select_sample_pages", lambda *a, **kw: list(_PARITY_PAGES))
+
+    cvqa._cmd_audit(_make_args(baseline_dir, kfx_dir, json=True))
+
+    out = capsys.readouterr().out
+    assert "# VQA baseline audit" not in out, "markdown header leaked into JSON output"
+    # And the JSON must still parse cleanly — no interleaved text.
+    json.loads(out.strip())
 
 
 def test_programming_bugs_propagate(monkeypatch, tmp_path):

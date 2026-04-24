@@ -50,7 +50,14 @@ Usage (compare — explicit subcommand):
 Usage (audit):
     python tools/compare_vqa_reports.py audit \\
         [--baseline-dir data/vqa_baseline_post_274/] \\
-        [--kfx-dir output/kindle/]
+        [--kfx-dir output/kindle/] \\
+        [--json]
+
+When --json is passed, stdout emits a single JSON object with shape
+{exit_code, summary{total,parity,skipped,mismatch}, books[]} for agent
+consumption. The markdown table is suppressed; logging stays on stderr.
+The exit_code field reflects the actual returned exit code (0/1/2/3),
+including the SCRUM-287 infra/data-error code 3.
 """
 
 from __future__ import annotations
@@ -511,10 +518,27 @@ def _cmd_audit(args: argparse.Namespace) -> int:
                 note="sampled-page mismatch",
             ))
 
-    _print_audit_table(results)
+    exit_code = _compute_audit_exit_code(results)
 
-    _INFRA_REASONS = {"conversion_error", "schema_error", "load_error"}
-    any_infra = any(r.skip_reason in _INFRA_REASONS for r in results)
+    if getattr(args, "json", False):
+        print(json.dumps(_render_audit_json(results, exit_code), indent=2))
+    else:
+        _print_audit_table(results)
+
+    return exit_code
+
+
+_INFRA_SKIP_REASONS = frozenset({"conversion_error", "schema_error", "load_error"})
+
+
+def _compute_audit_exit_code(results: list[BookAuditResult]) -> int:
+    """Derive the audit exit code from per-book results.
+
+    Priority (highest first): infra/data error (3) > mismatch (2) > no-KFX skip (1) > all parity (0).
+    Kept as a separate helper so the --json output and the CLI return value
+    are guaranteed to agree.
+    """
+    any_infra = any(r.skip_reason in _INFRA_SKIP_REASONS for r in results)
     any_mismatch = any(r.status == "mismatch" for r in results)
     any_no_kfx = any(r.skip_reason == "no_matching_kfx" for r in results)
     if any_infra:
@@ -524,6 +548,36 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     if any_no_kfx:
         return 1
     return 0
+
+
+def _render_audit_json(results: list[BookAuditResult], exit_code: int) -> dict:
+    """Build the SCRUM-286 structured-output payload for `audit --json`.
+
+    Field naming follows the ticket AC: `sampled_expected` is the freshly
+    computed select_sample_pages() result (the oracle), and `sampled_actual`
+    is the page-number array stored in the baseline JSON.
+    """
+    summary = {
+        "total": len(results),
+        "parity": sum(1 for r in results if r.status == "parity"),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
+        "mismatch": sum(1 for r in results if r.status == "mismatch"),
+    }
+    return {
+        "exit_code": exit_code,
+        "summary": summary,
+        "books": [
+            {
+                "book": r.stem,
+                "status": r.status,
+                "sampled_expected": r.expected_pages,
+                "sampled_actual": r.baseline_pages,
+                "skip_reason": r.skip_reason,
+                "note": r.note,
+            }
+            for r in results
+        ],
+    }
 
 
 def _print_audit_table(results: list[BookAuditResult]) -> None:
@@ -603,6 +657,10 @@ def main() -> int:
                          help="Directory containing *.kfx files (default: output/kindle/)")
     audit_p.add_argument("--calibre", default=_default_calibre,
                          help="Path to Calibre ebook-convert.exe")
+    audit_p.add_argument("--json", action="store_true",
+                         help="Emit a single JSON object on stdout instead of "
+                              "the markdown table (for agent / CI consumption). "
+                              "Suppresses the markdown summary; logging stays on stderr.")
 
     args = parser.parse_args(argv)
 
