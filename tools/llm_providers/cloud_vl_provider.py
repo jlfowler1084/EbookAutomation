@@ -82,11 +82,18 @@ class CloudVLProvider:
 
     name = "cloud_vl"
 
+    # Per-request HTTP read timeout in seconds (SCRUM-295).
+    # The openai SDK default is 600s — double the 300s outer subprocess cap in
+    # batch_qa.py — so a stalled provider response silently exhausts the
+    # subprocess slot. 60s keeps us well inside the cap with room for retries.
+    _DEFAULT_PER_REQUEST_TIMEOUT: float = 60.0
+
     def __init__(
         self,
         host: str = "openrouter",
         api_key: str | None = None,
         base_url: str | None = None,
+        per_request_timeout: float | None = None,
     ):
         if host not in _DEFAULT_BASE_URLS:
             raise ValueError(
@@ -103,6 +110,11 @@ class CloudVLProvider:
         self._host = host
         self._api_key = api_key
         self._base_url = base_url or _DEFAULT_BASE_URLS[host]
+        self._per_request_timeout: float = (
+            per_request_timeout
+            if per_request_timeout is not None
+            else self._DEFAULT_PER_REQUEST_TIMEOUT
+        )
 
     # ------------------------------------------------------------------
     # Request construction
@@ -175,6 +187,14 @@ class CloudVLProvider:
         backoff (mirrors ClaudeVisionProvider). Post-response invariants
         match local_provider: OutputTruncatedError on finish_reason=='length'
         and PageCountMismatchError on pages[] length != image count.
+
+        Per-request timeout (SCRUM-295): the openai SDK default is 600s read
+        timeout — double the 300s outer subprocess cap in batch_qa.py. Without
+        an explicit cap the first hung request silently exhausts the subprocess
+        slot and the caller sees duration_seconds==300 with score==null. This
+        method now passes self._per_request_timeout (default 60s) to the client
+        so APITimeoutError is raised promptly and the retry logic fires. Timeout
+        retries are capped at 1 (max 2 attempts) to stay within the outer cap.
         """
         default_headers: dict[str, str] = {}
         if self._host == "openrouter":
@@ -187,6 +207,7 @@ class CloudVLProvider:
             base_url=self._base_url,
             api_key=self._api_key,
             default_headers=default_headers or None,
+            timeout=self._per_request_timeout,
         )
 
         image_count = sum(
@@ -195,11 +216,16 @@ class CloudVLProvider:
             if isinstance(block, dict) and block.get("type") == "image_url"
         )
         logger.info(
-            "Sending %d images to %s (%s) at %s...",
+            "Sending %d images to %s (%s) at %s (per-request timeout: %ds)...",
             image_count, self._host, payload.get("model"), self._base_url,
+            int(self._per_request_timeout),
         )
 
         max_retries = 3
+        # Timeout retries are capped lower than connection/rate-limit retries
+        # to keep the total wall-time within the outer subprocess cap (300s).
+        # 2 attempts × 60s + 10s backoff = 130s worst-case for timeout failures.
+        max_timeout_retries = 1
         backoff_seconds = [10, 30, 60]
         response = None
 
@@ -222,7 +248,23 @@ class CloudVLProvider:
                 raise RuntimeError(
                     f"Cloud VL provider rate-limited after {max_retries} retries: {exc}"
                 ) from exc
-            except (openai.APIConnectionError, openai.APITimeoutError) as exc:
+            except openai.APITimeoutError as exc:
+                # Named diagnostic (SCRUM-295): timeout fires at per_request_timeout
+                # seconds rather than silently consuming the outer subprocess cap.
+                logger.warning(
+                    "  [SCRUM-295] Per-request timeout after %ds (attempt %d/%d): %s",
+                    int(self._per_request_timeout), attempt + 1, max_timeout_retries + 1, exc,
+                )
+                if attempt < max_timeout_retries:
+                    wait = backoff_seconds[attempt]
+                    logger.warning("  Retrying in %ds...", wait)
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(
+                    f"Cloud VL provider timed out after {max_timeout_retries + 1} attempt(s) "
+                    f"({int(self._per_request_timeout)}s per-request limit): {exc}"
+                ) from exc
+            except openai.APIConnectionError as exc:
                 if attempt < max_retries:
                     wait = backoff_seconds[attempt]
                     logger.warning(
