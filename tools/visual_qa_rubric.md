@@ -117,3 +117,21 @@ Return valid JSON with this exact structure:
 - Score relative to what a commercially published ebook looks like on a Kindle
 - If a page has no issues, return an empty issues array and a high score
 - The "top_issues" array should contain the 3-5 most impactful issues across all pages, with affected_pages listing every page where each issue appears
+
+## Report Metadata: `evaluation_status` Field (SCRUM-318)
+
+Every VQA report JSON emitted by `visual_qa.py` includes a top-level `evaluation_status` field.
+Downstream consumers (agents, CI gates, compare scripts) must read this field before
+interpreting `overall_score` and `overall_pass`.
+
+| Value | Meaning | `overall_score` | `overall_pass` |
+|---|---|---|---|
+| `evaluated` | All (or some) API batches succeeded; pages were scored normally. | Integer 0–100 | Boolean |
+| `api_failure` | Every API batch failed (network error, auth error, timeout, etc.); no pages were scored. | `null` | `null` |
+| `conversion_failure` | The KFX→PDF or PDF→PNG conversion step failed before any pages could be evaluated. | `null` | `null` |
+| `no_pages_sampled` | The page-sampling step returned an empty list (e.g. zero-page PDF); nothing to evaluate. | `null` | `null` |
+
+**Consumer contract:** When `evaluation_status != "evaluated"`, both `overall_score` and
+`overall_pass` are `null` (Python `None`). Consumers must NOT treat `overall_pass=null` as
+`False` or `overall_score=null` as `0`. A `null` score means the evaluation did not run, not
+that the book failed quality checks. Use `evaluation_status` as the authoritative discriminant.
