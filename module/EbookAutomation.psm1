@@ -3142,6 +3142,80 @@ function Test-AlreadyProcessed {
     return ($manifest | Where-Object { $_ -like "$hash|*" }).Count -gt 0
 }
 
+function Test-FullChainSucceeded {
+    <#
+    .SYNOPSIS
+        Returns $true only when every enabled pipeline step that was actually
+        attempted also succeeded.  Used by Invoke-EbookPipeline to determine
+        whether a book should be added to processed.txt.
+
+    .DESCRIPTION
+        A step is considered "required" when it was enabled AND was not merely
+        skipped (e.g. unsupported file format).  $XxxMsg values of 'disabled'
+        or starting with 'skipped' indicate the step was not required.
+
+        SCRUM-317: previously the pipeline used ($ttsOk -or $kindleOk) which
+        caused books to be cache-poisoned when TTS succeeded but Kindle failed.
+
+    .PARAMETER KindleEnabled
+        Whether Kindle conversion was enabled in settings.
+
+    .PARAMETER KindleOk
+        Whether the Kindle conversion step returned success.
+
+    .PARAMETER KindleMsg
+        The status message for the Kindle step ('disabled', 'skipped (...)',
+        'FAILED', 'EXCEPTION', or 'OK (...)').
+
+    .PARAMETER TtsEnabled
+        Whether TTS conversion was enabled in settings.
+
+    .PARAMETER TtsOk
+        Whether the TTS conversion step returned success.
+
+    .PARAMETER TtsMsg
+        The status message for the TTS step.
+
+    .PARAMETER Mp3Enabled
+        Whether MP3 generation was requested (via flag or settings).
+
+    .PARAMETER Mp3Ok
+        Whether the MP3 generation step returned success.
+    #>
+    param(
+        [bool]$KindleEnabled,
+        [bool]$KindleOk,
+        [string]$KindleMsg,
+        [bool]$TtsEnabled,
+        [bool]$TtsOk,
+        [string]$TtsMsg,
+        [bool]$Mp3Enabled,
+        [bool]$Mp3Ok
+    )
+
+    # A step "was required" if it was enabled and was actually attempted
+    # (not just skipped because the file format is not in supported formats).
+    $kindleRequired = $KindleEnabled -and
+                      ($KindleMsg -ne 'disabled') -and
+                      ($KindleMsg -notlike 'skipped*')
+
+    $ttsRequired    = $TtsEnabled -and
+                      ($TtsMsg -ne 'disabled') -and
+                      ($TtsMsg -notlike 'skipped*')
+
+    # MP3 is only required if it was enabled AND TTS succeeded (MP3 gate checks $ttsOk)
+    $mp3Required    = $Mp3Enabled -and $TtsOk
+
+    $ttsPass    = (-not $ttsRequired)    -or $TtsOk
+    $kindlePass = (-not $kindleRequired) -or $KindleOk
+    $mp3Pass    = (-not $mp3Required)    -or $Mp3Ok
+
+    # At least one step must have actually succeeded (guard against all-disabled)
+    $anyActualSuccess = $TtsOk -or $KindleOk
+
+    return $anyActualSuccess -and $ttsPass -and $kindlePass -and $mp3Pass
+}
+
 #endregion
 
 #region -- File validation ---------------------------------------------------
@@ -3920,10 +3994,27 @@ function Invoke-EbookPipeline {
         $bookTime     = "$([math]::Round($bookDuration.TotalSeconds, 1))s"
         $anySuccess   = $ttsOk -or $kindleOk   # MP3 failure does not affect this
 
+        # SCRUM-317: Only mark processed when the full requested chain succeeded.
+        # $anySuccess (TTS -or Kindle) is kept for $processed counter and status display,
+        # but Add-ProcessedFile is gated on all enabled/attempted steps succeeding.
+        $allRequiredSucceeded = Test-FullChainSucceeded `
+            -KindleEnabled $cfg.kindle.enabled `
+            -KindleOk      $kindleOk `
+            -KindleMsg     $kindleMsg `
+            -TtsEnabled    $cfg.tts.enabled `
+            -TtsOk         $ttsOk `
+            -TtsMsg        $ttsMsg `
+            -Mp3Enabled    ($GenerateMP3 -or $cfg.mp3.enabled) `
+            -Mp3Ok         $mp3Ok
+
         if ($anySuccess) {
             try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'archiving' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
-            # Archive the original
-            Add-ProcessedFile $file.FullName
+            # Archive the original — only mark processed when full chain succeeded (SCRUM-317)
+            if ($allRequiredSucceeded) {
+                Add-ProcessedFile $file.FullName
+            } else {
+                Write-EbookLog "  NOT marking processed: one or more required steps failed (TTS:$ttsMsg | Kindle:$kindleMsg | MP3:$mp3Msg)" -Level WARN
+            }
 
             if ($cfg.archive_originals) {
                 try {
