@@ -39,7 +39,9 @@ if sys.platform == 'win32':
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-ARCHIVE_DIR = PROJECT_ROOT / "archive"
+# SCRUM-300: allow env-var override so worktree can access main project's archive
+# without junctions (per 2026-04-22 incident in CLAUDE.md).
+ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR", str(PROJECT_ROOT / "archive")))
 
 # Import chapter alignment (non-fatal if unavailable)
 try:
@@ -47,7 +49,7 @@ try:
     HAS_CHAPTER_ALIGNMENT = True
 except ImportError:
     HAS_CHAPTER_ALIGNMENT = False
-OUTPUT_DIR = PROJECT_ROOT / "output" / "kindle"
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(PROJECT_ROOT / "output" / "kindle")))
 TEST_CASES_JSON = SCRIPT_DIR / "test_cases.json"
 CORPUS_DIR = PROJECT_ROOT / "test-corpus"
 CORPUS_EXTENSIONS = {'.pdf', '.epub', '.mobi', '.azw', '.azw3'}
