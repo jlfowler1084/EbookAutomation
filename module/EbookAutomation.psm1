@@ -138,10 +138,17 @@ function Get-EbookMetadataFromFilename {
     # Series prefix (SCRUM-316): leading parenthetical that is NOT a 4-digit
     # year is treated as a series tag. Example:
     #   "(Great Books in Philosophy) Author - Title (1989).pdf" -> series="Great Books in Philosophy"
+    # SCRUM-322: also strip the same prefix from $authors so it doesn't appear
+    # as part of the author name. The earlier "Author - Title" pattern matched
+    # against the full stem and captured the prefix into the authors group.
     if ($stem -match '^\(([^)]+)\)\s+') {
         $leadingParen = $Matches[1].Trim()
         if ($leadingParen -notmatch '^\d{4}$') {
             $series = $leadingParen
+            if ($authors) {
+                $escapedSeries = [regex]::Escape($leadingParen)
+                $authors = $authors -replace "^\($escapedSeries\)\s*", ''
+            }
         }
     }
 

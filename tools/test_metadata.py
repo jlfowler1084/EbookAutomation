@@ -90,6 +90,35 @@ class TestMetadataHelpers(unittest.TestCase):
     def test_clean_publisher_keeps_real(self):
         self.assertEqual('Oxford University Press', pattern_db._clean_meta_field('Oxford University Press', field_type='publisher'))
 
+    def test_clean_filters_literal_none_placeholder(self):
+        """SCRUM-322: literal 'None' / 'null' / 'n/a' placeholders are not real metadata.
+
+        Some PDF authoring tools (Pdf995 in particular) write the literal text
+        'None' into metadata fields instead of leaving them empty. Without this
+        filter the value flows through to Calibre's --authors arg and produces
+        output filenames like '... - None.kfx'.
+        """
+        # Author field
+        self.assertIsNone(pattern_db._clean_meta_field('None', field_type='author'))
+        self.assertIsNone(pattern_db._clean_meta_field('NONE', field_type='author'))
+        self.assertIsNone(pattern_db._clean_meta_field('none', field_type='author'))
+        self.assertIsNone(pattern_db._clean_meta_field('null', field_type='author'))
+        self.assertIsNone(pattern_db._clean_meta_field('N/A', field_type='author'))
+        self.assertIsNone(pattern_db._clean_meta_field('undefined', field_type='author'))
+        # Title field
+        self.assertIsNone(pattern_db._clean_meta_field('None', field_type='title'))
+        self.assertIsNone(pattern_db._clean_meta_field('null', field_type='title'))
+        # Publisher field
+        self.assertIsNone(pattern_db._clean_meta_field('None', field_type='publisher'))
+        self.assertIsNone(pattern_db._clean_meta_field('n/a', field_type='publisher'))
+        # Generic / unspecified field_type
+        self.assertIsNone(pattern_db._clean_meta_field('None'))
+
+    def test_clean_keeps_real_value_that_starts_with_none(self):
+        """A name like 'None Such Press' or a title 'None of the Above' must NOT be filtered."""
+        self.assertEqual('None Such Press', pattern_db._clean_meta_field('None Such Press', field_type='publisher'))
+        self.assertEqual('None of the Above', pattern_db._clean_meta_field('None of the Above', field_type='title'))
+
     def test_extract_year_from_pdf_date(self):
         self.assertEqual('2019', pattern_db._extract_year("D:20190415120000+00'00'"))
         self.assertEqual('2005', pattern_db._extract_year('D:20050101'))

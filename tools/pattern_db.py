@@ -2767,6 +2767,13 @@ _GARBAGE_CREATOR_NAMES = {
 
 _GARBAGE_TITLES = {'untitled', 'document', 'microsoft word', 'unnamed'}
 
+# Literal placeholder strings that appear in PDF metadata when a field is
+# unset but written as a stringified None/null value (SCRUM-322). Some PDF
+# authoring tools (e.g. Pdf995) write the literal text "None" instead of
+# leaving the field empty, which previously slipped through and ended up
+# in output filenames as "<Author> - None.kfx".
+_GARBAGE_PLACEHOLDERS = {'none', 'null', 'n/a', 'na', 'undefined', 'nil'}
+
 
 def _clean_meta_field(value, field_type='generic'):
     """Filter garbage values from PDF/EPUB metadata fields.
@@ -2777,6 +2784,9 @@ def _clean_meta_field(value, field_type='generic'):
         return None
 
     cleaned = value.strip()
+
+    if cleaned.lower() in _GARBAGE_PLACEHOLDERS:
+        return None
 
     if field_type == 'author':
         if cleaned.lower() in ('unknown', 'unknown author', ''):
