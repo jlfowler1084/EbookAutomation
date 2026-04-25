@@ -129,14 +129,37 @@ function Get-EbookMetadataFromFilename {
     $title   = $title -replace "\s*Anna'?s?\s*Archive\s*$", ''
     $authors = $authors -replace "\s*Anna'?s?\s*Archive\s*$", ''
 
-    # Extract publisher, year, ISBN from filename patterns
+    # Extract publisher, year, ISBN, series from filename patterns
     $publisher = ''
     $year = ''
     $isbn = ''
+    $series = ''
 
-    # Year: 4-digit number between 1800-2099
-    if ($stem -match '\b(1[89]\d{2}|20\d{2})\b') {
-        $year = $Matches[1]
+    # Series prefix (SCRUM-316): leading parenthetical that is NOT a 4-digit
+    # year is treated as a series tag. Example:
+    #   "(Great Books in Philosophy) Author - Title (1989).pdf" -> series="Great Books in Philosophy"
+    if ($stem -match '^\(([^)]+)\)\s+') {
+        $leadingParen = $Matches[1].Trim()
+        if ($leadingParen -notmatch '^\d{4}$') {
+            $series = $leadingParen
+        }
+    }
+
+    # Year (SCRUM-316): pick the LAST 4-digit year-in-range, preferring
+    # parens-bound matches. The previous regex picked the first match anywhere,
+    # which broke when a leading series tag preceded the publication year.
+    # @(...) forces array semantics so [-1] selects the last element rather
+    # than the last character of a single-match scalar string.
+    $parensYears = @([regex]::Matches($stem, '\((1[89]\d{2}|20\d{2})(?:[,\s)]|$)') |
+                     ForEach-Object { $_.Groups[1].Value })
+    if ($parensYears.Count -gt 0) {
+        $year = $parensYears[-1]
+    } else {
+        $bareYears = @([regex]::Matches($stem, '\b(1[89]\d{2}|20\d{2})\b') |
+                       ForEach-Object { $_.Groups[1].Value })
+        if ($bareYears.Count -gt 0) {
+            $year = $bareYears[-1]
+        }
     }
 
     # ISBN: 10 or 13 digit number (with optional hyphens)
@@ -179,6 +202,7 @@ function Get-EbookMetadataFromFilename {
         Publisher  = $publisher.Trim()
         Year       = $year
         ISBN       = $isbn
+        Series     = $series.Trim()
     }
 }
 
