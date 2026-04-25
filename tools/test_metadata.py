@@ -556,5 +556,212 @@ class TestEmailToKindleMetadata(unittest.TestCase):
         self.assertEqual(result_path, pdf_path)
 
 
+class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
+    """SCRUM-323 Bug 1: Python parser must handle libgen 'Author - Title (Year, Pub)' format.
+
+    Previously `_parse_metadata_from_filename` did `rsplit(' - ', 1)` and assigned
+    parts[0]=title, parts[1]=author. That inverts libgen convention (Author - Title)
+    and also gets confused by trailing `- libgen.li` noise. The PowerShell
+    `Get-EbookMetadataFromFilename` Pattern 2 anchors on the trailing parenthetical
+    and treats the LHS of the dash as the author. The Python parser is now expected
+    to do the same.
+    """
+
+    def test_libgen_format_oil_kings(self):
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Cooper, Andrew Scott - The Oil Kings_ How the U (2011, Simon & Schuster) - libgen.li.pdf'
+        )
+        self.assertEqual(author, 'Cooper, Andrew Scott')
+        self.assertIn('Oil Kings', title)
+        self.assertNotIn('libgen', title.lower())
+
+    def test_libgen_format_with_series_prefix_feuerbach(self):
+        """Feuerbach case — leading series parenthetical must not bleed into author,
+        and publisher metadata after the dash must not bleed into author either."""
+        title, author = pattern_db._parse_metadata_from_filename(
+            '(Great Books in Philosophy) Ludwig Feuerbach - The Essence of Christianity (Great Books in Philosophy)-Prometheus Books (1989).pdf'
+        )
+        self.assertEqual(author, 'Ludwig Feuerbach')
+        self.assertIn('Essence of Christianity', title)
+        self.assertNotIn('Prometheus', title)
+        self.assertNotIn('Great Books in Philosophy', author)
+
+    def test_libgen_format_year_only_no_publisher(self):
+        title, author = pattern_db._parse_metadata_from_filename(
+            'John Glubb - The Fate of Empires and Search for Survival (1976) - libgen.li.pdf'
+        )
+        self.assertEqual(author, 'John Glubb')
+        self.assertEqual(title, 'The Fate of Empires and Search for Survival')
+
+    def test_libgen_format_publisher_dash_year(self):
+        """Publisher-Year-only libgen variant: 'Author - Title-Publisher (Year).pdf'."""
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Helen Boak - Women in the Weimar Republic-Manchester University Press (2015).pdf'
+        )
+        self.assertEqual(author, 'Helen Boak')
+        self.assertIn('Women in the Weimar Republic', title)
+
+    def test_legacy_title_dash_author_format(self):
+        """Pipeline-output naming (Title - Author) — must still work for the no-parenthetical case."""
+        title, author = pattern_db._parse_metadata_from_filename(
+            'The Oil Kings - Andrew Scott Cooper.pdf'
+        )
+        self.assertEqual(title, 'The Oil Kings')
+        self.assertEqual(author, 'Andrew Scott Cooper')
+
+    def test_no_separator(self):
+        title, author = pattern_db._parse_metadata_from_filename('SimpleName.pdf')
+        self.assertEqual(title, 'SimpleName')
+        self.assertIsNone(author)
+
+    def test_strips_visual_qa_suffix(self):
+        title, author = pattern_db._parse_metadata_from_filename(
+            'My Book - Some Author_visual_qa_report.pdf'
+        )
+        self.assertEqual(title, 'My Book')
+        self.assertEqual(author, 'Some Author')
+
+    def test_year_in_leading_parenthetical_is_not_series(self):
+        """A leading (YYYY) prefix is a year, not a series tag — don't strip it as series."""
+        title, author = pattern_db._parse_metadata_from_filename(
+            '(2011) Some Author - Some Book.pdf'
+        )
+        # Authors should not contain the year-paren prefix; title should not be empty
+        self.assertIsNotNone(author)
+        self.assertNotIn('2011', author)
+
+
+class TestPdfInternalSuspiciousSCRUM323(unittest.TestCase):
+    """SCRUM-323 Bug 2: detect when pdf_internal metadata is junk and should be rejected
+    in favor of filename_parser.
+
+    Trip conditions:
+      1. PDF producer or creator matches a known PDF-tool fingerprint (Pdf995, etc.)
+      2. PDF title contains the filename-derived author (suggests filename was injected
+         as the title field by the PDF authoring tool).
+    """
+
+    def test_pdf995_creator_is_suspicious(self):
+        """Feuerbach's actual fingerprint: creator='Pdf995'."""
+        meta = {
+            'extra_json': json.dumps({'creator': 'Pdf995', 'producer': 'GPL Ghostscript 8.15'})
+        }
+        self.assertTrue(pattern_db._is_pdf_internal_suspicious(meta, 'Ludwig Feuerbach'))
+
+    def test_pdfcreator_producer_is_suspicious(self):
+        meta = {'extra_json': json.dumps({'producer': 'PDFCreator 2.5'})}
+        self.assertTrue(pattern_db._is_pdf_internal_suspicious(meta, 'Some Author'))
+
+    def test_calibre_is_not_suspicious(self):
+        """Calibre re-saves PDFs but preserves real metadata — must NOT trip the gate.
+        Oil Kings is the canonical regression anchor here."""
+        meta = {
+            'title': 'The Oil Kings',
+            'authors': 'Cooper, Andrew Scott',
+            'extra_json': json.dumps({'creator': 'calibre 1.22.0', 'producer': 'calibre 1.22.0 [http://calibre-ebook.com]'}),
+        }
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious(meta, 'Cooper, Andrew Scott'))
+
+    def test_adobe_indesign_is_not_suspicious(self):
+        """InDesign-produced PDFs from real publishers (Helen Boak / Manchester UP) must NOT trip."""
+        meta = {
+            'title': 'Women in the Weimar Republic',
+            'extra_json': json.dumps({'creator': 'Adobe InDesign CS6 (Macintosh)', 'producer': 'Adobe PDF Library 10.0.1'}),
+        }
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious(meta, 'Helen Boak'))
+
+    def test_acrobat_distiller_is_not_suspicious(self):
+        """Mackinder uses Acrobat Distiller (legitimate prepress tool) — must NOT trip."""
+        meta = {'extra_json': json.dumps({'producer': 'Acrobat Distiller 5.0.5 for Macintosh'})}
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious(meta, 'Halford John Mackinder'))
+
+    def test_filename_author_appears_in_pdf_title_is_suspicious(self):
+        """If the PDF title contains the filename-derived author verbatim, the PDF metadata
+        is almost certainly the filename injected as title (Pdf995 pattern)."""
+        meta = {
+            'title': '(Great Books in Philosophy) Ludwig Feuerbach',
+            'extra_json': json.dumps({'producer': 'Some Innocuous Producer'}),
+        }
+        self.assertTrue(pattern_db._is_pdf_internal_suspicious(meta, 'Ludwig Feuerbach'))
+
+    def test_clean_metadata_is_not_suspicious(self):
+        meta = {
+            'title': 'Real Book Title',
+            'authors': 'Real Author',
+            'extra_json': json.dumps({'producer': 'Real Publisher Press'}),
+        }
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious(meta, 'Real Author'))
+
+    def test_missing_extra_json_handles_gracefully(self):
+        """If extra_json is missing or unparseable, the gate must not throw."""
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious({'title': 'X'}, 'Y'))
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious({'extra_json': 'not-json'}, 'Y'))
+
+    def test_no_filename_author_no_tool_fingerprint(self):
+        """When filename author is None and no tool fingerprint, gate is False."""
+        meta = {'title': 'X', 'extra_json': json.dumps({'producer': 'Some Press'})}
+        self.assertFalse(pattern_db._is_pdf_internal_suspicious(meta, None))
+
+
+class TestExtractMetadataPdf995EndToEnd(unittest.TestCase):
+    """SCRUM-323 end-to-end: a Pdf995-fingerprinted PDF with the Feuerbach-style filename
+    must produce the filename-parsed title/author/year, not the PDF's internal junk."""
+
+    def setUp(self):
+        try:
+            import fitz
+        except ImportError:
+            self.skipTest('PyMuPDF not installed')
+        self.tmp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmp_dir, 'test.db')
+        self.output_file = os.path.join(self.tmp_dir, 'meta.json')
+        self.script = str(Path(__file__).resolve().parent / 'pattern_db.py')
+
+        # Reproduce Feuerbach's actual PDF metadata: empty title, literal 'None' author,
+        # creator='Pdf995', producer='GPL Ghostscript 8.15', creationDate in 2006.
+        self.pdf_path = os.path.join(
+            self.tmp_dir,
+            '(Great Books in Philosophy) Ludwig Feuerbach - The Essence of Christianity (Great Books in Philosophy)-Prometheus Books (1989).pdf',
+        )
+        doc = fitz.open()
+        doc.new_page()
+        doc.set_metadata({
+            'title': '',
+            'author': 'None',
+            'creator': 'Pdf995',
+            'producer': 'GPL Ghostscript 8.15',
+            'creationDate': "D:20060420073213",
+        })
+        doc.save(self.pdf_path)
+        doc.close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _run_cli(self, args):
+        cmd = [sys.executable, self.script, '--db-path', self.db_path] + args
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        return result.returncode, result.stdout, result.stderr
+
+    def test_feuerbach_extract_uses_filename_metadata(self):
+        rc, stdout, stderr = self._run_cli([
+            'extract-metadata', '--file', self.pdf_path,
+            '--output-file', self.output_file,
+        ])
+        self.assertEqual(rc, 0, f'stderr: {stderr}')
+        with open(self.output_file) as f:
+            data = json.load(f)
+
+        # Title and author must come from the filename, not the empty/junk PDF fields.
+        self.assertIn('Essence of Christianity', data.get('title') or '')
+        self.assertNotIn('Prometheus', data.get('title') or '')
+        self.assertEqual(data.get('authors'), 'Ludwig Feuerbach')
+
+        # Year must be the publication year (1989) from the filename, NOT the PDF
+        # creationDate year (2006).
+        self.assertEqual(data.get('year'), '1989')
+
+
 if __name__ == '__main__':
     unittest.main()

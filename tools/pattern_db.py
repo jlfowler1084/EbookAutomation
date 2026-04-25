@@ -2867,9 +2867,19 @@ def _parse_metadata_from_filename(filename):
     """Parse title and author from ebook filename.
 
     Handles patterns like:
-        "Title - Author.ext"
-        "Title - Subtitle - Author.ext"
-        "Title.ext"
+        "Author - Title (Year, Publisher).ext"               (libgen)
+        "Author - Title (Year, Publisher) - libgen.li.ext"   (libgen with suffix)
+        "(Series Name) Author - Title (Year, Publisher).ext" (libgen with series prefix)
+        "Author - Title-Publisher (Year).ext"                (libgen, publisher dash variant)
+        "Title - Author.ext"                                 (legacy pipeline-output naming)
+        "Title.ext"                                          (no separator)
+
+    SCRUM-323: previously this function did `rsplit(' - ', 1)` and assigned
+    parts[0] to title, parts[1] to author. That inverts the libgen convention
+    (Author - Title) and was also fooled by trailing `- libgen.li` noise.
+    The PowerShell `Get-EbookMetadataFromFilename` Pattern 2 anchors on the
+    trailing parenthetical year/publisher block and treats the LHS of the
+    dash as the author. This implementation mirrors that.
     """
     stem = Path(filename).stem
 
@@ -2879,6 +2889,34 @@ def _parse_metadata_from_filename(filename):
         if stem.endswith(suffix):
             stem = stem[:-len(suffix)]
 
+    # Strip trailing libgen / Anna's Archive noise so it doesn't end up captured
+    # as the author or as part of the title.
+    stem = re.sub(r'\s*-\s*libgen[\.\s]?li\s*$', '', stem, flags=re.IGNORECASE)
+    stem = re.sub(r"\s*--\s*Anna'?’?s?\s*Archive\s*$", '', stem,
+                  flags=re.IGNORECASE)
+    stem = stem.strip()
+
+    # Strip a leading parenthetical that is NOT a 4-digit year. A leading (YYYY)
+    # is a year, not a series tag, so leave that alone for the libgen regex.
+    series_prefix = re.match(r'^\(([^)]+)\)\s+(.+)$', stem)
+    if series_prefix and not re.fullmatch(r'\s*\d{4}\s*',
+                                          series_prefix.group(1)):
+        stem = series_prefix.group(2)
+
+    # Libgen heuristic: when the stem contains a parenthetical or bracket
+    # anywhere, treat it as 'Author - Title (...)' convention and stop the
+    # title capture at the FIRST open paren. This prevents inner parentheticals
+    # like '(Great Books in Philosophy)' or trailing '-Prometheus Books (1989)'
+    # publisher metadata from leaking into the title.
+    # Mirrors PowerShell Get-EbookMetadataFromFilename Pattern 2.
+    if '(' in stem or '[' in stem:
+        libgen_match = re.match(r'^(.+?)\s+-\s+(.+?)\s*[\(\[]', stem)
+        if libgen_match:
+            author = libgen_match.group(1).strip().rstrip('-').strip()
+            title = libgen_match.group(2).strip().rstrip('-').strip()
+            return title, author
+
+    # Legacy fallback: 'Title - Author' format (pipeline output naming).
     parts = stem.rsplit(' - ', 1)
     if len(parts) == 2:
         title = parts[0].strip()
@@ -2888,6 +2926,20 @@ def _parse_metadata_from_filename(filename):
         author = None
 
     return title, author
+
+
+def _parse_year_from_filename(filename):
+    """Extract the publication year from a filename.
+
+    SCRUM-323: prefer the filename's year over the PDF's `creationDate` year
+    when pdf_internal is rejected. Looks for a 4-digit year in 19xx/20xx range.
+    Returns the LAST matching year (matches PowerShell Get-EbookMetadataFromFilename
+    behavior — handles reprint patterns where original year appears early and
+    reprint year appears late).
+    """
+    stem = Path(filename).stem
+    matches = re.findall(r'\b(19\d{2}|20\d{2})\b', stem)
+    return matches[-1] if matches else None
 
 
 def extract_pdf_metadata(file_path):
@@ -2981,6 +3033,59 @@ def extract_file_metadata(file_path):
         return extract_epub_metadata(file_path)
     else:
         return {}
+
+
+# SCRUM-323 Bug 2: PDF authoring tools known to write garbage / filename-as-title
+# metadata. When the PDF's creator or producer matches one of these tokens
+# (case-insensitive substring), `_is_pdf_internal_suspicious` rejects the
+# pdf_internal record in favor of filename_parser values. The list is kept
+# tight on purpose: tools whose embedded metadata is generally reliable
+# (calibre, Adobe InDesign, Acrobat Distiller) must NOT appear here.
+_KNOWN_BAD_PDF_TOOLS = (
+    'pdf995',
+    'pdfcreator',
+    'pdfsam',
+)
+
+
+def _is_pdf_internal_suspicious(internal_meta, filename_author):
+    """Return True when pdf_internal metadata should be rejected as junk.
+
+    SCRUM-323 Bug 2: the metadata-merge logic gives `pdf_internal` higher
+    source priority than `filename_parser`, which is normally correct.
+    But Pdf995-class tools write the filename as the title field and the
+    literal string 'None' as author, with creationDate set to the PDF
+    generation date (not the book's publication year). This gate detects
+    two patterns and triggers a fallback to filename_parser:
+
+        1. PDF creator/producer matches a known bad-tool fingerprint.
+        2. PDF title contains the filename-derived author verbatim
+           (case-insensitive) — strong signal the filename was injected
+           into the title field.
+
+    `internal_meta` is the dict returned by `extract_pdf_metadata`. The
+    raw producer/creator strings live in `extra_json`.
+    """
+    extra_json = internal_meta.get('extra_json')
+    creator = ''
+    producer = ''
+    if extra_json:
+        try:
+            extra = json.loads(extra_json)
+            creator = (extra.get('creator') or '').lower()
+            producer = (extra.get('producer') or '').lower()
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    for tool in _KNOWN_BAD_PDF_TOOLS:
+        if tool in creator or tool in producer:
+            return True
+
+    pdf_title = (internal_meta.get('title') or '').lower()
+    if filename_author and pdf_title and filename_author.lower() in pdf_title:
+        return True
+
+    return False
 
 
 # Source priority for merge decisions
@@ -3149,10 +3254,33 @@ def _cmd_extract_metadata(args):
     internal_meta = extract_file_metadata(file_path)
 
     filename = os.path.basename(file_path)
+    parsed_title, parsed_author = _parse_metadata_from_filename(filename)
+    parsed_year = _parse_year_from_filename(filename)
+
+    ext = os.path.splitext(file_path)[1].lower()
+    source_type = 'pdf_internal' if ext == '.pdf' else 'epub_opf' if ext == '.epub' else 'filename_parser'
+
+    # SCRUM-323 Bug 2: when the PDF was produced by a tool known to write
+    # garbage metadata (Pdf995) or when the PDF title contains the filename-
+    # derived author, reject pdf_internal in favor of filename_parser. The
+    # `extra_json` field is preserved for debugging traceability.
+    if (source_type == 'pdf_internal'
+            and _is_pdf_internal_suspicious(internal_meta, parsed_author)):
+        extra_json = internal_meta.get('extra_json')
+        internal_meta = {}
+        if parsed_title:
+            internal_meta['title'] = parsed_title
+        if parsed_author:
+            internal_meta['authors'] = parsed_author
+        if parsed_year:
+            internal_meta['year'] = parsed_year
+        if extra_json:
+            internal_meta['extra_json'] = extra_json
+        source_type = 'filename_parser'
+
     title = internal_meta.get('title')
     authors = internal_meta.get('authors')
     if not title:
-        parsed_title, parsed_author = _parse_metadata_from_filename(filename)
         title = parsed_title
         authors = authors or parsed_author
 
@@ -3161,9 +3289,6 @@ def _cmd_extract_metadata(args):
         title_hash = _normalize_title_hash(Path(file_path).stem)
 
     existing = get_book_metadata(title_hash=title_hash, db_path=args.db_path)
-
-    ext = os.path.splitext(file_path)[1].lower()
-    source_type = 'pdf_internal' if ext == '.pdf' else 'epub_opf' if ext == '.epub' else 'filename_parser'
 
     if existing:
         merged = merge_metadata(existing, internal_meta, source_type)
