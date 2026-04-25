@@ -60,6 +60,8 @@ Your execution has two phases. **You stop after Phase A and return.** The coordi
    blocked: false
    ```
 
+   > **`STATUS.md` is a coordinator-readable artifact in the worktree root.** NEVER `git add STATUS.md`. NEVER include it in any commit. NEVER push it. The coordinator reads the working-tree copy directly. Verify with `git status --short STATUS.md` — it must show `??` (untracked), not staged.
+
 6. **STOP and return control to the coordinator.** Do NOT continue to full implementation. Do NOT push yet.
 
 ### Phase B — After coordinator approval
@@ -77,13 +79,15 @@ The coordinator will re-dispatch you with explicit "checkpoint approved, proceed
    - `## Test plan` — checkbox list of verification steps you ran (passed) and steps deferred to post-merge.
    - `## Acceptance criteria status` — checklist mapped to the ticket's AC.
    - The footer line: `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
-7. Update `STATUS.md`:
+7. Update `STATUS.md` (in the worktree root, **untracked**):
    ```
    STATUS: PR_OPEN
    ticket: {{ticket_id}}
    pr_url: <URL from gh pr create>
    blocked: false
    ```
+
+   > Same rule as Phase A: NEVER `git add STATUS.md` and NEVER push it. `gh pr create` may emit a warning like `1 uncommitted change` referring to `STATUS.md` — that warning is expected and correct; ignore it.
 
 ## Hard constraints
 
@@ -106,6 +110,21 @@ The following are frozen for the duration of the pilot. If you need to modify an
 - `tools/visual_qa.py` JSON output schema (other than the new `evaluation_status` field for Stream C).
 - `feature-manifest.json`.
 - `tests/expected_baselines.json` and `data/vqa_baseline_*`.
+
+## When asking for tracked files inside ignored directories
+
+If your scope requires creating a tracked file inside a directory that is gitignored at the project level (e.g., `logs/<subdir>/.gitkeep` to anchor a runtime-output subdir under the gitignored `logs/`), the coordinator will pre-authorize the corresponding `.gitignore` edit in your file scope and pre-list the exact pattern. Use the standard un-ignore idiom — keep changes minimal:
+
+```
+# Existing rule (do not touch other lines)
+logs/**
+
+# Un-ignore the specific subdirectory and the anchor file
+!logs/<subdir>/
+!logs/<subdir>/.gitkeep
+```
+
+If you find yourself needing to edit `.gitignore` and the coordinator has NOT pre-authorized it, that is emergent scope: write `STATUS.md=EMERGENT_SCOPE_NEEDED` describing why and return. Do NOT silently expand into `.gitignore`.
 
 ## Report back
 
