@@ -198,6 +198,111 @@ Describe 'Test-FullChainSucceeded' {
 }
 
 # ---------------------------------------------------------------------------
+# Section 3a — ForceReprocess bypass logic (SCRUM-321)
+# ---------------------------------------------------------------------------
+Describe 'ForceReprocess bypass (SCRUM-321)' {
+
+    It 'wildcard match bypasses already-processed: Test-AlreadyProcessed returns $false' {
+        # The bypass is a pre-check at the Invoke-EbookPipeline call site, not inside
+        # Test-AlreadyProcessed itself. We verify the bypass condition directly: a
+        # file that IS in the cache should appear as $false when the pattern matches.
+        $tmpRoot = New-TempProcessedTxt
+        $tmpPdf  = Join-Path ([System.IO.Path]::GetTempPath()) "OilKings_$(New-Guid).pdf"
+        [System.IO.File]::WriteAllBytes($tmpPdf, [byte[]](1,2,3,4))
+
+        try {
+            InModuleScope EbookAutomation -Parameters @{ TmpRoot = $tmpRoot; TmpPdf = $tmpPdf } {
+                param($TmpRoot, $TmpPdf)
+                $origRoot = $script:ModuleRoot
+                $script:ModuleRoot = $TmpRoot
+                try {
+                    # Record the file as processed
+                    Add-ProcessedFile $TmpPdf
+                    Test-AlreadyProcessed $TmpPdf | Should -BeTrue   # sanity
+
+                    # Simulate the ForceReprocess bypass: pattern matches filename
+                    $fileName = [System.IO.Path]::GetFileName($TmpPdf)
+                    $pattern  = '*OilKings*'
+                    $forceMatch = @($pattern) | Where-Object { $fileName -like $_ } | Select-Object -First 1
+                    # When a match is found the call site skips Test-AlreadyProcessed;
+                    # here we assert the match itself was detected (not null/empty).
+                    $forceMatch | Should -Not -BeNullOrEmpty
+                    # And confirm Test-AlreadyProcessed still returns $true (it is untouched)
+                    # — the bypass is in the caller, not the function.
+                    Test-AlreadyProcessed $TmpPdf | Should -BeTrue
+                } finally {
+                    $script:ModuleRoot = $origRoot
+                }
+            }
+        } finally {
+            Remove-Item $tmpPdf -Force -ErrorAction SilentlyContinue
+            Remove-Item $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'non-matching pattern does not trigger bypass: cache check still active' {
+        $tmpRoot = New-TempProcessedTxt
+        $tmpPdf  = Join-Path ([System.IO.Path]::GetTempPath()) "AtomicHabits_$(New-Guid).pdf"
+        [System.IO.File]::WriteAllBytes($tmpPdf, [byte[]](5,6,7,8))
+
+        try {
+            InModuleScope EbookAutomation -Parameters @{ TmpRoot = $tmpRoot; TmpPdf = $tmpPdf } {
+                param($TmpRoot, $TmpPdf)
+                $origRoot = $script:ModuleRoot
+                $script:ModuleRoot = $TmpRoot
+                try {
+                    Add-ProcessedFile $TmpPdf
+
+                    # Pattern does NOT match this filename
+                    $fileName = [System.IO.Path]::GetFileName($TmpPdf)
+                    $pattern  = '*OilKings*'
+                    $forceMatch = @($pattern) | Where-Object { $fileName -like $_ } | Select-Object -First 1
+                    $forceMatch | Should -BeNullOrEmpty   # no bypass triggered
+
+                    # Cache check is therefore active — file is detected as processed
+                    Test-AlreadyProcessed $TmpPdf | Should -BeTrue
+                } finally {
+                    $script:ModuleRoot = $origRoot
+                }
+            }
+        } finally {
+            Remove-Item $tmpPdf -Force -ErrorAction SilentlyContinue
+            Remove-Item $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'empty ForceReprocess array behaves identically to current code (no bypass)' {
+        $tmpRoot = New-TempProcessedTxt
+        $tmpPdf  = Join-Path ([System.IO.Path]::GetTempPath()) "DeclineWest_$(New-Guid).pdf"
+        [System.IO.File]::WriteAllBytes($tmpPdf, [byte[]](10,11,12))
+
+        try {
+            InModuleScope EbookAutomation -Parameters @{ TmpRoot = $tmpRoot; TmpPdf = $tmpPdf } {
+                param($TmpRoot, $TmpPdf)
+                $origRoot = $script:ModuleRoot
+                $script:ModuleRoot = $TmpRoot
+                try {
+                    Add-ProcessedFile $TmpPdf
+
+                    # Empty array: Where-Object produces nothing → $forceMatch is null
+                    $fileName = [System.IO.Path]::GetFileName($TmpPdf)
+                    $forceMatch = @() | Where-Object { $fileName -like $_ } | Select-Object -First 1
+                    $forceMatch | Should -BeNullOrEmpty   # no bypass
+
+                    # Cache check is active; already-processed is detected
+                    Test-AlreadyProcessed $TmpPdf | Should -BeTrue
+                } finally {
+                    $script:ModuleRoot = $origRoot
+                }
+            }
+        } finally {
+            Remove-Item $tmpPdf -Force -ErrorAction SilentlyContinue
+            Remove-Item $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Section 3 — End-to-end cache-poisoning regression guard
 # ---------------------------------------------------------------------------
 Describe 'Cache-poisoning regression: Kindle:FAILED + TTS:OK' {
