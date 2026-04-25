@@ -39,7 +39,9 @@ if sys.platform == 'win32':
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-ARCHIVE_DIR = PROJECT_ROOT / "archive"
+# Allow env-override so worktree sessions can point at the main repo's data dirs
+# without creating filesystem junctions (CLAUDE.md 2026-04-22 incident).
+ARCHIVE_DIR = Path(os.environ.get("ARCHIVE_DIR", PROJECT_ROOT / "archive"))
 
 # Import chapter alignment (non-fatal if unavailable)
 try:
@@ -47,7 +49,7 @@ try:
     HAS_CHAPTER_ALIGNMENT = True
 except ImportError:
     HAS_CHAPTER_ALIGNMENT = False
-OUTPUT_DIR = PROJECT_ROOT / "output" / "kindle"
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", PROJECT_ROOT / "output" / "kindle"))
 TEST_CASES_JSON = SCRIPT_DIR / "test_cases.json"
 CORPUS_DIR = PROJECT_ROOT / "test-corpus"
 CORPUS_EXTENSIONS = {'.pdf', '.epub', '.mobi', '.azw', '.azw3'}
