@@ -619,7 +619,18 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
             (output_tokens / 1_000_000) * output_cost_per_m
         )
 
-    overall_score = qa_data.get("overall_score", 0)
+    # evaluation_status disambiguates "API failed" from "evaluated as low-scoring".
+    # Valid values: "evaluated", "api_failure", "conversion_failure", "no_pages_sampled".
+    # When status != "evaluated", overall_score and overall_pass are None (not 0/False).
+    evaluation_status = qa_data.get("evaluation_status", "evaluated")
+
+    raw_score = qa_data.get("overall_score")
+    if evaluation_status == "evaluated":
+        overall_score = raw_score if raw_score is not None else 0
+        overall_pass = overall_score >= pass_threshold
+    else:
+        overall_score = None
+        overall_pass = None
 
     report = {
         "book": os.path.basename(book_path),
@@ -628,8 +639,9 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         "pages_sampled": pages_sampled,
         "pages_total": total_pages,
         "dpi": dpi,
+        "evaluation_status": evaluation_status,
         "overall_score": overall_score,
-        "overall_pass": overall_score >= pass_threshold,
+        "overall_pass": overall_pass,
         "pass_threshold": pass_threshold,
         "category_scores": qa_data.get("category_scores", {}),
         "pages": qa_data.get("pages", []),
@@ -948,6 +960,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
 
         # Build summary from the last batch (which has the most context) or generate one
         qa_data = {
+            "evaluation_status": "evaluated",
             "overall_score": overall_score,
             "overall_pass": overall_score >= pass_threshold,
             "pages": all_pages_results,
@@ -957,8 +970,9 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         }
     else:
         qa_data = {
-            "overall_score": 0,
-            "overall_pass": False,
+            "evaluation_status": "api_failure",
+            "overall_score": None,
+            "overall_pass": None,
             "pages": [],
             "category_scores": {},
             "summary": "All API batches failed — no pages were evaluated.",
@@ -990,9 +1004,12 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         json.dump(report, f, indent=2, ensure_ascii=False)
 
     logger.info("Report written: %s", report_path)
-    logger.info("Overall score: %d/100 (%s)",
-                report["overall_score"],
-                "PASS" if report["overall_pass"] else "FAIL")
+    if report["overall_score"] is None:
+        logger.info("Overall score: N/A (%s)", report["evaluation_status"])
+    else:
+        logger.info("Overall score: %d/100 (%s)",
+                    report["overall_score"],
+                    "PASS" if report["overall_pass"] else "FAIL")
 
     # --- Cleanup temp PDF if we created one ---
     if input_ext != ".pdf" and pdf_path != str(input_path):
