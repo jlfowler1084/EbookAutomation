@@ -3467,6 +3467,16 @@ function Invoke-EbookPipeline {
     if ($DryRun) { Write-EbookLog "  MODE: DRY RUN -- no files will be modified" -Level WARN }
     Write-EbookLog "--------------------------------------------------------"
 
+    # Tesseract precondition (SCRUM-309): warn once at pipeline start so scanned
+    # PDFs don't fail per-book mid-batch with an unresolvable tesseract path.
+    if ($cfg.paths.tesseract) {
+        $tesseractCheck = if (Test-Path $cfg.paths.tesseract) { $cfg.paths.tesseract }
+                          else { Resolve-ProjectPath $cfg.paths.tesseract }
+        if (-not (Test-Path $tesseractCheck)) {
+            Write-EbookLog "Tesseract OCR not resolvable at '$($cfg.paths.tesseract)' -- scanned/image-only PDFs will fail OCR. Install via 'winget install --id UB-Mannheim.TesseractOCR -e' or update paths.tesseract in settings.json." -Level WARN
+        }
+    }
+
     # Ensure directories exist
     foreach ($dir in @($inboxDir, $archiveDir, $ttsOutDir, $kindleDir, $audiobooksDir, $procDir)) {
         if (-not (Test-Path $dir)) { New-Item $dir -ItemType Directory | Out-Null }
