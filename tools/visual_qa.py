@@ -582,6 +582,59 @@ def run_claude_fallback(
 
 
 # ---------------------------------------------------------------------------
+# SCRUM-319: Large-file DPI / page-count auto-reduction
+# ---------------------------------------------------------------------------
+
+_LARGE_FILE_KFX_BYTES = 30 * 1024 * 1024   # 30 MB
+_LARGE_FILE_PAGE_COUNT = 500
+_LARGE_FILE_REDUCED_DPI = 72
+_LARGE_FILE_REDUCED_MAX_PAGES = 4
+
+
+def _apply_large_file_dpi_reduction(
+    kfx_size_bytes: int,
+    total_pages: int,
+    dpi: int,
+    max_pages: int,
+) -> tuple:
+    """Return (dpi, max_pages) adjusted for large KFX files.
+
+    When the KFX output exceeds 30 MB OR the rendered PDF has more than 500
+    pages, the per-batch image payload grows large enough to trigger provider
+    rejection (observed: Wilsonianism 72.6 MB / 643 pages → all 8-page batches
+    rejected by OpenRouter).  In those cases, reduce DPI to 72 and halve
+    max_pages (floor 4) so the request fits within the provider's image-bytes
+    limit.
+
+    The caller-supplied DPI is never *raised* — if it is already at or below
+    _LARGE_FILE_REDUCED_DPI, it is kept as-is.
+
+    Returns:
+        (dpi, max_pages) — possibly unchanged if neither threshold is exceeded.
+    """
+    is_large = (
+        kfx_size_bytes > _LARGE_FILE_KFX_BYTES
+        or total_pages > _LARGE_FILE_PAGE_COUNT
+    )
+    if not is_large:
+        return dpi, max_pages
+
+    reduced_dpi = min(dpi, _LARGE_FILE_REDUCED_DPI)
+    reduced_max_pages = min(max_pages, _LARGE_FILE_REDUCED_MAX_PAGES)
+    logger.info(
+        "Large-file threshold exceeded (%.1f MB, %d pages) — "
+        "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
+        kfx_size_bytes / (1024 * 1024),
+        total_pages,
+        dpi,
+        reduced_dpi,
+        max_pages,
+        reduced_max_pages,
+    )
+    return reduced_dpi, reduced_max_pages
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Assemble final report
 # ---------------------------------------------------------------------------
 
@@ -766,6 +819,18 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     if bookmark_pages:
         logger.info("Found %d bookmark pages for sampling", len(bookmark_pages))
 
+    # --- SCRUM-319: Auto-reduce DPI/page-count for large KFX files ---
+    # Large KFX outputs (e.g. Wilsonianism 72.6 MB / 643 pages) push the
+    # per-batch image payload past the provider's per-call image-bytes limit.
+    # Reduce DPI and max_pages before rendering so the request fits.
+    input_size_bytes = input_path.stat().st_size if input_path.exists() else 0
+    dpi, max_pages = _apply_large_file_dpi_reduction(
+        kfx_size_bytes=input_size_bytes,
+        total_pages=total_pages,
+        dpi=dpi,
+        max_pages=max_pages,
+    )
+
     # --- Select and render pages ---
     sample_pages = select_sample_pages(total_pages, max_pages, bookmark_pages)
     logger.info("Sampling %d pages: %s", len(sample_pages), sample_pages)
@@ -836,8 +901,51 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 )
                 all_pages_results.extend(pages)
         except Exception as e:
-            logger.error("  Batch %d failed: %s", batch_idx, e)
-            # Continue with remaining batches — partial results are better than none
+            # SCRUM-319: Capture and log the full provider error string so
+            # "All API batches failed" is no longer opaque.
+            logger.error(
+                "  Batch %d/%d failed: %s: %s",
+                batch_idx, len(batches), type(e).__name__, e,
+            )
+            # SCRUM-319: Single-page retry — if the batch had more than one
+            # page, try each page individually.  Payload-size errors (e.g. a
+            # 72 MB KFX generating 643 high-DPI pages) typically fail at the
+            # multi-image level but succeed when images are sent one at a time.
+            if len(batch) > 1 and not hasattr(provider, "two_pass_call"):
+                logger.warning(
+                    "  Batch %d: retrying %d pages one-at-a-time (single-page fallback)...",
+                    batch_idx, len(batch),
+                )
+                for single_page in batch:
+                    page_num = single_page[0]
+                    try:
+                        single_payload = provider.build_request(
+                            [single_page], rubric_text, model
+                        )
+                        single_response = provider.call(single_payload)
+                        total_input_tokens += single_response.input_tokens
+                        total_output_tokens += single_response.output_tokens
+                        logger.info(
+                            "    Single-page retry p%d: %d in, %d out tokens",
+                            page_num,
+                            single_response.input_tokens,
+                            single_response.output_tokens,
+                        )
+                        single_data = parse_qa_response(
+                            single_response.raw_text,
+                            provider=provider,
+                            original_payload=single_payload,
+                        )
+                        if isinstance(single_data, dict):
+                            single_pages = _align_pages_to_batch_order(
+                                single_data.get("pages", []), [page_num]
+                            )
+                            all_pages_results.extend(single_pages)
+                    except Exception as retry_exc:
+                        logger.error(
+                            "    Single-page retry p%d failed: %s: %s",
+                            page_num, type(retry_exc).__name__, retry_exc,
+                        )
 
     logger.info("All batches complete: %d input tokens, %d output tokens total",
                 total_input_tokens, total_output_tokens)
