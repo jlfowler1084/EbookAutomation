@@ -26,6 +26,15 @@ Describe 'Get-EbookMetadataFromFilename' {
             }
         }
 
+        It "strips the leading series prefix from Authors when captured into Series (SCRUM-322)" {
+            InModuleScope EbookAutomation {
+                $name = '(Great Books in Philosophy) Ludwig Feuerbach - The Essence of Christianity (Great Books in Philosophy)-Prometheus Books (1989).pdf'
+                $meta = Get-EbookMetadataFromFilename $name
+                # Bug A: previously '(Great Books in Philosophy) Ludwig Feuerbach'
+                $meta.Authors | Should -Be 'Ludwig Feuerbach'
+            }
+        }
+
         It 'returns empty Series when there is no leading parenthetical' {
             InModuleScope EbookAutomation {
                 $name = 'Andrew Scott Cooper - The Oil Kings (2011, Simon & Schuster) - libgen.li.pdf'
