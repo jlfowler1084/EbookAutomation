@@ -3483,6 +3483,12 @@ function Invoke-EbookPipeline {
         Reset failure counts and retry all previously-failed books that are
         still in the inbox.
 
+    .PARAMETER ForceReprocess
+        One or more wildcard patterns (PowerShell -like syntax, e.g. '*Oil Kings*').
+        Any inbox file whose name matches any pattern bypasses the already-processed
+        cache check and is processed unconditionally. A WARN log line is emitted per
+        match. The cache record is NOT removed; this is a one-time per-run bypass.
+
     .EXAMPLE
         PS> Invoke-EbookPipeline
         Processes all new ebooks in the inbox folder.
@@ -3537,7 +3543,9 @@ function Invoke-EbookPipeline {
         [switch]$ValidateAlignment,
 
         [switch]$SkipTTS,
-        [switch]$RetryFailed
+        [switch]$RetryFailed,
+
+        [string[]]$ForceReprocess = @()
     )
 
     $pipelineStart  = Get-Date
@@ -3737,8 +3745,11 @@ function Invoke-EbookPipeline {
             }
         }
 
-        # Skip already-processed
-        if (Test-AlreadyProcessed $file.FullName) {
+        # Skip already-processed (unless -ForceReprocess matches this file)
+        $forceMatch = $ForceReprocess | Where-Object { $file.Name -like $_ } | Select-Object -First 1
+        if ($forceMatch) {
+            Write-EbookLog "Pipeline: -ForceReprocess matched '$($file.Name)' against '$forceMatch'; bypassing already-processed check" -Level WARN
+        } elseif (Test-AlreadyProcessed $file.FullName) {
             Write-EbookLog "$bookLabel SKIP (already processed): $($file.Name)" -Level WARN
             $skipped++
             $resultLog += [PSCustomObject]@{
