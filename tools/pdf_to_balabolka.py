@@ -1387,7 +1387,7 @@ def _inject_images_into_html(html, page_images, log):
         for img in page_images[page_num]:
             cap = img.get('caption', '')
             if cap:
-                cap_esc = re.sub(r'<[^>]+>', '', cap)
+                cap_esc = re.sub(r'  +', ' ', re.sub(r'<[^>]+>', '', cap))
                 img_html += f'<figure><img src="{img["path"]}" alt="{cap_esc}"/><figcaption>{cap_esc}</figcaption></figure>\n'
             else:
                 img_html += f'<figure><img src="{img["path"]}" alt=""/></figure>\n'
@@ -11410,7 +11410,8 @@ def _link_footnote_divs(html, total_sups, log):
 
     # Parse each block to find numbered entries.
     # Accept: <p>N. text, <p>N text (where text starts with letter/quote)
-    entry_pat = re.compile(r'<p>(\d{1,4})(?:\.\s*|\s+(?=[A-Za-z"\u201c<]))')
+    # Also accept: <p><em>N. text</em> (italic-wrapped footnote bodies)
+    entry_pat = re.compile(r'<p>(?:<em>)?(\d{1,4})(?:\.\s*|\s+(?=[A-Za-z"\u201c<]))')
 
     # Build a list of (block_index, entry_number, entry_abs_pos) tuples
     # Also track which blocks are "valid" (have at least one numbered entry)
@@ -11511,7 +11512,8 @@ def _link_inline_note_paragraphs(html, total_sups, log):
         return html
 
     # Find all <p>N. text entries (potential footnote paragraphs)
-    note_pat = re.compile(r'<p>(\d{1,4})\.\s')
+    # Also accept: <p><em>N. text</em> (italic-wrapped footnote bodies)
+    note_pat = re.compile(r'<p>(?:<em>)?(\d{1,4})\.\s')
     all_notes = list(note_pat.finditer(html))
     if len(all_notes) < 20:
         log(f"  Only {len(all_notes)} <p>N. entries — too few for inline linking")
@@ -11558,6 +11560,63 @@ def _link_inline_note_paragraphs(html, total_sups, log):
         replacements.append((best.start(), note_end,
             f'<p><a id="footnote_{uid}"></a>'
             f'<a href="#noteref_{uid}">{num}.</a> '))
+
+    # Second pass: scan within already-matched footnote paragraphs for
+    # inline-joined entries (pdfminer merge artifact).
+    # Example: <p>...102. text. 103. more text. 104. last text.</p>
+    # The paragraph start (102.) was matched above; 103. and 104. are embedded
+    # inline and need their own anchor targets.
+    inline_inner_pat = re.compile(r'(?<!\d)\s(\d{1,4})\.\s')
+    used_sups = {sm.start() for sm in all_sups
+                 if any(r[0] == sm.start() for r in replacements)}
+    sup_by_num = defaultdict(list)
+    for sm in all_sups:
+        if sm.start() not in used_sups:
+            sup_by_num[sm.group(1)].append(sm)
+    for nm in all_notes:
+        if id(nm) not in used_notes:
+            continue
+        # Find the closing </p> for this paragraph
+        para_end = html.find('</p>', nm.start())
+        if para_end == -1:
+            continue
+        para_body = html[nm.end():para_end]
+        para_body_offset = nm.end()
+        for im in inline_inner_pat.finditer(para_body):
+            inline_num = im.group(1)
+            if inline_num not in sup_by_num or not sup_by_num[inline_num]:
+                continue
+            # Find nearest unused body sup before this note paragraph
+            note_pos = nm.start()
+            best_sup = None
+            for candidate in sup_by_num[inline_num]:
+                if candidate.start() < note_pos and note_pos - candidate.start() <= WINDOW:
+                    best_sup = candidate
+                    break
+            if best_sup is None:
+                # Also allow sups that are after the note if within window
+                for candidate in sup_by_num[inline_num]:
+                    if candidate.start() >= note_pos and candidate.start() - note_pos <= WINDOW:
+                        best_sup = candidate
+                        break
+            if best_sup is None:
+                continue
+            counter += 1
+            uid = f"fn5_{counter}"
+            sup_by_num[inline_num].remove(best_sup)
+            used_sups.add(best_sup.start())
+            # Body ref replacement
+            replacements.append((best_sup.start(), best_sup.end(),
+                f'<sup><a id="noteref_{uid}" href="#footnote_{uid}">'
+                f'{inline_num}</a></sup>'))
+            # Inline anchor: insert before the digit inside the paragraph
+            inline_abs = para_body_offset + im.start(1)
+            replacements.append((inline_abs, inline_abs,
+                f'<a id="footnote_{uid}"></a>'
+                f'<a href="#noteref_{uid}">'))
+            inline_abs_end = para_body_offset + im.end(1)
+            replacements.append((inline_abs_end, inline_abs_end + 2,
+                f'.</a> '))
 
     if counter == 0:
         log("  No inline footnote pairs matched")

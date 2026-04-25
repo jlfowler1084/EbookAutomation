@@ -52,7 +52,7 @@
     },
     "kfx_size_kb": 2418,
     "pdf_pattern": "*Oil*Kings*",
-    "captured_at": "2026-04-23T01:44:14.993953+00:00"
+    "captured_at": "2026-04-25T17:24:35.149021+00:00"
   },
   "Mexico": {
     "headings": {
@@ -62,8 +62,8 @@
     },
     "toc_entries": 47,
     "toc_max_depth": 3,
-    "footnote_linked_pairs": 256,
-    "footnote_unlinked": 458,
+    "footnote_linked_pairs": 437,
+    "footnote_unlinked": 277,
     "h2_headings": [
       "Contents",
       "Acknowledgments",
@@ -75,10 +75,10 @@
       "Conclusion"
     ],
     "blockquotes": 1,
-    "em_tags": 969,
+    "em_tags": 941,
     "attributions": 0,
     "ligature_splits": 22,
-    "double_spaces": 2,
+    "double_spaces": 0,
     "standalone_page_numbers": 0,
     "has_front_matter_h1": false,
     "chapter_openings": {
@@ -93,7 +93,7 @@
     },
     "kfx_size_kb": 1636,
     "pdf_pattern": "*Mexico*Illicit*",
-    "captured_at": "2026-04-23T00:58:15.076493+00:00"
+    "captured_at": "2026-04-25T17:24:43.762386+00:00"
   },
   "Return of the Gods": {
     "headings": {
@@ -135,7 +135,7 @@
       "Every Knee Shall Bow": "And though it was now dressed in modern clothing, the phenom"
     },
     "pdf_pattern": "*Return*Gods*",
-    "captured_at": "2026-04-23T00:25:20.308066+00:00"
+    "captured_at": "2026-04-25T17:24:50.587663+00:00"
   },
   "Python in Easy Steps": {
     "headings": {
@@ -337,108 +337,15 @@
       "Generating random numbers": "The graphical application developed on subsequent pages of t",
       "Planning the program": "When creating a new graphical application it is useful to fi",
       "Designing the interface": "Having created all the necessary widgets here, you can now d",
-      "Assigning static properties": "Having arranged all the necessary widgets in a grid layout&l",
+      "Assigning static properties": "Having arranged all the necessary widgets in a grid layout h",
       "Initializing dynamic properties": "Having specified values for static properties on the facing ",
-      "Adding runtime functionality": "Having created code to initialize dynamic properties&lt;a hr",
+      "Adding runtime functionality": "Having created code to initialize dynamic properties here, y",
       "Testing the program": "Having worked through the program plan here, the widgets nee",
-      "Installing a freezing tool": "Having satisfactorily tested the application&lt;a href=\"#hea",
+      "Installing a freezing tool": "Having satisfactorily tested the application here, you may w",
       "Freezing the program": "Applications developed in the Python language can be frozen "
     },
     "pdf_pattern": "*Python*easy*steps*",
-    "captured_at": "2026-04-23T00:25:35.608351+00:00"
-  },
-  "Dionysius": {
-    "headings": {
-      "h1": 4,
-      "h2": 30,
-      "h3": 30
-    },
-    "toc_entries": 64,
-    "toc_max_depth": 3,
-    "footnote_linked_pairs": 468,
-    "footnote_unlinked": 169,
-    "h2_headings": [
-      "Table of Contents",
-      "Chapter 12. Concerning 'Holy of holies,' 'King of kings,' 'Lord of lords,' 'God of gods.'. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 111 Chapter 13. Concerning 'Perfect' and 'One.'. . . . . . . . . . . . . . . . . . . p. 113 The Mystical Theology. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 118 The Influence of Dionysius in Religious History. . . . . . . . . . . . . . . . . . p. 124 I nd ex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Text. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Notes and Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . p. 135 Indexes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Index of Scripture References. . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Greek Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 140 Latin Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 143 French Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 144 Index of Pages of the Print Edition. . . . . . . . . . . . . . . . . . . . . . . . . p. 144",
-      "Preface",
-      "INTRODUCTION",
-      "THE DIVINE NAMES",
-      "Chapter X. Deity as Omnipotent: the Ancient of Days. God in relation to Time.",
-      "Chapter XI. On God and Peace.",
-      "Chapter XIII. On the Divine Perfection and Unity.",
-      "CHAPTER I",
-      "CHAPTER II",
-      "CHAPTER III",
-      "CHAPTER IV",
-      "CHAPTER V",
-      "CHAPTER VI",
-      "CHAPTER VII",
-      "CHAPTER VIII",
-      "CHAPTER IX",
-      "CHAPTER X",
-      "CHAPTER XI",
-      "CHAPTER XII",
-      "CHAPTER XIII",
-      "The Mystical Theology",
-      "CHAPTER I",
-      "CHAPTER II",
-      "CHAPTER III",
-      "CHAPTER IV",
-      "The Influence of Dionysius in Religious History",
-      "Index of Greek Words and Phrases",
-      "Index of Latin Words and Phrases",
-      "Index of French Words and Phrases"
-    ],
-    "blockquotes": 20,
-    "em_tags": 510,
-    "attributions": 0,
-    "ligature_splits": 0,
-    "double_spaces": 0,
-    "standalone_page_numbers": 0,
-    "has_front_matter_h1": false,
-    "chapter_openings": {
-      "Table of Contents": "iii",
-      "Chapter 12. Concerning 'Holy of holies,' 'King of kings,' 'Lord of lords,' 'God of gods.'. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 111 Chapter 13. Concerning 'Perfect' and 'One.'. . . . . . . . . . . . . . . . . . . p. 113 The Mystical Theology. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 118 The Influence of Dionysius in Religious History. . . . . . . . . . . . . . . . . . p. 124 I nd ex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Text. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Notes and Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . p. 135 Indexes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Index of Scripture References. . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Greek Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 140 Latin Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 143 French Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 144 Index of Pages of the Print Edition. . . . . . . . . . . . . . . . . . . . . . . . . p. 144": "iv",
-      "Preface": "THE translations of which the present volume consists are th",
-      "INTRODUCTION": "THE writings here translated are among the extant works of a",
-      "THE DIVINE NAMES": "THIS Treatise contains thirteen chapters. The following is a",
-      "Chapter X. Deity as Omnipotent: the Ancient of Days. God in relation to Time.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
-      "Chapter XI. On God and Peace.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
-      "Chapter XIII. On the Divine Perfection and Unity.": "Dionysius the Presbyter, to his fellow-Presbyter Timothy.45 ",
-      "CHAPTER I": "Wheat is the Divine Gloom.",
-      "CHAPTER II": "How it is necessary to be united with and render praise to H",
-      "CHAPTER III": "What are the affirmative expressions respecting God, and wha",
-      "CHAPTER IV": "That He Who is the Pre-eminent Cause of everything sensibly ",
-      "CHAPTER V": "Concerning ”Existence“ and also concerning ”Exemplars.”",
-      "CHAPTER VI": "Concerning ”Life.”",
-      "CHAPTER VII": "Concerning “Wisdom,” “Mind,” “Reason,” “Truth,” “Faith.”",
-      "CHAPTER VIII": "Concerning ”Power,” ”Righteousness,” ”Salvation,” ”Redemptio",
-      "CHAPTER IX": "Concerning ”Great,” ”Small,” ”Same,” ”Different,” ”Like,” “U",
-      "CHAPTER X": "Concerning ”Omnipotent,” ”Ancient of Days“; and also concern",
-      "CHAPTER XI": "Concerning ”Peace“ and what is meant by ”Very Being“ Itself,",
-      "CHAPTER XII": "Concerning ”Holy of holies,” ”King of kings,” ”Lord of lords",
-      "CHAPTER XIII": "Concerning ”Perfect“ and ”One.”",
-      "The Mystical Theology": "Wheat is the Divine Gloom.",
-      "The Influence of Dionysius in Religious History": "THE significance of the teaching of Dionysius cannot be appr",
-      "Index of Greek Words and Phrases": "• ἀγάπη • ἀγαθότητος ὕπαρξις • ἀγγελομιμητῶς • ἀγνώστως • ἀμ",
-      "Index of Latin Words and Phrases": "• Actus Purus. • Aevum • Deus movet sicut desideratum a Se I",
-      "Index of French Words and Phrases": "i ii iii iv v 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 1"
-    },
-    "kfx_size_kb": 832,
-    "pdf_pattern": "*Dionysius*",
-    "captured_at": "2026-04-23T00:25:43.267994+00:00"
-  },
-  "__known_issues__": [
-    "Mexico: footnote_linked_pairs=256 is the pipeline's actual output across every commit in this repo (bisected 3b3e4b8, ebec5d0, e7efd8e, 6372280, 2757116). The prior 377 figure in tools/test_cases.json originated in the initial commit (9b76f33) and was never produced by code in this history. SCRUM-305 confirmed no regression; 256 is the true floor. Future linker enhancements to handle italicized <p><em>N.</em> footnote bodies and inline-joined footnote paragraphs may legitimately raise this number."
-  ],
-  "__metadata__": {
-    "captured_at": "2026-04-23T01:49:29.707867+00:00",
-    "git_head_sha": "f310d64",
-    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
-    "scrum_tickets": [
-      "SCRUM-303",
-      "SCRUM-304"
-    ]
+    "captured_at": "2026-04-25T17:25:05.085071+00:00"
   },
   "Atomic Habits": {
     "headings": {
@@ -533,7 +440,7 @@
       "20: The Downside of Creating Good Habits": "20: The Downside of Creating Good Habits"
     },
     "pdf_pattern": "*Atomic*Habits*",
-    "captured_at": "2026-04-23T01:47:44.546045+00:00"
+    "captured_at": "2026-04-25T17:25:20.861496+00:00"
   },
   "Decline of the West": {
     "headings": {
@@ -592,6 +499,97 @@
       "THE FORM WORLD OF ECONOMIC LIFE: 1": "(A) MONEY"
     },
     "pdf_pattern": "*Decline*West*",
-    "captured_at": "2026-04-23T01:49:29.707867+00:00"
+    "captured_at": "2026-04-25T17:26:49.357732+00:00"
+  },
+  "Dionysius": {
+    "headings": {
+      "h1": 4,
+      "h2": 30,
+      "h3": 30
+    },
+    "toc_entries": 64,
+    "toc_max_depth": 3,
+    "footnote_linked_pairs": 468,
+    "footnote_unlinked": 169,
+    "h2_headings": [
+      "Table of Contents",
+      "Chapter 12. Concerning 'Holy of holies,' 'King of kings,' 'Lord of lords,' 'God of gods.'. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 111 Chapter 13. Concerning 'Perfect' and 'One.'. . . . . . . . . . . . . . . . . . . p. 113 The Mystical Theology. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 118 The Influence of Dionysius in Religious History. . . . . . . . . . . . . . . . . . p. 124 I nd ex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Text. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Notes and Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . p. 135 Indexes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Index of Scripture References. . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Greek Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 140 Latin Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 143 French Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 144 Index of Pages of the Print Edition. . . . . . . . . . . . . . . . . . . . . . . . . p. 144",
+      "Preface",
+      "INTRODUCTION",
+      "THE DIVINE NAMES",
+      "Chapter X. Deity as Omnipotent: the Ancient of Days. God in relation to Time.",
+      "Chapter XI. On God and Peace.",
+      "Chapter XIII. On the Divine Perfection and Unity.",
+      "CHAPTER I",
+      "CHAPTER II",
+      "CHAPTER III",
+      "CHAPTER IV",
+      "CHAPTER V",
+      "CHAPTER VI",
+      "CHAPTER VII",
+      "CHAPTER VIII",
+      "CHAPTER IX",
+      "CHAPTER X",
+      "CHAPTER XI",
+      "CHAPTER XII",
+      "CHAPTER XIII",
+      "The Mystical Theology",
+      "CHAPTER I",
+      "CHAPTER II",
+      "CHAPTER III",
+      "CHAPTER IV",
+      "The Influence of Dionysius in Religious History",
+      "Index of Greek Words and Phrases",
+      "Index of Latin Words and Phrases",
+      "Index of French Words and Phrases"
+    ],
+    "blockquotes": 20,
+    "em_tags": 510,
+    "attributions": 0,
+    "ligature_splits": 0,
+    "double_spaces": 0,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {
+      "Table of Contents": "iii",
+      "Chapter 12. Concerning 'Holy of holies,' 'King of kings,' 'Lord of lords,' 'God of gods.'. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 111 Chapter 13. Concerning 'Perfect' and 'One.'. . . . . . . . . . . . . . . . . . . p. 113 The Mystical Theology. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 118 The Influence of Dionysius in Religious History. . . . . . . . . . . . . . . . . . p. 124 I nd ex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Text. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Notes and Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . p. 135 Indexes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Index of Scripture References. . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Greek Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 140 Latin Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 143 French Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 144 Index of Pages of the Print Edition. . . . . . . . . . . . . . . . . . . . . . . . . p. 144": "iv",
+      "Preface": "THE translations of which the present volume consists are th",
+      "INTRODUCTION": "THE writings here translated are among the extant works of a",
+      "THE DIVINE NAMES": "THIS Treatise contains thirteen chapters. The following is a",
+      "Chapter X. Deity as Omnipotent: the Ancient of Days. God in relation to Time.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
+      "Chapter XI. On God and Peace.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
+      "Chapter XIII. On the Divine Perfection and Unity.": "Dionysius the Presbyter, to his fellow-Presbyter Timothy.45 ",
+      "CHAPTER I": "Wheat is the Divine Gloom.",
+      "CHAPTER II": "How it is necessary to be united with and render praise to H",
+      "CHAPTER III": "What are the affirmative expressions respecting God, and wha",
+      "CHAPTER IV": "That He Who is the Pre-eminent Cause of everything sensibly ",
+      "CHAPTER V": "Concerning ”Existence“ and also concerning ”Exemplars.”",
+      "CHAPTER VI": "Concerning ”Life.”",
+      "CHAPTER VII": "Concerning “Wisdom,” “Mind,” “Reason,” “Truth,” “Faith.”",
+      "CHAPTER VIII": "Concerning ”Power,” ”Righteousness,” ”Salvation,” ”Redemptio",
+      "CHAPTER IX": "Concerning ”Great,” ”Small,” ”Same,” ”Different,” ”Like,” “U",
+      "CHAPTER X": "Concerning ”Omnipotent,” ”Ancient of Days“; and also concern",
+      "CHAPTER XI": "Concerning ”Peace“ and what is meant by ”Very Being“ Itself,",
+      "CHAPTER XII": "Concerning ”Holy of holies,” ”King of kings,” ”Lord of lords",
+      "CHAPTER XIII": "Concerning ”Perfect“ and ”One.”",
+      "The Mystical Theology": "Wheat is the Divine Gloom.",
+      "The Influence of Dionysius in Religious History": "THE significance of the teaching of Dionysius cannot be appr",
+      "Index of Greek Words and Phrases": "• ἀγάπη • ἀγαθότητος ὕπαρξις • ἀγγελομιμητῶς • ἀγνώστως • ἀμ",
+      "Index of Latin Words and Phrases": "• Actus Purus. • Aevum • Deus movet sicut desideratum a Se I",
+      "Index of French Words and Phrases": "i ii iii iv v 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 1"
+    },
+    "kfx_size_kb": 832,
+    "pdf_pattern": "*Dionysius*",
+    "captured_at": "2026-04-25T17:26:56.354221+00:00"
+  },
+  "__known_issues__": [],
+  "__metadata__": {
+    "captured_at": "2026-04-25T17:26:56.354221+00:00",
+    "git_head_sha": "1a91660",
+    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
+    "scrum_tickets": [
+      "SCRUM-303",
+      "SCRUM-304"
+    ]
   }
 }
