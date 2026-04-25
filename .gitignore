@@ -32,7 +32,9 @@ __pycache__/
 
 # Logs
 *.log
-logs/
+logs/**
+!logs/chapter-detect-failures/
+!logs/chapter-detect-failures/.gitkeep
 
 # Debug output
 debug/

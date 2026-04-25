@@ -55,7 +55,9 @@ For longer books: three-zone sampling:
 
 ## Output Format
 
-Respond with a **raw JSON array** — no markdown fences, no commentary, no preamble. Each entry:
+**CRITICAL — FOLLOW EXACTLY:** Return ONLY a JSON array. No preamble, no explanation, no markdown fencing, no commentary before or after. The very first character of your response MUST be `[` and the very last MUST be `]`. Any text before or after the JSON array will cause the pipeline to fail.
+
+Each entry:
 
 ```json
 {"title": "exact heading text", "level": 1, "is_back_matter": false, "page_estimate": 45, "confidence": 0.95, "notes": "optional"}
