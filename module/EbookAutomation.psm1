@@ -5066,23 +5066,87 @@ level 1 = Part/Book/Volume, level 2 = Chapter, level 3 = Sub-section.
         return $null
     }
 
-    # -- Step 4: Parse JSON response (handle prose before/after fenced JSON)
-    if ($raw -match '(?s)```(?:json)?\s*(\[.*?\])\s*```') {
-        $json = $Matches[1]
-    } else {
-        $json = $raw -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
-    }
-    $json = $json.Trim()
+    # -- Step 4: Parse JSON response (tolerant -- handles prose preamble, single object, fenced blocks)
+    $json = Invoke-ChapterJsonExtract -RawResponse $raw
 
     try {
         $chapters = $json | ConvertFrom-Json
+        # ConvertFrom-Json on a single object returns a PSCustomObject, not an array
+        if ($chapters -isnot [System.Array]) {
+            $chapters = @($chapters)
+        }
         Write-EbookLog "Chapter detection: found $($chapters.Count) heading(s)" -Level SUCCESS
         return $chapters
     } catch {
-        Write-EbookLog "Chapter detection: failed to parse JSON response -- $_" -Level ERROR
-        Write-EbookLog "Chapter detection: raw response was: $($json.Substring(0, [Math]::Min(200, $json.Length)))" -Level ERROR
+        $parseError = $_
+        Write-EbookLog "Chapter detection: failed to parse JSON response -- $parseError" -Level ERROR
+        Write-EbookLog "Chapter detection: raw response was: $($raw.Substring(0, [Math]::Min(200, $raw.Length)))" -Level ERROR
+
+        # AC4: Capture failed-parse raw response for offline analysis
+        $bookLabel = if ($InputFile) { [System.IO.Path]::GetFileNameWithoutExtension($InputFile) } else { 'unknown' }
+        $safeLabel = $bookLabel -replace '[^\w\-]', '_'
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $failureDir = Join-Path $script:ModuleRoot "logs\chapter-detect-failures"
+        if (-not (Test-Path $failureDir)) {
+            New-Item -ItemType Directory -Path $failureDir -Force | Out-Null
+        }
+        $failureFile = Join-Path $failureDir "${timestamp}-${safeLabel}.txt"
+        try {
+            Set-Content -Path $failureFile -Value $raw -Encoding UTF8 -Force
+            Write-EbookLog "Chapter detection: saved failed response to $failureFile" -Level WARN
+        } catch {
+            Write-EbookLog "Chapter detection: could not save failure log ($_)" -Level WARN
+        }
+
+        # AC3: Fall back to PDF-bookmark-only mode (return null so caller uses bookmarks)
+        Write-EbookLog "Chapter detection: falling back to PDF-bookmark-only mode" -Level WARN
         return $null
     }
+}
+
+function Invoke-ChapterJsonExtract {
+    <#
+    .SYNOPSIS
+        Tolerant JSON extractor for Claude chapter-detection responses.
+    .DESCRIPTION
+        Handles three failure modes observed in production (SCRUM-313):
+        A) Conversational preamble before the JSON array.
+        B) Single JSON object instead of an array.
+        C) Markdown code fence wrapping (```json ... ```).
+        Returns a string ready for ConvertFrom-Json. Does NOT throw.
+    .PARAMETER RawResponse
+        The raw string returned by the Claude API.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$RawResponse
+    )
+
+    $s = $RawResponse.Trim()
+
+    # 1. Extract array from fenced block: ```json [ ... ] ```
+    if ($s -match '(?s)```(?:json)?\s*(\[[\s\S]*?\])\s*```') {
+        return $Matches[1].Trim()
+    }
+
+    # 2. Extract standalone array anywhere in the response (ignores leading prose)
+    if ($s -match '(?s)(\[[\s\S]*\])') {
+        return $Matches[1].Trim()
+    }
+
+    # 3. Single object in fenced block: ```json { ... } ```
+    if ($s -match '(?s)```(?:json)?\s*(\{[\s\S]*?\})\s*```') {
+        return "[$($Matches[1].Trim())]"
+    }
+
+    # 4. Bare single object (sub-failure B): wrap as one-element array
+    if ($s -match '(?s)(\{[\s\S]*\})') {
+        return "[$($Matches[1].Trim())]"
+    }
+
+    # 5. Strip fences and return whatever remains (last resort)
+    $stripped = $s -replace '(?s)^```(?:json)?\s*', '' -replace '\s*```\s*$', ''
+    return $stripped.Trim()
 }
 
 function Invoke-StructureAgent {
