@@ -5027,13 +5027,52 @@ def fix_ocr_artifacts(paragraphs, log, bookmark_titles=None, heading_indices=Non
     return paragraphs, fix_stats
 
 
-def _extract_html_with_pymupdf_columns(pdf_path, log, page_range=None):
+def _table_to_html(page, table):
+    """Convert a PyMuPDF Table object to a semantic HTML <table> string.
+
+    Each cell is extracted via page.get_textbox() so that the text is taken
+    directly from the PDF glyph stream (same source as get_text("dict")),
+    not from OCR.  Empty cells are preserved as empty <td> elements so that
+    the column structure survives the Calibre round-trip.
+
+    Args:
+        page: The pymupdf.Page the table belongs to.
+        table: A pymupdf.table.Table object (returned by page.find_tables()).
+
+    Returns:
+        An HTML string starting with <table> and ending with </table>.
+    """
+    from html import escape as _esc
+    lines = ['<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;margin:1em 0;">']
+    for row_idx, row in enumerate(table.rows):
+        lines.append('  <tr>')
+        tag = 'th' if row_idx == 0 else 'td'
+        for cell in row.cells:
+            if cell is None:
+                # Merged/spanned cell — emit empty td to preserve column count
+                lines.append(f'    <{tag}></{tag}>')
+            else:
+                cell_text = page.get_textbox(cell).strip()
+                # Normalize internal newlines to spaces
+                cell_text = ' '.join(cell_text.split())
+                lines.append(f'    <{tag}>{_esc(cell_text)}</{tag}>')
+        lines.append('  </tr>')
+    lines.append('</table>')
+    return '\n'.join(lines)
+
+
+def _extract_html_with_pymupdf_columns(pdf_path, log, page_range=None, use_tables=False):
     """Extract HTML-ready paragraph dicts from a two-column PDF using PyMuPDF.
 
     Uses page.get_text("dict") for font metadata (size, bold, italic, superscript)
     per span. Processes blocks in two-column reading order: top headers, left column
     body, right column body, left column footnotes, right column footnotes, bottom
     footers. Footnote zone = bottom 15% of page (y0 >= page_height * 0.85).
+
+    When use_tables=True (SCRUM-300 pilot, opt-in only), calls page.find_tables()
+    on each page before processing text blocks.  Detected tables are emitted as
+    is_raw_html para_dicts containing pre-built <table> markup; text blocks whose
+    bounding boxes overlap the table region are suppressed to avoid double-emission.
 
     Returns (para_dicts, body_size) with the same schema as extract_with_pdfminer_html(),
     so all downstream processing (rejoin_html_fragments, format_paragraphs_as_html,
@@ -5076,12 +5115,55 @@ def _extract_html_with_pymupdf_columns(pdf_path, log, page_range=None):
                 'line_count': 0, 'char_count': 0, 'is_page_marker': True
             })
 
+            # ── SCRUM-300 table detection (opt-in) ─────────────────────────────
+            # Collect table bounding boxes so that text blocks overlapping a
+            # detected table region can be suppressed (avoiding double-emission).
+            _table_bboxes = []  # list of (x0, y0, x1, y1) for each detected table
+            if use_tables:
+                try:
+                    _tab_result = page.find_tables()
+                    for _t in _tab_result.tables:
+                        _table_html = _table_to_html(page, _t)
+                        _table_bboxes.append(_t.bbox)
+                        # Emit as a raw-HTML para_dict so format_paragraphs_as_html
+                        # passes it through unchanged.
+                        all_paras.append({
+                            'text': '[TABLE]',
+                            'raw_html': _table_html,
+                            'is_raw_html': True,
+                            'font_size': 0,
+                            'is_bold': False,
+                            'is_italic': False,
+                            'is_centered': False,
+                            'is_all_caps': False,
+                            'page_number': pg,
+                            'line_count': 0,
+                            'char_count': len(_table_html),
+                            'is_page_marker': False,
+                        })
+                    if _tab_result.tables:
+                        log(f"    Page {pg}: {len(_tab_result.tables)} table(s) detected and emitted")
+                except Exception as _te:
+                    log(f"    [WARN] find_tables() on page {pg} failed: {_te} — skipping table detection for this page")
+
+            def _bbox_overlaps_table(bx0, by0, bx1, by1):
+                """Return True if a block bbox overlaps any detected table region."""
+                for tx0, ty0, tx1, ty1 in _table_bboxes:
+                    # Axis-aligned intersection
+                    if bx0 < tx1 and bx1 > tx0 and by0 < ty1 and by1 > ty0:
+                        return True
+                return False
+
             # Pre-scan: compute dominant font size per block for footnote detection
             text_blocks = []
             for block in page_dict["blocks"]:
                 if block["type"] != 0:
                     continue
                 x0, y0, x1, y1 = block["bbox"]
+                # Suppress text blocks that overlap a detected table region so that
+                # table cell text is not emitted twice (once as <table>, once as <p>).
+                if use_tables and _table_bboxes and _bbox_overlaps_table(x0, y0, x1, y1):
+                    continue
                 has_text = any(
                     span["text"].strip()
                     for line in block["lines"]
@@ -5368,7 +5450,8 @@ def _extract_page_with_timeout(page_layout, timeout_seconds=30):
     return result['elements']
 
 
-def _extract_chunked(pdf_path, log, force_columns=False, chunk_size=200, total_pages=None):
+def _extract_chunked(pdf_path, log, force_columns=False, chunk_size=200, total_pages=None,
+                     use_pymupdf_tables=False):
     """Extract a large PDF in page-range chunks, merging results.
 
     Used automatically when a PDF exceeds the chunking threshold (default 500 pages).
@@ -5407,7 +5490,8 @@ def _extract_chunked(pdf_path, log, force_columns=False, chunk_size=200, total_p
         try:
             chunk_paras, chunk_body_size = extract_with_pdfminer_html(
                 pdf_path, log, force_columns=force_columns,
-                page_range=(start_page, end_page)
+                page_range=(start_page, end_page),
+                use_pymupdf_tables=use_pymupdf_tables,
             )
 
             chunk_elapsed = _chunk_time.time() - chunk_start
@@ -5444,11 +5528,30 @@ def _extract_chunked(pdf_path, log, force_columns=False, chunk_size=200, total_p
     return all_para_dicts, body_size
 
 
-def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=None):
+def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=None,
+                               use_pymupdf_tables=False):
     """
     Extract PDF content using pdfminer with font metadata preserved.
     Returns list of paragraph dicts with font properties.
+
+    When use_pymupdf_tables=True (SCRUM-300 pilot, opt-in) the function bypasses
+    the column-detection gate and routes directly to _extract_html_with_pymupdf_columns
+    with use_tables=True so that detected tables are emitted as <table> markup.
     """
+    # ── SCRUM-300: explicit PyMuPDF-tables opt-in path ────────────────────────
+    if use_pymupdf_tables:
+        log("  [EXTRACTION_PATH] pymupdf_tables (SCRUM-300 pilot opt-in)")
+        try:
+            para_dicts, body_size = _extract_html_with_pymupdf_columns(
+                pdf_path, log, page_range=page_range, use_tables=True
+            )
+            if any(not p.get('is_page_marker') for p in para_dicts):
+                return para_dicts, body_size
+            log("  [WARN] PyMuPDF tables extraction returned empty — falling back to pdfminer")
+        except Exception as e:
+            log(f"  [WARN] PyMuPDF tables extraction failed: {e} — falling back to pdfminer")
+        # fall through to standard pdfminer path
+
     # ── PyMuPDF column detection gate ─────────────────────────────────────────
     # detect_column_layout() handles its own ImportError and returns is_multicolumn=False
     # if pymupdf is not installed — no outer ImportError guard needed here.
@@ -6553,6 +6656,9 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     for p in para_dicts:
         if p.get('is_page_marker'):
             continue
+        # Skip raw-HTML dicts (table markup) — their placeholder text is not a heading
+        if p.get('is_raw_html'):
+            continue
         text = p.get('text', '').strip()
         if text and len(text) < 80:
             key = text.lower()
@@ -6723,6 +6829,9 @@ hr.footnote-separator {{ border: none; border-top: 1px solid #999; width: 30%; m
 figure {{ margin: 1.5em auto; text-align: center; page-break-inside: avoid; }}
 figure img {{ max-width: 100%; height: auto; }}
 figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.5em; }}
+table {{ border-collapse: collapse; margin: 1em 0; width: auto; }}
+th, td {{ border: 1px solid #999; padding: 4px 8px; vertical-align: top; }}
+th {{ background-color: #f0f0f0; font-weight: bold; }}
 </style>
 </head><body>
 ''')
@@ -6793,6 +6902,21 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
             in_toc_region = current_page in toc_skip_pages
             continue
         if not text:
+            continue
+
+        # ── SCRUM-300: pass-through raw HTML (table markup) ─────────────────
+        if p.get('is_raw_html'):
+            raw = p.get('raw_html', '')
+            if raw and not in_toc_region:
+                # Close any open blockquote or footnote section before the table
+                if in_blockquote:
+                    html_parts.append('</blockquote>\n')
+                    in_blockquote = False
+                if in_footnotes:
+                    html_parts.append('</div>\n')
+                    in_footnotes = False
+                html_parts.append(raw + '\n')
+            after_heading = False
             continue
 
         # Handle footnote paragraphs
@@ -11815,7 +11939,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         compare_extractors_enabled=False,
                         extract_images=True,
                         _pending_corrections=None, export_corrections=False,
-                        chunk_size=200, chunk_threshold=500):
+                        chunk_size=200, chunk_threshold=500,
+                        use_pymupdf_tables=False):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -11987,10 +12112,12 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 _future = _pool.submit(_extract_chunked, pdf_path, log,
                                        force_columns=force_columns,
                                        chunk_size=_CHUNK_SIZE,
-                                       total_pages=_total_pages)
+                                       total_pages=_total_pages,
+                                       use_pymupdf_tables=use_pymupdf_tables)
             else:
                 _future = _pool.submit(extract_with_pdfminer_html, pdf_path, log,
-                                       force_columns=force_columns)
+                                       force_columns=force_columns,
+                                       use_pymupdf_tables=use_pymupdf_tables)
             try:
                 para_dicts, body_size = _future.result(timeout=_EXTRACTION_TIMEOUT)
             except _FuturesTimeout:
@@ -13336,6 +13463,10 @@ Examples:
                          "Preserves formatting (bold, italic, headings, links).")
     ap.add_argument("--force-columns", action="store_true",
                     help="Force PyMuPDF column-aware extraction even if detection confidence is low")
+    ap.add_argument("--pymupdf-tables", action="store_true", default=False,
+                    help="[SCRUM-300 pilot] Route extraction through PyMuPDF with table detection "
+                         "(find_tables). Emits <table>/<tr>/<td> markup for detected tables. "
+                         "Opt-in only — does not affect other books or the default pdfminer path.")
     ap.add_argument("--no-cache", action="store_true", default=False,
                     help="Skip extraction cache lookup, force fresh extraction")
     ap.add_argument("--use-gemini", action="store_true",
@@ -13405,6 +13536,10 @@ Examples:
     # --dialogue-voices implies --tts-enhance
     if args.dialogue_voices and not args.tts_enhance:
         args.tts_enhance = True
+
+    # --pymupdf-tables implies --html-extraction (requires the HTML pipeline)
+    if args.pymupdf_tables and not args.html_extraction:
+        args.html_extraction = True
 
     # Handle --dump-ocr-table diagnostic flag
     if args.dump_ocr_table:
@@ -13625,7 +13760,8 @@ Examples:
                                     _pending_corrections=_pending_corrections,
                                     export_corrections=args.export_corrections,
                                     chunk_size=args.chunk_size,
-                                    chunk_threshold=args.chunk_threshold)
+                                    chunk_threshold=args.chunk_threshold,
+                                    use_pymupdf_tables=args.pymupdf_tables)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}
