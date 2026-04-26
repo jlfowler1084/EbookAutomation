@@ -45,6 +45,9 @@ debug_paragraphs.txt
 tools/balcon/
 tools/poppler/
 
+# Per-machine setup-script artifacts (registry backups from voice bridge / aliases)
+tools/setup/*.reg
+
 # Credentials and session data
 tools/data/foh_credentials.json
 tools/data/foh_session.json
