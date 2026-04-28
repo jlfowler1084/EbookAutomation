@@ -231,6 +231,18 @@ restricted to the approved list (Microsoft Steffan/Aria/Jenny/Guy Online).
 Any new SecondBrain TTS emission path must have a regression case added here before it ships.
 Run `python tools/test_voice_tags.py` to verify.
 
+## Worktree Policy — data/ Is NOT Broadly Exempt (EB-181)
+
+Only `data/batch_reports/**` and `data/debug/**` are exempt from worktree enforcement.
+All other `data/` subtrees — including VQA baselines (`data/vqa_baseline_*/**`), pilot
+comparison outputs (`data/scrum*/**`), and gate result files — must be committed on a
+worktree branch and land via PR. VQA baseline files feed the regression gate at runtime
+and function as test fixtures; a silent update to master can cause false passes or mask
+real pipeline regressions across the entire 6-book corpus. The SCRUM-306 audit found 9
+violations in this category during the hook-unwired window (2026-04-09 to 2026-04-23),
+including one unticketed "Stray Baseline" commit. This constraint is intentional — see
+`docs/decisions/ADR-EB-181-data-exemption-scope.md` for the full rationale.
+
 ## Project-Specific Mistakes to Avoid
 - Don't use Unix-style paths (`/home/...`) — use Windows paths (`C:\...`)
 - Changes to regex phases affect downstream — always test full pipeline
