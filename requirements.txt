@@ -3,7 +3,7 @@
 
 # Core PDF extraction
 pypdf==6.9.2
-pdfminer.six==20260107
+pdfminer.six==20251230
 PyMuPDF==1.27.2.2
 pdf2image==1.17.0
 pytesseract==0.3.13
@@ -21,7 +21,7 @@ requests==2.33.0
 pyspellchecker==0.9.0
 
 # Optional — coordinate-based heading resolution (degrades gracefully if missing)
-pdfplumber==0.11.5
+pdfplumber==0.11.9
 
 # Config
 python-dotenv==1.2.2
