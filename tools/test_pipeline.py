@@ -93,7 +93,7 @@ TEST_CASES = {
     },
     "Genesis": {
         "pdf_pattern": "*Genesis*",
-        "pdf_exclude": None,
+        "pdf_exclude": "Kass",
         "use_pdfminer": True,
         "expected": {
             "kfx_produced": True,
