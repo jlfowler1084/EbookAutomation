@@ -1,3 +1,5 @@
+@.claude/preflight.md
+
 # CLAUDE.md — EbookAutomation Project Context
 <!-- This file contains EbookAutomation-specific rules only.
      Shared conventions are inherited from ~/.claude/CLAUDE.md -->

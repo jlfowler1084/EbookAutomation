@@ -71,6 +71,8 @@ data/scrum28?_*/
 
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
+.claude/preflight.md
+.claude/preflight.tmp.md
 
 # Test corpus (books are copyrighted, but baselines/expectations are committed)
 test-corpus/*
