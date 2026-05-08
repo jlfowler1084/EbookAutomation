@@ -1632,8 +1632,30 @@ def detect_column_layout(pdf_path, log, sample_pages=8):
                            and b[1] / page_height <= 0.88                   # exclude bottom 12% (footnotes)
                            and (b[2] - b[0]) / page_width_local <= 0.70]   # exclude full-width blocks
 
-            if len(text_blocks) < 3:
+            if len(text_blocks) < 2:
                 continue  # too few blocks to classify this page
+
+            # Special case: exactly 2 blocks with one clearly left and one clearly right
+            # is direct evidence of two-column layout (each column is a single large block).
+            # Check that one block's x0 is in the left 45% and the other in the right 45%
+            # of the page, with a gap of at least 10% of page width between them.
+            if len(text_blocks) == 2:
+                b_left, b_right = sorted(text_blocks, key=lambda b: b[0])
+                left_x0 = b_left[0]
+                right_x0 = b_right[0]
+                gap_ratio = (right_x0 - left_x0) / page_width_local
+                left_in_left_half = left_x0 < page_width_local * 0.45
+                right_in_right_half = right_x0 > page_width_local * 0.45
+                if left_in_left_half and right_in_right_half and gap_ratio >= 0.10:
+                    pages_with_two_clusters += 1
+                    col1_start = 0
+                    col1_end = right_x0 - (page_width_local * 0.02)
+                    col2_start = right_x0
+                    col2_end = page_width_local
+                    column_boundaries_list.append(
+                        [(col1_start, col1_end), (col2_start, col2_end)]
+                    )
+                continue  # handled the 2-block case; move to next page
 
             x0_values = [b[0] for b in text_blocks]
 
