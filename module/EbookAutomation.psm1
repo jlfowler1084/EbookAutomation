@@ -2014,9 +2014,15 @@ else:
         } else {
             Write-EbookLog "Kindle: Calibre exited with code $($proc.ExitCode)" -Level ERROR
             if (Test-Path $errFile) {
-                $errText = Get-Content $errFile -Tail 10 -ErrorAction SilentlyContinue
+                $errText = Get-Content $errFile -Tail 50 -ErrorAction SilentlyContinue
                 foreach ($line in $errText) {
-                    if ($line.Trim()) { Write-EbookLog "Kindle:   $line" -Level ERROR }
+                    if ($line.Trim()) { Write-EbookLog "[CALIBRE_STDERR] $line" -Level ERROR }
+                }
+            }
+            if (Test-Path $outLog) {
+                $outText = Get-Content $outLog -Tail 50 -ErrorAction SilentlyContinue
+                foreach ($line in $outText) {
+                    if ($line.Trim()) { Write-EbookLog "[CALIBRE_STDOUT] $line" -Level ERROR }
                 }
             }
             if ($outFmt -eq 'kfx') {
@@ -2080,9 +2086,15 @@ else:
             } else {
                 Write-EbookLog "Kindle: AZW3 fallback failed (exit $($proc2.ExitCode))" -Level ERROR
                 if (Test-Path $errFile) {
-                    $errText2 = Get-Content $errFile -Tail 5 -ErrorAction SilentlyContinue
+                    $errText2 = Get-Content $errFile -Tail 50 -ErrorAction SilentlyContinue
                     foreach ($line in $errText2) {
-                        if ($line.Trim()) { Write-EbookLog "Kindle:   $line" -Level ERROR }
+                        if ($line.Trim()) { Write-EbookLog "[CALIBRE_STDERR] $line" -Level ERROR }
+                    }
+                }
+                if (Test-Path $outLog) {
+                    $outText2 = Get-Content $outLog -Tail 50 -ErrorAction SilentlyContinue
+                    foreach ($line in $outText2) {
+                        if ($line.Trim()) { Write-EbookLog "[CALIBRE_STDOUT] $line" -Level ERROR }
                     }
                 }
                 return $failResult
