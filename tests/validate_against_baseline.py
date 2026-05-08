@@ -62,6 +62,28 @@ def load_baselines() -> dict:
 # Per-book comparison
 # ---------------------------------------------------------------------------
 
+def _safe_test_name(pdf_path: str, book_name: str) -> str:
+    """Return a test_name that keeps the output filename within the NTFS
+    255-byte filename limit when passed to _tp.run_extraction().
+
+    Background (EB-208): PDFs with very long filenames produce safe_stems of
+    229+ chars; with the test suffix ``_test_<book_name>.html`` appended the
+    filename reaches 256 chars — one over the NTFS limit — causing
+    [Errno 22] on open(), regardless of the output directory.  Shortening the
+    test_name is the only safe fix that doesn't touch pdf_to_balabolka.py.
+    """
+    import re as _re
+    stem = Path(pdf_path).stem
+    safe_stem = _re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
+    fixed_prefix = "_test_"
+    fixed_ext = ".html"
+    max_slug_len = 255 - len(safe_stem) - len(fixed_prefix) - len(fixed_ext) - 1
+    slug = book_name.replace(" ", "_").lower()
+    if len(slug) <= max_slug_len:
+        return book_name
+    return slug[:max(max_slug_len, 4)]
+
+
 def run_and_compare(book_name: str, entry: dict) -> Tuple[List[str], List[str]]:
     """
     Run HTML extraction for *book_name* and compare against *entry*.
@@ -71,13 +93,14 @@ def run_and_compare(book_name: str, entry: dict) -> Tuple[List[str], List[str]]:
     failures: list[str] = []
 
     # -- Find PDF --
-    pdf_path = _tp.find_pdf(entry["pdf_pattern"])
+    pdf_path = _tp.find_pdf(entry["pdf_pattern"], exclude=entry.get("pdf_exclude"))
     if not pdf_path:
         failures.append(f"PDF not found matching pattern: {entry['pdf_pattern']}")
         return passes, failures
 
-    # -- Run extraction --
-    html_path, stdout, stderr = _tp.run_extraction(pdf_path, use_pdfminer=True, test_name=book_name)
+    # -- Run extraction (with path-safe test_name if needed for EB-208) --
+    safe_name = _safe_test_name(pdf_path, book_name)
+    html_path, stdout, stderr = _tp.run_extraction(pdf_path, use_pdfminer=True, test_name=safe_name)
     if not html_path or not os.path.isfile(html_path):
         failures.append("HTML file was not produced by extraction pipeline")
         if stderr.strip():
@@ -255,6 +278,17 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def _run_standalone(books_filter: Optional[List[str]] = None) -> int:
+    # EB-209: startup guard — detect empty/missing ARCHIVE_DIR before iterating
+    # books so that setup errors produce a clear exit-2 instead of 7 spurious
+    # "PDF not found" failures that look like real regressions.
+    if not _tp.ARCHIVE_DIR.exists():
+        print(f"ERROR: ARCHIVE_DIR does not exist: {_tp.ARCHIVE_DIR}", file=sys.stderr)
+        sys.exit(2)
+    pdf_count = len(list(_tp.ARCHIVE_DIR.glob("*.pdf")))
+    if pdf_count == 0:
+        print(f"ERROR: ARCHIVE_DIR is empty: {_tp.ARCHIVE_DIR}", file=sys.stderr)
+        sys.exit(2)
+
     try:
         baselines = load_baselines()
     except FileNotFoundError as exc:

@@ -32,19 +32,23 @@ import test_pipeline as _tp  # noqa: E402
 
 
 # Books to recapture (pdf_pattern matches archive/ glob).
+# Values are (pdf_pattern, pdf_exclude_substring_or_None).
 # Corpus policy (SCRUM-303 + SCRUM-304): full CLAUDE.md 6-book regression
 # corpus plus Dionysius (retained as the SCRUM-299 running-header
 # regression anchor). Atomic Habits and Decline of the West source PDFs
 # were re-acquired under SCRUM-304 and added here; their KFX-only
 # carve-out from SCRUM-303 is removed.
+# Genesis (Barton) added under EB-208 as 8th canonical baseline book;
+# pdf_exclude="Kass" disambiguates from the Kass "Beginning of Wisdom" PDF.
 BOOK_PATTERNS = {
-    "Oil Kings":             "*Oil*Kings*",
-    "Mexico":                "*Mexico*Illicit*",
-    "Return of the Gods":    "*Return*Gods*",
-    "Python in Easy Steps":  "*Python*easy*steps*",
-    "Atomic Habits":         "*Atomic*Habits*",
-    "Decline of the West":   "*Decline*West*",
-    "Dionysius":             "*Dionysius*",
+    "Oil Kings":             ("*Oil*Kings*",         None),
+    "Mexico":                ("*Mexico*Illicit*",     None),
+    "Return of the Gods":    ("*Return*Gods*",        None),
+    "Python in Easy Steps":  ("*Python*easy*steps*",  None),
+    "Atomic Habits":         ("*Atomic*Habits*",      None),
+    "Decline of the West":   ("*Decline*West*",       None),
+    "Dionysius":             ("*Dionysius*",           None),
+    "Genesis (Barton)":      ("*Genesis*",            "Kass"),
 }
 
 
@@ -72,6 +76,33 @@ def baseline_from_actual(raw: dict) -> dict:
     }
 
 
+def _safe_test_name(pdf_path: str, book_name: str) -> str:
+    """Return a test_name that keeps the output filename within the NTFS
+    255-byte filename limit when passed to _tp.run_extraction().
+
+    Background (EB-208): PDFs with very long filenames (e.g. Anna's Archive
+    export names) produce safe_stems of 229+ chars.  With the test suffix
+    ``_test_<book_name>.html`` appended the filename reaches 256 chars — one
+    over the NTFS hard limit — causing Python 3.12 to raise
+    [Errno 22] Invalid argument on open(), regardless of which output
+    directory is used.  Shortening the test_name is the only safe fix that
+    doesn't touch pdf_to_balabolka.py.
+    """
+    import re as _re
+    stem = Path(pdf_path).stem
+    safe_stem = _re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
+    # suffix template: _test_<slug>.html — compute budget for slug
+    fixed_prefix = "_test_"
+    fixed_ext = ".html"
+    max_slug_len = 255 - len(safe_stem) - len(fixed_prefix) - len(fixed_ext) - 1  # -1 safety
+    slug = book_name.replace(" ", "_").lower()
+    if len(slug) <= max_slug_len:
+        return book_name  # original is fine
+    # Truncate slug to fit
+    truncated_slug = slug[:max(max_slug_len, 4)]
+    return truncated_slug
+
+
 def _git_head_sha() -> str:
     """Return the short SHA of the current git HEAD, or 'unknown'."""
     import subprocess
@@ -95,8 +126,8 @@ def recapture(books_filter: list[str] | None = None) -> int:
             existing = json.load(f)
 
     to_capture = {
-        name: pat
-        for name, pat in BOOK_PATTERNS.items()
+        name: (pat, excl)
+        for name, (pat, excl) in BOOK_PATTERNS.items()
         if not books_filter or any(f.lower() in name.lower() for f in books_filter)
     }
 
@@ -120,16 +151,22 @@ def recapture(books_filter: list[str] | None = None) -> int:
     print(f"  EbookAutomation — Baseline Recapture ({total} book(s))")
     print(f"{'=' * 62}\n")
 
-    for book_name, pdf_pattern in to_capture.items():
+    for book_name, (pdf_pattern, pdf_exclude) in to_capture.items():
         print(f"  [{ok + failed + 1}/{total}] {book_name} ...", flush=True)
 
-        pdf_path = _tp.find_pdf(pdf_pattern)
+        pdf_path = _tp.find_pdf(pdf_pattern, exclude=pdf_exclude)
         if not pdf_path:
             print(f"  SKIP: PDF not found for pattern {pdf_pattern!r}")
             failed += 1
             continue
 
-        html_path, stdout, stderr = _tp.run_extraction(pdf_path, use_pdfminer=True, test_name=book_name)
+        # Use a safe (possibly truncated) test_name so the output filename
+        # stays within the NTFS 255-byte limit (EB-208).
+        safe_name = _safe_test_name(pdf_path, book_name)
+        if safe_name != book_name:
+            print(f"    [path-safe] truncated test_name: {safe_name!r}")
+        html_path, stdout, stderr = _tp.run_extraction(pdf_path, use_pdfminer=True, test_name=safe_name)
+
         if not html_path or not os.path.isfile(html_path):
             print(f"  FAIL: extraction produced no HTML file")
             if stderr.strip():
@@ -149,6 +186,8 @@ def recapture(books_filter: list[str] | None = None) -> int:
             entry["kfx_size_kb"] = existing_entry["kfx_size_kb"]
 
         entry["pdf_pattern"] = pdf_pattern
+        if pdf_exclude is not None:
+            entry["pdf_exclude"] = pdf_exclude
         entry["captured_at"] = datetime.now(timezone.utc).isoformat()
 
         new_baselines[book_name] = entry
@@ -198,10 +237,11 @@ def recapture(books_filter: list[str] | None = None) -> int:
             "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, "
             "Return of the Gods, Python in Easy Steps, Atomic Habits, "
             "Decline of the West) plus Dionysius (SCRUM-299 running-header "
-            "regression anchor). Atomic Habits + Decline of the West "
+            "regression anchor) and Genesis/Barton (EB-208 diverse-author "
+            "edited collection anchor). Atomic Habits + Decline of the West "
             "source PDFs were re-acquired under SCRUM-304."
         ),
-        "scrum_tickets": ["SCRUM-303", "SCRUM-304"],
+        "scrum_tickets": ["SCRUM-303", "SCRUM-304", "EB-208"],
     }
 
     with open(BASELINES_FILE, "w", encoding="utf-8") as f:
