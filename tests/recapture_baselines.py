@@ -40,15 +40,18 @@ import test_pipeline as _tp  # noqa: E402
 # carve-out from SCRUM-303 is removed.
 # Genesis (Barton) added under EB-208 as 8th canonical baseline book;
 # pdf_exclude="Kass" disambiguates from the Kass "Beginning of Wisdom" PDF.
+# Fate of Empires (Glubb) added under EB-160 as 9th canonical baseline book;
+# two-column layout regression anchor post column-detection heuristic fix.
 BOOK_PATTERNS = {
-    "Oil Kings":             ("*Oil*Kings*",         None),
-    "Mexico":                ("*Mexico*Illicit*",     None),
-    "Return of the Gods":    ("*Return*Gods*",        None),
-    "Python in Easy Steps":  ("*Python*easy*steps*",  None),
-    "Atomic Habits":         ("*Atomic*Habits*",      None),
-    "Decline of the West":   ("*Decline*West*",       None),
-    "Dionysius":             ("*Dionysius*",           None),
-    "Genesis (Barton)":      ("*Genesis*",            "Kass"),
+    "Oil Kings":                  ("*Oil*Kings*",         None),
+    "Mexico":                     ("*Mexico*Illicit*",    None),
+    "Return of the Gods":         ("*Return*Gods*",       None),
+    "Python in Easy Steps":       ("*Python*easy*steps*", None),
+    "Atomic Habits":              ("*Atomic*Habits*",     None),
+    "Decline of the West":        ("*Decline*West*",      None),
+    "Dionysius":                  ("*Dionysius*",          None),
+    "Genesis (Barton)":           ("*Genesis*",           "Kass"),
+    "Fate of Empires (Glubb)":    ("*Fate*Empires*",      None),
 }
 
 
@@ -237,11 +240,12 @@ def recapture(books_filter: list[str] | None = None) -> int:
             "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, "
             "Return of the Gods, Python in Easy Steps, Atomic Habits, "
             "Decline of the West) plus Dionysius (SCRUM-299 running-header "
-            "regression anchor) and Genesis/Barton (EB-208 diverse-author "
-            "edited collection anchor). Atomic Habits + Decline of the West "
-            "source PDFs were re-acquired under SCRUM-304."
+            "regression anchor), Genesis/Barton (EB-208 diverse-author "
+            "edited collection anchor), and Fate of Empires/Glubb (EB-160 "
+            "two-column layout regression anchor). Atomic Habits + Decline "
+            "of the West source PDFs were re-acquired under SCRUM-304."
         ),
-        "scrum_tickets": ["SCRUM-303", "SCRUM-304", "EB-208"],
+        "scrum_tickets": ["SCRUM-303", "SCRUM-304", "EB-208", "EB-160"],
     }
 
     with open(BASELINES_FILE, "w", encoding="utf-8") as f:

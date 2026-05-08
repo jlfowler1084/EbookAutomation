@@ -584,13 +584,14 @@
   },
   "__known_issues__": [],
   "__metadata__": {
-    "captured_at": "2026-05-08T22:36:18.729293+00:00",
-    "git_head_sha": "acc826e",
-    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor) and Genesis/Barton (EB-208 diverse-author edited collection anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
+    "captured_at": "2026-05-08T23:25:37.042474+00:00",
+    "git_head_sha": "a64817c",
+    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor), Genesis/Barton (EB-208 diverse-author edited collection anchor), and Fate of Empires/Glubb (EB-160 two-column layout regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
     "scrum_tickets": [
       "SCRUM-303",
       "SCRUM-304",
-      "EB-208"
+      "EB-208",
+      "EB-160"
     ]
   },
   "Genesis (Barton)": {
@@ -642,5 +643,27 @@
     "pdf_pattern": "*Genesis*",
     "pdf_exclude": "Kass",
     "captured_at": "2026-05-08T22:36:18.729293+00:00"
+  },
+  "Fate of Empires (Glubb)": {
+    "headings": {
+      "h1": 3,
+      "h2": 0,
+      "h3": 0
+    },
+    "toc_entries": 3,
+    "toc_max_depth": 1,
+    "footnote_linked_pairs": 0,
+    "footnote_unlinked": 0,
+    "h2_headings": [],
+    "blockquotes": 0,
+    "em_tags": 102,
+    "attributions": 0,
+    "ligature_splits": 0,
+    "double_spaces": 0,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {},
+    "pdf_pattern": "*Fate*Empires*",
+    "captured_at": "2026-05-08T23:25:37.042474+00:00"
   }
 }

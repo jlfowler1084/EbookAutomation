@@ -73,8 +73,9 @@ focus. Stored in `output/kindle/`.
 
 `tests/expected_baselines.json` covers the full CLAUDE.md 6-book test
 corpus plus Dionysius (retained as the SCRUM-299 running-header regression
-anchor) and Genesis/Barton (EB-208, diverse-author edited collection) —
-8 books total, all with source PDFs in `archive/`.
+anchor), Genesis/Barton (EB-208, diverse-author edited collection), and
+Fate of Empires/Glubb (EB-160, two-column layout regression anchor) —
+9 books total, all with source PDFs in `archive/`.
 
 | Book | In CLAUDE.md corpus | Source PDF | In baseline |
 |---|---|---|---|
@@ -86,6 +87,7 @@ anchor) and Genesis/Barton (EB-208, diverse-author edited collection) —
 | Decline of the West | yes | `archive/` | yes |
 | Dionysius | no | `archive/` | yes (regression anchor) |
 | Genesis (Barton) | no | `archive/` | yes (diverse-author edited collection) |
+| Fate of Empires (Glubb) | no | `archive/` | yes (two-column layout regression anchor — EB-160) |
 
 The baseline file's `__metadata__` block records the capture date, pipeline
 commit SHA, and current corpus policy. Re-baseline with
