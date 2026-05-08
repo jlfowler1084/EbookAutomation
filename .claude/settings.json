@@ -31,6 +31,16 @@
   "enabledPlugins": {
     "playwright@claude-plugins-official": false,
     "context7@claude-plugins-official": false,
-    "github@claude-plugins-official": false
+    "github@claude-plugins-official": false,
+    "huggingface-skills@claude-plugins-official": false,
+    "vercel@claude-plugins-official": false,
+    "chrome-devtools-mcp@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false,
+    "typescript-lsp@claude-plugins-official": false,
+    "firecrawl@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": false,
+    "discord@claude-plugins-official": false
   }
 }
