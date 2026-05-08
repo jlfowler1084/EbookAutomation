@@ -42,5 +42,16 @@
     "claude-md-management@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": false,
     "discord@claude-plugins-official": false
-  }
+  },
+  "skillFilterAllowlist": [
+    "ship",
+    "safe-commit",
+    "regression-check",
+    "worktree-management",
+    "powershell-windows",
+    "python-core",
+    "post-deployment",
+    "subagent-coordinator",
+    "generate-deployment-prompt"
+  ]
 }
