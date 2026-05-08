@@ -11528,6 +11528,14 @@ def _link_inline_note_paragraphs(html, total_sups, log):
     separator.  This strategy matches each body reference to the nearest
     forward <p>N. entry with the same number.
 
+    Two-phase matching (EB-179): before the main greedy loop, pre-scan each
+    note paragraph for inline-joined entries (N. text embedded inside a longer
+    merged paragraph).  When a body <sup>N</sup> has both a standalone <p>N.
+    candidate and an inline-joined candidate within the same chapter scope, the
+    inline-joined match is preferred.  This prevents restart-numbered footnotes
+    from being mis-linked to the wrong chapter's standalone entry, freeing the
+    inner-loop pass to reclaim the correct inline-joined link.
+
     Validation: only activates when the HTML contains enough potential
     footnote entries (>=20) that pair with body superscripts.
     """
@@ -11553,6 +11561,36 @@ def _link_inline_note_paragraphs(html, total_sups, log):
     for nm in all_notes:
         notes_by_num[nm.group(1)].append(nm)
 
+    # ── EB-179: Two-phase pre-scan ────────────────────────────────────────────
+    # Build chapter boundary positions from h1/h2 headings.  A body sup must
+    # not be linked across a chapter boundary.
+    _ch_boundary_pat = re.compile(r'<h[12][^>]*>', re.IGNORECASE)
+    _chapter_boundaries = [m.start() for m in _ch_boundary_pat.finditer(html)]
+
+    def _same_chapter(pos1, pos2):
+        """True when no h1/h2 heading falls strictly between pos1 and pos2."""
+        lo, hi = min(pos1, pos2), max(pos1, pos2)
+        # Binary search to check if any boundary lies inside (lo, hi)
+        import bisect
+        idx = bisect.bisect_right(_chapter_boundaries, lo)
+        return idx >= len(_chapter_boundaries) or _chapter_boundaries[idx] >= hi
+
+    # Pre-scan every note paragraph for inline-joined entries.
+    # An inline-joined entry is a "N. text" pattern embedded inside a note
+    # paragraph that starts with a different number (pdfminer merge artifact).
+    # Stored as: inline_joined[num_str] -> list of para_start positions (sorted)
+    # so the main loop can check whether a better in-chapter match exists.
+    inline_inner_pre = re.compile(r'(?<!\d)\s(\d{1,4})\.\s')
+    inline_joined = defaultdict(list)  # num -> sorted list of para_start positions
+    for nm in all_notes:
+        para_end = html.find('</p>', nm.start())
+        if para_end == -1:
+            continue
+        para_body = html[nm.end():para_end]
+        for im in inline_inner_pre.finditer(para_body):
+            inline_joined[im.group(1)].append(nm.start())
+    # ── end pre-scan ──────────────────────────────────────────────────────────
+
     WINDOW = 40000  # max chars between body ref and footnote entry
     counter = 0
     replacements = []
@@ -11573,6 +11611,24 @@ def _link_inline_note_paragraphs(html, total_sups, log):
                 break
         if best is None:
             continue
+
+        # ── EB-179: prefer inline-joined over standalone ──────────────────────
+        # If the best standalone candidate crosses a chapter boundary OR there
+        # is an inline-joined candidate for the same number within the same
+        # chapter, skip this standalone match so the inner loop can claim the
+        # inline-joined entry instead.
+        if num in inline_joined:
+            best_crosses_boundary = not _same_chapter(pos, best.start())
+            # Check whether any inline-joined para is in-chapter and forward
+            has_inline_in_chapter = any(
+                p > pos and p - pos <= WINDOW and _same_chapter(pos, p)
+                for p in inline_joined[num]
+            )
+            if has_inline_in_chapter and (best_crosses_boundary
+                    or not _same_chapter(pos, best.start())):
+                # Defer this sup to the inner-loop pass
+                continue
+        # ── end EB-179 guard ──────────────────────────────────────────────────
 
         counter += 1
         used_notes.add(id(best))
