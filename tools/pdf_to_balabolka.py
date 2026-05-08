@@ -2795,6 +2795,12 @@ def extract_text_via_calibre(input_path, log, calibre_path=None):
             capture_output=True, text=True, encoding='utf-8',
         )
         if result.returncode != 0:
+            for line in (result.stderr or '').splitlines():
+                if line.strip():
+                    log(f"[CALIBRE_STDERR] {line}")
+            for line in (result.stdout or '').splitlines():
+                if line.strip():
+                    log(f"[CALIBRE_STDOUT] {line}")
             raise RuntimeError(
                 f"Calibre conversion failed (exit {result.returncode}):\n{result.stderr}"
             )
