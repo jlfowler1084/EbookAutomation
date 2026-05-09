@@ -175,15 +175,16 @@ import tempfile, soundfile as sf, os
 # with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
 #     sf.write(tmp.name, samples, sr)  # PermissionError
 
-# CORRECT: path without holding a file handle
-tmp = tempfile.mktemp(suffix=".wav")
+# CORRECT: mkstemp returns (fd, path); close fd before soundfile opens the path
+fd, tmp = tempfile.mkstemp(suffix=".wav")
+os.close(fd)
 sf.write(tmp, samples, sr)
 size_kb = os.path.getsize(tmp) // 1024
 os.unlink(tmp)
 ```
 
-`tempfile.mktemp()` is deprecated due to TOCTOU risk, but that risk is immaterial for a
-single-process pipeline writing to a user-local temp directory.
+`tempfile.mkstemp()` creates the file and returns an open file descriptor; calling
+`os.close(fd)` immediately releases the handle so `soundfile.write()` can open the path.
 
 ### 5 — Python `urllib` for model download (not PowerShell `Invoke-WebRequest`)
 
@@ -217,7 +218,7 @@ Alternatively, pass `--ffmpeg <path>` to `kokoro_synth.py` when ffmpeg is not on
 | 404 on model URLs | v0.5.0 renamed model files with no changelog entry | URLs pinned to `model-files-v1.0` release tag in `kokoro_synth.py` |
 | `providers=` TypeError | Constructor kwarg silently removed in v0.5.0 | `ONNX_PROVIDER` env var is the documented v0.5.0 interface |
 | 510 IndexError | Library truncates to 510 phonemes then accesses index 510 (0-based OOB) | 100-word chunks ≈ ≤400 phonemes; binary retry handles pathological edge cases |
-| PermissionError on WAV | Windows holds exclusive lock on `NamedTemporaryFile` for life of context manager | `mktemp()` returns a path string without any handle |
+| PermissionError on WAV | Windows holds exclusive lock on `NamedTemporaryFile` for life of context manager | `mkstemp()` + `os.close(fd)` releases the handle before soundfile opens the path |
 | HTML instead of binary | `Invoke-WebRequest` does not follow GitHub CDN redirect chain | `urllib.request.urlretrieve` follows all HTTP redirects correctly |
 
 The chunker + binary retry provide defense-in-depth: the chunker eliminates 99%+ of IndexErrors
@@ -262,9 +263,11 @@ exceeding 5,000 words. The canonical regression case is *Fate of Empires* Chapte
 words, 9 chapters, `John_Glubb_-_The_Fate_of_Empires_*_balabolka.txt`).
 
 **Never use `NamedTemporaryFile` for inter-process file paths on Windows.**
-Use `tempfile.mktemp()` or construct a path under `tempfile.gettempdir()` when a second process
-or library needs to open the same path. Reserve `NamedTemporaryFile` for in-process context
-managers where the handle never escapes the `with` block.
+Use `tempfile.mkstemp()` + `os.close(fd)` when a second process or library needs to open the
+same path. `mkstemp()` creates the file and returns an open fd; closing it immediately before
+passing the path to the consumer (e.g. `soundfile.write()`) releases the exclusive Windows lock.
+Reserve `NamedTemporaryFile` for in-process context managers where the handle never escapes the
+`with` block.
 
 **Check ffmpeg before invoking the stitch step.**
 The chapter WAVs succeed independently of ffmpeg; the stitch fails silently if it is absent. Add
