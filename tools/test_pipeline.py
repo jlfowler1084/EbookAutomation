@@ -1377,6 +1377,54 @@ def run_spaced_letter_tests():
         (P if result == original else F).append(
             f"TOC dots unchanged: got '{result}'")
 
+    # ── Page-number debris removal (EB-212): _strip_page_number_debris ──
+
+    from pdf_to_balabolka import _strip_page_number_debris as _spnd
+
+    def _debrise(text):
+        """Run a single paragraph through _strip_page_number_debris and return text."""
+        log_messages.clear()
+        pdicts = [{'text': text}]
+        _spnd(pdicts, _log)
+        return pdicts[0]['text']
+
+    def test_pnd_standalone_digit(P, F):
+        """EB-212: pure-digit paragraph is cleared (orphaned page number)."""
+        result = _debrise("256")
+        (P if result == '' else F).append(f"standalone '256' cleared: got '{result}'")
+
+    def test_pnd_spaced_digit(P, F):
+        """EB-212: space-separated digit paragraph (wide-tracking artifact) is cleared."""
+        result = _debrise("2 5 6")
+        (P if result == '' else F).append(f"spaced '2 5 6' cleared: got '{result}'")
+
+    def test_pnd_prefix_chapter(P, F):
+        """EB-212: 3-digit prefix before 'Chapter' stripped."""
+        result = _debrise("256 Chapter 3 Machine-Level Representation")
+        (P if result == "Chapter 3 Machine-Level Representation" else F).append(
+            f"prefix stripped: got '{result}'")
+
+    def test_pnd_spaced_prefix_chapter(P, F):
+        """EB-212: spaced-digit prefix before 'Chapter' stripped (pre-Phase-3e form)."""
+        result = _debrise("2 5 6 Chapter 3 Machine-Level Representation")
+        (P if result == "Chapter 3 Machine-Level Representation" else F).append(
+            f"spaced prefix stripped: got '{result}'")
+
+    def test_pnd_short_prefix_unchanged(P, F):
+        """EB-212: 1-2 digit prefix NOT stripped (likely a section/chapter number)."""
+        original = "3 Chapter 1 Introduction"
+        result = _debrise(original)
+        (P if result == original else F).append(
+            f"short prefix unchanged: got '{result}'")
+
+    def test_pnd_normal_unchanged(P, F):
+        """EB-212: normal paragraph text is not touched."""
+        original = "This is body text with no page number prefix."
+        result = _debrise(original)
+        (P if result == original else F).append(
+            f"normal text unchanged: got '{result}'")
+
+
     # ── Register and run ──────────────────────────────────────────────
 
     _run("spaced: fully-spaced Wilson", test_fully_spaced_wilson)
@@ -1396,6 +1444,13 @@ def run_spaced_letter_tests():
     _run("spaced[html]: code bracket artifacts (EB-214)", test_html_code_brackets)
     _run("spaced[html]: normal text unchanged", test_html_normal_text_unchanged)
     _run("spaced[html]: TOC dot leaders unchanged", test_html_toc_dots_unchanged)
+    # EB-212 page-number debris
+    _run("pnd[eb-212]: standalone digit cleared", test_pnd_standalone_digit)
+    _run("pnd[eb-212]: spaced digit cleared", test_pnd_spaced_digit)
+    _run("pnd[eb-212]: prefix before Chapter stripped", test_pnd_prefix_chapter)
+    _run("pnd[eb-212]: spaced-prefix before Chapter stripped", test_pnd_spaced_prefix_chapter)
+    _run("pnd[eb-212]: short prefix unchanged", test_pnd_short_prefix_unchanged)
+    _run("pnd[eb-212]: normal text unchanged", test_pnd_normal_unchanged)
 
     return results
 
@@ -1601,7 +1656,7 @@ def main():
         run_spaced = True
 
     n_filter = 16 if run_filters else 0
-    n_spaced = 11 if run_spaced else 0
+    n_spaced = 22 if run_spaced else 0  # 11 spaced + 5 HTML (EB-213/214) + 6 EB-212 pnd tests
     total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter + n_spaced
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
     print(f"\n{'=' * 60}")
