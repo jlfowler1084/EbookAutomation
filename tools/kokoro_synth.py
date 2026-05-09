@@ -38,11 +38,11 @@ DEFAULT_SPEED    = 1.0
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "kokoro-models"
 _PROGRESS_SUFFIX  = ".kokoro_progress.json"
 
-# Direct download URLs (no HuggingFace auth required)
-_MODEL_URL  = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v0.19.onnx"
-_VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices.bin"
-_MODEL_FILE  = "kokoro-v0.19.onnx"
-_VOICES_FILE = "voices.bin"
+# Direct download URLs — kokoro-onnx v0.5.0+ uses v1.0 model files
+_MODEL_URL  = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+_VOICES_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+_MODEL_FILE  = "kokoro-v1.0.onnx"
+_VOICES_FILE = "voices-v1.0.bin"
 
 
 # ── Chapter splitting ──────────────────────────────────────────────────────────
@@ -119,7 +119,12 @@ def ensure_models(model_dir: Path) -> tuple:
 # ── Synthesis ──────────────────────────────────────────────────────────────────
 
 def load_kokoro(model_path: Path, voices_path: Path, device: str = "auto"):
-    """Load Kokoro model. device='auto' uses GPU if onnxruntime-gpu is installed."""
+    """Load Kokoro model.
+
+    kokoro-onnx v0.5.0+ manages GPU detection internally via onnxruntime-gpu
+    presence; passing providers= to the constructor is no longer supported.
+    The --device flag now sets ONNX_PROVIDER env var for cpu/gpu override.
+    """
     try:
         from kokoro_onnx import Kokoro
     except ImportError:
@@ -129,26 +134,24 @@ def load_kokoro(model_path: Path, voices_path: Path, device: str = "auto"):
         )
         sys.exit(1)
 
+    import os
     if device == "gpu":
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        log.info("Kokoro: forcing GPU (CUDAExecutionProvider)")
-        return Kokoro(str(model_path), str(voices_path), providers=providers)
-
-    if device == "cpu":
-        providers = ["CPUExecutionProvider"]
-        log.info("Kokoro: forcing CPU")
-        return Kokoro(str(model_path), str(voices_path), providers=providers)
-
-    # "auto": let onnxruntime pick (GPU if onnxruntime-gpu installed, else CPU)
-    try:
-        import onnxruntime as ort
-        available = ort.get_available_providers()
-        if "CUDAExecutionProvider" in available:
-            log.info("Kokoro: GPU detected (CUDAExecutionProvider)")
-        else:
-            log.info("Kokoro: CPU only (CUDAExecutionProvider not available)")
-    except Exception:
-        pass
+        os.environ["ONNX_PROVIDER"] = "CUDAExecutionProvider"
+        log.info("Kokoro: forcing GPU via ONNX_PROVIDER=CUDAExecutionProvider")
+    elif device == "cpu":
+        os.environ["ONNX_PROVIDER"] = "CPUExecutionProvider"
+        log.info("Kokoro: forcing CPU via ONNX_PROVIDER=CPUExecutionProvider")
+    else:
+        # auto: kokoro-onnx picks GPU if onnxruntime-gpu is installed
+        try:
+            import onnxruntime as ort
+            available = ort.get_available_providers()
+            if "CUDAExecutionProvider" in available:
+                log.info("Kokoro: GPU detected (CUDAExecutionProvider available)")
+            else:
+                log.info("Kokoro: CPU only (CUDAExecutionProvider not available)")
+        except Exception:
+            pass
 
     return Kokoro(str(model_path), str(voices_path))
 

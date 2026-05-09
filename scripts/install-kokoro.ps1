@@ -60,8 +60,8 @@ $modelDir = Join-Path $PSScriptRoot "..\tools\kokoro-models"
 New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
 
 $files = @(
-    @{ Name = "kokoro-v0.19.onnx"; Url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v0.19.onnx" },
-    @{ Name = "voices.bin";         Url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices.bin" }
+    @{ Name = "kokoro-v1.0.onnx"; Url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx" },
+    @{ Name = "voices-v1.0.bin";  Url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin" }
 )
 
 foreach ($file in $files) {
@@ -81,17 +81,18 @@ Write-Host "`nRunning smoke test (3-second synthesis)..." -ForegroundColor Cyan
 
 $smokeScript = @'
 import sys, tempfile, os
+sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
 from kokoro_onnx import Kokoro
 import soundfile as sf
 
 model_dir = Path(sys.argv[1])
-kokoro = Kokoro(str(model_dir / "kokoro-v0.19.onnx"), str(model_dir / "voices.bin"))
+kokoro = Kokoro(str(model_dir / "kokoro-v1.0.onnx"), str(model_dir / "voices-v1.0.bin"))
 samples, sr = kokoro.create("Hello. Kokoro TTS is ready.", voice="af_heart", speed=1.0, lang="en-us")
-with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-    sf.write(tmp.name, samples, sr)
-    size_kb = os.path.getsize(tmp.name) // 1024
-    os.unlink(tmp.name)
+tmp = tempfile.mktemp(suffix=".wav")
+sf.write(tmp, samples, sr)
+size_kb = os.path.getsize(tmp) // 1024
+os.unlink(tmp)
 duration = len(samples) / sr
 print(f"Smoke test OK: {duration:.1f}s audio, {size_kb} KB written")
 '@
