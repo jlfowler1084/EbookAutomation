@@ -2788,6 +2788,192 @@ def extract_html_from_epub(epub_path, log, output_dir=None):
     return {'html': merged_html, 'cover_image': cover_image_path}
 
 
+def _extract_epub_nav_headings(book):
+    """Extract headings from an EPUB3 nav document or EPUB2 NCX.
+
+    Returns list of {'title': str, 'level': int} in reading order.
+    Depth-0 nav entries → level 1; depth-1+ → level 2.
+    Returns [] when no navigation document is found or parseable.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        import ebooklib
+    except ImportError:
+        return []
+
+    nav_items = list(book.get_items_of_type(ebooklib.ITEM_NAVIGATION))
+    if not nav_items:
+        return []
+
+    for nav_item in nav_items:
+        try:
+            soup = BeautifulSoup(nav_item.get_content(), 'html.parser')
+            headings = []
+
+            # EPUB3: <nav epub:type="toc"> or first <nav>
+            nav_toc = (soup.find('nav', attrs={'epub:type': 'toc'})
+                       or soup.find('nav', attrs={'role': 'doc-toc'})
+                       or soup.find('nav'))
+            if nav_toc:
+                def _walk(ol_or_ul, depth=0):
+                    result = []
+                    for li in ol_or_ul.find_all('li', recursive=False):
+                        a = li.find('a')
+                        if a:
+                            text = re.sub(r'\s+', ' ', a.get_text(separator=' ').strip())
+                            if text:
+                                result.append({'title': text, 'level': 1 if depth == 0 else 2})
+                        nested = li.find(['ol', 'ul'])
+                        if nested:
+                            result.extend(_walk(nested, depth + 1))
+                    return result
+
+                top_list = nav_toc.find(['ol', 'ul'])
+                if top_list:
+                    headings = _walk(top_list)
+
+            if headings:
+                return headings
+
+            # EPUB2 NCX: <navPoint> elements
+            navpoints = soup.find_all('navpoint')
+            if navpoints:
+                for np in navpoints:
+                    label = np.find('text') or np.find('navlabel')
+                    if label:
+                        text = re.sub(r'\s+', ' ', label.get_text(separator=' ').strip())
+                        if text:
+                            depth = len(np.find_parents('navpoint'))
+                            headings.append({'title': text, 'level': 1 if depth == 0 else 2})
+
+            if headings:
+                return headings
+
+        except Exception:
+            continue
+
+    return []
+
+
+def extract_epub_headings(epub_path, log):
+    """Extract chapter headings from an EPUB for use in chapter detection.
+
+    Tries the NCX/nav navigation document first (structured, reliable).
+    Falls back to scanning HTML h1-h3 tags across spine items.
+    Returns list of {'title': str, 'level': int} in reading order, or [].
+    """
+    try:
+        import ebooklib
+        from ebooklib import epub
+        from bs4 import BeautifulSoup
+    except ImportError:
+        log("  [warn] ebooklib/beautifulsoup4 not installed — EPUB heading extraction skipped")
+        return []
+
+    try:
+        book = epub.read_epub(epub_path, options={'ignore_ncx': False})
+    except Exception as e:
+        log(f"  [warn] EPUB heading extraction failed: {e}")
+        return []
+
+    nav_headings = _extract_epub_nav_headings(book)
+    if nav_headings:
+        log(f"  EPUB headings: {len(nav_headings)} from NCX/nav")
+        return nav_headings
+
+    # Fallback: scan spine items for <h1>-<h3>
+    spine_ids = [item_id for item_id, _ in book.spine]
+    items = {item.get_id(): item for item in book.get_items()
+             if item.get_type() == ebooklib.ITEM_DOCUMENT}
+    spine_items = [items[sid] for sid in spine_ids if sid in items]
+
+    headings = []
+    for item in spine_items:
+        try:
+            soup = BeautifulSoup(item.get_content(), 'html.parser')
+            for tag in soup.find_all(['h1', 'h2', 'h3']):
+                text = re.sub(r'\s+', ' ', tag.get_text(separator=' ').strip())
+                if text:
+                    level = min(int(tag.name[1]), 2)
+                    headings.append({'title': text, 'level': level})
+        except Exception:
+            continue
+
+    if headings:
+        log(f"  EPUB headings: {len(headings)} from HTML h1-h3 tags")
+    else:
+        log("  EPUB headings: none found — falling back to regex chapter detection")
+    return headings
+
+
+def match_epub_headings_to_paragraphs(paragraphs, epub_headings, log):
+    """Match EPUB heading titles to paragraph indices.
+
+    Mirrors the bookmark-based heading detection used for PDF files.
+    Level 1 → 'parts'; level 2 → 'chapters'.
+    When all headings are top-level (flat NCX), they are treated as 'chapters'.
+    Unmatched headings are logged and skipped.
+    Returns {'parts': [indices], 'chapters': [indices]}.
+    """
+    heading_dict = {'parts': [], 'chapters': []}
+    if not epub_headings or not paragraphs:
+        return heading_dict
+
+    def _norm(text):
+        return re.sub(r'\s+', ' ', text.lower().strip())
+
+    para_norms = [_norm(p) for p in paragraphs]
+    used = set()
+    matched = 0
+
+    for hdg in epub_headings:
+        title = hdg['title']
+        level = hdg['level']
+        norm_title = _norm(title)
+        if not norm_title or len(norm_title) < 2:
+            continue
+
+        # Exact match first
+        best = None
+        for i, np_ in enumerate(para_norms):
+            if i in used and np_ == norm_title:
+                continue
+            if np_ == norm_title:
+                best = i
+                break
+
+        # Substring match — prefer short paragraphs (headings are short)
+        if best is None:
+            for i, np_ in enumerate(para_norms):
+                if i in used:
+                    continue
+                if (norm_title in np_ or np_ in norm_title) and len(paragraphs[i].split()) <= 20:
+                    best = i
+                    break
+
+        if best is not None:
+            used.add(best)
+            if level == 1:
+                heading_dict['parts'].append(best)
+            else:
+                heading_dict['chapters'].append(best)
+            matched += 1
+            log(f"  [epub-hdg] L{level} para {best}: {title[:60]}")
+        else:
+            log(f"  [epub-hdg] no match: {title[:60]}")
+
+    # When all headings mapped to 'parts' (flat NCX), demote to 'chapters'
+    if not heading_dict['chapters'] and heading_dict['parts']:
+        heading_dict['chapters'] = heading_dict['parts']
+        heading_dict['parts'] = []
+        log("  EPUB: flat structure — all headings treated as chapters")
+
+    heading_dict['parts'] = sorted(heading_dict['parts'])
+    heading_dict['chapters'] = sorted(heading_dict['chapters'])
+    log(f"  EPUB heading match: {matched}/{len(epub_headings)} headings found")
+    return heading_dict
+
+
 def extract_text_via_calibre(input_path, log, calibre_path=None):
     """Convert an ebook to plain text via Calibre's ebook-convert CLI.
 
@@ -11199,10 +11385,14 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
     is_pdf = ext_upper == 'PDF'
 
     bookmarks = []
+    epub_headings = []
     if is_pdf:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(input_path, log)
         resolve_bookmarks_by_coordinates(input_path, bookmarks, log)
+    elif ext_upper == 'EPUB':
+        log("\n-- STEP 0: Extracting EPUB chapter headings -----------")
+        epub_headings = extract_epub_headings(input_path, log)
 
     log(f"\n-- STEP 1: Extracting text from {ext_upper} --")
 
@@ -11413,6 +11603,14 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
             heading_indices = sorted(heading_dict['parts'] + heading_dict['chapters'])
         except (json.JSONDecodeError, OSError) as e:
             log(f"  [warn] Failed to load chapter hints: {e} -- falling back to regex")
+            heading_indices = detect_chapters_flat(body, log, toc_indices=toc_indices)
+            heading_dict = None
+    elif epub_headings:
+        log("\n-- STEP 5: Using EPUB heading structure ---------------")
+        heading_dict = match_epub_headings_to_paragraphs(body, epub_headings, log)
+        heading_indices = sorted(heading_dict['parts'] + heading_dict['chapters'])
+        if not heading_indices:
+            log("  EPUB heading match found nothing — falling back to regex")
             heading_indices = detect_chapters_flat(body, log, toc_indices=toc_indices)
             heading_dict = None
     else:
@@ -13174,10 +13372,14 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
     is_pdf = ext_upper == 'PDF'
 
     bookmarks = []
+    epub_headings = []
     if is_pdf:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(input_path, log)
         resolve_bookmarks_by_coordinates(input_path, bookmarks, log)
+    elif ext_upper == 'EPUB':
+        log("\n-- STEP 0: Extracting EPUB chapter headings -----------")
+        epub_headings = extract_epub_headings(input_path, log)
 
     log(f"\n-- STEP 1: Extracting text from {ext_upper} --")
     raw = extract_text_auto(input_path, log, calibre_path=calibre_path,
@@ -13622,6 +13824,12 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
 
         except (json.JSONDecodeError, OSError) as e:
             log(f"  [warn] Failed to load chapter hints: {e} -- falling back to regex")
+            headings = detect_chapters(paragraphs, log, toc_indices=toc_indices)
+    elif epub_headings:
+        log("\n-- STEP 3: Using EPUB heading structure ---------------")
+        headings = match_epub_headings_to_paragraphs(paragraphs, epub_headings, log)
+        if not headings['parts'] and not headings['chapters']:
+            log("  EPUB heading match found nothing — falling back to regex")
             headings = detect_chapters(paragraphs, log, toc_indices=toc_indices)
     else:
         headings = detect_chapters(paragraphs, log, toc_indices=toc_indices)
