@@ -1194,13 +1194,14 @@ def run_filter_tests(quick=False):
 
 
 def run_spaced_letter_tests():
-    """Run unit tests for Phase 8 character spacing collapse in fix_ocr_artifacts().
+    """Run unit tests for spaced-character collapse in fix_ocr_artifacts (Phase 8)
+    and _fix_ligature_splits (Phase 3e, HTML path).
 
     Returns list of (name, passed, passes, failures, elapsed).
     """
     if str(SCRIPT_DIR) not in sys.path:
         sys.path.insert(0, str(SCRIPT_DIR))
-    from pdf_to_balabolka import fix_ocr_artifacts
+    from pdf_to_balabolka import fix_ocr_artifacts, _fix_ligature_splits
 
     results = []
     log_messages = []
@@ -1325,6 +1326,57 @@ def run_spaced_letter_tests():
         (P if "d o m" not in result else F).append(
             f"spaced letters gone: got '{result}'")
 
+    # ── HTML path (Phase 3e): _fix_ligature_splits spaced-char collapse ──
+
+    def _collapse_html(text):
+        """Run a paragraph through _fix_ligature_splits (HTML path) and return result."""
+        log_messages.clear()
+        para_dicts = [{'text': text}]
+        _fix_ligature_splits(para_dicts, _log)
+        return para_dicts[0]['text']
+
+    def test_html_all_caps_publisher(P, F):
+        """EB-213: ALL-CAPS wide-tracked publisher name collapses on HTML path."""
+        result = _collapse_html("W I L L I A M B . E E R D M A N S")
+        (P if "WILLIAM" in result else F).append(
+            f"WILLIAM in result: got '{result}'")
+        (P if "EERDMANS" in result else F).append(
+            f"EERDMANS in result: got '{result}'")
+        (P if "W I L" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    def test_html_l_i_confusion(P, F):
+        """EB-213: l/I OCR confusion in ALL-CAPS wide-tracked text collapses correctly."""
+        result = _collapse_html("W l L L l A M")
+        (P if "WILLIAM" in result else F).append(
+            f"WILLIAM in result: got '{result}'")
+        (P if "W l L" not in result else F).append(
+            f"spaced letters gone: got '{result}'")
+
+    def test_html_code_brackets(P, F):
+        """EB-214: code bracket artifacts (bracket extension) collapse on HTML path."""
+        result = _collapse_html("A [ 1 2 ]")
+        (P if "[ 1 2 ]" not in result else F).append(
+            f"bracket spaces collapsed: got '{result}'")
+        (P if "A" in result else F).append(
+            f"variable A preserved: got '{result}'")
+        (P if "12" in result else F).append(
+            f"digits 12 preserved: got '{result}'")
+
+    def test_html_normal_text_unchanged(P, F):
+        """HTML path: normal prose unaffected by Phase 3e."""
+        original = "The quick brown fox jumped over the lazy dog"
+        result = _collapse_html(original)
+        (P if result == original else F).append(
+            f"normal text unchanged: got '{result}'")
+
+    def test_html_toc_dots_unchanged(P, F):
+        """HTML path: TOC dot leaders not collapsed by Phase 3e."""
+        original = ". . . . . . ."
+        result = _collapse_html(original)
+        (P if result == original else F).append(
+            f"TOC dots unchanged: got '{result}'")
+
     # ── Register and run ──────────────────────────────────────────────
 
     _run("spaced: fully-spaced Wilson", test_fully_spaced_wilson)
@@ -1338,6 +1390,12 @@ def run_spaced_letter_tests():
     _run("spaced: short sequence (2 chars)", test_short_sequence_unchanged)
     _run("spaced: short acronym (U S A)", test_short_acronym_unchanged)
     _run("spaced: apostrophe punctuation", test_punctuation_apostrophe)
+    # HTML path (Phase 3e)
+    _run("spaced[html]: ALL-CAPS publisher name (EB-213)", test_html_all_caps_publisher)
+    _run("spaced[html]: l/I OCR confusion ALL-CAPS (EB-213)", test_html_l_i_confusion)
+    _run("spaced[html]: code bracket artifacts (EB-214)", test_html_code_brackets)
+    _run("spaced[html]: normal text unchanged", test_html_normal_text_unchanged)
+    _run("spaced[html]: TOC dot leaders unchanged", test_html_toc_dots_unchanged)
 
     return results
 

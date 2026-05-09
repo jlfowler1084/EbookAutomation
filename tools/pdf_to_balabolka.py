@@ -11837,7 +11837,8 @@ def _fix_ligature_splits(para_dicts, log):
     """
     Fix ligature decomposition splits in paragraph text.
     Reusable by both pdfminer HTML path and legacy pypdf path.
-    Handles: fi/fl splits, ffi/ffl triple splits, Th+word splits, hyphen-splits.
+    Handles: fi/fl splits, ffi/ffl triple splits, Th+word splits, hyphen-splits,
+    and spaced-character wide-tracking artifacts (EB-213, EB-214).
     """
     try:
         from spellchecker import SpellChecker
@@ -11847,6 +11848,94 @@ def _fix_ligature_splits(para_dicts, log):
         return
 
     total_fixes = 0
+
+    # Phase 3e helpers: spaced-character collapse for HTML/pdfminer path (EB-213, EB-214)
+    # Wide-tracked fonts produce per-glyph spaces: "W I L L I A M" instead of "WILLIAM".
+    # Pattern extended to include brackets for code artifacts like "A [ 1 2 ]" (EB-214).
+    _sp3e_pat = re.compile(
+        r'(?<!\S)'                                      # preceded by whitespace or string start
+        r'((?:[\w,.\';:!?\-\[\]\{\}] ){3,}'            # 3+ single-char tokens each followed by space
+        r'[\w,.\';:!?\-\[\]\{\}])'                     # final single char (no trailing space)
+        r'(?!\S)'                                       # followed by whitespace or string end
+    )
+    _sp3e_words = set(spell.word_frequency.words())
+
+    def _sp3e_greedy(letters):
+        """Greedy longest-match dictionary split of a letter run."""
+        result, i, n = [], 0, len(letters)
+        while i < n:
+            best = None
+            for length in range(min(n - i, 20), 0, -1):
+                cand = letters[i:i + length]
+                if length == 1:
+                    if cand.lower() in ('a', 'i', 'o'):
+                        best = cand
+                    break
+                if cand.lower() in _sp3e_words:
+                    best = cand
+                    break
+            if best:
+                result.append(best)
+                i += len(best)
+            else:
+                end = i + 1
+                for k in range(i + 2, n + 1):
+                    rem = letters[k:k + 20]
+                    if any(rem[:wl].lower() in _sp3e_words
+                           for wl in range(min(len(rem), 20), 1, -1)):
+                        end = k
+                        break
+                else:
+                    end = n
+                result.append(letters[i:end])
+                i = end
+        return ' '.join(result)
+
+    def _sp3e_collapse(run_text):
+        """Collapse a spaced single-char run into normal text.
+
+        ALL-CAPS/mostly-caps runs (publisher names, acronyms): collapse directly with
+        l→I correction and punctuation-based spacing.  Mixed/lowercase runs: use
+        spell-dict word-boundary recovery identical to Phase 8 of fix_ocr_artifacts().
+        """
+        raw = run_text.replace(' ', '')
+        alpha_chars = [c for c in raw if c.isalpha()]
+        upper_ratio = (sum(c.isupper() for c in alpha_chars) / len(alpha_chars)
+                       ) if alpha_chars else 0
+
+        if upper_ratio >= 0.5:
+            # Fix OCR confusion: lowercase 'l' between uppercase/digit chars is 'I'
+            fixed = re.sub(r'(?<=[A-Z\d])l(?=[A-Z\d])', 'I', raw)
+            fixed = re.sub(r'^l(?=[A-Z])', 'I', fixed)
+            fixed = re.sub(r'(?<=[A-Z])l$', 'I', fixed)
+            # Tokenise by punctuation so "WILLIAMB.EERDMANS" → "WILLIAM B. EERDMANS"
+            parts = re.findall(r'[A-Za-z]+|[^A-Za-z]+', fixed)
+            joined = ' '.join(p.strip() for p in parts)
+            # Tighten punctuation: "B . E" → "B. E", "[" / "]" attach to content
+            joined = re.sub(r'\s+([.,;:!?\-\[\]\{\}])(\s*)', r'\1\2', joined)
+            joined = re.sub(r'([\[\{])\s+', r'\1', joined)
+            return joined.strip()
+        else:
+            # Mixed/lowercase — spell-dict word-boundary recovery (mirrors Phase 8)
+            tokens = re.findall(r'[a-zA-Z]+|[^a-zA-Z]+', raw)
+            parts = []
+            for tok in tokens:
+                if re.match(r'^[a-zA-Z]+$', tok):
+                    parts.append(_sp3e_greedy(tok))
+                else:
+                    parts.append(tok)
+            result = []
+            for part in parts:
+                if not result:
+                    result.append(part)
+                elif (re.match(r'^[a-zA-Z]', part)
+                      and result and re.search(r'[a-zA-Z]$', result[-1])):
+                    result.append(' ' + part)
+                elif re.match(r'^[^a-zA-Z]', part):
+                    result.append(part + ' ')
+                else:
+                    result.append(part)
+            return ''.join(result).strip()
 
     for p in para_dicts:
         if p.get('is_page_marker') or not p.get('text', '').strip():
@@ -12020,6 +12109,22 @@ def _fix_ligature_splits(para_dicts, log):
                 continue
             j += 1
         text = ' '.join(words)
+
+        # Phase 3e: Spaced-character collapse (EB-213, EB-214)
+        sp3e_matches = list(_sp3e_pat.finditer(text))
+        if sp3e_matches:
+            new_text = text
+            for m in reversed(sp3e_matches):
+                run = m.group(1)
+                distinct = set(c for c in run if c.isalpha())
+                has_brackets = any(c in '[]{}' for c in run)
+                if len(distinct) < 3 and not has_brackets:
+                    continue
+                collapsed = _sp3e_collapse(run)
+                if collapsed != run:
+                    new_text = new_text[:m.start(1)] + collapsed + new_text[m.end(1):]
+                    log(f"  [Phase 3e] {run!r:.60} → {collapsed!r:.40}")
+            text = new_text
 
         if text != original:
             p['text'] = text
