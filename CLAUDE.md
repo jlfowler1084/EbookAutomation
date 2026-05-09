@@ -121,7 +121,7 @@ EbookAutomation/
 │   └── validate_against_baseline.py
 ├── prompts/                 # Session handoff prompts
 ├── docs/plans/              # CE implementation plans (archive)
-├── docs/solutions/          # Knowledge compounding (solved problems)
+├── docs/solutions/          # Knowledge compounding: bugs, best practices, workflow patterns — organized by category with YAML frontmatter (module, tags, problem_type) for targeted search
 ├── .mcp.json                # MCP server configuration
 └── .claude/
     ├── settings.json        # Project hooks (regression test runner)
