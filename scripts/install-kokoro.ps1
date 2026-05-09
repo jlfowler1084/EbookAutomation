@@ -89,7 +89,8 @@ import soundfile as sf
 model_dir = Path(sys.argv[1])
 kokoro = Kokoro(str(model_dir / "kokoro-v1.0.onnx"), str(model_dir / "voices-v1.0.bin"))
 samples, sr = kokoro.create("Hello. Kokoro TTS is ready.", voice="af_heart", speed=1.0, lang="en-us")
-tmp = tempfile.mktemp(suffix=".wav")
+fd, tmp = tempfile.mkstemp(suffix=".wav")
+os.close(fd)
 sf.write(tmp, samples, sr)
 size_kb = os.path.getsize(tmp) // 1024
 os.unlink(tmp)

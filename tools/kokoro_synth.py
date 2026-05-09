@@ -144,7 +144,8 @@ def load_kokoro(model_path: Path, voices_path: Path, device: str = "auto"):
         os.environ["ONNX_PROVIDER"] = "CPUExecutionProvider"
         log.info("Kokoro: forcing CPU via ONNX_PROVIDER=CPUExecutionProvider")
     else:
-        # auto: kokoro-onnx picks GPU if onnxruntime-gpu is installed
+        # auto: clear any prior forced provider; kokoro picks GPU if onnxruntime-gpu installed
+        os.environ.pop("ONNX_PROVIDER", None)
         try:
             import onnxruntime as ort
             available = ort.get_available_providers()
@@ -210,26 +211,29 @@ def _chunk_text(text: str) -> list:
                     # Final fallback: hard word-count split
                     result.extend(_hard_split(sub, _CHUNK_WORDS))
 
-    return result or [text]
+    return result  # caller is responsible for skipping empty-chunk lists
 
 
-def _synth_with_retry(kokoro, chunk: str, voice: str, speed: float, depth: int = 0):
+def _synth_with_retry(
+    kokoro, chunk: str, voice: str, speed: float, depth: int = 0
+) -> tuple[np.ndarray, int]:
     """Synthesize a text chunk, halving it recursively if it exceeds the phoneme limit.
 
     kokoro-onnx v0.5.0 has a bug where truncating to exactly 510 phonemes then
     causes an off-by-one IndexError. Binary-split and retry to work around it.
+    Depth limit of 7 = ceil(log2(100)) — guarantees termination for ≤100-word chunks.
     """
-    if depth > 6:
+    if depth > 7:
         raise RuntimeError(f"Chunk still too long after {depth} splits: {chunk[:80]!r}")
     try:
         return kokoro.create(chunk, voice=voice, speed=speed, lang="en-us")
     except IndexError:
         words = chunk.split()
         mid = len(words) // 2
-        left  = _synth_with_retry(kokoro, " ".join(words[:mid]), voice, speed, depth + 1)
-        right = _synth_with_retry(kokoro, " ".join(words[mid:]), voice, speed, depth + 1)
-        combined = np.concatenate([left[0], right[0]])
-        return combined, left[1]
+        left_samples,  sr       = _synth_with_retry(kokoro, " ".join(words[:mid]), voice, speed, depth + 1)
+        right_samples, right_sr = _synth_with_retry(kokoro, " ".join(words[mid:]), voice, speed, depth + 1)
+        assert sr == right_sr, f"sample rate mismatch in binary split: {sr} vs {right_sr}"
+        return np.concatenate([left_samples, right_samples]), sr
 
 
 def synthesize_chapter(kokoro, text: str, wav_path: Path, voice: str, speed: float) -> bool:
@@ -251,6 +255,10 @@ def synthesize_chapter(kokoro, text: str, wav_path: Path, voice: str, speed: flo
         return False
 
     chunks = _chunk_text(clean)
+    if not chunks:
+        log.warning("No text chunks after splitting — skipping: %s", wav_path.name)
+        return False
+
     all_samples = []
     sample_rate = None
 
