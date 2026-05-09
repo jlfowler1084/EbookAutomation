@@ -21,6 +21,8 @@ import sys
 import wave
 from pathlib import Path
 
+import numpy as np
+
 log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
@@ -156,8 +158,87 @@ def load_kokoro(model_path: Path, voices_path: Path, device: str = "auto"):
     return Kokoro(str(model_path), str(voices_path))
 
 
+# Kokoro's ONNX model has a 510-phoneme hard limit (~100-150 English words).
+# Long chapters are chunked at sentence boundaries before synthesis.
+_CHUNK_WORDS = 100
+_SENT_SPLIT_RE   = re.compile(r'(?<=[.!?])\s+')
+_CLAUSE_SPLIT_RE = re.compile(r'(?<=[;,:])\s+')
+
+
+def _chunk_text(text: str) -> list:
+    """Split text into ≤_CHUNK_WORDS-word chunks using a three-tier strategy:
+    1. Sentence boundaries (.!?)
+    2. Clause boundaries (;,:) for long sentences
+    3. Hard word-count split as final fallback
+    """
+    def _split_units(txt: str, pattern) -> list:
+        parts = pattern.split(txt)
+        return [p.strip() for p in parts if p.strip()]
+
+    def _pack(units: list, limit: int) -> list:
+        chunks, buf, count = [], [], 0
+        for u in units:
+            w = len(u.split())
+            if count + w > limit and buf:
+                chunks.append(" ".join(buf))
+                buf, count = [], 0
+            buf.append(u)
+            count += w
+        if buf:
+            chunks.append(" ".join(buf))
+        return chunks
+
+    def _hard_split(txt: str, limit: int) -> list:
+        words = txt.split()
+        return [" ".join(words[i:i + limit]) for i in range(0, len(words), limit)]
+
+    sentences = _split_units(text, _SENT_SPLIT_RE)
+    packed = _pack(sentences, _CHUNK_WORDS)
+
+    # Second pass: re-split any chunk still over the limit on clause boundaries
+    result = []
+    for chunk in packed:
+        if len(chunk.split()) <= _CHUNK_WORDS:
+            result.append(chunk)
+        else:
+            clauses = _split_units(chunk, _CLAUSE_SPLIT_RE)
+            repacked = _pack(clauses, _CHUNK_WORDS)
+            for sub in repacked:
+                if len(sub.split()) <= _CHUNK_WORDS:
+                    result.append(sub)
+                else:
+                    # Final fallback: hard word-count split
+                    result.extend(_hard_split(sub, _CHUNK_WORDS))
+
+    return result or [text]
+
+
+def _synth_with_retry(kokoro, chunk: str, voice: str, speed: float, depth: int = 0):
+    """Synthesize a text chunk, halving it recursively if it exceeds the phoneme limit.
+
+    kokoro-onnx v0.5.0 has a bug where truncating to exactly 510 phonemes then
+    causes an off-by-one IndexError. Binary-split and retry to work around it.
+    """
+    if depth > 6:
+        raise RuntimeError(f"Chunk still too long after {depth} splits: {chunk[:80]!r}")
+    try:
+        return kokoro.create(chunk, voice=voice, speed=speed, lang="en-us")
+    except IndexError:
+        words = chunk.split()
+        mid = len(words) // 2
+        left  = _synth_with_retry(kokoro, " ".join(words[:mid]), voice, speed, depth + 1)
+        right = _synth_with_retry(kokoro, " ".join(words[mid:]), voice, speed, depth + 1)
+        combined = np.concatenate([left[0], right[0]])
+        return combined, left[1]
+
+
 def synthesize_chapter(kokoro, text: str, wav_path: Path, voice: str, speed: float) -> bool:
-    """Synthesize one chapter to a WAV file. Returns True on success."""
+    """Synthesize one chapter to a WAV file. Returns True on success.
+
+    Long chapters are split into ≤_CHUNK_WORDS-word sentences and concatenated
+    to stay within Kokoro's 510-phoneme input limit. Individual chunks that still
+    exceed the limit are recursively halved until they succeed.
+    """
     try:
         import soundfile as sf
     except ImportError:
@@ -169,12 +250,23 @@ def synthesize_chapter(kokoro, text: str, wav_path: Path, voice: str, speed: flo
         log.warning("Empty chapter after tag-strip — skipping: %s", wav_path.name)
         return False
 
+    chunks = _chunk_text(clean)
+    all_samples = []
+    sample_rate = None
+
     try:
-        samples, sample_rate = kokoro.create(clean, voice=voice, speed=speed, lang="en-us")
+        for chunk in chunks:
+            samples, sr = _synth_with_retry(kokoro, chunk, voice, speed)
+            all_samples.append(samples)
+            sample_rate = sr
+
+        combined = np.concatenate(all_samples) if len(all_samples) > 1 else all_samples[0]
         wav_path.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(str(wav_path), samples, sample_rate)
-        duration_s = len(samples) / sample_rate
-        log.info("  OK  %s  (%.1f s, %.1f MB)", wav_path.name, duration_s, wav_path.stat().st_size / 1_048_576)
+        sf.write(str(wav_path), combined, sample_rate)
+        duration_s = len(combined) / sample_rate
+        log.info("  OK  %s  (%.1f s, %.1f MB, %d chunk%s)",
+                 wav_path.name, duration_s, wav_path.stat().st_size / 1_048_576,
+                 len(chunks), "" if len(chunks) == 1 else "s")
         return True
     except Exception as exc:
         log.error("Synthesis failed for %s: %s", wav_path.name, exc)
