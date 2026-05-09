@@ -6202,6 +6202,11 @@ def rejoin_html_fragments(para_dicts, body_size, log):
                 # footnote number or running header at a page boundary
                 j += 1
                 continue
+            # Skip A2-marked running headers regardless of font size (EB-212).
+            # _mark_a2_running_headers() must run before rejoin for this to fire.
+            if cand.get('_is_a2_running_header'):
+                j += 1
+                continue
             break
         if j >= len(para_dicts):
             break
@@ -6384,6 +6389,56 @@ def _mark_a2_running_headers(para_dicts, log):
     if strip_count:
         log(f"  A2 filter: stripped {strip_count} running-header paragraphs "
             f"across {pattern_count} normalized patterns")
+
+
+def _strip_page_number_debris(para_dicts, log):
+    """Strip orphaned page-number paragraphs and page-number prefixes (EB-212).
+
+    Addresses two patterns from running-header bleed:
+
+    Pattern 1 — standalone numeric paragraph:
+        A paragraph that is purely digits (possibly space-separated from wide-tracking,
+        e.g. '2 5 6') is an orphaned page number and is cleared.
+
+    Pattern 2 — leading digit prefix before structural chapter keyword:
+        '256 Chapter 3 Machine-Level...' → 'Chapter 3 Machine-Level...'
+        Matches collapsed digits (\d{3,4}) OR spaced digits ('2 5 6') before
+        Chapter / Book / Part / Section.  Restricted to 3-4-digit sequences to
+        avoid stripping genuine section numbers like '3 Chapter 1'.
+    """
+    # 3-4 collapsed digits OR 3-4 spaced single-digits before a structural word
+    _LEADING_PAGENUM = re.compile(
+        r'^\s*(?:\d{3,4}|\d(?:\s+\d){2,3})\s+'
+        r'(?=(?:Chapter|Book|Part|Section)\b)',
+        re.IGNORECASE,
+    )
+
+    stripped = 0
+    prefixed = 0
+    for p in para_dicts:
+        if p.get('is_page_marker') or p.get('is_footnote') or p.get('_is_a2_running_header'):
+            continue
+        text = p.get('text', '').strip()
+        if not text:
+            continue
+
+        # Pattern 1: pure-digit paragraph (collapsed length 1-6, total text ≤ 8 chars)
+        collapsed = re.sub(r'\s', '', text)
+        if re.match(r'^\d{1,6}$', collapsed) and len(text) <= 8:
+            log(f"  [EB-212] Page-num para stripped: '{text}'")
+            p['text'] = ''
+            stripped += 1
+            continue
+
+        # Pattern 2: digit prefix before chapter keyword
+        cleaned = _LEADING_PAGENUM.sub('', text).strip()
+        if cleaned != text:
+            log(f"  [EB-212] Page-num prefix stripped: '{text[:70]}' → '{cleaned[:70]}'")
+            p['text'] = cleaned
+            prefixed += 1
+
+    if stripped or prefixed:
+        log(f"  Page-number debris (EB-212): {stripped} standalone, {prefixed} prefix-stripped")
 
 
 def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Untitled',
@@ -12348,6 +12403,12 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         log("\n-- STEP 1a: Fixing word merges in extraction output ----")
         _fix_word_merges_html(para_dicts, log)
 
+        log("\n-- STEP 1a2: Early running-header marking (EB-212) ----")
+        # Mark A2 running headers BEFORE rejoin so the fragment-merge pass
+        # can skip them and prevent running-header text from being absorbed
+        # into adjacent body paragraphs across page boundaries.
+        _mark_a2_running_headers(para_dicts, log)
+
         log("\n-- STEP 1b: Rejoining page-boundary fragments ----------")
         para_dicts = rejoin_html_fragments(para_dicts, body_size, log)
 
@@ -12367,6 +12428,12 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             log(f"  Fixed {total_encoding_fixes} encoding issues across {len(para_dicts)} paragraphs")
         else:
             log(f"  No encoding issues found")
+
+        # ── STEP 1d: Page-number debris removal (EB-212) ─────────────
+        # Must run AFTER Phase 3e (ligature/spaced-char fixes) so that
+        # wide-tracked "2 5 6" has been collapsed to "256" before matching.
+        log("\n-- STEP 1d: Page-number debris removal (EB-212) -------")
+        _strip_page_number_debris(para_dicts, log)
 
         # ── STEP 1c3: PyMuPDF text fallback (EB-65) ──────────────────
         # pdfminer sometimes returns zero text from PDFs that have a
