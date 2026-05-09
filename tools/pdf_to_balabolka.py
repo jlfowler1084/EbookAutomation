@@ -11567,13 +11567,27 @@ def _link_inline_note_paragraphs(html, total_sups, log):
     _ch_boundary_pat = re.compile(r'<h[12][^>]*>', re.IGNORECASE)
     _chapter_boundaries = [m.start() for m in _ch_boundary_pat.finditer(html)]
 
+    import bisect
+
     def _same_chapter(pos1, pos2):
         """True when no h1/h2 heading falls strictly between pos1 and pos2."""
         lo, hi = min(pos1, pos2), max(pos1, pos2)
         # Binary search to check if any boundary lies inside (lo, hi)
-        import bisect
         idx = bisect.bisect_right(_chapter_boundaries, lo)
         return idx >= len(_chapter_boundaries) or _chapter_boundaries[idx] >= hi
+
+    def _chapter_end_window(pos):
+        """Characters from pos to the start of the next chapter (or end of HTML).
+
+        EB-211: replaces the static WINDOW=40000 limit so that books like
+        Mexico Illicit — where body→note-cluster gaps reach 50k–120k chars —
+        are fully covered.  The floor of 40000 preserves behaviour for short
+        chapters where the old static window was already sufficient.
+        """
+        idx = bisect.bisect_right(_chapter_boundaries, pos)
+        if idx < len(_chapter_boundaries):
+            return max(_chapter_boundaries[idx] - pos, 40000)
+        return max(len(html) - pos, 40000)
 
     # Pre-scan every note paragraph for inline-joined entries.
     # An inline-joined entry is a "N. text" pattern embedded inside a note
@@ -11591,7 +11605,6 @@ def _link_inline_note_paragraphs(html, total_sups, log):
             inline_joined[im.group(1)].append(nm.start())
     # ── end pre-scan ──────────────────────────────────────────────────────────
 
-    WINDOW = 40000  # max chars between body ref and footnote entry
     counter = 0
     replacements = []
     used_notes = set()
@@ -11601,12 +11614,13 @@ def _link_inline_note_paragraphs(html, total_sups, log):
         if num not in notes_by_num:
             continue
         pos = sm.start()
+        window = _chapter_end_window(pos)  # EB-211: dynamic per-chapter window
         # Find nearest forward note entry with same number
         best = None
         for nm in notes_by_num[num]:
             if id(nm) in used_notes:
                 continue
-            if nm.start() > pos and nm.start() - pos <= WINDOW:
+            if nm.start() > pos and nm.start() - pos <= window:
                 best = nm
                 break
         if best is None:
@@ -11621,7 +11635,7 @@ def _link_inline_note_paragraphs(html, total_sups, log):
             best_crosses_boundary = not _same_chapter(pos, best.start())
             # Check whether any inline-joined para is in-chapter and forward
             has_inline_in_chapter = any(
-                p > pos and p - pos <= WINDOW and _same_chapter(pos, p)
+                p > pos and p - pos <= window and _same_chapter(pos, p)
                 for p in inline_joined[num]
             )
             if has_inline_in_chapter and (best_crosses_boundary
@@ -11672,15 +11686,16 @@ def _link_inline_note_paragraphs(html, total_sups, log):
                 continue
             # Find nearest unused body sup before this note paragraph
             note_pos = nm.start()
+            note_window = _chapter_end_window(note_pos)  # EB-211: dynamic window
             best_sup = None
             for candidate in sup_by_num[inline_num]:
-                if candidate.start() < note_pos and note_pos - candidate.start() <= WINDOW:
+                if candidate.start() < note_pos and note_pos - candidate.start() <= note_window:
                     best_sup = candidate
                     break
             if best_sup is None:
                 # Also allow sups that are after the note if within window
                 for candidate in sup_by_num[inline_num]:
-                    if candidate.start() >= note_pos and candidate.start() - note_pos <= WINDOW:
+                    if candidate.start() >= note_pos and candidate.start() - note_pos <= note_window:
                         best_sup = candidate
                         break
             if best_sup is None:
