@@ -3,6 +3,9 @@ archive/
 inbox/
 batch_qa_intake/
 
+# Kokoro model files (downloaded by scripts/install-kokoro.ps1, not tracked)
+tools/kokoro-models/
+
 # Generated output
 output/
 

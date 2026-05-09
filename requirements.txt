@@ -23,6 +23,13 @@ pyspellchecker==0.9.0
 # Optional — coordinate-based heading resolution (degrades gracefully if missing)
 pdfplumber==0.11.9
 
+# Optional — Kokoro neural TTS (SCRUM-325)
+# Install via scripts\install-kokoro.ps1, which handles onnxruntime-gpu/cpu conflict.
+# kokoro-onnx       # core synthesis library (installs own onnxruntime dep)
+# soundfile         # WAV I/O for chapter files
+# onnxruntime-gpu   # GPU inference (mutually exclusive with onnxruntime)
+# onnxruntime       # CPU-only inference (use -CpuOnly flag in install script)
+
 # Config
 python-dotenv==1.2.2
 

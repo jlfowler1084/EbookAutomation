@@ -3864,11 +3864,17 @@ function Invoke-EbookPipeline {
                 try { (@{ status = 'processing'; file = $file.Name; started = $bookStart.ToString('o'); book_number = $bookNumber; total_books = $files.Count; current_step = 'MP3 generation' } | ConvertTo-Json) | Set-Content $statusPath -Encoding UTF8 } catch {}
                 $mp3Start = Get-Date
                 try {
-                    $mp3Ok = Invoke-Balabolka -InputFile $txtFile -OutputFile $mp3File `
-                                              -Voice   $mp3Voice  `
-                                              -Speed   $mp3Speed  `
-                                              -Volume  $mp3Volume `
-                                              -Bitrate $cfg.mp3.bitrate
+                    $ttsEngine = $cfg.mp3.engine ?? 'balabolka'
+                    if ($ttsEngine -eq 'kokoro') {
+                        $mp3Ok = Invoke-KokoroTTS -InputFile  $txtFile `
+                                                   -OutputDir (Split-Path $mp3File -Parent)
+                    } else {
+                        $mp3Ok = Invoke-Balabolka -InputFile $txtFile -OutputFile $mp3File `
+                                                  -Voice   $mp3Voice  `
+                                                  -Speed   $mp3Speed  `
+                                                  -Volume  $mp3Volume `
+                                                  -Bitrate $cfg.mp3.bitrate
+                    }
 
                     $mp3Duration = (Get-Date) - $mp3Start
                     if ($mp3Ok) {
@@ -4984,6 +4990,103 @@ function Invoke-Balabolka {
         return $false
     } finally {
         if (Test-Path $tempWav) { Remove-Item $tempWav -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+function Invoke-KokoroTTS {
+    <#
+    .SYNOPSIS
+        Convert a _balabolka.txt file to audio using Kokoro neural TTS.
+    .DESCRIPTION
+        Calls tools\kokoro_synth.py which splits the input on ALL-CAPS chapter
+        headings, synthesises each chapter via Kokoro ONNX, and optionally
+        stitches the results to a chaptered M4B. Run scripts\install-kokoro.ps1
+        once before first use to install the model and Python package.
+    .PARAMETER InputFile
+        Path to a _balabolka.txt file produced by Convert-ToTTS.
+    .PARAMETER OutputDir
+        Output directory. Chapter WAVs land in <OutputDir>\<stem>\ and the
+        final M4B lands at <OutputDir>\<stem>.m4b.
+    .PARAMETER Voice
+        Kokoro voice ID (default: from config kokoro.voice, fallback af_heart).
+    .PARAMETER Speed
+        Speed multiplier (default: from config kokoro.speed, fallback 1.0).
+    .PARAMETER StitchM4B
+        Produce a single chaptered M4B after synthesis.
+        Defaults to config kokoro.stitch_m4b.
+    .PARAMETER Device
+        Inference device: auto | cpu | gpu (default: config kokoro.device).
+    .EXAMPLE
+        PS> Invoke-KokoroTTS -InputFile output\balabolka-txt\MyBook_balabolka.txt `
+                              -OutputDir output\audiobooks -StitchM4B
+    .NOTES
+        Requires: scripts\install-kokoro.ps1 run once. ffmpeg must be on PATH.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$InputFile,
+        [Parameter(Mandatory)][string]$OutputDir,
+        [string]$Voice      = '',
+        [float] $Speed      = 0,
+        [switch]$StitchM4B,
+        [string]$Device     = ''
+    )
+
+    $cfg    = Get-EbookConfig
+    $python = $cfg.paths.python
+    $script = Resolve-ProjectPath 'tools\kokoro_synth.py'
+
+    if (-not (Test-Path $python)) {
+        Write-EbookLog "KokoroTTS: python not found at: $python" -Level ERROR
+        return $false
+    }
+    if (-not (Test-Path $script)) {
+        Write-EbookLog "KokoroTTS: kokoro_synth.py not found at: $script" -Level ERROR
+        return $false
+    }
+    if (-not (Test-Path $InputFile)) {
+        Write-EbookLog "KokoroTTS: input file not found: $InputFile" -Level ERROR
+        return $false
+    }
+
+    # Resolve config with param overrides
+    $kcfg      = $cfg.kokoro
+    $useVoice  = if ($Voice)  { $Voice  } else { $kcfg.voice  ?? 'af_heart' }
+    $useSpeed  = if ($Speed -ne 0) { $Speed } else { $kcfg.speed  ?? 1.0 }
+    $useDevice = if ($Device) { $Device } else { $kcfg.device ?? 'auto' }
+    $doStitch  = $StitchM4B.IsPresent -or ($kcfg.stitch_m4b -eq $true)
+    $modelDir  = Resolve-ProjectPath ($kcfg.model_dir ?? 'tools\kokoro-models')
+    $ffmpeg    = $cfg.paths.ffmpeg ?? 'ffmpeg'
+
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+    $pyArgs = @(
+        $script,
+        '--input',      "`"$InputFile`"",
+        '--output-dir', "`"$OutputDir`"",
+        '--voice',      $useVoice,
+        '--speed',      $useSpeed,
+        '--model-dir',  "`"$modelDir`"",
+        '--device',     $useDevice,
+        '--ffmpeg',     "`"$ffmpeg`""
+    )
+    if ($doStitch) { $pyArgs += '--stitch' }
+
+    Write-EbookLog "KokoroTTS: voice=$useVoice  speed=$useSpeed  device=$useDevice  stitch=$doStitch"
+    Write-EbookLog "KokoroTTS: $InputFile -> $OutputDir"
+
+    try {
+        $proc = Start-Process -FilePath $python -ArgumentList ($pyArgs -join ' ') `
+                              -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -ne 0) {
+            Write-EbookLog "KokoroTTS: kokoro_synth.py exited with code $($proc.ExitCode)" -Level ERROR
+            return $false
+        }
+        Write-EbookLog "KokoroTTS: done"
+        return $true
+    } catch {
+        Write-EbookLog "KokoroTTS: exception -- $_" -Level ERROR
+        return $false
     }
 }
 
@@ -6735,6 +6838,7 @@ Export-ModuleMember -Function @(
     'Get-EbookTaskStatus'
     'Initialize-EbookAutomation'
     'Invoke-Balabolka'
+    'Invoke-KokoroTTS'
     'Test-BalabolkaVoices'
     'Send-ToClaudeAPI'
     'Get-ChapterStructure'

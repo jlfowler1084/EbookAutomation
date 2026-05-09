@@ -31,10 +31,18 @@
   },
   "mp3": {
     "enabled":  false,
+    "engine":   "balabolka",
     "voice":    "Microsoft Steffan Online",
     "speed":    0,
     "volume":   100,
     "bitrate":  "128k"
+  },
+  "kokoro": {
+    "voice":      "af_heart",
+    "speed":      1.0,
+    "model_dir":  "tools\\kokoro-models",
+    "device":     "auto",
+    "stitch_m4b": true
   },
   "scheduler": {
     "interval_minutes": 15,
