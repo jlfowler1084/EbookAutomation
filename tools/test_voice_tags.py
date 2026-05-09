@@ -22,6 +22,10 @@ from pdf_to_balabolka import (
     detect_dialogue_spans,
     _build_voiced_paragraph,
     _voice_wrap,
+    _build_character_voice_map,
+    _build_voiced_paragraph_attributed,
+    _apply_per_character_voices,
+    _DIALOGUE_VOICES_ORDERED,
     CHAPTER_SILENCE_MS,
     PART_SILENCE_MS,
     SCENE_BREAK_SILENCE_MS,
@@ -991,6 +995,155 @@ class TestStudyGuideLongFormContract:
         assert '<rate speed="-2">That\'s the end of this study guide' not in _SAMPLE_STUDYGUIDE
         # Default StudyGuide emphasis lines have no rate -1 wrapper
         assert '<rate speed="-1">Key Takeaway' not in _SAMPLE_STUDYGUIDE
+
+
+class TestPerCharacterVoices:
+    """Tier 2b: per-character voice assignment via LLM attribution."""
+
+    # ── _build_character_voice_map ─────────────────────────────────────
+
+    def test_character_map_greedy_first_three(self):
+        speakers = ['Alice', 'Bob', 'Carol']
+        m = _build_character_voice_map(speakers)
+        assert m['Alice'] == _DIALOGUE_VOICES_ORDERED[0]
+        assert m['Bob']   == _DIALOGUE_VOICES_ORDERED[1]
+        assert m['Carol'] == _DIALOGUE_VOICES_ORDERED[2]
+
+    def test_character_map_wraps_at_fourth(self):
+        speakers = ['A', 'B', 'C', 'D']
+        m = _build_character_voice_map(speakers)
+        assert m['D'] == _DIALOGUE_VOICES_ORDERED[0]  # cycles back
+
+    def test_character_map_same_speaker_same_voice(self):
+        speakers = ['Alice', 'Bob', 'Alice']
+        m = _build_character_voice_map(speakers)
+        # Alice appears twice but is only mapped once
+        assert len(m) == 2
+        assert m['Alice'] == _DIALOGUE_VOICES_ORDERED[0]
+        assert m['Bob'] == _DIALOGUE_VOICES_ORDERED[1]
+
+    def test_character_map_ignores_none_and_empty(self):
+        speakers = [None, '', 'Alice']
+        m = _build_character_voice_map(speakers)
+        assert list(m.keys()) == ['Alice']
+        assert m['Alice'] == _DIALOGUE_VOICES_ORDERED[0]
+
+    def test_character_map_empty_input(self):
+        assert _build_character_voice_map([]) == {}
+
+    # ── _build_voiced_paragraph_attributed ────────────────────────────
+
+    def test_attributed_span_uses_mapped_voice(self):
+        para = 'She said "Hello there, friend" and smiled.'
+        spans = detect_dialogue_spans(para)
+        assert spans, "test requires at least one detected span"
+        span_text = spans[0][2]
+        span_voice_map = {span_text: 'Microsoft Jenny Online'}
+        result, fb = _build_voiced_paragraph_attributed(
+            para, spans, span_voice_map, 'Microsoft Guy Online', 0, 0, 'sapi'
+        )
+        assert 'Name=Microsoft Jenny Online' in result
+        assert fb == 0
+
+    def test_unattributed_span_uses_fallback_voice(self):
+        para = 'He replied "That is quite unexpected, yes."'
+        spans = detect_dialogue_spans(para)
+        assert spans
+        result, fb = _build_voiced_paragraph_attributed(
+            para, spans, {}, 'Microsoft Guy Online', 0, 0, 'sapi'
+        )
+        assert 'Name=Microsoft Guy Online' in result
+        assert fb == 1
+
+    def test_no_spans_returns_paragraph_unchanged(self):
+        para = 'No dialogue here at all.'
+        result, fb = _build_voiced_paragraph_attributed(
+            para, [], {}, 'Microsoft Guy Online', 0, 0, 'sapi'
+        )
+        assert result == para
+        assert fb == 0
+
+    # ── _apply_per_character_voices ────────────────────────────────────
+
+    def test_attributed_dialogue_gets_character_voice(self):
+        para = 'Alice said "We need to leave now, Bob."'
+        spans = detect_dialogue_spans(para)
+        assert spans
+        span_text = spans[0][2]
+        logs = []
+        result = _apply_per_character_voices(
+            [para], {span_text: 'Microsoft Jenny Online'}, 'sapi', {}, logs.append
+        )
+        assert len(result) == 1
+        assert 'Name=Microsoft Jenny Online' in result[0]
+
+    def test_fallback_voice_used_and_logged(self):
+        para = 'He cried "Impossible, utterly impossible!"'
+        spans = detect_dialogue_spans(para)
+        assert spans
+        logs = []
+        result = _apply_per_character_voices([para], {}, 'sapi', {}, logs.append)
+        # Fallback voice (Guy Online) applied
+        assert 'Name=Microsoft Guy Online' in result[0]
+        # Log line emitted for unattributed span
+        assert any('unattributed' in m for m in logs)
+
+    def test_blockquote_still_gets_blockquote_voice(self):
+        para = '> This is a quoted passage from another work.'
+        logs = []
+        result = _apply_per_character_voices([para], {}, 'sapi', {}, logs.append)
+        assert 'Name=Microsoft Aria Online' in result[0]
+
+    def test_silence_tags_pass_through_unchanged(self):
+        tag = '<silence msec="1000"/>'
+        result = _apply_per_character_voices([tag], {}, 'sapi', {}, lambda m: None)
+        assert result == [tag]
+
+    def test_plain_paragraph_unchanged(self):
+        para = 'The sun rose slowly over the hills.'
+        result = _apply_per_character_voices([para], {}, 'sapi', {}, lambda m: None)
+        assert result == [para]
+
+    # ── Disabled flag: output bit-identical to Tier 2 ─────────────────
+
+    def test_per_character_disabled_identical_to_tier2(self):
+        """When per_character_voices=False, output is bit-identical to dialogue_voices=True."""
+        paragraphs = [
+            'Chapter One',
+            'Alice said "We must go now, before it is too late."',
+            'The door creaked open.',
+        ]
+        cs = {'parts': [], 'chapters': [0]}
+
+        tier2_out = apply_voice_tags(
+            paragraphs, cs, options={'dialogue_voices': True, 'per_character_voices': False,
+                                      'chapter_silence': False, 'scene_break_silence': False,
+                                      'emphatic_closers': False, 'em_dash_pause': False},
+            log=lambda m: None
+        )
+        # per_character_voices=False with dialogue_voices=True → same as Tier 2 alone
+        tier2_check = apply_voice_tags(
+            paragraphs, cs, options={'dialogue_voices': True,
+                                      'chapter_silence': False, 'scene_break_silence': False,
+                                      'emphatic_closers': False, 'em_dash_pause': False},
+            log=lambda m: None
+        )
+        assert tier2_out == tier2_check
+
+    def test_per_character_off_no_llm_called(self):
+        """per_character_voices=False must NOT trigger any LLM call path."""
+        import unittest.mock as mock
+        paragraphs = ['She said "Hello there, friend."']
+        cs = {'parts': [], 'chapters': []}
+        with mock.patch('pdf_to_balabolka._build_book_attribution') as mock_attr:
+            apply_voice_tags(
+                paragraphs, cs,
+                options={'dialogue_voices': True, 'per_character_voices': False,
+                          'chapter_silence': False, 'scene_break_silence': False,
+                          'emphatic_closers': False, 'em_dash_pause': False},
+                log=lambda m: None
+            )
+            mock_attr.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,83 +1,99 @@
 {
   "paths": {
-    "inbox":         "inbox",
-    "processing":    "processing",
-    "archive":       "archive",
-    "logs":          "logs",
-    "dictionaries":  "dictionaries",
-    "audiobooks":    "output\\audiobooks",
+    "inbox": "inbox",
+    "processing": "processing",
+    "archive": "archive",
+    "logs": "logs",
+    "dictionaries": "dictionaries",
+    "audiobooks": "output\\audiobooks",
     "balabolka_txt": "output\\balabolka-txt",
-    "kindle":        "output\\kindle",
-    "episodes":      "output\\episodes",
-    "balcon":        "tools\\balcon\\balcon.exe",
-    "ffmpeg":        "ffmpeg",
-    "python":        "C:\\Users\\Joe\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-    "calibre":       "C:\\Program Files\\Calibre2\\ebook-convert.exe",
-    "tesseract":     "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
-    "poppler":       "tools\\poppler",
-    "data":          "tools\\data",
-    "ghostscript":   ""
+    "kindle": "output\\kindle",
+    "episodes": "output\\episodes",
+    "balcon": "tools\\balcon\\balcon.exe",
+    "ffmpeg": "ffmpeg",
+    "python": "C:\\Users\\Joe\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+    "calibre": "C:\\Program Files\\Calibre2\\ebook-convert.exe",
+    "tesseract": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+    "poppler": "tools\\poppler",
+    "data": "tools\\data",
+    "ghostscript": ""
   },
   "tts": {
-    "enabled":         true,
-    "input_formats":   ["pdf", "epub", "mobi", "azw", "azw3", "djvu", "txt", "docx"],
-    "output_suffix":   "_balabolka.txt"
+    "enabled": true,
+    "input_formats": [
+      "pdf",
+      "epub",
+      "mobi",
+      "azw",
+      "azw3",
+      "djvu",
+      "txt",
+      "docx"
+    ],
+    "output_suffix": "_balabolka.txt"
   },
   "kindle": {
-    "enabled":         true,
-    "input_formats":   ["epub", "pdf", "txt", "docx", "mobi", "azw"],
-    "output_format":   "kfx",
+    "enabled": true,
+    "input_formats": [
+      "epub",
+      "pdf",
+      "txt",
+      "docx",
+      "mobi",
+      "azw"
+    ],
+    "output_format": "kfx",
     "calibre_options": "--output-profile kindle_pw3 --embed-all-fonts"
   },
   "mp3": {
-    "enabled":  false,
-    "engine":   "balabolka",
-    "voice":    "Microsoft Steffan Online",
-    "speed":    0,
-    "volume":   100,
-    "bitrate":  "128k"
+    "enabled": false,
+    "engine": "balabolka",
+    "voice": "Microsoft Steffan Online",
+    "speed": 0,
+    "volume": 100,
+    "bitrate": "128k"
   },
   "kokoro": {
-    "voice":      "af_heart",
-    "speed":      1.0,
-    "model_dir":  "tools\\kokoro-models",
-    "device":     "auto",
+    "voice": "af_heart",
+    "speed": 1.0,
+    "model_dir": "tools\\kokoro-models",
+    "device": "auto",
     "stitch_m4b": true
   },
   "scheduler": {
     "interval_minutes": 15,
-    "task_name":        "EbookAutomation",
-    "run_on_login":     true
+    "task_name": "EbookAutomation",
+    "run_on_login": true
   },
   "notifications": {
-    "enabled":          true,
-    "show_toast":       true
+    "enabled": true,
+    "show_toast": true
   },
   "api_models": {
-    "haiku":          "claude-haiku-4-5-20251001",
-    "sonnet":         "claude-sonnet-4-20250514",
-    "sonnet_latest":  "claude-sonnet-4-6",
-    "gemini_flash":   "gemini-2.5-flash"
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-20250514",
+    "sonnet_latest": "claude-sonnet-4-6",
+    "gemini_flash": "gemini-2.5-flash"
   },
   "visual_qa": {
-    "enabled":        false,
-    "dpi":            100,
-    "max_pages":      8,
+    "enabled": false,
+    "dpi": 100,
+    "max_pages": 8,
     "pass_threshold": 70,
-    "rubric_path":    "tools\\visual_qa_rubric.md",
-    "provider":       "cloud",
-    "cloud_host":     "openrouter",
-    "cloud_model":    "qwen/qwen3-vl-30b-a3b-instruct",
-    "local_model":    "qwen3.5-35b-a3b-fp8",
+    "rubric_path": "tools\\visual_qa_rubric.md",
+    "provider": "cloud",
+    "cloud_host": "openrouter",
+    "cloud_model": "qwen/qwen3-vl-30b-a3b-instruct",
+    "local_model": "qwen3.5-35b-a3b-fp8",
     "local_base_url": "http://localhost:8000/v1",
     "fallback": {
-      "enabled":                           true,
-      "claude_model":                      "claude-sonnet-4-6",
-      "empty_issues_score_threshold":      80,
-      "corpus_path":                       "tools\\visual_qa_fallback_fingerprints.json",
-      "match_uniform_score_responses":     true,
-      "uniform_score_page_ratio":          0.75,
-      "uniform_score_min_pages":           3
+      "enabled": true,
+      "claude_model": "claude-sonnet-4-6",
+      "empty_issues_score_threshold": 80,
+      "corpus_path": "tools\\visual_qa_fallback_fingerprints.json",
+      "match_uniform_score_responses": true,
+      "uniform_score_page_ratio": 0.75,
+      "uniform_score_min_pages": 3
     }
   },
   "classify": {
@@ -85,14 +101,24 @@
     "sample_pages": 3,
     "min_text_density_digital": 500,
     "min_text_density_scan_with_text": 50,
-    "scan_producers": ["Google", "ABBYY", "Xerox", "Kofax", "ScanSnap", "Fujitsu", "Canon", "Epson", "HP Scan"]
+    "scan_producers": [
+      "Google",
+      "ABBYY",
+      "Xerox",
+      "Kofax",
+      "ScanSnap",
+      "Fujitsu",
+      "Canon",
+      "Epson",
+      "HP Scan"
+    ]
   },
   "converge_loop": {
-    "enabled":                 true,
-    "max_iterations":          4,
-    "target_score":            85,
-    "stall_threshold":         3,
-    "cost_limit_per_book_usd": 2.00
+    "enabled": true,
+    "max_iterations": 4,
+    "target_score": 85,
+    "stall_threshold": 3,
+    "cost_limit_per_book_usd": 2.0
   },
   "kindle_delivery": {
     "enabled": true,
@@ -112,9 +138,9 @@
   "preflight": {
     "enabled": true,
     "text_quality_sample_pages": 5,
-    "ocr_artifact_threshold_poor": 0.30,
-    "ocr_artifact_threshold_moderate": 0.10,
-    "bookmark_readability_threshold": 0.80,
+    "ocr_artifact_threshold_poor": 0.3,
+    "ocr_artifact_threshold_moderate": 0.1,
+    "bookmark_readability_threshold": 0.8,
     "min_bookmarks_for_viable": 3
   },
   "extraction": {
@@ -141,8 +167,14 @@
     "blockquote_silence_before_ms": 200,
     "blockquote_silence_after_ms": 300,
     "em_dash_pause_ms": 250,
-    "en_dash_pause_ms": 150
+    "en_dash_pause_ms": 150,
+    "per_character": {
+      "enabled": false,
+      "attribution_url": "http://localhost:11434/v1",
+      "attribution_model": "qwen3.5:122b-a10b",
+      "confidence_threshold": 0.7
+    }
   },
-  "archive_originals":  true,
-  "log_level":          "INFO"
+  "archive_originals": true,
+  "log_level": "INFO"
 }
