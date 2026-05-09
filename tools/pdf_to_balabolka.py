@@ -8844,6 +8844,235 @@ def _apply_dialogue_voices(paragraphs, tag_syntax, options, log):
     return result
 
 
+# ── Per-character voice assignment (Tier 2b) ──────────────────────────────
+# Voices assigned greedily in first-appearance order across the book.
+_DIALOGUE_VOICES_ORDERED = [
+    'Microsoft Guy Online',
+    'Microsoft Jenny Online',
+    'Microsoft Aria Online',
+]
+
+
+def _build_character_voice_map(speakers_in_order):
+    """Assign voices to named speakers in order of first appearance.
+
+    Returns {speaker_name: voice_name}. Cycles Guy→Jenny→Aria→Guy→...
+    """
+    voice_map = {}
+    idx = 0
+    for name in speakers_in_order:
+        if name and name not in voice_map:
+            voice_map[name] = _DIALOGUE_VOICES_ORDERED[idx % len(_DIALOGUE_VOICES_ORDERED)]
+            idx += 1
+    return voice_map
+
+
+def _attribute_chapter_speakers(chapter_paragraphs, span_texts, llm_url, model, log):
+    """Call a local OpenAI-compatible LLM to identify the speaker of each dialogue span.
+
+    Inserts [SPAN_N] markers into a chapter excerpt and parses the JSON response.
+    Returns [(speaker | None, confidence)] parallel to span_texts.
+    Never raises — returns [(None, 0.0)] * n on any failure.
+    """
+    fallback = [(None, 0.0)] * len(span_texts)
+    if not span_texts:
+        return fallback
+
+    try:
+        import openai  # VQA already requires this package
+    except ImportError:
+        log('  Per-character voices: openai package not installed — skipping attribution')
+        return fallback
+
+    chapter_text = '\n\n'.join(chapter_paragraphs)
+    excerpt = chapter_text[:4000]
+
+    # Insert [SPAN_N] marker before the opening quote of each span
+    for i, span_text in enumerate(span_texts):
+        marker = f'[SPAN_{i}] '
+        for q in ('"', '“'):
+            candidate = f'{q}{span_text}'
+            if candidate in excerpt:
+                excerpt = excerpt.replace(candidate, f'{marker}{q}{span_text}', 1)
+                break
+
+    span_list = '\n'.join(f'  SPAN_{i}: {t[:80]}' for i, t in enumerate(span_texts))
+    user_msg = (
+        f'Chapter excerpt (spans marked [SPAN_N]):\n"""\n{excerpt}\n"""\n\n'
+        f'Spans to attribute:\n{span_list}\n\n'
+        "For each span identify the speaker using nearby tags ('said X', 'X asked', "
+        "alternating-turn context, etc.). Return ONLY a JSON array — no fences:\n"
+        '[{"span_index": 0, "speaker": "Name", "confidence": 0.9}, ...]\n'
+        'Use null for speaker when attribution is uncertain.'
+    )
+
+    try:
+        client = openai.OpenAI(base_url=llm_url, api_key='not-needed')
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {'role': 'system', 'content': 'You are a fiction dialogue analyst. Return only JSON arrays, no explanation.'},
+                {'role': 'user', 'content': user_msg},
+            ],
+            max_tokens=512,
+            temperature=0.1,
+        )
+        raw = (resp.choices[0].message.content or '').strip()
+        raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.MULTILINE).strip()
+        items = json.loads(raw)
+        result = [(None, 0.0)] * len(span_texts)
+        for item in items:
+            idx = item.get('span_index')
+            if not isinstance(idx, int) or idx < 0 or idx >= len(span_texts):
+                continue
+            speaker = item.get('speaker') or None
+            result[idx] = (speaker, float(item.get('confidence', 0.0)))
+        return result
+    except Exception as exc:
+        log(f'  Per-character voices: attribution failed ({exc.__class__.__name__}) — using fallback')
+        return fallback
+
+
+def _build_book_attribution(paragraphs, chapter_structure, llm_cfg, confidence_threshold, log):
+    """Attribute dialogue spans across all chapters and build character→voice map.
+
+    Returns (span_voice_map, char_voice_map):
+        span_voice_map: {span_text: voice_name}
+        char_voice_map: {speaker_name: voice_name}
+    """
+    llm_url = llm_cfg.get('attribution_url', 'http://localhost:11434/v1')
+    model = llm_cfg.get('attribution_model', 'qwen3.5:122b-a10b')
+
+    chapter_indices = sorted(
+        set(chapter_structure.get('chapters', [])) | set(chapter_structure.get('parts', []))
+    )
+    boundaries = chapter_indices + [len(paragraphs)]
+    chapter_slices = [(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)]
+    if not chapter_slices:
+        chapter_slices = [(0, len(paragraphs))]
+
+    span_speaker_map = {}   # span_text → speaker_name
+    speakers_in_order = []  # first-seen order for voice assignment
+
+    for start, end in chapter_slices:
+        chapter_paras = paragraphs[start:end]
+        span_texts = [
+            qt for para in chapter_paras
+            for _, _, qt in detect_dialogue_spans(para)
+            if qt not in span_speaker_map
+        ]
+        if not span_texts:
+            continue
+
+        for span_text, (speaker, confidence) in zip(
+            span_texts,
+            _attribute_chapter_speakers(chapter_paras, span_texts, llm_url, model, log),
+        ):
+            if speaker and confidence >= confidence_threshold:
+                span_speaker_map[span_text] = speaker
+                if speaker not in speakers_in_order:
+                    speakers_in_order.append(speaker)
+
+    char_voice_map = _build_character_voice_map(speakers_in_order)
+    span_voice_map = {
+        text: char_voice_map[spk]
+        for text, spk in span_speaker_map.items()
+        if spk in char_voice_map
+    }
+
+    total_spans = sum(len(detect_dialogue_spans(p)) for p in paragraphs)
+    log(f'  Per-character voices: {len(span_voice_map)}/{total_spans} spans attributed, '
+        f'{len(char_voice_map)} character(s) mapped')
+    return span_voice_map, char_voice_map
+
+
+def _build_voiced_paragraph_attributed(paragraph, spans, span_voice_map, fallback_voice,
+                                        silence_before, silence_after, tag_syntax):
+    """Reconstruct a paragraph with per-character voice tags (Tier 2b).
+
+    Returns (tagged_paragraph_str, fallback_count).
+    """
+    parts = []
+    last_end = 0
+    fallback_count = 0
+
+    for start, end, quote_text in spans:
+        if start > last_end:
+            parts.append(paragraph[last_end:start])
+        voice = span_voice_map.get(quote_text.strip())
+        if voice is None:
+            voice = fallback_voice
+            fallback_count += 1
+        parts.append(_silence_tag(silence_before, tag_syntax))
+        parts.append(_voice_wrap(paragraph[start:end], voice, tag_syntax))
+        parts.append(_silence_tag(silence_after, tag_syntax))
+        last_end = end
+
+    if last_end < len(paragraph):
+        parts.append(paragraph[last_end:])
+
+    return ''.join(parts), fallback_count
+
+
+def _apply_per_character_voices(paragraphs, span_voice_map, tag_syntax, options, log):
+    """Tier 2b: apply per-character voice tags using a pre-built span→voice map.
+
+    Replaces _apply_dialogue_voices when per_character_voices is enabled.
+    Blockquotes still get blockquote_voice; narrator text stays untagged.
+    """
+    try:
+        _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+        with open(_cfg_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f).get('voice_tags', {})
+    except Exception:
+        cfg = {}
+
+    fallback_voice = cfg.get('dialogue_voice', 'Microsoft Guy Online')
+    blockquote_voice = cfg.get('blockquote_voice', 'Microsoft Aria Online')
+    dlg_before = cfg.get('dialogue_silence_before_ms', 150)
+    dlg_after = cfg.get('dialogue_silence_after_ms', 200)
+    bq_before = cfg.get('blockquote_silence_before_ms', 200)
+    bq_after = cfg.get('blockquote_silence_after_ms', 300)
+
+    tagged_count = fallback_count = blockquote_count = 0
+    result = []
+
+    for p in paragraphs:
+        if not p or p.startswith('<silence') or p.startswith('{{Pause'):
+            result.append(p)
+            continue
+
+        stripped = p.strip()
+        if stripped.startswith('>') or stripped.startswith('\t>'):
+            bq_text = re.sub(r'^>\s*', '', stripped)
+            result.append(
+                _silence_tag(bq_before, tag_syntax) +
+                _voice_wrap(bq_text, blockquote_voice, tag_syntax) +
+                _silence_tag(bq_after, tag_syntax)
+            )
+            blockquote_count += 1
+            continue
+
+        spans = detect_dialogue_spans(p)
+        if not spans:
+            result.append(p)
+            continue
+
+        tagged_para, n_fb = _build_voiced_paragraph_attributed(
+            p, spans, span_voice_map, fallback_voice, dlg_before, dlg_after, tag_syntax
+        )
+        if n_fb:
+            log(f'  Per-character: {n_fb} unattributed span(s), using fallback voice')
+            fallback_count += n_fb
+        result.append(tagged_para)
+        tagged_count += len(spans)
+
+    if tagged_count or blockquote_count:
+        log(f'  Voice tags (per-character): {tagged_count} spans '
+            f'({fallback_count} fallback), {blockquote_count} blockquotes')
+    return result
+
+
 def _replace_em_dashes_with_pause(paragraphs, tag_syntax, log):
     """Replace em dashes with a brief silence for natural TTS pausing.
 
@@ -8959,8 +9188,22 @@ def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=N
         else:
             output.append(p)
 
-    # ── Tier 2: Dialogue voice tags ──────────────────────────────────
-    if options.get('dialogue_voices', False):
+    # ── Tier 2 / 2b: Dialogue voice tags ─────────────────────────────
+    if options.get('per_character_voices', False):
+        # Tier 2b — attribution pre-pass then per-character voices
+        try:
+            _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+            with open(_cfg_path, 'r', encoding='utf-8') as _f:
+                _pc_cfg = json.load(_f).get('voice_tags', {}).get('per_character', {})
+        except Exception:
+            _pc_cfg = {}
+        _threshold = float(_pc_cfg.get('confidence_threshold', 0.7))
+        span_voice_map, _ = _build_book_attribution(
+            paragraphs, chapter_structure, _pc_cfg, _threshold, log
+        )
+        output = _apply_per_character_voices(output, span_voice_map, tag_syntax, options, log)
+    elif options.get('dialogue_voices', False):
+        # Tier 2 — uniform dialogue voice (existing behaviour)
         output = _apply_dialogue_voices(output, tag_syntax, options, log)
 
     # ── Tier 3: Em dash pause insertion ───────────────────────────────
@@ -8973,7 +9216,7 @@ def apply_voice_tags(paragraphs, chapter_structure, tag_syntax='sapi', options=N
 
 
 def format_output(paragraphs, chapter_structure, log, tts_enhance=False, tag_syntax='sapi',
-                  dialogue_voices=False):
+                  dialogue_voices=False, per_character_voices=False):
     """Build the final text with ALL-CAPS headings and optional TTS voice tags."""
     if tts_enhance:
         options = {
@@ -8981,6 +9224,7 @@ def format_output(paragraphs, chapter_structure, log, tts_enhance=False, tag_syn
             'scene_break_silence': True,
             'emphatic_closers': True,
             'dialogue_voices': dialogue_voices,
+            'per_character_voices': per_character_voices,
         }
         tagged = apply_voice_tags(paragraphs, chapter_structure, tag_syntax=tag_syntax,
                                   options=options, log=log)
@@ -10945,7 +11189,8 @@ def strip_footnotes_from_paragraphs(paragraphs, log):
 def process_pdf(input_path, output_path, log, chapter_hints_path=None,
                 use_ocr=None, tesseract_path=None, poppler_path=None, ocr_dpi=300,
                 calibre_path=None, force_columns=False,
-                tts_enhance=False, tag_syntax='sapi', dialogue_voices=False):
+                tts_enhance=False, tag_syntax='sapi', dialogue_voices=False,
+                per_character_voices=False):
     """Full pipeline: ebook -> clean text -> chapter-formatted Balabolka file.
 
     use_ocr: True = force OCR, False = force standard, None = auto-detect (PDF only)
@@ -11088,7 +11333,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         else:
             log("\n-- STEP 6: Formatting and saving ---------------------")
         _cs = {'parts': [], 'chapters': heading_indices}
-        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices)
+        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices, per_character_voices=per_character_voices)
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(final_text)
@@ -11191,7 +11436,7 @@ def process_pdf(input_path, output_path, log, chapter_hints_path=None,
         final_text = format_output_with_levels(body, heading_dict)
     else:
         _cs = heading_dict if heading_dict else {'parts': [], 'chapters': heading_indices}
-        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices)
+        final_text = format_output(body, _cs, log, tts_enhance=tts_enhance, tag_syntax=tag_syntax, dialogue_voices=dialogue_voices, per_character_voices=per_character_voices)
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(final_text)
@@ -13766,6 +14011,9 @@ Examples:
                          "'universal' for {{Voice=}}/{{Pause=}} tags (default: sapi)")
     ap.add_argument("--dialogue-voices", action="store_true", default=False,
                     help="Tag detected dialogue with alternate TTS voice (Guy Online)")
+    ap.add_argument("--per-character-voices", action="store_true", default=False,
+                    help="Tag dialogue with per-character voices via LLM attribution (Tier 2b; "
+                         "implies --dialogue-voices and --tts-enhance)")
     ap.add_argument("--compare-extractors", action="store_true", default=False,
                     help="For borderline PDFs (score 60-80), try all 3 extractors and pick the best")
     ap.add_argument("--ocr-table", default=None,
@@ -13804,8 +14052,10 @@ Examples:
 
     args = ap.parse_args()
 
-    # --dialogue-voices implies --tts-enhance
+    # --dialogue-voices and --per-character-voices both imply --tts-enhance
     if args.dialogue_voices and not args.tts_enhance:
+        args.tts_enhance = True
+    if args.per_character_voices and not args.tts_enhance:
         args.tts_enhance = True
 
     # --pymupdf-tables implies --html-extraction (requires the HTML pipeline)
@@ -14068,7 +14318,8 @@ Examples:
                         force_columns=args.force_columns,
                         tts_enhance=args.tts_enhance,
                         tag_syntax=args.tag_syntax,
-                        dialogue_voices=args.dialogue_voices)
+                        dialogue_voices=args.dialogue_voices,
+                        per_character_voices=args.per_character_voices)
         # ── Save CLI corrections to pattern_db for future conversions (EB-73) ──
         if _corrections_should_save and _pending_corrections:
             try:
