@@ -526,3 +526,135 @@ def test_integration_mapreduce_a2_report_flagged() -> None:
         f"Expected all {len(pages)} MapReduce pages flagged via Matcher 4, "
         f"got {len(flagged)}: {sorted(flagged)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Matcher 5 (EB-202): page-type score ceiling for DocVQA-shaped failures
+# ---------------------------------------------------------------------------
+# Oil Kings p3: front_matter, score=90, only minor issues, Δ=56 vs Claude
+# baseline. All 4 existing matchers missed it — the DocVQA-shaped failure gap.
+# Ceiling fires when: page_type in ceilings map AND score > ceiling AND
+# no issue has severity in {"moderate", "critical"}.
+
+SETTINGS_MATCHER5_ONLY = FingerprintSettings(
+    empty_issues_score_threshold=80,
+    substring_corpus=(),
+    match_category_scores_collapse=False,
+    match_uniform_score_responses=False,
+    page_type_ceilings={"front_matter": 80},
+)
+
+
+def test_matcher5_front_matter_high_score_minor_issues_flagged() -> None:
+    """front_matter, score=90, all minor issues → flagged by Matcher 5 (R7, Oil Kings p3 shape)."""
+    pages = [_make_page(3, score=90, issues=[_make_issue("Front matter text is clean.")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == {3}
+
+
+def test_matcher5_front_matter_high_score_empty_issues_flagged() -> None:
+    """front_matter, score=90, issues=[] → flagged (vacuous severity — no high-severity issues present)."""
+    pages = [_make_page(3, score=90, issues=[], page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == {3}
+
+
+def test_matcher5_moderate_issue_not_flagged() -> None:
+    """front_matter, score=90, one moderate issue → NOT flagged (R8 false-positive guard)."""
+    pages = [_make_page(3, score=90,
+                        issues=[_make_issue("Text overflow at right margin", severity="moderate")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == set()
+
+
+def test_matcher5_critical_issue_not_flagged() -> None:
+    """front_matter, score=90, one critical issue → NOT flagged."""
+    pages = [_make_page(3, score=90,
+                        issues=[_make_issue("Page is blank — conversion failure", severity="critical")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == set()
+
+
+def test_matcher5_body_page_not_flagged() -> None:
+    """body page type not in ceiling map → NOT flagged even at high score with minor issues."""
+    pages = [_make_page(5, score=90, issues=[_make_issue("Minor OCR artifact")],
+                        page_type="body")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == set()
+
+
+def test_matcher5_score_at_ceiling_not_flagged() -> None:
+    """front_matter, score exactly at ceiling (80) → NOT flagged (strictly >, not >=)."""
+    pages = [_make_page(3, score=80, issues=[_make_issue("Minor text spacing")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == set()
+
+
+def test_matcher5_score_one_above_ceiling_flagged() -> None:
+    """front_matter, score=81, all minor → flagged (first value strictly above ceiling)."""
+    pages = [_make_page(3, score=81, issues=[_make_issue("Minor text spacing")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == {3}
+
+
+def test_matcher5_empty_ceilings_dict_does_not_fire() -> None:
+    """Empty page_type_ceilings dict → Matcher 5 does not fire (R9 backward compat)."""
+    settings = FingerprintSettings(
+        empty_issues_score_threshold=80,
+        substring_corpus=(),
+        match_category_scores_collapse=False,
+        match_uniform_score_responses=False,
+        page_type_ceilings={},
+    )
+    pages = [_make_page(3, score=90, issues=[_make_issue("Front matter")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, settings)
+    assert result == set()
+
+
+def test_matcher5_no_kwarg_uses_empty_default() -> None:
+    """FingerprintSettings without page_type_ceilings kwarg → uses {} default, Matcher 5 does not fire (R9)."""
+    settings = FingerprintSettings(
+        empty_issues_score_threshold=80,
+        substring_corpus=(),
+        match_category_scores_collapse=False,
+        match_uniform_score_responses=False,
+    )
+    pages = [_make_page(3, score=90, issues=[_make_issue("Front matter")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, settings)
+    assert result == set()
+
+
+def test_matcher5_composes_with_matcher1_without_replacement() -> None:
+    """Matcher 5 adds to the flagged set — does not replace Matcher 1/2/4 results."""
+    settings = FingerprintSettings(
+        empty_issues_score_threshold=80,
+        substring_corpus=("no action needed",),
+        match_category_scores_collapse=False,
+        match_uniform_score_responses=False,
+        page_type_ceilings={"front_matter": 80},
+    )
+    pages = [
+        _make_page(1, score=95, issues=[]),                              # Matcher 1 (empty + high)
+        _make_page(2, score=85, issues=[_make_issue("no action needed here")]),  # Matcher 2
+        _make_page(3, score=90, issues=[_make_issue("Front matter text clean.")],
+                   page_type="front_matter"),                            # Matcher 5
+    ]
+    detector = FallbackFingerprintDetector(["no action needed"])
+    result = detector.detect(pages, settings)
+    assert result == {1, 2, 3}

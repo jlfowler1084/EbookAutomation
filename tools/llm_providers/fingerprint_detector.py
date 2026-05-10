@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -55,6 +55,7 @@ class FingerprintSettings:
     match_uniform_score_responses: bool = True
     uniform_score_page_ratio: float = 0.75
     uniform_score_min_pages: int = 3
+    page_type_ceilings: dict[str, int] = field(default_factory=dict)
 
 
 class FallbackFingerprintDetector:
@@ -216,6 +217,35 @@ class FallbackFingerprintDetector:
                         ratio,
                         settings.uniform_score_page_ratio,
                         settings.uniform_score_min_pages,
+                    )
+
+        # Matcher 5 (EB-202): page-type score ceiling for DocVQA-shaped failures.
+        # Cloud VLMs can emit schema-valid, specific, high-scoring responses that
+        # are confidently wrong — all existing matchers miss these because they
+        # pass every structural check. For certain page types, score > ceiling
+        # with no moderate/critical severity issue is implausible given the rubric.
+        if settings.page_type_ceilings:
+            for page in valid_pages:
+                pn = page.get("page_number")
+                if pn is None or pn in flagged:
+                    continue
+                page_type = page.get("page_type", "")
+                ceiling = settings.page_type_ceilings.get(page_type)
+                if ceiling is None:
+                    continue
+                if page.get("score", 0) <= ceiling:
+                    continue
+                issues = page.get("issues", [])
+                has_high_severity = any(
+                    issue.get("severity", "minor") in {"moderate", "critical"}
+                    for issue in issues
+                )
+                if not has_high_severity:
+                    flagged.add(pn)
+                    logger.debug(
+                        "Matcher 5 fired: page %d type=%r score=%d > ceiling=%d, "
+                        "no moderate/critical issues (reason: page_type_ceiling)",
+                        pn, page_type, page.get("score", 0), ceiling,
                     )
 
         if flagged:
