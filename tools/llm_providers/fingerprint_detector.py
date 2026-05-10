@@ -237,14 +237,14 @@ class FallbackFingerprintDetector:
                     continue
                 issues = page.get("issues", [])
                 has_high_severity = any(
-                    issue.get("severity", "minor") in {"moderate", "critical"}
+                    issue.get("severity", "minor") in {"critical", "major", "moderate"}
                     for issue in issues
                 )
                 if not has_high_severity:
                     flagged.add(pn)
                     logger.debug(
                         "Matcher 5 fired: page %d type=%r score=%d > ceiling=%d, "
-                        "no moderate/critical issues (reason: page_type_ceiling)",
+                        "no major/moderate/critical issues (reason: page_type_ceiling)",
                         pn, page_type, page.get("score", 0), ceiling,
                     )
 
