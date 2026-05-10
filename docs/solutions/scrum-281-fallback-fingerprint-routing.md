@@ -3,6 +3,7 @@ title: Fallback fingerprint routing — lessons + failure-mode taxonomy from SCR
 type: solution
 status: compound
 date: 2026-04-19
+last_updated: 2026-05-10
 origin_ticket: SCRUM-281
 origin_plan: docs/plans/2026-04-19-001-feat-scrum-281-fallback-fingerprint-routing-plan.md
 predecessor: docs/solutions/scrum-283-cloud-vlm-evaluation.md
@@ -139,7 +140,7 @@ When someone (future me) tunes the fingerprint corpus or threshold — say, adds
 
 ## Implications for residual tickets
 
-**Residual #1 (DocVQA-shaped outlier detection):** Oil Kings p3 Δ=56 is the concrete motivation. A page-type score ceiling (e.g., "front_matter pages cannot score > 80 without at least one moderate issue") would have caught p3. Alternative: a light multi-provider sampler (every Nth page also goes to a second provider). Priority is low — it's one page out of 48 in corpus, and R2(b) passed at 16.5 without it. File it with the smoke evidence attached.
+**Residual #1 (DocVQA-shaped outlier detection) — CLOSED by EB-202 (2026-05-10):** Oil Kings p3 Δ=56 is the concrete motivation. The page-type score ceiling approach was implemented as Matcher 5 in `FallbackFingerprintDetector`: `front_matter` pages scoring >80 with no `moderate`/`critical` severity issues are flagged for Claude re-evaluation. Config: `visual_qa.fallback.page_type_ceilings: {"front_matter": 80}`. See `docs/solutions/logic-errors/vqa-fingerprint-page-type-ceiling-matcher-2026-05-10.md` for full implementation details and prevention patterns. The detector now has 5 matchers; Matchers 1–4 remain unchanged.
 
 **Residual #2 (Python KFX layout investigation):** Both cloud A3B (58) and Claude (baseline ~60) agree Python in Easy Steps has genuine layout degradation. This is a *pipeline* issue, not a VQA issue — the book renders poorly through Calibre's KFX output (code blocks, inline bullet lists, operator precedence tables). SCRUM-281's hybrid stack did its job by reflecting the agreement faithfully. Separate concern worth investigating.
 
