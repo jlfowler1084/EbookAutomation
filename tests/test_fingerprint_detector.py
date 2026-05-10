@@ -582,6 +582,16 @@ def test_matcher5_critical_issue_not_flagged() -> None:
     assert result == set()
 
 
+def test_matcher5_major_issue_not_flagged() -> None:
+    """front_matter, score=90, one major issue → NOT flagged (EB-219: major is high-severity)."""
+    pages = [_make_page(3, score=90,
+                        issues=[_make_issue("Significant text reflow across spread", severity="major")],
+                        page_type="front_matter")]
+    detector = FallbackFingerprintDetector([])
+    result = detector.detect(pages, SETTINGS_MATCHER5_ONLY)
+    assert result == set()
+
+
 def test_matcher5_body_page_not_flagged() -> None:
     """body page type not in ceiling map → NOT flagged even at high score with minor issues."""
     pages = [_make_page(5, score=90, issues=[_make_issue("Minor OCR artifact")],

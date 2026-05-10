@@ -546,7 +546,7 @@ def test_schema_issue_severity_enum() -> None:
     schema = _build_page_extraction_schema(8)
     issues_items = schema["properties"]["pages"]["items"]["properties"]["issues"]["items"]
     severity_enum = issues_items["properties"]["severity"]["enum"]
-    assert severity_enum == ["critical", "moderate", "minor"]
+    assert severity_enum == ["critical", "major", "moderate", "minor"]  # EB-219
 
 
 def test_schema_category_scores_has_six_keys_with_bounds() -> None:

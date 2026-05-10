@@ -67,7 +67,7 @@ def _build_page_extraction_schema(page_count: int) -> dict:
             },
             "severity": {
                 "type": "string",
-                "enum": ["critical", "moderate", "minor"],
+                "enum": ["critical", "major", "moderate", "minor"],
             },
             "description": {"type": "string"},
             "suggestion": {"type": "string"},
@@ -98,7 +98,7 @@ def _build_page_extraction_schema(page_count: int) -> dict:
             },
             "severity": {
                 "type": "string",
-                "enum": ["critical", "moderate", "minor"],
+                "enum": ["critical", "major", "moderate", "minor"],
             },
             "description": {"type": "string"},
             "affected_pages": {
@@ -210,7 +210,7 @@ def _build_detection_schema(page_count: int) -> dict:
                     "toc_navigation", "cover_images", "page_layout",
                 ],
             },
-            "severity": {"type": "string", "enum": ["critical", "moderate", "minor"]},
+            "severity": {"type": "string", "enum": ["critical", "major", "moderate", "minor"]},
             "description": {"type": "string"},
             "suggestion": {"type": "string"},
         },
