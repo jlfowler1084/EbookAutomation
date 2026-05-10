@@ -542,6 +542,7 @@ class TestConfigRoundTrip:
                 "claude_model": "claude-sonnet-4-6",
                 "empty_issues_score_threshold": 80,
                 "corpus_path": r"tools\visual_qa_fallback_fingerprints.json",
+                "page_type_ceilings": {"front_matter": 80},
             },
         },
     }
@@ -621,6 +622,14 @@ class TestConfigRoundTrip:
                                                              r"custom\fingerprints.json"])
         assert captured.get("fallback_corpus_path") == r"custom\fingerprints.json"
 
+    def test_page_type_ceilings_flows_from_config_to_run_visual_qa(self, tmp_path):
+        """page_type_ceilings flows from settings.json → main() → run_visual_qa() (EB-202)."""
+        captured = self._run_main_capture_kwargs(tmp_path)
+        assert captured.get("fallback_page_type_ceilings") == {"front_matter": 80}, (
+            "page_type_ceilings must be forwarded from config to run_visual_qa(). "
+            "Check the call site in main() — wiring gap confirmed by EB-202 Phase 1 audit."
+        )
+
     def test_legacy_config_no_fallback_block(self, tmp_path):
         """Settings without a fallback block uses hardcoded defaults (graceful degradation)."""
         settings_override = {"visual_qa": {"fallback": {}}}
@@ -698,6 +707,18 @@ _BORDERLINE_BATCH = [
 ]
 
 
+_OIL_KINGS_P3_DOCVQA = {
+    # Oil Kings p3 (EB-202 / SCRUM-281 corpus smoke, DocVQA-shaped, Δ=56 vs Claude baseline)
+    # Synthetic reconstruction matching known shape: front_matter, score=90, minor issues only
+    "page_number": 3,
+    "page_type": "front_matter",
+    "score": 90,
+    "pass": True,
+    "issues": [{"category": "text_integrity", "severity": "minor",
+                "description": "Front matter text is clean.", "suggestion": "Review page."}],
+}
+
+
 class TestRegressionContract:
     """Frozen detector behavior against corpus-derived artifacts.
 
@@ -763,3 +784,74 @@ class TestRegressionContract:
         high_score_pages = {p["page_number"] for p in _PYTHON_MAX_PAGES_BATCH
                             if p["score"] >= 80 and not p["issues"]}
         assert flagged == high_score_pages
+
+    def test_fixture4_oil_kings_p3_docvqa_flagged_by_matcher5(self):
+        """Oil Kings p3 DocVQA shape (front_matter, score=90, minor issues) → flagged by Matcher 5."""
+        from tools.llm_providers.fingerprint_detector import (
+            FallbackFingerprintDetector, FingerprintSettings,
+        )
+        settings = FingerprintSettings(
+            empty_issues_score_threshold=80,
+            substring_corpus=(),
+            match_category_scores_collapse=False,
+            match_uniform_score_responses=False,
+            page_type_ceilings={"front_matter": 80},
+        )
+        detector = FallbackFingerprintDetector([])
+        flagged = detector.detect([_OIL_KINGS_P3_DOCVQA], settings)
+        assert flagged == {3}, (
+            f"Expected Oil Kings p3 flagged by Matcher 5. Got {flagged}. "
+            "If ceiling threshold or severity condition changed, update this frozen fixture."
+        )
+
+    def test_fixture5_body_page_minor_issues_not_flagged_by_matcher5(self):
+        """body page at score=90 with minor issues → NOT flagged (ceiling only covers front_matter in v1)."""
+        from tools.llm_providers.fingerprint_detector import (
+            FallbackFingerprintDetector, FingerprintSettings,
+        )
+        settings = FingerprintSettings(
+            empty_issues_score_threshold=80,
+            substring_corpus=(),
+            match_category_scores_collapse=False,
+            match_uniform_score_responses=False,
+            page_type_ceilings={"front_matter": 80},
+        )
+        body_page = {
+            "page_number": 5,
+            "page_type": "body",
+            "score": 90,
+            "pass": True,
+            "issues": [{"category": "text_integrity", "severity": "minor",
+                        "description": "Text looks clean.", "suggestion": "Review page."}],
+        }
+        detector = FallbackFingerprintDetector([])
+        flagged = detector.detect([body_page], settings)
+        assert flagged == set(), (
+            f"Expected body page NOT flagged by Matcher 5. Got {flagged}. "
+            "Ceiling must only apply to page types in page_type_ceilings map."
+        )
+
+    def test_fixture6_oil_kings_p3_flagged_in_full_default_settings(self):
+        """Oil Kings p3 is flagged by Matcher 5 when all matchers are on and ceiling is set.
+
+        Does NOT use _make_detector_with_real_corpus() — that helper omits page_type_ceilings.
+        Settings constructed inline to make the ceiling value explicit.
+        """
+        from tools.llm_providers.fingerprint_detector import (
+            FallbackFingerprintDetector, FingerprintSettings,
+        )
+        detector = FallbackFingerprintDetector.from_corpus(CORPUS_PATH)
+        settings = FingerprintSettings(
+            empty_issues_score_threshold=80,
+            substring_corpus=tuple(detector._fingerprints),
+            match_category_scores_collapse=True,
+            match_uniform_score_responses=True,
+            uniform_score_page_ratio=0.75,
+            uniform_score_min_pages=3,
+            page_type_ceilings={"front_matter": 80},
+        )
+        flagged = detector.detect([_OIL_KINGS_P3_DOCVQA], settings)
+        assert 3 in flagged, (
+            f"Expected page 3 flagged in full-settings run. Got {flagged}. "
+            "Matcher 5 must fire even when all other matchers are active."
+        )

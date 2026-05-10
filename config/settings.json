@@ -93,7 +93,8 @@
       "corpus_path": "tools\\visual_qa_fallback_fingerprints.json",
       "match_uniform_score_responses": true,
       "uniform_score_page_ratio": 0.75,
-      "uniform_score_min_pages": 3
+      "uniform_score_min_pages": 3,
+      "page_type_ceilings": {"front_matter": 80}
     }
   },
   "classify": {
