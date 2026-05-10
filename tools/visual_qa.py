@@ -36,7 +36,7 @@ from pathlib import Path
 # calls through a pluggable backend so the orchestration code in this module
 # no longer contains provider-specific payload or pricing logic.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, VisionProvider, VisionResponse  # noqa: E402
+from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, OutputTruncatedError, VisionProvider, VisionResponse  # noqa: E402
 from llm_providers.fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
@@ -642,7 +642,7 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  input_tokens, output_tokens, provider=None, pass_threshold=70,
                  fallback_tokens=None, fallback_provider_name=None,
                  fallback_cost_usd=None, fallback_model=None,
-                 capture_pipeline=None):
+                 capture_pipeline=None, truncation_events=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -652,6 +652,10 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     fallback_tokens: (input_tokens, output_tokens) from the Claude fallback call,
         or None when no fallback fired. When set, adds fallback_* fields to
         token_usage. Omitted entirely when fallback did not fire.
+
+    truncation_events: list of EB-149 coverage-loss events from OutputTruncatedError
+        failures, each with keys batch_index, pages_lost, finish_reason, output_tokens.
+        None or [] when no truncation occurred.
     """
     if provider is not None:
         estimated_cost = provider.estimate_cost(model, input_tokens, output_tokens)
@@ -685,11 +689,20 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         overall_score = None
         overall_pass = None
 
+    # EB-149: coverage accounting — pages_evaluated is the count of pages that
+    # returned valid results; pages_sampled is what was requested. Any gap
+    # (truncation, parse failure, provider rejection) sets coverage_status "partial".
+    pages_evaluated = len(qa_data.get("pages", []))
+    coverage_status = "complete" if pages_evaluated >= pages_sampled else "partial"
+
     report = {
         "book": os.path.basename(book_path),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
         "pages_sampled": pages_sampled,
+        "pages_evaluated": pages_evaluated,
+        "coverage_status": coverage_status,
+        "truncation_events": truncation_events or [],
         "pages_total": total_pages,
         "dpi": dpi,
         "evaluation_status": evaluation_status,
@@ -849,6 +862,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     all_pages_results = []
     total_input_tokens = 0
     total_output_tokens = 0
+    _truncation_attempts = []  # EB-149: raw truncation events, pages_lost resolved after retries
 
     batches = []
     for i in range(0, len(page_images), BATCH_SIZE):
@@ -908,6 +922,15 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 "  Batch %d/%d failed: %s: %s",
                 batch_idx, len(batches), type(e).__name__, e,
             )
+            # EB-149: Record truncation attempt so pages_lost can be computed
+            # after all retries complete (single-page retry may recover some pages).
+            if isinstance(e, OutputTruncatedError):
+                _truncation_attempts.append({
+                    "batch_index": batch_idx,
+                    "pages_attempted": [pn for pn, _ in batch],
+                    "finish_reason": e.finish_reason,
+                    "output_tokens": e.output_tokens,
+                })
             # SCRUM-319: Single-page retry — if the batch had more than one
             # page, try each page individually.  Payload-size errors (e.g. a
             # 72 MB KFX generating 643 high-DPI pages) typically fail at the
@@ -952,6 +975,31 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 total_input_tokens, total_output_tokens)
     input_tokens = total_input_tokens
     output_tokens = total_output_tokens
+
+    # EB-149: Resolve truncation events — drop any pages recovered by the
+    # single-page retry so pages_lost only contains genuinely missing pages.
+    if _truncation_attempts:
+        evaluated_pns = {p["page_number"] for p in all_pages_results if isinstance(p, dict)}
+        truncation_events = [
+            {
+                "batch_index": evt["batch_index"],
+                "pages_lost": sorted(pn for pn in evt["pages_attempted"] if pn not in evaluated_pns),
+                "finish_reason": evt["finish_reason"],
+                "output_tokens": evt["output_tokens"],
+            }
+            for evt in _truncation_attempts
+            if any(pn not in evaluated_pns for pn in evt["pages_attempted"])
+        ]
+        if truncation_events:
+            total_lost = sum(len(e["pages_lost"]) for e in truncation_events)
+            logger.warning(
+                "EB-149: %d page(s) lost to output truncation across %d batch(es): %s",
+                total_lost,
+                len(truncation_events),
+                [e["pages_lost"] for e in truncation_events],
+            )
+    else:
+        truncation_events = []
 
     # --- Hybrid fingerprint routing (SCRUM-281) ---
     # Short-circuit for Claude primary (no self-fallback) and when disabled.
@@ -1098,6 +1146,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         fallback_cost_usd=fallback_cost_usd,
         fallback_model=fallback_model_used,
         capture_pipeline=capture_pipeline,
+        truncation_events=truncation_events,
     )
 
     # --- Write report ---
