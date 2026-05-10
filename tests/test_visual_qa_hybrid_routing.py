@@ -855,3 +855,127 @@ class TestRegressionContract:
             f"Expected page 3 flagged in full-settings run. Got {flagged}. "
             "Matcher 5 must fire even when all other matchers are active."
         )
+
+
+# ---------------------------------------------------------------------------
+# EB-149: TestVQACoverageLoss
+# ---------------------------------------------------------------------------
+# Verifies that output-token truncation (OutputTruncatedError) is surfaced
+# in the report JSON rather than silently degrading pages_sampled coverage.
+# ---------------------------------------------------------------------------
+
+class TestVQACoverageLoss:
+    """EB-149: coverage metadata is accurate when batches are lost to truncation."""
+
+    # 16 pages split into two 8-page batches
+    _PAGE_IMAGES = [(n, PNG_FIXTURE) for n in range(1, 17)]
+    _BATCH1_PNS = list(range(1, 9))    # pages 1–8
+    _BATCH2_PNS = list(range(9, 17))   # pages 9–16
+
+    def _good_raw(self, page_numbers: list[int]) -> str:
+        return json.dumps({"pages": [_make_page(pn) for pn in page_numbers]})
+
+    def _make_cloud_provider_batch1_ok_batch2_truncated(self) -> MagicMock:
+        """Batch 1 succeeds; batch 2 raises OutputTruncatedError."""
+        from llm_providers.local_provider import OutputTruncatedError
+
+        provider = MagicMock(spec=_PROVIDER_ATTRS)
+        provider.name = "cloud_vl"
+        provider.build_request.return_value = {"model": "qwen", "messages": []}
+        provider.estimate_cost.return_value = 0.0
+
+        good_response = VisionResponse(
+            raw_text=self._good_raw(self._BATCH1_PNS),
+            input_tokens=300,
+            output_tokens=200,
+        )
+        provider.call.side_effect = [
+            good_response,
+            OutputTruncatedError(finish_reason="length", output_tokens=4096, max_tokens_budget=16384),
+        ]
+        return provider
+
+    def _run(self, tmp_path: Path, provider: MagicMock) -> dict:
+        return _run_vqa(
+            tmp_path, provider, self._PAGE_IMAGES,
+            extra_env={"ANTHROPIC_API_KEY": ""},
+            fallback_enabled=False,
+        )
+
+    # --- Happy path: no truncation ---
+
+    def test_no_truncation_coverage_complete(self, tmp_path: Path) -> None:
+        """All batches succeed → coverage_status 'complete', truncation_events empty."""
+        provider = _make_mock_cloud_provider(
+            self._good_raw(self._BATCH1_PNS + self._BATCH2_PNS),
+        )
+        # Return different batches per call
+        provider.call.side_effect = [
+            VisionResponse(raw_text=self._good_raw(self._BATCH1_PNS), input_tokens=300, output_tokens=200),
+            VisionResponse(raw_text=self._good_raw(self._BATCH2_PNS), input_tokens=300, output_tokens=200),
+        ]
+
+        report = self._run(tmp_path, provider)
+
+        assert report["coverage_status"] == "complete"
+        assert report["pages_evaluated"] == report["pages_sampled"]
+        assert report["truncation_events"] == []
+
+    # --- Truncation: entire batch 2 lost ---
+
+    def test_truncated_batch_sets_coverage_partial(self, tmp_path: Path) -> None:
+        """Batch 2 OutputTruncatedError → coverage_status 'partial'."""
+        provider = self._make_cloud_provider_batch1_ok_batch2_truncated()
+        report = self._run(tmp_path, provider)
+
+        assert report["coverage_status"] == "partial"
+
+    def test_truncated_batch_pages_evaluated_reflects_actual_count(self, tmp_path: Path) -> None:
+        """pages_evaluated counts only pages that returned results; pages_sampled is unchanged."""
+        provider = self._make_cloud_provider_batch1_ok_batch2_truncated()
+        report = self._run(tmp_path, provider)
+
+        assert report["pages_sampled"] == len(self._PAGE_IMAGES)
+        assert report["pages_evaluated"] == len(self._BATCH1_PNS)
+
+    def test_truncated_batch_event_in_report(self, tmp_path: Path) -> None:
+        """truncation_events list contains an entry for the lost batch."""
+        provider = self._make_cloud_provider_batch1_ok_batch2_truncated()
+        report = self._run(tmp_path, provider)
+
+        assert len(report["truncation_events"]) == 1
+        evt = report["truncation_events"][0]
+        assert evt["batch_index"] == 2
+        assert evt["finish_reason"] == "length"
+        assert evt["output_tokens"] == 4096
+        assert sorted(evt["pages_lost"]) == self._BATCH2_PNS
+
+    # --- Truncation recovered by single-page retry ---
+
+    def test_truncation_recovered_by_retry_coverage_complete(self, tmp_path: Path) -> None:
+        """Batch-level truncation followed by successful single-page retries → coverage 'complete'."""
+        from llm_providers.local_provider import OutputTruncatedError
+
+        provider = MagicMock(spec=_PROVIDER_ATTRS)
+        provider.name = "cloud_vl"
+        provider.build_request.return_value = {"model": "qwen", "messages": []}
+        provider.estimate_cost.return_value = 0.0
+
+        # Batch 1: OK; Batch 2: truncation; then single-page retries for each of batch 2 succeed
+        single_page_responses = [
+            VisionResponse(raw_text=self._good_raw([pn]), input_tokens=50, output_tokens=30)
+            for pn in self._BATCH2_PNS
+        ]
+        provider.call.side_effect = [
+            VisionResponse(raw_text=self._good_raw(self._BATCH1_PNS), input_tokens=300, output_tokens=200),
+            OutputTruncatedError(finish_reason="length", output_tokens=4096, max_tokens_budget=16384),
+            *single_page_responses,
+        ]
+
+        report = self._run(tmp_path, provider)
+
+        assert report["coverage_status"] == "complete"
+        assert report["pages_evaluated"] == len(self._PAGE_IMAGES)
+        assert report["truncation_events"] == [], (
+            "Truncation events should be empty when all pages are recovered by retry"
+        )

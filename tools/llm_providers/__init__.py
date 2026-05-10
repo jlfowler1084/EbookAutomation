@@ -11,7 +11,7 @@ from .base import VisionProvider, VisionResponse
 from .claude_provider import ClaudeVisionProvider
 from .cloud_vl_provider import CloudVLProvider
 from .fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings
-from .local_provider import LocalVisionProvider, PageCountMismatchError
+from .local_provider import LocalVisionProvider, OutputTruncatedError, PageCountMismatchError
 
 __all__ = [
     "VisionProvider",
@@ -21,5 +21,6 @@ __all__ = [
     "FallbackFingerprintDetector",
     "FingerprintSettings",
     "LocalVisionProvider",
+    "OutputTruncatedError",
     "PageCountMismatchError",
 ]
