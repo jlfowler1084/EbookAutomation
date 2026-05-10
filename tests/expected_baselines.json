@@ -52,7 +52,7 @@
     },
     "kfx_size_kb": 2418,
     "pdf_pattern": "*Oil*Kings*",
-    "captured_at": "2026-04-25T17:24:35.149021+00:00"
+    "captured_at": "2026-05-10T00:07:07.733500+00:00"
   },
   "Mexico": {
     "headings": {
@@ -85,15 +85,15 @@
       "Contents": "vii",
       "Acknowledgments": "along the way a young scholar writing his dissertation and c",
       "Introduction": "i will be discussing profit-seeking illicit networks (PSINs)",
-      "1 The State Reaction and Illicit-Network Resilience": "1 The State Reaction and Illicit-Network Resilience",
-      "2 The Arellano Félix Organization’s Resilience": "2 The Arellano Félix Organization’s Resilience",
-      "3 The State Reaction": "3 The State Reaction",
-      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios": "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templari",
+      "1 The State Reaction and Illicit-Network Resilience": "illicit networks include insurgent networks such as Al Qaeda",
+      "2 The Arellano Félix Organization’s Resilience": "the arellano félix organization (AFO) was considered one of ",
+      "3 The State Reaction": "the successful destruction of the territorial drug network l",
+      "4 The Sinaloa Cartel, Los Zetas, and Los Caballeros Templarios": "this chapter will apply the state-reaction theoretical frame",
       "Conclusion": "the state-reaction argument provides us with important insig"
     },
     "kfx_size_kb": 1636,
     "pdf_pattern": "*Mexico*Illicit*",
-    "captured_at": "2026-05-08T23:59:07.370564+00:00"
+    "captured_at": "2026-05-10T00:07:08.688152+00:00"
   },
   "Return of the Gods": {
     "headings": {
@@ -135,15 +135,15 @@
       "Every Knee Shall Bow": "And though it was now dressed in modern clothing, the phenom"
     },
     "pdf_pattern": "*Return*Gods*",
-    "captured_at": "2026-04-25T17:24:50.587663+00:00"
+    "captured_at": "2026-05-10T00:07:16.635199+00:00"
   },
   "Python in Easy Steps": {
     "headings": {
       "h1": 0,
       "h2": 93,
-      "h3": 110
+      "h3": 105
     },
-    "toc_entries": 203,
+    "toc_entries": 198,
     "toc_max_depth": 3,
     "footnote_linked_pairs": 0,
     "footnote_unlinked": 51,
@@ -252,7 +252,7 @@
     "chapter_openings": {
       "Contents": "The creation of this book has been for me, Mike McGrath, an ",
       "Preface": "The creation of this book has been for me, Mike McGrath, an ",
-      "1 Getting started": "1 Getting started",
+      "1 Getting started": "Welcome to the exciting world of the Python programming lang",
       "Introducing Python": "Python is a high-level (human-readable) programming language",
       "Installing Python on Windows": "Before you can begin programming in the Python language you ",
       "Installing Python on Linux": "Linux distributions will, typically, include Python but gene",
@@ -262,7 +262,7 @@
       "Obtaining user input": "Just as a data value can be assigned to a variable in a Pyth",
       "Correcting errors": "In Python programming there are three types of error that ca",
       "Summary": "• Python uses indentation to group statements into code bloc",
-      "2 Performing operations": "2 Performing operations",
+      "2 Performing operations": "This chapter introduces the Python operators, and demonstrat",
       "Doing arithmetic": "The arithmetical operators commonly used in Python programmi",
       "Assigning values": "The operators that are used in Python programming to assign ",
       "Comparing values": "The operators that are commonly used in Python programming t",
@@ -271,7 +271,7 @@
       "Setting precedence": "Operator precedence determines the order in which the Python",
       "Casting data types": "Although Python variables can store data of any data type, i",
       "Manipulating bits": "In computer terms, each byte comprises eight bits that can e",
-      "3 Making statements": "3 Making statements",
+      "3 Making statements": "This chapter demonstrates how statements can evaluate expres",
       "Writing lists": "In Python programming, a variable must be assigned an initia",
       "Manipulating lists": "List variables, which can contain multiple items of data, ar",
       "Restricting lists": "The values in a regular list can be changed as the program p",
@@ -280,7 +280,7 @@
       "Looping while true": "A loop is a piece of code in a program that automatically re",
       "Looping over items": "In Python programming, the for keyword loops over all items ",
       "Breaking out of loops": "The Python break keyword can be used to prematurely terminat",
-      "4 Defining functions": "4 Defining functions",
+      "4 Defining functions": "This chapter demonstrates how to create functions that can b",
       "Understanding scope": "Previous examples in this book have used built-in functions ",
       "Supplying arguments": "When defining a custom function in Python programming you ma",
       "Returning values": "Like Python’s built-in str()function, which returns a string",
@@ -289,7 +289,7 @@
       "Producing generators": "When a Python function is called, it executes the statements",
       "Handling exceptions": "Sections of a Python script in which it is possible to antic",
       "Debugging assertions": "When tracking down (debugging) errors in your code it is oft",
-      "5 Importing modules": "5 Importing modules",
+      "5 Importing modules": "This chapter demonstrates how to use Python modules in your ",
       "Storing functions": "Python function definitions can, usefully, be stored in one ",
       "Owning function names": "Internally, each Python module and program has its own “symb",
       "Interrogating the system": "Python includes “sys” and “keyword” modules that are useful ",
@@ -298,7 +298,7 @@
       "Telling the time": "The Python “datetime” module can be imported into a program ",
       "Running a timer": "Getting the current time both before and after an event mean",
       "Matching patterns": "The Python “re” module can be imported into a program to mak",
-      "6 Managing strings": "6 Managing strings",
+      "6 Managing strings": "This chapter demonstrates how to work with string data value",
       "Manipulating strings": "String values can be manipulated in a Python program using t",
       "Formatting strings": "The Python built-in dir() function can be useful to examine ",
       "Modifying strings": "The Python str object has many useful methods that can be do",
@@ -307,7 +307,7 @@
       "Reading and writing files": "Once a file has been successfully opened it can be read or a",
       "Updating file strings": "A file object’s read() method will, by default, read the ent",
       "Pickling data": "In Python, string data can easily be stored in text files us",
-      "7 Programming objects": "7 Programming objects",
+      "7 Programming objects": "This chapter demonstrates how to use Python for Object Orien",
       "Encapsulating data": "A “class” is a specified prototype describing a set of prope",
       "Creating instance objects": "An “instance” of a class object is simply a copy of the prot",
       "Addressing class attributes": "An attribute of a class instance can be added, modified, or ",
@@ -316,7 +316,7 @@
       "Inheriting features": "A Python class can be created as a brand new class, like tho",
       "Overriding base methods": "A method can be declared in a derived class to override a ma",
       "Harnessing polymorphism": "The three cornerstones of Object Oriented Programming (OOP) ",
-      "8 Processing requests": "8 Processing requests",
+      "8 Processing requests": "This chapter demonstrates how to create server-side Python s",
       "Sending responses": "Whenever a user asks to view an online webpage in their brow",
       "Handling values": "Values can be passed to a Python script on the web server wh",
       "Submitting forms": "Passing data from a webpage to a web server using the GET me",
@@ -325,7 +325,7 @@
       "Choosing radio buttons": "An HTML form can provide a “radio button” group from which t",
       "Selecting options": "An HTML form can provide a drop-down list of possible option",
       "Uploading files": "An HTML form can provide a file selection facility, which ca",
-      "9 Building interfaces": "9 Building interfaces",
+      "9 Building interfaces": "This chapter demonstrates how to create graphical windowed a",
       "Launching a window": "The standard Python module that you can use to create graphi",
       "Responding to buttons": "A Button widget provides a graphical button in an applicatio",
       "Displaying messages": "A program can display messages to the user by calling method",
@@ -333,7 +333,7 @@
       "Listing options": "A Listbox widget provides a list of items in an application ",
       "Polling radio buttons": "A Radiobutton widget provides a single item in an applicatio",
       "Adding images": "With the tkinter module, images in GIF or PGM/PPM file forma",
-      "10 Developing applications": "10 Developing applications",
+      "10 Developing applications": "This chapter brings together elements from previous chapters",
       "Generating random numbers": "The graphical application developed on subsequent pages of t",
       "Planning the program": "When creating a new graphical application it is useful to fi",
       "Designing the interface": "Having created all the necessary widgets here, you can now d",
@@ -345,7 +345,7 @@
       "Freezing the program": "Applications developed in the Python language can be frozen "
     },
     "pdf_pattern": "*Python*easy*steps*",
-    "captured_at": "2026-04-25T17:25:05.085071+00:00"
+    "captured_at": "2026-05-10T00:07:18.474047+00:00"
   },
   "Atomic Habits": {
     "headings": {
@@ -405,42 +405,42 @@
     "chapter_openings": {
       "Contents": "N THE FINAL day of my sophomore year of high school, I was h",
       "Introduction: My Story": "N THE FINAL day of my sophomore year of high school, I was h",
-      "THE FUNDAMENTALS: Why Tiny Changes Make a Big Difference": "1: The Surprising Power of Atomic Habits",
-      "1: The Surprising Power of Atomic Habits": "1: The Surprising Power of Atomic Habits",
-      "2: How Your Habits Shape Your Identity (and Vice Versa)": "2: How Your Habits Shape Your Identity (and Vice Versa)",
-      "3: How to Build Better Habits in 4 Simple Steps": "How to Build Better Habits in 4 Simple Steps",
-      "THE 1ST LAW: Make It Obvious": "4: The Man Who Didn’t Look Right",
-      "4: The Man Who Didn’t Look Right": "4: The Man Who Didn’t Look Right",
-      "5: The Best Way to Start a New Habit": "5: The Best Way to Start a New Habit",
-      "6: Motivation Is Overrated; Environment Often Matters More": "6: Motivation Is Overrated; Environment Often Matters More",
-      "7: The Secret to Self-Control": "7: The Secret to Self-Control",
-      "THE 2ND LAW: Make It Attractive": "8: How to Make a Habit Irresistible",
-      "8: How to Make a Habit Irresistible": "8: How to Make a Habit Irresistible",
-      "9: The Role of Family and Friends in Shaping Your Habits": "The Role of Family and Friends in Shaping Your Habits",
-      "10: How to Find and Fix the Causes of Your Bad Habits": "How to Find and Fix the Causes of Your Bad Habits",
+      "THE FUNDAMENTALS: Why Tiny Changes Make a Big Difference": "HE FATE OF British Cycling changed one day in 2003. The orga",
+      "1: The Surprising Power of Atomic Habits": "HE FATE OF British Cycling changed one day in 2003. The orga",
+      "2: How Your Habits Shape Your Identity (and Vice Versa)": "HY IS IT so easy to repeat bad habits and so hard to form go",
+      "3: How to Build Better Habits in 4 Simple Steps": "N 1898, A psychologist named Edward Thorndike conducted an e",
+      "THE 1ST LAW: Make It Obvious": "THE PSYCHOLOGIST GARY Klein once told me a story about a wom",
+      "4: The Man Who Didn’t Look Right": "THE PSYCHOLOGIST GARY Klein once told me a story about a wom",
+      "5: The Best Way to Start a New Habit": "N 2001, RESEARCHERS in Great Britain began working with 248 ",
+      "6: Motivation Is Overrated; Environment Often Matters More": "ANNE THORNDIKE, A primary care physician at Massachusetts Ge",
+      "7: The Secret to Self-Control": "N 1971, as the Vietnam War was heading into its sixteenth ye",
+      "THE 2ND LAW: Make It Attractive": "N THE 1940S, a Dutch scientist named Niko Tinbergen performe",
+      "8: How to Make a Habit Irresistible": "N THE 1940S, a Dutch scientist named Niko Tinbergen performe",
+      "9: The Role of Family and Friends in Shaping Your Habits": "N 1965, a Hungarian man named Laszlo Polgar wrote a series o",
+      "10: How to Find and Fix the Causes of Your Bad Habits": "N LATE 2012, I was sitting in an old apartment just a few bl",
       "Inversion of the 2nd Law: Make It Unattractive": "2.4: Reframe your mind-set. Highlight the benefits of avoidi",
-      "THE 3RD LAW: Make It Easy": "11: Walk Slowly, but Never Backward",
-      "11: Walk Slowly, but Never Backward": "11: Walk Slowly, but Never Backward",
-      "12: The Law of Least Effort": "12: The Law of Least Effort",
-      "13: How to Stop Procrastinating by Using the Two-Minute Rule": "How to Stop Procrastinating by Using the Two-Minute Rule",
-      "14: How to Make Good Habits Inevitable and Bad Habits Impossible": "How to Make Good Habits Inevitable and Bad Habits Impossible",
+      "THE 3RD LAW: Make It Easy": "N THE FIRST day of class, Jerry Uelsmann, a professor at the",
+      "11: Walk Slowly, but Never Backward": "N THE FIRST day of class, Jerry Uelsmann, a professor at the",
+      "12: The Law of Least Effort": "N HIS AWARD-WINNING BOOK, Guns, Germs, and Steel, anthropolo",
+      "13: How to Stop Procrastinating by Using the Two-Minute Rule": "WYLA THARP IS widely regarded as one of the greatest dancers",
+      "14: How to Make Good Habits Inevitable and Bad Habits Impossible": "As another example, my friend and fellow habits expert Nir E",
       "The 2nd Law: Make It Attractive": "2.1: Use temptation bundling. Pair an action you want to do ",
       "The 4th Law: Make It Satisfying Inversion of the 1st Law: Make It Invisible": "1.5: Reduce exposure. Remove the cues of your bad habits fro",
       "Inversion of the 3rd Law: Make It Difficult": "3.6: Increase friction. Increase the number of steps between",
-      "Inversion of the 4th Law: Make It Unsatisfying": "15: The Cardinal Rule of Behavior Change",
-      "THE 4TH LAW: Make It Satisfying": "15: The Cardinal Rule of Behavior Change",
-      "15: The Cardinal Rule of Behavior Change": "15: The Cardinal Rule of Behavior Change",
+      "Inversion of the 4th Law: Make It Unsatisfying": "N THE LATE 1990S, a public health worker named Stephen Luby ",
+      "THE 4TH LAW: Make It Satisfying": "N THE LATE 1990S, a public health worker named Stephen Luby ",
+      "15: The Cardinal Rule of Behavior Change": "N THE LATE 1990S, a public health worker named Stephen Luby ",
       "The Cardinal Rule of Behavior Change: What is immediately": "rewarded is repeated. What is immediately punished is avoide",
-      "16: How to Stick with Good Habits Every Day": "16: How to Stick with Good Habits Every Day",
-      "17: How an Accountability Partner Can Change Everything": "17: How an Accountability Partner Can Change Everything",
+      "16: How to Stick with Good Habits Every Day": "N 1993, a bank in Abbotsford, Canada, hired a twenty-three-y",
+      "17: How an Accountability Partner Can Change Everything": "FTER SERVING AS a pilot in World War II, Roger Fisher attend",
       "Inversion of the 1st Law: Make It Invisible": "1.5: Reduce exposure. Remove the cues of your bad habits fro",
-      "ADVANCED TACTICS: How to Go from Being Merely Good to Being Truly Great": "The Truth About Talent (When Genes Matter and When They Don’",
-      "18: The Truth About Talent (When Genes Matter and When They Don’t)": "The Truth About Talent (When Genes Matter and When They Don’",
-      "19: The Goldilocks Rule: How to Stay Motivated in Life and Work": "The Goldilocks Rule: How to Stay Motivated in Life and Work",
-      "20: The Downside of Creating Good Habits": "20: The Downside of Creating Good Habits"
+      "ADVANCED TACTICS: How to Go from Being Merely Good to Being Truly Great": "ANY PEOPLE ARE familiar with Michael Phelps, who is widely c",
+      "18: The Truth About Talent (When Genes Matter and When They Don’t)": "ANY PEOPLE ARE familiar with Michael Phelps, who is widely c",
+      "19: The Goldilocks Rule: How to Stay Motivated in Life and Work": "Within a year, he had transitioned to Disney’s magic shop, w",
+      "20: The Downside of Creating Good Habits": "ABITS CREATE THE FOUNDATION FOR MASTERY. In chess, it is onl"
     },
     "pdf_pattern": "*Atomic*Habits*",
-    "captured_at": "2026-04-25T17:25:20.861496+00:00"
+    "captured_at": "2026-05-10T00:07:21.048570+00:00"
   },
   "Decline of the West": {
     "headings": {
@@ -499,7 +499,7 @@
       "THE FORM WORLD OF ECONOMIC LIFE: 1": "(A) MONEY"
     },
     "pdf_pattern": "*Decline*West*",
-    "captured_at": "2026-04-25T17:26:49.357732+00:00"
+    "captured_at": "2026-05-10T00:07:23.218044+00:00"
   },
   "Dionysius": {
     "headings": {
@@ -544,7 +544,7 @@
       "Index of French Words and Phrases"
     ],
     "blockquotes": 20,
-    "em_tags": 510,
+    "em_tags": 509,
     "attributions": 0,
     "ligature_splits": 0,
     "double_spaces": 0,
@@ -555,7 +555,7 @@
       "Chapter 12. Concerning 'Holy of holies,' 'King of kings,' 'Lord of lords,' 'God of gods.'. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 111 Chapter 13. Concerning 'Perfect' and 'One.'. . . . . . . . . . . . . . . . . . . p. 113 The Mystical Theology. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 118 The Influence of Dionysius in Religious History. . . . . . . . . . . . . . . . . . p. 124 I nd ex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Text. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 134 Index to Notes and Introduction. . . . . . . . . . . . . . . . . . . . . . . . . . . p. 135 Indexes. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Index of Scripture References. . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 138 Greek Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 140 Latin Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 143 French Words and Phrases. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . p. 144 Index of Pages of the Print Edition. . . . . . . . . . . . . . . . . . . . . . . . . p. 144": "iv",
       "Preface": "THE translations of which the present volume consists are th",
       "INTRODUCTION": "THE writings here translated are among the extant works of a",
-      "THE DIVINE NAMES": "THIS Treatise contains thirteen chapters. The following is a",
+      "THE DIVINE NAMES": "Chapter I. Introductory. The Purpose of the Treatise. Doctri",
       "Chapter X. Deity as Omnipotent: the Ancient of Days. God in relation to Time.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
       "Chapter XI. On God and Peace.": "Chapter XII. On the Names Holy of holies, King of kings, Lor",
       "Chapter XIII. On the Divine Perfection and Unity.": "Dionysius the Presbyter, to his fellow-Presbyter Timothy.45 ",
@@ -580,19 +580,7 @@
     },
     "kfx_size_kb": 832,
     "pdf_pattern": "*Dionysius*",
-    "captured_at": "2026-04-25T17:26:56.354221+00:00"
-  },
-  "__known_issues__": [],
-  "__metadata__": {
-    "captured_at": "2026-05-08T23:59:07.370564+00:00",
-    "git_head_sha": "4734afe",
-    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor), Genesis/Barton (EB-208 diverse-author edited collection anchor), and Fate of Empires/Glubb (EB-160 two-column layout regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
-    "scrum_tickets": [
-      "SCRUM-303",
-      "SCRUM-304",
-      "EB-208",
-      "EB-160"
-    ]
+    "captured_at": "2026-05-10T00:07:23.989128+00:00"
   },
   "Genesis (Barton)": {
     "headings": {
@@ -642,7 +630,7 @@
     },
     "pdf_pattern": "*Genesis*",
     "pdf_exclude": "Kass",
-    "captured_at": "2026-05-08T22:36:18.729293+00:00"
+    "captured_at": "2026-05-10T00:07:48.268339+00:00"
   },
   "Fate of Empires (Glubb)": {
     "headings": {
@@ -664,6 +652,18 @@
     "has_front_matter_h1": false,
     "chapter_openings": {},
     "pdf_pattern": "*Fate*Empires*",
-    "captured_at": "2026-05-08T23:25:37.042474+00:00"
+    "captured_at": "2026-05-10T00:07:49.157266+00:00"
+  },
+  "__known_issues__": [],
+  "__metadata__": {
+    "captured_at": "2026-05-10T00:07:49.157266+00:00",
+    "git_head_sha": "8fa345b",
+    "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor), Genesis/Barton (EB-208 diverse-author edited collection anchor), and Fate of Empires/Glubb (EB-160 two-column layout regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
+    "scrum_tickets": [
+      "SCRUM-303",
+      "SCRUM-304",
+      "EB-208",
+      "EB-160"
+    ]
   }
 }
