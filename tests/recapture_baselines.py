@@ -52,6 +52,8 @@ BOOK_PATTERNS = {
     "Dionysius":                  ("*Dionysius*",          None),
     "Genesis (Barton)":           ("*Genesis*",           "Kass"),
     "Fate of Empires (Glubb)":    ("*Fate*Empires*",      None),
+    # EB-217: EPUB regression anchor — exercises NCX/nav heading extraction (EB-20)
+    "Sherlock Holmes (Doyle)":    ("*Sherlock*Holmes*",   None),
 }
 
 
@@ -241,11 +243,13 @@ def recapture(books_filter: list[str] | None = None) -> int:
             "Return of the Gods, Python in Easy Steps, Atomic Habits, "
             "Decline of the West) plus Dionysius (SCRUM-299 running-header "
             "regression anchor), Genesis/Barton (EB-208 diverse-author "
-            "edited collection anchor), and Fate of Empires/Glubb (EB-160 "
-            "two-column layout regression anchor). Atomic Habits + Decline "
-            "of the West source PDFs were re-acquired under SCRUM-304."
+            "edited collection anchor), Fate of Empires/Glubb (EB-160 "
+            "two-column layout regression anchor), and Sherlock Holmes/Doyle "
+            "(EB-217 EPUB regression anchor — exercises extract_html_from_epub "
+            "and EPUB HTML merging). Atomic Habits + Decline of the West source "
+            "PDFs were re-acquired under SCRUM-304."
         ),
-        "scrum_tickets": ["SCRUM-303", "SCRUM-304", "EB-208", "EB-160"],
+        "scrum_tickets": ["SCRUM-303", "SCRUM-304", "EB-208", "EB-160", "EB-217"],
     }
 
     with open(BASELINES_FILE, "w", encoding="utf-8") as f:

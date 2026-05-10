@@ -562,6 +562,9 @@ def find_pdf(pattern, exclude=None):
 
 def run_extraction(pdf_path, use_pdfminer=True, test_name="test"):
     """Run the Python extraction pipeline and return the HTML output path."""
+    ext = Path(pdf_path).suffix.lower()
+    is_epub = ext == '.epub'
+
     suffix = f"_test_{test_name.replace(' ', '_').lower()}.txt"
     cmd = [
         sys.executable, str(SCRIPT_DIR / "pdf_to_balabolka.py"),
@@ -570,8 +573,10 @@ def run_extraction(pdf_path, use_pdfminer=True, test_name="test"):
         "--output-dir", str(OUTPUT_DIR),
         "--suffix", suffix,
     ]
-    if use_pdfminer:
+    if use_pdfminer and not is_epub:
         cmd.append("--html-extraction")
+    if is_epub:
+        cmd.append("--epub-html")
 
     # Scale timeout based on file size (matches batch_qa.py pattern from EB-83)
     # Base 900s (generous for post-processing) + 15s per MB over 20MB
@@ -584,19 +589,34 @@ def run_extraction(pdf_path, use_pdfminer=True, test_name="test"):
     except subprocess.TimeoutExpired:
         return None, "", f"TIMEOUT: extraction exceeded {timeout}s for {Path(pdf_path).name}"
 
-    # Find the HTML file that was produced
-    base = Path(pdf_path).stem
-    safe = re.sub(r'[^\w\-.]', '_', base)
-    html_pattern = str(OUTPUT_DIR / f"*{safe[:40]}*test*.html")
-    html_files = sorted(glob.glob(html_pattern), key=os.path.getmtime)
-    if not html_files:
-        # Broader search
-        html_files = sorted(
-            [f for f in glob.glob(str(OUTPUT_DIR / "*.html"))
-             if "test_" + test_name.replace(' ', '_').lower() in f.lower()],
-            key=os.path.getmtime
-        )
-    html_path = html_files[-1] if html_files else None
+    # Primary: parse HTML path from JSON output emitted by both --html-extraction
+    # (PDF) and --epub-html (EPUB) paths — more reliable than filename glob.
+    html_path = None
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith('{'):
+            try:
+                data = json.loads(line)
+                if 'html_path' in data and data['html_path']:
+                    html_path = data['html_path']
+                    break
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    # Fallback: glob search (catches older pipeline runs or non-JSON stdout)
+    if not html_path:
+        base = Path(pdf_path).stem
+        safe = re.sub(r'[^\w\-.]', '_', base)
+        html_pattern = str(OUTPUT_DIR / f"*{safe[:40]}*test*.html")
+        html_files = sorted(glob.glob(html_pattern), key=os.path.getmtime)
+        if not html_files:
+            html_files = sorted(
+                [f for f in glob.glob(str(OUTPUT_DIR / "*.html"))
+                 if "test_" + test_name.replace(' ', '_').lower() in f.lower()],
+                key=os.path.getmtime
+            )
+        html_path = html_files[-1] if html_files else None
+
     return html_path, result.stdout, result.stderr
 
 

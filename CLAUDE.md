@@ -69,25 +69,27 @@ focus. Stored in `output/kindle/`.
 | Long chapters + footnotes | `Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx` | TOC depth, footnote pairing on long-form historical prose |
 | Simple structure canary | `Python in easy steps, 2nd Edition - Mike McGrath.kfx` | Short, regularly-structured chapters — baseline sanity |
 
-### Baseline Coverage Policy (SCRUM-303 + SCRUM-304)
+### Baseline Coverage Policy (SCRUM-303 + SCRUM-304 + EB-217)
 
 `tests/expected_baselines.json` covers the full CLAUDE.md 6-book test
 corpus plus Dionysius (retained as the SCRUM-299 running-header regression
-anchor), Genesis/Barton (EB-208, diverse-author edited collection), and
-Fate of Empires/Glubb (EB-160, two-column layout regression anchor) —
-9 books total, all with source PDFs in `archive/`.
+anchor), Genesis/Barton (EB-208, diverse-author edited collection),
+Fate of Empires/Glubb (EB-160, two-column layout regression anchor), and
+Sherlock Holmes/Doyle (EB-217, EPUB regression anchor) —
+10 books total, with source files in `archive/`.
 
-| Book | In CLAUDE.md corpus | Source PDF | In baseline |
+| Book | In CLAUDE.md corpus | Source file | In baseline |
 |---|---|---|---|
-| Oil Kings | yes | `archive/` | yes |
-| Mexico Illicit | yes | `archive/` | yes |
-| Return of the Gods | yes | `archive/` | yes |
-| Python in Easy Steps | yes | `archive/` | yes |
-| Atomic Habits | yes | `archive/` | yes |
-| Decline of the West | yes | `archive/` | yes |
-| Dionysius | no | `archive/` | yes (regression anchor) |
-| Genesis (Barton) | no | `archive/` | yes (diverse-author edited collection) |
-| Fate of Empires (Glubb) | no | `archive/` | yes (two-column layout regression anchor — EB-160) |
+| Oil Kings | yes | `archive/` (PDF) | yes |
+| Mexico Illicit | yes | `archive/` (PDF) | yes |
+| Return of the Gods | yes | `archive/` (PDF) | yes |
+| Python in Easy Steps | yes | `archive/` (PDF) | yes |
+| Atomic Habits | yes | `archive/` (PDF) | yes |
+| Decline of the West | yes | `archive/` (PDF) | yes |
+| Dionysius | no | `archive/` (PDF) | yes (regression anchor) |
+| Genesis (Barton) | no | `archive/` (PDF) | yes (diverse-author edited collection) |
+| Fate of Empires (Glubb) | no | `archive/` (PDF) | yes (two-column layout regression anchor — EB-160) |
+| Sherlock Holmes (Doyle) | no | `archive/` (EPUB) | yes (EPUB regression anchor — EB-217) |
 
 The baseline file's `__metadata__` block records the capture date, pipeline
 commit SHA, and current corpus policy. Re-baseline with

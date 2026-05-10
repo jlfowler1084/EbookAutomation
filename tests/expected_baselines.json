@@ -656,8 +656,8 @@
   },
   "__known_issues__": [],
   "__metadata__": {
-    "captured_at": "2026-05-10T00:07:49.157266+00:00",
-    "git_head_sha": "8fa345b",
+    "captured_at": "2026-05-10T00:26:46.369857+00:00",
+    "git_head_sha": "4c0a0fb",
     "corpus_policy": "Full CLAUDE.md 6-book regression corpus (Oil Kings, Mexico, Return of the Gods, Python in Easy Steps, Atomic Habits, Decline of the West) plus Dionysius (SCRUM-299 running-header regression anchor), Genesis/Barton (EB-208 diverse-author edited collection anchor), and Fate of Empires/Glubb (EB-160 two-column layout regression anchor). Atomic Habits + Decline of the West source PDFs were re-acquired under SCRUM-304.",
     "scrum_tickets": [
       "SCRUM-303",
@@ -665,5 +665,34 @@
       "EB-208",
       "EB-160"
     ]
+  },
+  "Sherlock Holmes (Doyle)": {
+    "headings": {
+      "h1": 1,
+      "h2": 4,
+      "h3": 3
+    },
+    "toc_entries": 8,
+    "toc_max_depth": 3,
+    "footnote_linked_pairs": 0,
+    "footnote_unlinked": 0,
+    "h2_headings": [
+      "The Project Gutenberg eBook of <span id=\"pg-title-no-subtitle\" lang=\"en\" xml:lang=\"en\">The Adventures of Sherlock Holmes</span>",
+      "by Arthur Conan Doyle",
+      "Contents",
+      "THE FULL PROJECT GUTENBERG™ LICENSE"
+    ],
+    "blockquotes": 1,
+    "em_tags": 0,
+    "attributions": 0,
+    "ligature_splits": 0,
+    "double_spaces": 119,
+    "standalone_page_numbers": 0,
+    "has_front_matter_h1": false,
+    "chapter_openings": {
+      "The Project Gutenberg eBook of <span id=\"pg-title-no-subtitle\" lang=\"en\" xml:lang=\"en\">The Adventures of Sherlock Holmes</span>": "Title: The Adventures of Sherlock Holmes"
+    },
+    "pdf_pattern": "*Sherlock*Holmes*",
+    "captured_at": "2026-05-10T00:26:46.369857+00:00"
   }
 }
