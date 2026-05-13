@@ -15,6 +15,7 @@ beautifulsoup4==4.14.3
 # AI/API
 google-genai==1.68.0
 openai==1.109.1
+anthropic>=0.50.0
 requests==2.33.0
 
 # Text processing
