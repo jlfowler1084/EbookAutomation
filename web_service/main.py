@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from web_service import job_queue, job_store
 from web_service.config import get_settings
-from web_service.routes import convert, download, status
+from web_service.routes import checkout, convert, download, status
 
 log = logging.getLogger(__name__)
 
@@ -140,6 +140,7 @@ async def lifespan(app: FastAPI):
 
     job_store.init_db()
     job_queue.init_queue()
+    job_queue.init_billing_executor()
     _sweep_task = asyncio.create_task(job_queue.cleanup_expired_jobs())
     log.info("EbookAutomation web service started")
     yield
@@ -149,6 +150,8 @@ async def lifespan(app: FastAPI):
             await _sweep_task
         except asyncio.CancelledError:
             pass
+    if job_queue.billing_executor is not None:
+        job_queue.billing_executor.shutdown(wait=True)
     log.info("EbookAutomation web service stopped")
 
 
@@ -169,6 +172,7 @@ def create_app() -> FastAPI:
     application.include_router(convert.router)
     application.include_router(status.router)
     application.include_router(download.router)
+    application.include_router(checkout.router)
     return application
 
 

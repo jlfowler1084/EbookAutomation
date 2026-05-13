@@ -21,6 +21,25 @@ log = logging.getLogger(__name__)
 _semaphore: asyncio.Semaphore | None = None
 _executor: ThreadPoolExecutor | None = None
 
+# Unit 3+ addition: dedicated executor for fast Stripe SDK + token store operations.
+# Separate from the conversion executor because 30s webhook timeout vs 120s conversion
+# timeout is incompatible on a shared pool (Phase 2 plan, Unit 4 reliability deepening).
+billing_executor: ThreadPoolExecutor | None = None
+
+
+def init_billing_executor() -> None:
+    """Initialise the billing thread pool. Call once at app startup.
+
+    Kept separate from init_queue() so the billing executor can be started and
+    stopped independently (e.g. in tests that don't need the conversion queue).
+    """
+    global billing_executor
+    if billing_executor is None:
+        billing_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="billing"
+        )
+        log.info("Billing executor initialised (max_workers=4)")
+
 
 def init_queue() -> None:
     """Initialise the semaphore and thread pool. Call once at app startup."""
