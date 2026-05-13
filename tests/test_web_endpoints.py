@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -131,11 +132,6 @@ class TestConvertEndpoint:
         )
         assert resp.status_code == 422
 
-    @pytest.mark.skip(
-        reason="EB-45 Phase 1: tier check is bypassed in convert.py (every request "
-        "treated as premium until Phase 2 Stripe billing lands). Re-enable when the "
-        "bypass line in convert.py is removed."
-    )
     def test_kfx_on_free_tier_returns_422(self, client):
         tc, _ = client
         resp = tc.post(
@@ -154,6 +150,226 @@ class TestConvertEndpoint:
             files={"file": ("notapdf.pdf", BytesIO(png_bytes), "application/pdf")},
         )
         assert resp.status_code == 422
+
+    # -----------------------------------------------------------------------
+    # Phase 2 (Unit 6): token validation tests
+    # -----------------------------------------------------------------------
+
+    def test_premium_without_token_returns_422_missing_token(self, client):
+        """tier=premium with no token → 422 MISSING_TOKEN."""
+        tc, _ = client
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium"},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["detail"]["code"] == "MISSING_TOKEN"
+
+    def test_premium_with_malformed_token_returns_422_malformed(self, client):
+        """tier=premium with a token that fails the format regex → 422 MALFORMED."""
+        tc, _ = client
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium", "token": "not_a_valid_format"},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["detail"]["code"] == "MALFORMED"
+
+    def test_premium_with_unknown_token_returns_422_invalid_or_expired(self, client):
+        """tier=premium with correct-format token not in DB → 422 TOKEN_INVALID_OR_EXPIRED."""
+        tc, db_path = client
+        import web_service.token_store as ts
+        ts.init_db(db_path)
+
+        # Valid format but not stored in DB
+        unknown_token = "lb_pk_" + "A" * 43
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium", "token": unknown_token},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["detail"]["code"] == "INVALID_OR_EXPIRED"
+
+    def test_premium_with_valid_token_consumes_and_returns_202(self, client):
+        """tier=premium with a valid minted token → 202 + job_id; token is consumed."""
+        import sqlite3
+
+        import web_service.token_store as ts
+
+        tc, db_path = client
+        ts.init_db(db_path)
+
+        # Mint a real token to consume
+        mint_result = ts.mint_tokens_if_absent(
+            session_id="cs_test_unit6_valid",
+            count=1,
+            payment_intent_id="pi_test_unit6",
+            db_path=db_path,
+        )
+        assert mint_result.ok
+        token = mint_result.tokens[0]
+
+        with patch("web_service.routes.convert.job_queue.dispatch_job", new=AsyncMock()):
+            resp = tc.post(
+                "/convert",
+                data={"output_format": "kfx", "tier": "premium", "token": token},
+                files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+            )
+        assert resp.status_code == 202
+        body = resp.json()
+        assert "job_id" in body
+
+        # Verify token is now marked used=1 in DB
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT used FROM tokens WHERE pack_id=?",
+            ("cs_test_unit6_valid",),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == 1
+
+    def test_premium_with_already_used_token_returns_422_already_used(self, client):
+        """Using the same token twice → second call returns 422 TOKEN_ALREADY_USED."""
+        import web_service.token_store as ts
+
+        tc, db_path = client
+        ts.init_db(db_path)
+
+        mint_result = ts.mint_tokens_if_absent(
+            session_id="cs_test_unit6_double",
+            count=1,
+            payment_intent_id="pi_test_unit6_double",
+            db_path=db_path,
+        )
+        assert mint_result.ok
+        token = mint_result.tokens[0]
+
+        with patch("web_service.routes.convert.job_queue.dispatch_job", new=AsyncMock()):
+            resp1 = tc.post(
+                "/convert",
+                data={"output_format": "kfx", "tier": "premium", "token": token},
+                files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+            )
+        assert resp1.status_code == 202
+
+        resp2 = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium", "token": token},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp2.status_code == 422
+        body = resp2.json()
+        assert body["detail"]["code"] == "ALREADY_USED"
+
+    def test_premium_with_disputed_token_returns_422_disputed(self, client):
+        """Minting then marking disputed → 422 TOKEN_DISPUTED."""
+        import web_service.token_store as ts
+
+        tc, db_path = client
+        ts.init_db(db_path)
+
+        session_id = "cs_test_unit6_disputed"
+        mint_result = ts.mint_tokens_if_absent(
+            session_id=session_id,
+            count=1,
+            payment_intent_id="pi_test_unit6_disputed",
+            db_path=db_path,
+        )
+        assert mint_result.ok
+        token = mint_result.tokens[0]
+
+        ts.mark_disputed(session_id, db_path=db_path)
+
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium", "token": token},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["detail"]["code"] == "DISPUTED"
+
+    def test_premium_with_expired_token_returns_422_invalid_or_expired(self, client):
+        """Token minted with expires_at in the past → 422 TOKEN_INVALID_OR_EXPIRED."""
+        import sqlite3
+
+        import web_service.token_store as ts
+        from web_service.crypto import compute_token_hash, get_fernet, mint_token
+
+        tc, db_path = client
+        ts.init_db(db_path)
+
+        # Manually insert an expired token
+        token_str, token_hash = mint_token()
+        f = get_fernet(key_version=1)
+        encrypted = f.encrypt(token_str.encode())
+        past = int(time.time()) - 100  # 100 seconds ago
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """INSERT INTO tokens
+               (token_hash, token_encrypted_for_recovery, key_version,
+                pack_id, payment_intent_id, created_at, expires_at, used, disputed)
+               VALUES (?, ?, 1, ?, ?, ?, ?, 0, 0)""",
+            (token_hash, encrypted, "cs_test_unit6_expired", "pi_unit6_expired", past, past),
+        )
+        conn.commit()
+        conn.close()
+
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "kfx", "tier": "premium", "token": token_str},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["detail"]["code"] == "INVALID_OR_EXPIRED"
+
+    def test_free_tier_ignores_token_field(self, client):
+        """tier=free with any token value → 202 (token field silently ignored)."""
+        tc, _ = client
+        resp = tc.post(
+            "/convert",
+            data={"output_format": "epub", "tier": "free", "token": "some_random_token"},
+            files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+        )
+        assert resp.status_code == 202
+        assert "job_id" in resp.json()
+
+    def test_circuit_breaker_open_returns_503(self, client):
+        """When circuit breaker is open, premium conversion returns 503 DB_UNAVAILABLE."""
+        import web_service.circuit_breaker as cb
+
+        tc, db_path = client
+        import web_service.token_store as ts
+        ts.init_db(db_path)
+
+        # Valid-format token (format check passes before circuit breaker check)
+        valid_format_token = "lb_pk_" + "B" * 43
+
+        # Force circuit open
+        original_open_until = cb._circuit_open_until
+        cb._circuit_open_until = float("inf")
+        try:
+            resp = tc.post(
+                "/convert",
+                data={"output_format": "kfx", "tier": "premium", "token": valid_format_token},
+                files={"file": ("book.pdf", BytesIO(PDF_BYTES), "application/pdf")},
+            )
+        finally:
+            cb._circuit_open_until = original_open_until
+
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["detail"]["code"] == "DB_UNAVAILABLE"
 
 
 # ---------------------------------------------------------------------------
