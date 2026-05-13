@@ -127,6 +127,11 @@ class TestConvertEndpoint:
         )
         assert resp.status_code == 422
 
+    @pytest.mark.skip(
+        reason="EB-45 Phase 1: tier check is bypassed in convert.py (every request "
+        "treated as premium until Phase 2 Stripe billing lands). Re-enable when the "
+        "bypass line in convert.py is removed."
+    )
     def test_kfx_on_free_tier_returns_422(self, client):
         tc, _ = client
         resp = tc.post(
