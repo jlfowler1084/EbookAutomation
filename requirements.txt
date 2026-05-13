@@ -37,6 +37,9 @@ uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 filetype>=1.2.0
 aiofiles>=24.1.0
+# Stripe billing + crypto (EB-45 Phase 2)
+stripe>=12.0.0,<13.0.0
+cryptography>=48.0.0,<49.0.0
 
 # Config
 python-dotenv==1.2.2

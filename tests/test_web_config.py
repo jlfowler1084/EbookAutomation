@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,10 +18,26 @@ from web_service.config import (
     reset_settings,
 )
 
+# ---------------------------------------------------------------------------
+# Phase 2 Stripe + token env vars — placeholder values used by all tests that
+# call load_settings().  Individual tests override specific vars as needed.
+# ---------------------------------------------------------------------------
+_STRIPE_ENV_DEFAULTS = {
+    "STRIPE_SECRET_KEY": "sk_test_placeholder",
+    "STRIPE_PUBLISHABLE_KEY": "pk_test_placeholder",
+    "STRIPE_WEBHOOK_SECRET": "whsec_placeholder",
+    "TOKEN_HMAC_SECRET": "placeholder_hmac_secret_for_tests",
+    "STRIPE_PRICE_STARTER": "price_starter_test",
+    "STRIPE_PRICE_STANDARD": "price_standard_test",
+    "STRIPE_PRICE_POWER": "price_power_test",
+}
+
 
 @pytest.fixture(autouse=True)
-def clear_settings_cache():
-    """Ensure each test starts with a fresh settings cache."""
+def clear_settings_cache(monkeypatch):
+    """Ensure each test starts with a fresh settings cache and Phase 2 env vars set."""
+    for key, value in _STRIPE_ENV_DEFAULTS.items():
+        monkeypatch.setenv(key, value)
     reset_settings()
     yield
     reset_settings()
@@ -166,3 +184,189 @@ class TestGetSettings:
         reset_settings()
         s2 = get_settings()
         assert s1 is not s2
+
+
+class TestStripeSettingsHappyPath:
+    """Unit 1: All 7 Phase 2 env vars set -> Settings populated correctly."""
+
+    def test_all_stripe_vars_loaded(self, monkeypatch, linux_config):
+        """Happy path: all 7 new env vars present -> fields populated on Settings."""
+        _patch_project_root(monkeypatch, linux_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        settings = load_settings()
+
+        assert settings.stripe_secret_key == "sk_test_placeholder"
+        assert settings.stripe_publishable_key == "pk_test_placeholder"
+        assert settings.stripe_webhook_secret == "whsec_placeholder"
+        assert settings.token_hmac_secret == "placeholder_hmac_secret_for_tests"
+        assert settings.stripe_price_starter == "price_starter_test"
+        assert settings.stripe_price_standard == "price_standard_test"
+        assert settings.stripe_price_power == "price_power_test"
+
+    def test_phase1_settings_still_load_alongside_phase2(self, monkeypatch, linux_config):
+        """Regression: Phase 1 settings still load correctly when Phase 2 vars are set."""
+        _patch_project_root(monkeypatch, linux_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        settings = load_settings()
+
+        # Phase 1 fields unchanged
+        assert settings.calibre_path == Path("/usr/bin/ebook-convert")
+        assert settings.max_file_size_free == 20 * 1024 * 1024
+        assert settings.max_file_size_premium == 100 * 1024 * 1024
+        assert settings.max_concurrent_jobs == 3
+        assert settings.job_ttl_free == 3600
+        assert settings.job_ttl_premium == 86400
+
+    def test_settings_dataclass_is_frozen(self, monkeypatch, linux_config):
+        """Frozen dataclass prevents runtime mutation — no nullity guards needed in handlers."""
+        from dataclasses import FrozenInstanceError
+
+        _patch_project_root(monkeypatch, linux_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        settings = load_settings()
+
+        with pytest.raises(FrozenInstanceError):
+            settings.stripe_secret_key = "mutated"  # type: ignore[misc]
+
+
+class TestStripeSettingsErrorPath:
+    """Unit 1: Any missing env var raises ConfigurationError naming the variable."""
+
+    @pytest.mark.parametrize("missing_var", [
+        "STRIPE_SECRET_KEY",
+        "STRIPE_PUBLISHABLE_KEY",
+        "STRIPE_WEBHOOK_SECRET",
+        "TOKEN_HMAC_SECRET",
+        "STRIPE_PRICE_STARTER",
+        "STRIPE_PRICE_STANDARD",
+        "STRIPE_PRICE_POWER",
+    ])
+    def test_missing_env_var_raises_configuration_error(
+        self, monkeypatch, linux_config, missing_var
+    ):
+        """Each of the 7 required env vars, when unset, raises ConfigurationError naming it."""
+        _patch_project_root(monkeypatch, linux_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.delenv(missing_var, raising=False)
+
+        with pytest.raises(ConfigurationError, match=missing_var):
+            load_settings()
+
+
+class TestStartupChecks:
+    """Unit 1: Startup check helpers (env-mismatch and NTP) behave correctly."""
+
+    def test_env_mismatch_logs_warning_on_test_live_mix(
+        self, monkeypatch, linux_config, caplog
+    ):
+        """pk_test_ + sk_live_ mismatch -> WARN logged; load_settings still succeeds."""
+        _patch_project_root(monkeypatch, linux_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setenv("STRIPE_PUBLISHABLE_KEY", "pk_test_abc123")
+        monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_xyz789")
+
+        import web_service.main as main_module
+
+        with caplog.at_level(logging.WARNING, logger="web_service.main"):
+            main_module._check_stripe_env_mismatch()
+
+        assert any("mismatch" in record.message.lower() for record in caplog.records), (
+            f"Expected 'mismatch' in WARN log; records: {[r.message for r in caplog.records]}"
+        )
+
+    def test_env_mismatch_no_warning_when_both_test(
+        self, monkeypatch, linux_config, caplog
+    ):
+        """pk_test_ + sk_test_ -> no mismatch warning."""
+        monkeypatch.setenv("STRIPE_PUBLISHABLE_KEY", "pk_test_abc123")
+        monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_xyz789")
+
+        import web_service.main as main_module
+
+        with caplog.at_level(logging.WARNING, logger="web_service.main"):
+            main_module._check_stripe_env_mismatch()
+
+        mismatch_records = [r for r in caplog.records if "mismatch" in r.message.lower()]
+        assert not mismatch_records, f"Unexpected mismatch warning: {mismatch_records}"
+
+    def test_env_mismatch_no_warning_when_both_live(
+        self, monkeypatch, linux_config, caplog
+    ):
+        """pk_live_ + sk_live_ -> no mismatch warning."""
+        monkeypatch.setenv("STRIPE_PUBLISHABLE_KEY", "pk_live_abc123")
+        monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_live_xyz789")
+
+        import web_service.main as main_module
+
+        with caplog.at_level(logging.WARNING, logger="web_service.main"):
+            main_module._check_stripe_env_mismatch()
+
+        mismatch_records = [r for r in caplog.records if "mismatch" in r.message.lower()]
+        assert not mismatch_records, f"Unexpected mismatch warning: {mismatch_records}"
+
+    def test_ntp_not_synced_check_ntp_returns_false(self, monkeypatch):
+        """When timedatectl returns 'no', _check_ntp_sync() returns False."""
+        import web_service.main as main_module
+
+        # Sentinel file absent on this machine (test host is likely Windows/macOS)
+        # Mock subprocess.run to simulate a Linux host with NTP not synced
+        mock_result = MagicMock()
+        mock_result.stdout = "no\n"
+
+        with patch("web_service.main.Path") as mock_path_cls, \
+             patch("web_service.main.subprocess.run", return_value=mock_result):
+            # Make sentinel path.exists() return False so we fall through to timedatectl
+            mock_sentinel = MagicMock()
+            mock_sentinel.exists.return_value = False
+            mock_path_cls.return_value = mock_sentinel
+
+            result = main_module._check_ntp_sync()
+
+        assert result is False
+
+    def test_ntp_synced_check_ntp_returns_true(self, monkeypatch):
+        """When timedatectl returns 'yes', _check_ntp_sync() returns True."""
+        import web_service.main as main_module
+
+        mock_result = MagicMock()
+        mock_result.stdout = "yes\n"
+
+        with patch("web_service.main.Path") as mock_path_cls, \
+             patch("web_service.main.subprocess.run", return_value=mock_result):
+            mock_sentinel = MagicMock()
+            mock_sentinel.exists.return_value = False
+            mock_path_cls.return_value = mock_sentinel
+
+            result = main_module._check_ntp_sync()
+
+        assert result is True
+
+    def test_ntp_sentinel_file_present_returns_true(self):
+        """When the systemd timesync sentinel file exists, _check_ntp_sync() returns True."""
+        import web_service.main as main_module
+
+        with patch("web_service.main.Path") as mock_path_cls:
+            mock_sentinel = MagicMock()
+            mock_sentinel.exists.return_value = True
+            mock_path_cls.return_value = mock_sentinel
+
+            result = main_module._check_ntp_sync()
+
+        assert result is True
+
+    def test_ntp_not_available_returns_true(self):
+        """When timedatectl is not installed (FileNotFoundError), assume synced."""
+        import web_service.main as main_module
+
+        with patch("web_service.main.Path") as mock_path_cls, \
+             patch("web_service.main.subprocess.run", side_effect=FileNotFoundError):
+            mock_sentinel = MagicMock()
+            mock_sentinel.exists.return_value = False
+            mock_path_cls.return_value = mock_sentinel
+
+            result = main_module._check_ntp_sync()
+
+        assert result is True
