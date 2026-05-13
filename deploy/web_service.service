@@ -1,0 +1,24 @@
+[Unit]
+Description=EbookAutomation Web Service (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=ebookweb
+WorkingDirectory=/opt/ebookautomation
+EnvironmentFile=/opt/ebookautomation/.env
+ExecStart=/opt/ebookautomation/venv/bin/uvicorn web_service.main:app --host 127.0.0.1 --port 8001 --workers 2
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ebookweb
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ebookautomation/data /tmp
+
+[Install]
+WantedBy=multi-user.target

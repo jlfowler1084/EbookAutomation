@@ -31,6 +31,13 @@ pdfplumber==0.11.9
 # onnxruntime-gpu   # GPU inference (mutually exclusive with onnxruntime)
 # onnxruntime       # CPU-only inference (use -CpuOnly flag in install script)
 
+# Web service (EB-45)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+filetype>=1.2.0
+aiofiles>=24.1.0
+
 # Config
 python-dotenv==1.2.2
 
