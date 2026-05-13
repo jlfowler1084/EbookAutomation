@@ -1,0 +1,37 @@
+{
+  "_comment": "Linux path overrides for Hetzner VM (claude-dev-01). Copy values into config/settings.json on Linux hosts. Windows config is authoritative in the repo. NOTE: output_format is epub on Linux — KFX Output plugin requires Wine which is not installed on the VM.",
+  "paths": {
+    "calibre": "/usr/bin/ebook-convert",
+    "python": "/home/joe/EbookAutomation/.venv/bin/python3.12",
+    "tesseract": "/usr/bin/tesseract",
+    "balcon": "",
+    "ffmpeg": "ffmpeg",
+    "poppler": "",
+    "audiobooks": "output/audiobooks",
+    "balabolka_txt": "output/balabolka-txt",
+    "kindle": "output/kindle",
+    "episodes": "output/episodes",
+    "data": "tools/data"
+  },
+  "visual_qa": {
+    "rubric_path": "tools/visual_qa_rubric.md",
+    "fallback": {
+      "corpus_path": "tools/visual_qa_fallback_fingerprints.json"
+    }
+  },
+  "kokoro": {
+    "model_dir": "tools/kokoro-models"
+  },
+  "kindle_delivery": {
+    "calibre_library": "/home/joe/calibre-library"
+  },
+  "tts": {
+    "enabled": false
+  },
+  "mp3": {
+    "enabled": false
+  },
+  "kindle": {
+    "output_format": "epub"
+  }
+}
