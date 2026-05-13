@@ -26,6 +26,7 @@ async def convert_file(
     Returns 202 with a job_id immediately — the caller polls /status/{job_id}.
     """
     settings = get_settings()
+    tier = "premium"  # EB-45 Phase 1: bypass tier checks until Phase 2 billing lands
 
     file_bytes = await file.read()
     file_size = len(file_bytes)
