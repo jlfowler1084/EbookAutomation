@@ -488,7 +488,50 @@ def mark_disputed(pack_id: str, db_path: Path | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Recovery lookup
+# Read-only recovery lookup for /payment/success idempotent revisit
+# ---------------------------------------------------------------------------
+
+def get_tokens_for_session(
+    session_id: str,
+    db_path: Path | None = None,
+) -> tuple[list[str], int] | None:
+    """Return (tokens, expires_at) for an existing session, or None if no rows exist.
+
+    Read-only path for /payment/success idempotent revisit. Does NOT mint new tokens.
+    Decrypts the token_encrypted_for_recovery column using each row's key_version.
+    Returns None (not an empty list) if no rows exist for the session_id.
+
+    Args:
+        session_id: Stripe Checkout session ID (= pack_id in the tokens table).
+        db_path: Optional DB path override (for tests).
+
+    Returns:
+        (tokens_list, expires_at_unix_int) if rows found, else None.
+    """
+    with _get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT token_encrypted_for_recovery, key_version, expires_at "
+            "FROM tokens WHERE pack_id = ? ORDER BY rowid",
+            (session_id,),
+        ).fetchall()
+
+    if not rows:
+        return None
+
+    tokens: list[str] = []
+    for row in rows:
+        f = get_fernet(row["key_version"])
+        raw_token = f.decrypt(bytes(row["token_encrypted_for_recovery"])).decode()
+        tokens.append(raw_token)
+
+    # All rows for the same session share the same expires_at; take the max
+    # defensively in case of any row-level drift.
+    expires_at = max(row["expires_at"] for row in rows)
+    return tokens, expires_at
+
+
+# ---------------------------------------------------------------------------
+# Payment-intent recovery lookup
 # ---------------------------------------------------------------------------
 
 def find_session_by_payment_intent(

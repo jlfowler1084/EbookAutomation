@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from web_service import job_queue, job_store
 from web_service.config import get_settings
-from web_service.routes import checkout, convert, download, status, webhook
+from web_service.routes import checkout, convert, download, payment, status, webhook
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +174,7 @@ def create_app() -> FastAPI:
     application.include_router(download.router)
     application.include_router(checkout.router)
     application.include_router(webhook.router)
+    application.include_router(payment.router)
     return application
 
 
