@@ -48,6 +48,15 @@ class Settings:
     max_concurrent_jobs: int
     job_ttl_free: int             # seconds — 1 hour
     job_ttl_premium: int          # seconds — 24 hours
+    # Stripe billing secrets — all required at startup (fail-closed via _require_env)
+    stripe_price_power: str
+    stripe_price_standard: str
+    stripe_price_starter: str
+    stripe_publishable_key: str
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+    # Token HMAC secret — required for token generation and validation
+    token_hmac_secret: str
     allowed_origins: list[str] = field(default_factory=list)
 
 
@@ -107,6 +116,13 @@ def load_settings() -> Settings:
         max_concurrent_jobs=int(os.environ.get("WEB_MAX_CONCURRENT_JOBS", "3")),
         job_ttl_free=int(os.environ.get("WEB_JOB_TTL_FREE", "3600")),
         job_ttl_premium=int(os.environ.get("WEB_JOB_TTL_PREMIUM", "86400")),
+        stripe_price_power=_require_env("STRIPE_PRICE_POWER"),
+        stripe_price_standard=_require_env("STRIPE_PRICE_STANDARD"),
+        stripe_price_starter=_require_env("STRIPE_PRICE_STARTER"),
+        stripe_publishable_key=_require_env("STRIPE_PUBLISHABLE_KEY"),
+        stripe_secret_key=_require_env("STRIPE_SECRET_KEY"),
+        stripe_webhook_secret=_require_env("STRIPE_WEBHOOK_SECRET"),
+        token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
         allowed_origins=allowed_origins,
     )
 

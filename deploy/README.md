@@ -52,6 +52,59 @@ WEB_SERVICE_ALLOWED_ORIGINS=https://yourdomain.com
 # WEB_SERVICE_MAX_CONCURRENT_JOBS=3
 ```
 
+## Stripe Configuration
+
+Phase 2 billing requires seven additional environment variables. Add these to
+`/opt/ebookautomation/.env` manually (the credential-write hook blocks Claude
+from writing them).
+
+**Required variables (all fail-closed — service will not start if any are absent):**
+
+```
+# Stripe API keys — get these from the Stripe Dashboard > Developers > API keys
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+
+# Stripe webhook signing secret — generated when you register the endpoint in
+# the Stripe Dashboard (Developers > Webhooks > Add endpoint).
+# For local dev/testing, use: stripe listen --forward-to localhost:8001/stripe/webhook
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Stripe Price IDs — created once via deploy/stripe_bootstrap.py or the
+# Stripe Dashboard (Products > create Product + Price for each pack).
+STRIPE_PRICE_STARTER=price_...   # $2.99 / 3 credits
+STRIPE_PRICE_STANDARD=price_...  # $7.99 / 10 credits
+STRIPE_PRICE_POWER=price_...     # $14.99 / 25 credits
+
+# HMAC secret for token generation and validation.
+# Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+# IMPORTANT: Never rotate this value without also rotating all active tokens.
+# key_version column in the token table enables future rotation — see docs.
+TOKEN_HMAC_SECRET=<64-hex-char random string>
+```
+
+**Environment mismatch check:** At startup the service compares the prefixes of
+`STRIPE_PUBLISHABLE_KEY` and `STRIPE_SECRET_KEY`. If one is `pk_test_` and the
+other is `sk_live_` (or vice versa), a WARN is logged. The service continues
+running — this is a configuration advisory, not a fatal error. Verify both keys
+are from the same Stripe mode (test or live) before going to production.
+
+**NTP synchronization:** The service checks NTP sync at startup and logs an ERROR
+if not synchronized. Stripe webhook signature validation uses wall-clock time;
+clock drift exceeding 300 seconds causes Stripe to reject webhooks. Ensure NTP is
+active on the VM:
+
+```bash
+# Check current sync status
+timedatectl show --property=NTPSynchronized --value
+
+# Enable NTP sync if not active
+sudo timedatectl set-ntp true
+sudo systemctl restart systemd-timesyncd
+```
+
+The `/health` endpoint reports `"ntp_synced": true/false` at runtime.
+
 ## 5. Create the data directory
 
 ```bash

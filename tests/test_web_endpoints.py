@@ -97,7 +97,11 @@ class TestHealth:
         tc, _ = client
         resp = tc.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        body = resp.json()
+        assert body["status"] == "ok"
+        # Phase 2 (EB-45 Unit 1) added ntp_synced — should be True in tests
+        # because the NTP check defaults to True when unavailable (Windows/macOS dev hosts).
+        assert body["ntp_synced"] is True
 
 
 # ---------------------------------------------------------------------------
