@@ -1556,8 +1556,19 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
         try {
             $coverImage = Join-Path $script:TempDir ('ebook_cover_{0}.jpg' -f [System.IO.Path]::GetRandomFileName())
 
-            # Find poppler bin path in tools\poppler
-            $popplerBin = Get-ChildItem (Join-Path $script:ModuleRoot 'tools' 'poppler') -Recurse -Filter (if ($IsLinux -or $IsMacOS) { 'pdftoppm' } else { 'pdftoppm.exe' }) -ErrorAction SilentlyContinue | Select-Object -First 1
+            # Find poppler bin path — bundled under tools/poppler on Windows,
+            # system-installed on Linux/macOS. Assign filter to variable first:
+            # inline (if ...) as a -Filter argument is unreliable on Linux PS7.
+            $popplerFilter = if ($IsLinux -or $IsMacOS) { 'pdftoppm' } else { 'pdftoppm.exe' }
+            $popplerBin = Get-ChildItem (Join-Path $script:ModuleRoot 'tools' 'poppler') -Recurse -Filter $popplerFilter -ErrorAction SilentlyContinue | Select-Object -First 1
+
+            if (-not $popplerBin -and ($IsLinux -or $IsMacOS)) {
+                $sysCmd = Get-Command pdftoppm -ErrorAction SilentlyContinue
+                if ($sysCmd) {
+                    $popplerBin = Get-Item $sysCmd.Source
+                    Write-EbookLog "Kindle: using system pdftoppm at $($popplerBin.FullName)"
+                }
+            }
 
             if ($popplerBin) {
                 # Use a temp script + sys.argv to avoid Unicode filename issues in inline Python
