@@ -15,6 +15,7 @@
 #region -- Module-level setup ------------------------------------------------
 
 $script:ModuleRoot = if ($env:EBOOK_AUTOMATION_ROOT) { $env:EBOOK_AUTOMATION_ROOT } else { $PSScriptRoot | Split-Path }   # project root (one level up from module\)
+$script:TempDir    = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar) }
 $script:Config     = $null
 
 function Get-EbookConfig {
@@ -33,7 +34,7 @@ function Get-EbookConfig {
     #>
     if ($script:Config) { return $script:Config }
 
-    $configPath = Join-Path $script:ModuleRoot 'config\settings.json'
+    $configPath = Join-Path $script:ModuleRoot 'config' 'settings.json'
     if (-not (Test-Path $configPath)) {
         throw "settings.json not found at: $configPath"
     }
@@ -356,7 +357,7 @@ function Convert-ToTTS {
     }
 
     $python    = $cfg.paths.python          # 'python' or full path
-    $toolPath  = Join-Path $script:ModuleRoot 'tools\pdf_to_balabolka.py'
+    $toolPath  = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
     $ext       = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
 
     if ($ext -notin $cfg.tts.input_formats) {
@@ -376,8 +377,9 @@ function Convert-ToTTS {
     $metaTempFile = Join-Path (Resolve-ProjectPath 'processing') "ebook_meta_tts_$(Get-Random).json"
     try {
         $toolsDir = Join-Path $script:ModuleRoot 'tools'
+        $patternDb  = Join-Path $toolsDir 'pattern_db.py'
 
-        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        $extractArgs = "`"$patternDb`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
         Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait | Out-Null
 
         $fileMeta = Get-EbookMetadataFromFilename $fileName
@@ -385,7 +387,7 @@ function Convert-ToTTS {
             $dbMeta = Get-Content $metaTempFile -Raw | ConvertFrom-Json
             $titleHash = $dbMeta.title_hash
             if ($titleHash) {
-                $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata --title-hash `"$titleHash`""
+                $updateArgs = "`"$patternDb`" update-metadata --title-hash `"$titleHash`""
                 if ($fileMeta.Title) { $updateArgs += " --title `"$($fileMeta.Title -replace '"', "'")`"" }
                 if ($fileMeta.Authors) { $updateArgs += " --authors `"$($fileMeta.Authors -replace '"', "'")`"" }
                 if ($fileMeta.Publisher) { $updateArgs += " --publisher `"$($fileMeta.Publisher -replace '"', "'")`"" }
@@ -421,8 +423,8 @@ function Convert-ToTTS {
 
     try {
         $env:PYTHONIOENCODING = 'utf-8'
-        $errFile   = Join-Path $env:TEMP 'tts_err.txt'
-        $outLog    = Join-Path $env:TEMP 'tts_out.txt'
+        $errFile   = Join-Path $script:TempDir 'tts_err.txt'
+        $outLog    = Join-Path $script:TempDir 'tts_out.txt'
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
         # Build OCR arguments if applicable
@@ -517,7 +519,7 @@ function Convert-ToTTS {
                     Write-EbookLog 'TTS: pass 2 -- sending text to Claude for chapter detection...'
 
                     # Extract raw text from first 30 pages of original PDF (includes TOC)
-                    $rawTextFile = Join-Path $env:TEMP ('raw_toc_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
+                    $rawTextFile = Join-Path $script:TempDir ('raw_toc_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
                     $extractCmd = @"
 from pypdf import PdfReader
 r = PdfReader(r'$workFile')
@@ -568,7 +570,7 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         if ($missingCount -gt 0) {
 
                             # Write hints JSON to temp
-                            $hintsJson = Join-Path $env:TEMP ('chapter_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
+                            $hintsJson = Join-Path $script:TempDir ('chapter_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
                             $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
 
                             # Re-run Python with --chapter-hints
@@ -921,9 +923,10 @@ print(json.dumps(output))
     try {
         $python    = $cfg.paths.python
         $toolsDir  = Join-Path $script:ModuleRoot 'tools'
+        $patternDb  = Join-Path $toolsDir 'pattern_db.py'
 
         # Step 1: Extract internal metadata from source file and store in database
-        $extractArgs = "`"$toolsDir\pattern_db.py`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
+        $extractArgs = "`"$patternDb`" extract-metadata --file `"$InputFile`" --output-file `"$metaTempFile`""
         $extractProc = Start-Process -FilePath $python -ArgumentList $extractArgs -PassThru -NoNewWindow -Wait
 
         $dbMeta = $null
@@ -935,7 +938,7 @@ print(json.dumps(output))
         # Step 2: Merge filename-derived metadata (fills gaps the internal metadata missed)
         $fileMeta = Get-EbookMetadataFromFilename $fileName
         if ($fileMeta.Title -or $fileMeta.Authors) {
-            $updateArgs = "`"$toolsDir\pattern_db.py`" update-metadata"
+            $updateArgs = "`"$patternDb`" update-metadata"
             if ($titleHash) {
                 $updateArgs += " --title-hash `"$titleHash`""
             } else {
@@ -1018,19 +1021,19 @@ print(json.dumps(output))
         Write-EbookLog "Kindle: extracting clean text from PDF (preserving full content)..."
 
         $python    = $cfg.paths.python
-        $toolPath  = Join-Path $script:ModuleRoot 'tools\pdf_to_balabolka.py'
+        $toolPath  = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
 
         if (-not (Test-Path $toolPath)) {
             Write-EbookLog "Kindle: text extractor not found at $toolPath -- falling back to raw PDF" -Level WARN
         } else {
             # Create a temp folder for the extraction output
-            $tempDir = Join-Path $env:TEMP ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+            $tempDir = Join-Path $script:TempDir ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
             New-Item $tempDir -ItemType Directory -Force | Out-Null
 
             try {
                 $env:PYTHONIOENCODING = 'utf-8'
-                $pyErrFile  = Join-Path $env:TEMP 'kindle_py_err.txt'
-                $pyOutFile  = Join-Path $env:TEMP 'kindle_py_out.txt'
+                $pyErrFile  = Join-Path $script:TempDir 'kindle_py_err.txt'
+                $pyOutFile  = Join-Path $script:TempDir 'kindle_py_out.txt'
                 $pySw       = [System.Diagnostics.Stopwatch]::StartNew()
 
                 # Build argument list
@@ -1195,7 +1198,7 @@ print(json.dumps(output))
                     Write-EbookLog 'Kindle: pass 2 -- sending text to Claude for chapter detection...'
 
                     # Extract raw text from first 30 pages of original PDF (includes TOC)
-                    $rawTextFile = Join-Path $env:TEMP ('raw_toc_kindle_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
+                    $rawTextFile = Join-Path $script:TempDir ('raw_toc_kindle_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
                     $extractCmd = @"
 from pypdf import PdfReader
 r = PdfReader(r'$InputFile')
@@ -1328,7 +1331,7 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                             }
 
                             if ($missingCount -gt 0) {
-                                $hintsJson = Join-Path $env:TEMP ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
+                                $hintsJson = Join-Path $script:TempDir ('kindle_hints_{0}.json' -f [System.IO.Path]::GetRandomFileName())
                                 $chapters | ConvertTo-Json -Depth 3 | Set-Content $hintsJson -Encoding UTF8
                                 Write-EbookLog "Kindle: $missingCount of $($chapters.Count) headings not found in text -- writing hints for pass 2"
                             } elseif ($insertedMd -eq 0) {
@@ -1384,16 +1387,16 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
         Write-EbookLog "Kindle: extracting HTML from EPUB (preserving formatting)..."
 
         $python   = $cfg.paths.python
-        $toolPath = Join-Path $script:ModuleRoot 'tools\pdf_to_balabolka.py'
+        $toolPath = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
 
         if (Test-Path $toolPath) {
-            $tempDir = Join-Path $env:TEMP ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+            $tempDir = Join-Path $script:TempDir ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
             New-Item $tempDir -ItemType Directory -Force | Out-Null
 
             try {
                 $env:PYTHONIOENCODING = 'utf-8'
-                $pyErrFile = Join-Path $env:TEMP 'kindle_epub_err.txt'
-                $pyOutFile = Join-Path $env:TEMP 'kindle_epub_out.txt'
+                $pyErrFile = Join-Path $script:TempDir 'kindle_epub_err.txt'
+                $pyOutFile = Join-Path $script:TempDir 'kindle_epub_out.txt'
                 $pySw      = [System.Diagnostics.Stopwatch]::StartNew()
 
                 $pyArgs = "$toolPath --input `"$InputFile`" --mode kindle --output-dir `"$tempDir`" --epub-html"
@@ -1551,14 +1554,14 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
     $coverSw = [System.Diagnostics.Stopwatch]::StartNew()
     if ($ext -eq 'pdf') {
         try {
-            $coverImage = Join-Path $env:TEMP ('ebook_cover_{0}.jpg' -f [System.IO.Path]::GetRandomFileName())
+            $coverImage = Join-Path $script:TempDir ('ebook_cover_{0}.jpg' -f [System.IO.Path]::GetRandomFileName())
 
             # Find poppler bin path in tools\poppler
-            $popplerBin = Get-ChildItem (Join-Path $script:ModuleRoot 'tools\poppler') -Recurse -Filter 'pdftoppm.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            $popplerBin = Get-ChildItem (Join-Path $script:ModuleRoot 'tools' 'poppler') -Recurse -Filter (if ($IsLinux -or $IsMacOS) { 'pdftoppm' } else { 'pdftoppm.exe' }) -ErrorAction SilentlyContinue | Select-Object -First 1
 
             if ($popplerBin) {
                 # Use a temp script + sys.argv to avoid Unicode filename issues in inline Python
-                $coverScript = Join-Path $env:TEMP 'ebook_extract_cover.py'
+                $coverScript = Join-Path $script:TempDir 'ebook_extract_cover.py'
                 @"
 from pdf2image import convert_from_path
 import sys, os
@@ -1573,7 +1576,7 @@ else:
 "@ | Set-Content $coverScript -Encoding UTF8
 
                 # Copy PDF to safe temp path to avoid Unicode filename issues with poppler
-                $safePdfCopy = Join-Path $env:TEMP ('ebook_cover_src_{0}.pdf' -f [System.IO.Path]::GetRandomFileName())
+                $safePdfCopy = Join-Path $script:TempDir ('ebook_cover_src_{0}.pdf' -f [System.IO.Path]::GetRandomFileName())
                 Copy-Item $InputFile $safePdfCopy -Force
 
                 $coverOutput = & $python $coverScript $safePdfCopy $popplerBin.DirectoryName $coverImage 2>&1
@@ -1606,8 +1609,8 @@ else:
             $fixEngPath = Join-Path $script:ModuleRoot 'tools' 'fix_engine.py'
             if (Test-Path $fixEngPath) {
                 $fixGuid     = [guid]::NewGuid().ToString('N')
-                $fixStdout   = Join-Path $env:TEMP "fix_stdout_$fixGuid.txt"
-                $fixStderr   = Join-Path $env:TEMP "fix_stderr_$fixGuid.txt"
+                $fixStdout   = Join-Path $script:TempDir "fix_stdout_$fixGuid.txt"
+                $fixStderr   = Join-Path $script:TempDir "fix_stderr_$fixGuid.txt"
 
                 $fixArgs = "`"$fixEngPath`" --input `"$convertInput`""
 
@@ -1681,8 +1684,8 @@ else:
                 Write-EbookLog "Kindle: filtering content (profile=$Profile)..."
 
                 $filterGuid   = [guid]::NewGuid().ToString('N')
-                $filterStdout = Join-Path $env:TEMP "filter_stdout_$filterGuid.txt"
-                $filterStderr = Join-Path $env:TEMP "filter_stderr_$filterGuid.txt"
+                $filterStdout = Join-Path $script:TempDir "filter_stdout_$filterGuid.txt"
+                $filterStderr = Join-Path $script:TempDir "filter_stderr_$filterGuid.txt"
 
                 $filterProc = Start-Process -FilePath $python -ArgumentList $filterArgs `
                                             -NoNewWindow -Wait -PassThru `
@@ -1961,8 +1964,8 @@ else:
 
     try {
         # Use Start-Process to avoid PowerShell treating Calibre's stderr as exceptions
-        $errFile   = Join-Path $env:TEMP 'calibre_err.txt'
-        $outLog    = Join-Path $env:TEMP 'calibre_out.txt'
+        $errFile   = Join-Path $script:TempDir 'calibre_err.txt'
+        $outLog    = Join-Path $script:TempDir 'calibre_out.txt'
 
         # Snapshot existing KFX files so we can detect an unexpected-path output later
         # (filename prediction mismatch: code computes a different name than Calibre/KFX plugin uses)
@@ -2380,8 +2383,8 @@ print(json.dumps(result))
 
                 Write-EbookLog "Kindle: generating EPUB for email delivery..."
                 try {
-                    $epubOutLog = Join-Path $env:TEMP "epub_out_$(Get-Random).txt"
-                    $epubErrLog = Join-Path $env:TEMP "epub_err_$(Get-Random).txt"
+                    $epubOutLog = Join-Path $script:TempDir "epub_out_$(Get-Random).txt"
+                    $epubErrLog = Join-Path $script:TempDir "epub_err_$(Get-Random).txt"
                     $epubProc = Start-Process -FilePath $calibre -ArgumentList $epubArgs `
                                               -PassThru -NoNewWindow `
                                               -RedirectStandardOutput $epubOutLog `
@@ -2741,7 +2744,7 @@ function Send-ToKindle {
                 Write-EbookLog "SendToKindle: set it with: `$env:$passwordEnvVar = 'your-gmail-app-password'" -Level ERROR
                 return
             }
-            $emailScript = Join-Path $script:ModuleRoot 'tools\email_to_kindle.py'
+            $emailScript = Join-Path $script:ModuleRoot 'tools' 'email_to_kindle.py'
             if (-not (Test-Path $emailScript)) {
                 Write-EbookLog "SendToKindle: email_to_kindle.py not found at $emailScript" -Level ERROR
                 return
@@ -2754,9 +2757,11 @@ function Send-ToKindle {
         }
 
         # Resolve Calibre paths -- calibredb and calibre-debug are in the same folder as ebook-convert
-        $calibreDir = Split-Path (Resolve-ProjectPath $cfg.paths.calibre) -Parent
-        $calibreDb  = Join-Path $calibreDir 'calibredb.exe'
-        $calibreDbg = Join-Path $calibreDir 'calibre-debug.exe'
+        if (-not $cfg.paths.calibre) { throw "paths.calibre is not set in config/settings.json" }
+        $calibreDir   = Split-Path (Resolve-ProjectPath $cfg.paths.calibre) -Parent
+        $exeSuffix    = if ($IsLinux -or $IsMacOS) { '' } else { '.exe' }
+        $calibreDb    = Join-Path $calibreDir "calibredb$exeSuffix"
+        $calibreDbg   = Join-Path $calibreDir "calibre-debug$exeSuffix"
 
         if (-not (Test-Path $calibreDb)) {
             Write-EbookLog "SendToKindle: calibredb.exe not found at $calibreDb" -Level ERROR
@@ -2782,7 +2787,7 @@ function Send-ToKindle {
             return
         }
 
-        $sendScript = Join-Path $script:ModuleRoot 'tools\send_to_kindle.py'
+        $sendScript = Join-Path $script:ModuleRoot 'tools' 'send_to_kindle.py'
         if (-not (Test-Path $sendScript)) {
             Write-EbookLog "SendToKindle: send_to_kindle.py not found at $sendScript" -Level ERROR
             return
@@ -2914,7 +2919,8 @@ function Send-ToKindle {
             try {
                 $python   = $cfg.paths.python
                 $toolsDir = Join-Path $script:ModuleRoot 'tools'
-                $lookupArgs = "`"$toolsDir\pattern_db.py`" get-metadata"
+                $patternDb  = Join-Path $toolsDir 'pattern_db.py'
+                $lookupArgs = "`"$patternDb`" get-metadata"
                 if ($emailMeta.Title) {
                     $lookupArgs += " --title `"$($emailMeta.Title -replace '"', "'")`""
                 }
@@ -3138,7 +3144,7 @@ function Send-ToKindle {
 #region -- File tracking (prevent re-processing) -----------------------------
 
 function Get-ProcessedManifest {
-    $path = Join-Path $script:ModuleRoot 'logs\processed.txt'
+    $path = Join-Path $script:ModuleRoot 'logs' 'processed.txt'
     if (Test-Path $path) {
         return (Get-Content $path -Encoding UTF8 | Where-Object { $_ -ne '' } | ForEach-Object { $_.Trim() })
     }
@@ -3147,7 +3153,7 @@ function Get-ProcessedManifest {
 
 function Add-ProcessedFile {
     param([string]$FilePath)
-    $path = Join-Path $script:ModuleRoot 'logs\processed.txt'
+    $path = Join-Path $script:ModuleRoot 'logs' 'processed.txt'
     $hash = (Get-FileHash $FilePath -Algorithm MD5).Hash
     $entry = "$hash|$([System.IO.Path]::GetFileName($FilePath))|$(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     Add-Content $path $entry -Encoding UTF8
@@ -3318,7 +3324,7 @@ function Test-EbookFile {
     $calibreFormats = @('mobi', 'azw', 'azw3', 'djvu')
 
     if ($ext -eq 'pdf') {
-        $integrityScript = Join-Path $env:TEMP 'ebook_validate_pdf.py'
+        $integrityScript = Join-Path $script:TempDir 'ebook_validate_pdf.py'
         try {
             @"
 from pypdf import PdfReader
@@ -3347,7 +3353,7 @@ except Exception as e:
             if (Test-Path $integrityScript) { Remove-Item $integrityScript -Force -ErrorAction SilentlyContinue }
         }
     } elseif ($ext -eq 'epub') {
-        $integrityScript = Join-Path $env:TEMP 'ebook_validate_epub.py'
+        $integrityScript = Join-Path $script:TempDir 'ebook_validate_epub.py'
         try {
             @"
 from ebooklib import epub
@@ -4216,7 +4222,7 @@ function Install-EbookScheduledTask {
     $cfg          = Get-EbookConfig
     $taskName     = $cfg.scheduler.task_name
     $intervalMins = $cfg.scheduler.interval_minutes
-    $modulePath   = Join-Path $script:ModuleRoot 'module\EbookAutomation.psm1'
+    $modulePath   = Join-Path $script:ModuleRoot 'module' 'EbookAutomation.psm1'
     $runnerScript = Join-Path $script:ModuleRoot 'module\Run-Pipeline.ps1'
 
     if ((Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) -and -not $Force) {
@@ -4431,17 +4437,18 @@ function Initialize-EbookAutomation {
 
         # Check calibredb and calibre-debug (for Send-ToKindle)
         $calibreDir = Split-Path $calibrePath -Parent
-        $calibreDbPath  = Join-Path $calibreDir 'calibredb.exe'
-        $calibreDbgPath = Join-Path $calibreDir 'calibre-debug.exe'
+        $exeSuffix    = if ($IsLinux -or $IsMacOS) { '' } else { '.exe' }
+        $calibreDbPath  = Join-Path $calibreDir "calibredb$exeSuffix"
+        $calibreDbgPath = Join-Path $calibreDir "calibre-debug$exeSuffix"
         if (Test-Path $calibreDbPath) {
-            Write-Host "  + calibredb.exe: $calibreDbPath" -ForegroundColor Green
+            Write-Host "  + calibredb${exeSuffix}: $calibreDbPath" -ForegroundColor Green
         } else {
-            Write-Host "  [Optional] calibredb.exe not found (needed for Send-ToKindle)" -ForegroundColor Yellow
+            Write-Host "  [Optional] calibredb$exeSuffix not found (needed for Send-ToKindle)" -ForegroundColor Yellow
         }
         if (Test-Path $calibreDbgPath) {
-            Write-Host "  + calibre-debug.exe: $calibreDbgPath" -ForegroundColor Green
+            Write-Host "  + calibre-debug${exeSuffix}: $calibreDbgPath" -ForegroundColor Green
         } else {
-            Write-Host "  [Optional] calibre-debug.exe not found (needed for Send-ToKindle)" -ForegroundColor Yellow
+            Write-Host "  [Optional] calibre-debug$exeSuffix not found (needed for Send-ToKindle)" -ForegroundColor Yellow
         }
 
         # Check email delivery configuration
@@ -4694,14 +4701,14 @@ function Convert-BriefToYouTube {
             $proc = Start-Process -FilePath $ffmpeg `
                                   -ArgumentList ($ffArgs -join ' ') `
                                   -Wait -PassThru -NoNewWindow `
-                                  -RedirectStandardError "$env:TEMP\ffmpeg_err.txt"
+                                  -RedirectStandardError "$script:TempDir\ffmpeg_err.txt"
 
             if ($proc.ExitCode -eq 0) {
                 $sizeMB = [math]::Round((Get-Item $outPath).Length / 1MB, 1)
                 Write-EbookLog "Created: $outName ($sizeMB MB)" -Level SUCCESS
                 $outputFiles += $outPath
             } else {
-                $errText = Get-Content "$env:TEMP\ffmpeg_err.txt" -Tail 5 -ErrorAction SilentlyContinue
+                $errText = Get-Content "$script:TempDir\ffmpeg_err.txt" -Tail 5 -ErrorAction SilentlyContinue
                 Write-EbookLog "FFmpeg failed on $($mp3.Name): $errText" -Level ERROR
             }
         }
@@ -4716,7 +4723,7 @@ function Convert-BriefToYouTube {
         $combinedPath = Join-Path $OutputFolder $combinedName
 
         # Build FFmpeg concat list
-        $concatFile = Join-Path $env:TEMP "ffmpeg_concat.txt"
+        $concatFile = Join-Path $script:TempDir "ffmpeg_concat.txt"
         $outputFiles | ForEach-Object { "file '$_'" } | Set-Content $concatFile -Encoding UTF8
 
         if ($DryRun) {
@@ -4726,13 +4733,13 @@ function Convert-BriefToYouTube {
             $proc = Start-Process -FilePath $ffmpeg `
                                   -ArgumentList $concatArgs `
                                   -Wait -PassThru -NoNewWindow `
-                                  -RedirectStandardError "$env:TEMP\ffmpeg_err.txt"
+                                  -RedirectStandardError "$script:TempDir\ffmpeg_err.txt"
 
             if ($proc.ExitCode -eq 0) {
                 $sizeMB = [math]::Round((Get-Item $combinedPath).Length / 1MB, 1)
                 Write-EbookLog "Combined episode: $combinedName ($sizeMB MB)" -Level SUCCESS
             } else {
-                $errText = Get-Content "$env:TEMP\ffmpeg_err.txt" -Tail 5 -ErrorAction SilentlyContinue
+                $errText = Get-Content "$script:TempDir\ffmpeg_err.txt" -Tail 5 -ErrorAction SilentlyContinue
                 Write-EbookLog "Combine step failed: $errText" -Level ERROR
             }
         }
@@ -4917,7 +4924,7 @@ function Invoke-Balabolka {
                         '-enc', 'utf8')
         if ($dictPath) { $balconArgs += '-d', "`"$dictPath`"" }
 
-        $errFile   = Join-Path $env:TEMP 'balcon_err.txt'
+        $errFile   = Join-Path $script:TempDir 'balcon_err.txt'
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
         # Track input size for ETA estimation
@@ -4967,7 +4974,7 @@ function Invoke-Balabolka {
         # Stage 2: WAV -> MP3 via ffmpeg
         Write-EbookLog "Balabolka: encoding MP3..."
         $ffmpegArgs = "-y -i `"$tempWav`" -b:a $Bitrate -loglevel error `"$OutputFile`""
-        $ffErrFile  = Join-Path $env:TEMP 'ffmpeg_err.txt'
+        $ffErrFile  = Join-Path $script:TempDir 'ffmpeg_err.txt'
 
         $ffProc = Start-Process -FilePath $ffmpeg `
                                 -ArgumentList $ffmpegArgs `
@@ -5287,7 +5294,7 @@ function Get-ChapterStructure {
     }
 
     # -- Step 3: Build Claude prompt (load from agent file)
-    $agentPromptFile = Join-Path $script:ModuleRoot 'agents\structure-analysis\system-prompt.md'
+    $agentPromptFile = Join-Path $script:ModuleRoot 'agents' 'structure-analysis' 'system-prompt.md'
     if (Test-Path $agentPromptFile) {
         $systemPrompt = Get-Content $agentPromptFile -Raw -Encoding UTF8
         Write-EbookLog "Chapter detection: loaded agent prompt from $agentPromptFile"
@@ -5446,7 +5453,7 @@ function Invoke-StructureAgent {
     $ext    = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
 
     # Use pypdf for quick raw text extraction
-    $tempText = Join-Path $env:TEMP ('struct_agent_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
+    $tempText = Join-Path $script:TempDir ('struct_agent_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
     $extractCmd = @"
 from pypdf import PdfReader
 import sys
@@ -5671,8 +5678,8 @@ function Test-ConversionQuality {
     try {
         # Unique temp paths to prevent collision with concurrent VQA runs
         $vqaGuid   = [System.Guid]::NewGuid().ToString('N').Substring(0, 8)
-        $vqaStdout = Join-Path $env:TEMP "vqa_stdout_$vqaGuid.txt"
-        $vqaStderr = Join-Path $env:TEMP "vqa_stderr_$vqaGuid.txt"
+        $vqaStdout = Join-Path $script:TempDir "vqa_stdout_$vqaGuid.txt"
+        $vqaStderr = Join-Path $script:TempDir "vqa_stderr_$vqaGuid.txt"
 
         $argString = $pyArgs -join ' '
         $proc = Start-Process -FilePath $pythonPath -ArgumentList $argString `
@@ -5812,7 +5819,7 @@ function Invoke-BatchQA {
 
     $config   = Get-EbookConfig
     $python   = $config.paths.python
-    $qaScript = Join-Path $script:ModuleRoot "tools\batch_qa.py"
+    $qaScript = Join-Path $script:ModuleRoot 'tools' 'batch_qa.py'
 
     if (-not (Test-Path $qaScript)) {
         Write-EbookLog "batch_qa.py not found at $qaScript" -Level ERROR
@@ -6299,12 +6306,12 @@ function Invoke-ConvergeLoop {
 
         # Capture chapter hints from iteration 1 for reuse in subsequent iterations
         if (-not $cachedChapterHints -or -not (Test-Path $cachedChapterHints)) {
-            $hintsCandidate = Get-ChildItem $env:TEMP -Filter 'kindle_hints_*.json' -File -ErrorAction SilentlyContinue |
+            $hintsCandidate = Get-ChildItem $script:TempDir -Filter 'kindle_hints_*.json' -File -ErrorAction SilentlyContinue |
                               Where-Object { $_.LastWriteTime -gt $iterStart } |
                               Sort-Object LastWriteTime -Descending |
                               Select-Object -First 1
             if ($hintsCandidate) {
-                $cachedChapterHints = Join-Path $env:TEMP "converge_chapters_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).json"
+                $cachedChapterHints = Join-Path $script:TempDir "converge_chapters_$([System.Guid]::NewGuid().ToString('N').Substring(0,8)).json"
                 Copy-Item $hintsCandidate.FullName $cachedChapterHints -Force
                 Write-EbookLog "  Cached chapter hints for reuse: $cachedChapterHints"
             }
