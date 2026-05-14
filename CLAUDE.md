@@ -269,7 +269,7 @@ Stripe MCP (hosted at `https://mcp.stripe.com`, HTTP transport) is enabled via t
 
 Cloudflare MCP (hosted at `https://mcp.cloudflare.com/mcp`, HTTP transport) is wired in `.mcp.json` directly — not via a Claude Code plugin (the official `cloudflare` plugin is a separate skills/docs package, not an MCP server). Auth via OAuth on first call; ~2,500 endpoints incl. DNS, Workers, Zero Trust. Use to manage the leafbind.io zone, add subdomains, and tune cache rules. Added 2026-05-14 under INFRA-391.
 
-Playwright and GitHub are Claude Code plugins (installed at user scope, auto-discovered). Playwright provides browser automation for visual QA on the deployed leafbind.io site; GitHub collapses the `gh` CLI shell-out loop into direct PR/issue/CI tool calls. Both added 2026-05-14 under INFRA-391.
+Playwright and GitHub are Claude Code plugins (enabled at project scope in `.claude/settings.json` `enabledPlugins`, auto-discovered after restart). Playwright provides browser automation for visual QA on the deployed leafbind.io site; GitHub collapses the `gh` CLI shell-out loop into direct PR/issue/CI tool calls. Both added 2026-05-14 under INFRA-391.
 
 ## Current Priorities
 1. Stabilize 5-book regression suite — zero failures on all test cases
