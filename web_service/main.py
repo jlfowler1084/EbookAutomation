@@ -25,7 +25,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from web_service import job_queue, job_store
+from web_service import job_queue, job_store, token_store
 from web_service.config import get_settings
 from web_service.routes import checkout, convert, download, payment, recover, status, webhook
 
@@ -141,6 +141,12 @@ async def lifespan(app: FastAPI):
     _check_middleware_safety(app)
 
     job_store.init_db()
+    # HOTFIX (EB-45): token_store.init_db() was missed in the Phase 2 lifespan
+    # wiring. Without this, the tokens + failed_mints tables don't exist on a
+    # fresh-DB deploy, causing sqlite3.OperationalError on every /payment/success
+    # render and tripping the circuit breaker. CREATE TABLE IF NOT EXISTS makes
+    # this safe to call on existing DBs (no-op when tables already exist).
+    token_store.init_db()
     job_queue.init_queue()
     job_queue.init_billing_executor()
     _sweep_task = asyncio.create_task(job_queue.cleanup_expired_jobs())
