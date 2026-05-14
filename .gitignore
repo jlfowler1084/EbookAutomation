@@ -90,3 +90,9 @@ test-corpus/*
 
 # Review agent context directories (generated, not source)
 .context/
+
+# Vercel CLI link directory (project IDs are stored here)
+.vercel
+
+# Playwright MCP runtime artifacts (console + page captures)
+.playwright-mcp/
