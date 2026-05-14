@@ -1,15 +1,27 @@
+/**
+ * leafbind visual tokens — source of truth.
+ *
+ * - tailwind.config.ts imports these named exports.
+ * - app/globals.css `:root` mirrors these hex values via --color-* variables.
+ * - tools/check-token-drift.mjs verifies the two stay in sync.
+ *
+ * Run `npm run check:tokens` after any edit here; this script runs automatically
+ * as part of `prebuild`.
+ */
 export const colors = {
-  brand:    "#1a1a2e",
-  accent:   "#e8642c",
-  muted:    "#6b7280",
-  surface:  "#f9f7f4",
-  border:   "#e5e7eb",
-  textBase: "#1f2937",
+  brand:        "#2D4A2B",
+  brandDark:    "#1a3a1a",
+  accent:       "#3D7A3A",
+  surface:      "#FAF8F3",
+  surfaceMuted: "#F5F1E8",
+  border:       "#E2DFD5",
+  textBase:     "#1a1a1a",
+  textMuted:    "#6a6a6a",
 } as const;
 
 export const type = {
-  fontSans: '"Inter", ui-sans-serif, system-ui, sans-serif',
-  fontSerif: '"Lora", ui-serif, Georgia, serif',
+  fontSans:  "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
+  fontSerif: "var(--font-lora), ui-serif, Georgia, serif",
   // Modular scale: 12/14/16/20/24/32/48
   scaleXs:  "0.75rem",
   scaleSm:  "0.875rem",
