@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JsonLd from "../../../components/JsonLd";
+import {
+  buildSoftwareApplicationSchema,
+  type FAQPageSchema,
+  type HowToSchema,
+} from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "Convert Academic PDFs to Kindle — leafbind",
@@ -11,6 +17,7 @@ export const metadata: Metadata = {
     description: "Preserves double-column layouts, footnotes, and section numbering.",
     type: "website",
     url: "https://leafbind.io/convert/academic-pdf-to-kindle",
+    images: [{ url: "https://leafbind.io/quality/pipeline-columns.png", width: 800, height: 600 }],
   },
   twitter: {
     card: "summary",
@@ -56,9 +63,33 @@ const faqItems = [
   },
 ];
 
+const faqSchema: FAQPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqItems.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
+const howToSchema: HowToSchema = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "Three steps to a readable academic library",
+  step: howToSteps.map((step) => ({
+    "@type": "HowToStep",
+    name: step.title,
+    text: step.body,
+  })),
+};
+
 export default function AcademicPdfToKindlePage() {
   return (
     <div className="font-sans bg-surface min-h-screen">
+      <JsonLd schema={buildSoftwareApplicationSchema()} />
+      <JsonLd schema={faqSchema} />
+      <JsonLd schema={howToSchema} />
 
       {/* Navigation */}
       <nav className="bg-brand">

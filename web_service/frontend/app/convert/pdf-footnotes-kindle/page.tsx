@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JsonLd from "../../../components/JsonLd";
+import {
+  buildSoftwareApplicationSchema,
+  type FAQPageSchema,
+  type HowToSchema,
+} from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "PDF Footnotes on Kindle — Keep Them Linked | leafbind",
@@ -11,6 +17,7 @@ export const metadata: Metadata = {
     description: "Footnote markers and text are linked — not stripped — in the Kindle output.",
     type: "website",
     url: "https://leafbind.io/convert/pdf-footnotes-kindle",
+    images: [{ url: "https://leafbind.io/quality/pipeline-columns.png", width: 800, height: 600 }],
   },
   twitter: {
     card: "summary",
@@ -52,9 +59,33 @@ const faqs = [
   },
 ];
 
+const faqSchema: FAQPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
+const howToSchema: HowToSchema = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "Three steps from PDF to Kindle-ready output",
+  step: howToSteps.map((step) => ({
+    "@type": "HowToStep",
+    name: step.title,
+    text: step.body,
+  })),
+};
+
 export default function PdfFootnotesKindlePage() {
   return (
     <div className="font-sans bg-surface min-h-screen">
+      <JsonLd schema={buildSoftwareApplicationSchema()} />
+      <JsonLd schema={faqSchema} />
+      <JsonLd schema={howToSchema} />
       {/* Navigation */}
       <nav className="bg-brand">
         <div className="max-w-6xl mx-auto px-8 h-14 flex items-center justify-between">
