@@ -261,9 +261,11 @@ including one unticketed "Stray Baseline" commit. This constraint is intentional
 - **Never use `mklink /J` junctions inside a worktree to give it access to gitignored data dirs (`archive/`, `output/`, `inbox/`, `processing/`).** Windows `rmdir /s` and `Remove-Item -Recurse` traverse junctions and delete the *target* contents. When ExitWorktree (or any recursive delete of the worktree directory) runs, the linked source data is destroyed. **Recovered from this on 2026-04-22 during SCRUM-301**: the SCRUM-303 worktree's junctions caused archive/output/inbox/processing in the main repo to be wiped on cleanup. Recovery was possible because PDFs were available in `F:\books`. Safer pattern: run pipeline scripts from the main working tree (`F:\Projects\EbookAutomation\`), and keep worktrees scoped to code-only edits. If you must run scripts from a worktree, set an environment override on `ARCHIVE_DIR`/`OUTPUT_DIR` rather than creating filesystem junctions.
 
 ## MCP Servers
-Allowed: Atlassian Rovo, Context7
+Allowed: Atlassian Rovo, Context7, Stripe
 All other cloud MCP servers should be disabled in this project (`/mcp disable <name>`).
 Source of truth: ClaudeInfra `configs/mcp-server-registry.json` (INFRA-70).
+
+Stripe MCP (hosted at `https://mcp.stripe.com`, HTTP transport) is enabled via the `stripe/agent-toolkit` Claude plugin; auth via OAuth on first call, scoped through a Stripe Workbench restricted access key. Same trust model as the existing Atlassian MCP. Added 2026-05-13 under INFRA-390 for the EB-45 freemium web service.
 
 ## Current Priorities
 1. Stabilize 5-book regression suite — zero failures on all test cases
