@@ -1,0 +1,69 @@
+"use client";
+
+import { useState } from "react";
+import { createCheckoutSession } from "../lib/api";
+
+interface Pack {
+  id: string;
+  label: string;
+}
+
+interface Props {
+  packs: Pack[];
+}
+
+export default function BuyButtons({ packs }: Props) {
+  const [creating, setCreating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleBuy(packId: string) {
+    if (creating) return;
+    setCreating(packId);
+    setError(null);
+    try {
+      const resp = await createCheckoutSession(packId);
+      window.location.href = resp.checkout_url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not start checkout");
+      setCreating(null);
+    }
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          gap: "1em",
+          marginTop: "1em",
+          justifyContent: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        {packs.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => handleBuy(p.id)}
+            disabled={creating !== null}
+            style={{
+              padding: "0.75em 2em",
+              backgroundColor: creating === p.id ? "#ccc" : "#0070f3",
+              color: "white",
+              border: "none",
+              borderRadius: 4,
+              cursor: creating !== null ? "not-allowed" : "pointer",
+              fontSize: "1em",
+              fontWeight: 600,
+              transition: "background-color 0.15s",
+            }}
+          >
+            {creating === p.id ? "Redirecting to checkout…" : `Buy ${p.label}`}
+          </button>
+        ))}
+      </div>
+      {error && (
+        <p style={{ color: "red", marginTop: "1em", textAlign: "center" }}>{error}</p>
+      )}
+    </div>
+  );
+}
