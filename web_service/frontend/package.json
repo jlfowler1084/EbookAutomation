@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node tools/check-token-drift.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:icons": "node tools/build-icons.mjs"
+    "build:icons": "node tools/build-icons.mjs",
+    "check:tokens": "node tools/check-token-drift.mjs"
   },
   "dependencies": {
     "next": "^16.2.6",
