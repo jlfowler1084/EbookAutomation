@@ -387,10 +387,13 @@ After compiling the LaTeX to PDF:
    # On the VM (claude-dev-01):
    ebook-convert leafbind-demo.pdf leafbind-demo-calibre.epub
    ```
-2. Convert via premium pipeline:
+2. Convert via premium pipeline (from repo root, with `leafbind-demo.pdf` in `inbox/`):
    ```powershell
-   python tools/pdf_to_balabolka.py --cli --input web_service/test-pdfs/leafbind-demo.pdf
+   python tools/pdf_to_balabolka.py --html-extraction --force-columns
    ```
+   Note: `--cli --input` flags do not exist. The correct invocation uses `--html-extraction
+   --force-columns`; input is read from `inbox/` per `settings.json`. See `SCREENSHOTS.md`
+   for the exact commands used during Unit 1 execution.
 3. Open both outputs in a Kindle simulator or ebook viewer. Capture screenshots of:
    - The two-column page (Calibre: garbled; pipeline: clean)
    - A footnoted page (Calibre: footnote lost; pipeline: linked)
