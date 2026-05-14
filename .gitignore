@@ -18,6 +18,8 @@ processing/
 *.mobi
 *.azw3
 *.kfx
+# Exception: synthetic test fixtures committed as regression anchors
+!web_service/test-pdfs/*.pdf
 
 # Audio files
 *.mp3

@@ -1,0 +1,180 @@
+\documentclass[twocolumn,12pt]{article}
+\usepackage{lipsum}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+
+\title{The Epistemology of Computational Systems}
+\author{A.~R.~Fontaine \and M.~J.~Hessler}
+\date{2024}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper examines the epistemological foundations of modern computational
+systems, focusing on the boundary conditions under which formal verification
+methods yield reliable knowledge claims.
+We argue that Gettier-style counterexamples apply with equal force to
+machine-generated proof certificates.\footnote{The term ``proof certificate''
+is used here in the sense of Necula \& Lee (1998), not the informal
+usage common in software engineering.}
+A taxonomy of computational epistemic failures is proposed, grounded in
+an analysis of three representative system classes.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Computational epistemology sits at the intersection of formal methods,
+philosophy of science, and cognitive systems theory.
+\lipsum[1]
+A defining challenge\footnote{This challenge was first articulated in the
+context of automated theorem provers by Robinson (1965), though he did not
+use this terminology.} is distinguishing between \emph{verified} results
+and \emph{justified} results.
+
+\lipsum[2]
+
+The distinction matters in practice: a system may produce a verified proof
+of a false theorem if the formal model diverges from the intended
+semantics.\footnote{The canonical example is the Pentium FDIV bug (1994),
+in which a formally verified microcode routine produced incorrect results
+for a specific class of floating-point inputs.} We return to this point
+in Section~\ref{sec:taxonomy}.
+
+\subsection{Scope and Method}
+\label{sec:scope}
+
+The analysis is restricted to deterministic, finitely-computable systems.
+Probabilistic and quantum computational models are deferred to future work.
+\lipsum[3]
+
+\subsubsection{Formal Preliminaries}
+\label{sec:prelim}
+
+Let $\Sigma$ be a finite alphabet and $L \subseteq \Sigma^*$ a decidable language.
+A \emph{verifier} $V$ is a deterministic Turing machine such that for all
+$x \in L$, there exists a certificate $c$ with $V(x,c) = 1$.
+\lipsum[4]
+
+\section{A Taxonomy of Epistemic Failure Modes}
+\label{sec:taxonomy}
+
+We identify four primary failure modes in computational knowledge systems.
+Each mode corresponds to a distinct breakdown in the justification chain
+from axioms to conclusions.
+
+\subsection{Type I: Model-Semantic Divergence}
+\label{sec:type1}
+
+Model-semantic divergence occurs when the formal model $M$ is a sound
+abstraction of the specification $S$ but $S$ is itself an inaccurate
+description of the intended system $\mathcal{I}$.
+\lipsum[5]
+
+\subsubsection{Illustrative Cases}
+
+The TLS 1.3 handshake verification effort \cite{bhargavan2017} provides
+a well-documented instance of this failure mode.\footnote{Bhargavan et
+al.\ verified the cryptographic core of TLS 1.3 using F$\star$, but noted
+that their model excluded session resumption tickets—an exclusion that
+proved non-trivial in later implementations.}
+\lipsum[6]
+
+\subsection{Type II: Proof-State Corruption}
+\label{sec:type2}
+
+Proof-state corruption arises when a proof assistant's internal state is
+modified by a trusted kernel extension in a way that is not reflected in
+the proof certificate.
+\lipsum[7]
+
+\begin{figure}[h]
+  \centering
+  \rule{0.9\columnwidth}{3cm}
+  \caption{Schematic of the justification chain from axioms ($\mathcal{A}$)
+  through the proof kernel ($K$) to the certificate ($C$). A Type~II failure
+  corrupts the $K \to C$ link without invalidating $\mathcal{A} \to K$.}
+  \label{fig:justification-chain}
+\end{figure}
+
+\lipsum[8]
+
+\subsection{Type III: Certificate Non-Portability}
+\label{sec:type3}
+
+A certificate $c$ produced by verifier $V_1$ may not be accepted by verifier
+$V_2$ even when both are sound with respect to the same logic, because the
+two systems may use non-equivalent encodings of the proof term.
+\lipsum[9]
+
+\subsubsection{Cross-System Verification}
+
+Cross-system verification remains an open problem.\footnote{The QED Manifesto
+(1994) proposed a universal proof repository, but the project stalled
+precisely because of certificate non-portability across the Coq, Isabelle,
+and HOL family of proof assistants.}
+\lipsum[10]
+
+\section{Implications for Verified Software Engineering}
+\label{sec:implications}
+
+The taxonomy developed in Section~\ref{sec:taxonomy} has direct implications
+for the deployment of formally verified components in safety-critical systems.
+
+\subsection{Certification Standards}
+
+Current certification standards such as DO-178C (avionics) and IEC 61508
+(industrial safety) do not yet account for Type~II or Type~III failures.
+\lipsum[11]
+
+\subsubsection{Proposed Augmentations}
+
+We propose three augmentations to existing standards.
+First, certificate portability testing should be mandated for all Level~A
+software.\footnote{Level A software is defined by DO-178C as software whose
+failure would result in catastrophic failure conditions.}
+Second, formal models should include explicit semantic gap documentation.
+Third, trusted kernel extensions should undergo independent formal verification.
+
+\lipsum[12]
+
+\subsection{Tool Qualification}
+
+Tool qualification under DO-330 partially addresses Type~I failures but
+does not cover the certificate layer.
+\lipsum[13]
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented a taxonomy of four epistemic failure modes in computational
+verification systems and argued that existing certification standards are
+insufficient to address the full range of failure modes.
+\lipsum[14]
+
+\begin{thebibliography}{9}
+
+\bibitem{bhargavan2017}
+K.~Bhargavan, B.~Blanchet, and N.~Kobeissi.
+\newblock Verified models and reference implementations for the {TLS} 1.3
+  standard candidate.
+\newblock In \emph{Proceedings of the IEEE Symposium on Security and Privacy},
+  pages 483--502, 2017.
+
+\bibitem{necula1998}
+G.~C.~Necula and P.~Lee.
+\newblock Safe kernel extensions without run-time checking.
+\newblock In \emph{Proceedings of the 2nd USENIX Symposium on Operating Systems
+  Design and Implementation}, 1998.
+
+\bibitem{robinson1965}
+J.~A.~Robinson.
+\newblock A machine-oriented logic based on the resolution principle.
+\newblock \emph{Journal of the ACM}, 12(1):23--41, 1965.
+
+\end{thebibliography}
+
+\end{document}

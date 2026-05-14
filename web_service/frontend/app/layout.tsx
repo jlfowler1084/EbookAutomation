@@ -1,8 +1,15 @@
+import "./globals.css";
 import { type Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "EbookAutomation — Ebook Converter",
-  description: "Convert ebooks between PDF, EPUB, MOBI, AZW, AZW3, and DJVU formats.",
+  title: "leafbind — PDF to Kindle Converter",
+  description:
+    "Convert PDFs to Kindle KFX with smart heading detection, footnote linking, " +
+    "and multi-column layout support. Free tier available.",
+  openGraph: {
+    siteName: "leafbind",
+    url: "https://leafbind.io",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
