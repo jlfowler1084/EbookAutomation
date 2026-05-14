@@ -129,6 +129,8 @@ export default function QualityPage() {
         </div>
       </header>
 
+      {/* Main content */}
+      <main>
       {/* Comparison sections */}
       {comparisons.map((c, i) => (
         <section
@@ -221,6 +223,8 @@ export default function QualityPage() {
           </div>
         </div>
       </section>
+
+      </main>
 
       {/* Footer cross-links */}
       <footer className="bg-surface border-t border-border py-8">
