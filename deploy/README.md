@@ -83,6 +83,17 @@ STRIPE_PRICE_POWER=price_...     # $14.99 / 25 credits
 TOKEN_HMAC_SECRET=<64-hex-char random string>
 ```
 
+**Optional Stripe variables (sensible defaults — set only to override):**
+
+```
+# Stripe API version pin (EB-227). Defaults to 2026-04-22.dahlia. Must match
+# the version configured on the Stripe webhook endpoint in Workbench. Bumping
+# this requires updating BOTH this env var AND the webhook endpoint config in
+# Stripe Workbench, or signed payloads can carry a different shape than the
+# SDK expects.
+STRIPE_API_VERSION=2026-04-22.dahlia
+```
+
 **Environment mismatch check:** At startup the service compares the prefixes of
 `STRIPE_PUBLISHABLE_KEY` and `STRIPE_SECRET_KEY`. If one is `pk_test_` and the
 other is `sk_live_` (or vice versa), a WARN is logged. The service continues
@@ -105,22 +116,36 @@ sudo systemctl restart systemd-timesyncd
 
 The `/health` endpoint reports `"ntp_synced": true/false` at runtime.
 
-### Stripe Dashboard webhook registration
+### Stripe webhook endpoint registration (Workbench)
+
+Stripe replaced the legacy Developers Dashboard with **Workbench** (GA Aug 2024).
+The instructions below use current Workbench navigation; if your account is still
+on the legacy Developers UI, the equivalent path is in parentheses.
 
 After the env vars are in /etc/web_service.env and the service has restarted:
 
-1. Go to Stripe Dashboard → Developers → Webhooks → Add endpoint
+1. Open **Workbench → Webhooks tab → Add destination** (legacy: Developers → Webhooks → Add endpoint)
 2. Endpoint URL: `https://leafbind.io/stripe/webhook`
-3. Events to send (subscribe to BOTH):
-   - `checkout.session.completed` (mints tokens after payment)
+3. **API version:** set to `2026-04-22.dahlia` to match the SDK pin in `STRIPE_API_VERSION`. Mismatched versions produce payload shapes the handler may not parse correctly.
+4. Events to send (EB-227: subscribe to ALL FOUR):
+   - `checkout.session.completed` (sync card payments: mints tokens after capture)
+   - `checkout.session.async_payment_succeeded` (ACH/SEPA: mints tokens once funds settle — without this, async-method customers never get tokens)
+   - `checkout.session.async_payment_failed` (ACH/SEPA: logged so support can investigate)
    - `charge.dispute.created` (revokes tokens on chargeback)
-4. Click "Add endpoint"
-5. On the resulting endpoint page, click "Reveal" next to "Signing secret"
-6. Copy the `whsec_...` value and paste it into `/etc/web_service.env` as `STRIPE_WEBHOOK_SECRET`
-7. `sudo systemctl restart ebookweb.service`
-8. Send a test event from the Dashboard ("Send test webhook" → checkout.session.completed) and verify the response is 200 OK in the delivery log
+5. Click "Add destination"
+6. On the resulting endpoint page, click "Reveal" next to "Signing secret"
+7. Copy the `whsec_...` value and paste it into `/etc/web_service.env` as `STRIPE_WEBHOOK_SECRET`
+8. `sudo systemctl restart ebookweb.service`
+9. From Workbench → Webhooks → endpoint detail → **Send test event** → `checkout.session.completed`. Verify the response is 200 OK in the **Event deliveries** tab.
 
 **Test mode vs live mode**: register a SEPARATE webhook endpoint per mode. Stripe issues different `whsec_*` per endpoint. For local development, use `stripe listen --forward-to http://localhost:8001/stripe/webhook` and capture the `whsec_test_*` it prints into `.env.local`.
+
+**Why subscribe to async events even if you're card-only today**: Stripe Link
+auto-surfaces alternative payment methods (ACH on US accounts) to returning
+customers without merchant config. The async events arrive only if the customer
+actually uses an async method; the handler short-circuits cleanly on
+`payment_status="unpaid"` (EB-227), so subscribing costs nothing and is
+forward-compatible.
 
 ### Cloudflare rate-limit rule
 
@@ -162,7 +187,7 @@ Before flipping to live mode, verify all of the following:
 - [ ] `TOKEN_HMAC_SECRET` generated via `openssl rand -hex 32`
 - [ ] All 7 new env vars in `/etc/web_service.env`:
       `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `TOKEN_HMAC_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STANDARD`, `STRIPE_PRICE_POWER`
-- [ ] Test-mode webhook endpoint registered in Stripe Dashboard with `checkout.session.completed` + `charge.dispute.created` events
+- [ ] Test-mode webhook endpoint registered in Stripe Workbench (API version `2026-04-22.dahlia`) with four event subscriptions: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.dispute.created`
 - [ ] Cloudflare rate-limit rule deployed on `/stripe/webhook`
 - [ ] `timedatectl status` shows `System clock synchronized: yes` (NTP startup check depends on this)
 - [ ] nginx config reloaded (`sudo nginx -t && sudo systemctl reload nginx`)

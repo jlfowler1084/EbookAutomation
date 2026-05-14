@@ -55,6 +55,9 @@ class Settings:
     stripe_publishable_key: str
     stripe_secret_key: str
     stripe_webhook_secret: str
+    # Stripe API version pin (EB-227) — defaults to 2026-04-22.dahlia. Must match
+    # the version configured on the Stripe webhook endpoint in Workbench.
+    stripe_api_version: str
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
     allowed_origins: list[str] = field(default_factory=list)
@@ -122,6 +125,7 @@ def load_settings() -> Settings:
         stripe_publishable_key=_require_env("STRIPE_PUBLISHABLE_KEY"),
         stripe_secret_key=_require_env("STRIPE_SECRET_KEY"),
         stripe_webhook_secret=_require_env("STRIPE_WEBHOOK_SECRET"),
+        stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
         allowed_origins=allowed_origins,
     )

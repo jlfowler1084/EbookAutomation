@@ -21,10 +21,12 @@ Key design decisions (from Phase 2 plan, Unit 3):
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import time
 
 import stripe
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 
 from web_service.config import get_settings
 from web_service.job_queue import billing_executor
@@ -41,12 +43,33 @@ _PACK_TO_PRICE_KEY: dict[str, str] = {
     "power": "stripe_price_power",
 }
 
+# EB-227: idempotency-key time bucket. A 30s window de-duplicates rapid
+# double-clicks from the same client without colliding distinct purchases.
+_IDEMPOTENCY_BUCKET_SECONDS = 30
+
+
+def _derive_idempotency_key(pack: str, client_host: str) -> str:
+    """Return a stable Stripe idempotency key for the current logical request.
+
+    Key shape: SHA256(pack:client_host:30s-time-bucket), truncated to 32 hex
+    chars. Same (pack, client_host) within a 30s window resolves to the same
+    key — Stripe will then return the existing Session URL instead of creating
+    a duplicate one on a client double-click or network retry.
+    """
+    bucket = int(time.time() // _IDEMPOTENCY_BUCKET_SECONDS)
+    seed = f"{pack}:{client_host}:{bucket}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
+
 
 @router.post("/stripe/create-session", status_code=200)
-async def create_checkout_session(pack: str = Form(...)) -> dict:
+async def create_checkout_session(
+    request: Request,
+    pack: str = Form(...),
+) -> dict:
     """Create a Stripe Checkout session for the requested token pack.
 
     Args:
+        request: FastAPI Request — used to derive a per-client idempotency key.
         pack: One of "starter", "standard", or "power".
 
     Returns:
@@ -67,6 +90,12 @@ async def create_checkout_session(pack: str = Form(...)) -> dict:
 
     price_key = _PACK_TO_PRICE_KEY[pack]
     price_id = getattr(settings, price_key)
+
+    # EB-227: derive an idempotency key from (pack, client IP, 30s bucket).
+    # Stripe retains keys ≥24h; duplicate POSTs from the same client within
+    # the bucket window get the existing Session URL instead of a new charge.
+    client_host = request.client.host if request.client else "unknown"
+    idempotency_key = _derive_idempotency_key(pack, client_host)
 
     loop = asyncio.get_event_loop()
     try:
@@ -93,6 +122,7 @@ async def create_checkout_session(pack: str = Form(...)) -> dict:
                 },
                 # Session-level metadata for Stripe Dashboard debugging.
                 metadata={"pack": pack},
+                idempotency_key=idempotency_key,
             ),
         )
     except stripe.error.StripeError as exc:

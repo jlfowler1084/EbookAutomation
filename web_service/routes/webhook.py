@@ -5,11 +5,23 @@ Do NOT add middleware upstream that consumes `request.stream()`. The current
 middleware stack (CORSMiddleware) is header-only and safe. A startup check in
 main.py's lifespan logs WARN if any non-allowlisted middleware is added.
 
-Handles two event types:
-  - checkout.session.completed: mint tokens via shared mint_tokens_if_absent;
+Handles four event types:
+  - checkout.session.completed: mint tokens IFF payment_status == "paid";
     extends PaymentIntent metadata with checkout_session_id for dispute lookup.
+  - checkout.session.async_payment_succeeded (EB-227): for async payment methods
+    (ACH/SEPA), this is the event that fires after funds settle. Mints tokens
+    using the same code path as completed-with-paid.
+  - checkout.session.async_payment_failed (EB-227): async payment failed to
+    settle. Logged; no token side effects.
   - charge.dispute.created: revoke all tokens for the disputed session via
     PaymentIntent metadata lookup (single-hop) with token_store fallback.
+
+Why the payment_status guard (EB-227): checkout.session.completed fires for
+async payment methods with payment_status="unpaid". Minting tokens at that
+point would hand out premium access before funds capture. The async_payment_
+succeeded event fires later (hours/days) with payment_status="paid" and is
+what should actually trigger the mint for async flows. Sync card payments
+fire completed with payment_status="paid" directly and remain unaffected.
 
 Response policy:
   - 400 on signature/parse failure (permanent -- Stripe will not retry)
@@ -52,9 +64,10 @@ async def stripe_webhook(request: Request) -> dict:
     """Handle incoming Stripe webhook events.
 
     Validates the Stripe-Signature header before processing any event data.
-    Processes two event types: checkout.session.completed and
-    charge.dispute.created. All other event types return 200 with no side
-    effects (Stripe stops retrying unknown events).
+    Processes four event types: checkout.session.completed (paid only),
+    checkout.session.async_payment_succeeded, checkout.session.async_payment_
+    failed, and charge.dispute.created. All other event types return 200 with
+    no side effects (Stripe stops retrying unknown events).
 
     Returns:
         {"received": True} on success or idempotent no-op.
@@ -122,13 +135,23 @@ async def stripe_webhook(request: Request) -> dict:
     loop = asyncio.get_event_loop()
 
     # =========================================================================
-    # checkout.session.completed
+    # checkout.session.completed  +  checkout.session.async_payment_succeeded
     # =========================================================================
-    if event_type == "checkout.session.completed":
+    # Combined branch (EB-227). For sync card payments, completed fires with
+    # payment_status="paid" → mint immediately. For async methods (ACH/SEPA),
+    # completed fires with payment_status="unpaid" → short-circuit; the matching
+    # async_payment_succeeded event will fire later with payment_status="paid"
+    # and re-enter this branch. mint_tokens_if_absent is idempotent on session_id
+    # so duplicate paid events for the same session are safe.
+    if event_type in (
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+    ):
         session_id = obj.get("id")
         payment_intent_id = obj.get("payment_intent")
         pack = obj.get("metadata", {}).get("pack", "starter")
         count = _PACK_TOKEN_COUNT.get(pack, 0)
+        payment_status = obj.get("payment_status")
 
         if not session_id or count == 0:
             log.warning(
@@ -136,6 +159,19 @@ async def stripe_webhook(request: Request) -> dict:
                 extra={"event_id": event.get("id")},
             )
             # Return 200 to stop Stripe retries on permanently-bad events.
+            return {"received": True}
+
+        # EB-227: only mint after funds have actually captured.
+        if payment_status != "paid":
+            log.info(
+                "checkout_session_event_not_paid",
+                extra={
+                    "event_id": event.get("id"),
+                    "event_type": event_type,
+                    "session_id": session_id,
+                    "payment_status": payment_status,
+                },
+            )
             return {"received": True}
 
         try:
@@ -206,6 +242,22 @@ async def stripe_webhook(request: Request) -> dict:
                 500,
                 detail={"error": "transient db failure, will retry"},
             )
+
+    # =========================================================================
+    # checkout.session.async_payment_failed  (EB-227)
+    # =========================================================================
+    # An async payment method (ACH/SEPA) failed to settle. No tokens were minted
+    # (guarded by payment_status check above), so no revocation needed. Log and
+    # return 200 to stop Stripe retries.
+    elif event_type == "checkout.session.async_payment_failed":
+        log.warning(
+            "async_payment_failed",
+            extra={
+                "event_id": event.get("id"),
+                "session_id": obj.get("id"),
+                "payment_status": obj.get("payment_status"),
+            },
+        )
 
     # =========================================================================
     # charge.dispute.created
