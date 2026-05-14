@@ -44,7 +44,11 @@ sudo -u ebookweb nano /opt/ebookautomation/.env
 Minimum required variables:
 
 ```
-WEB_SERVICE_ALLOWED_ORIGINS=https://yourdomain.com
+# CORS origin list. Comma-separated, no spaces. Production values for leafbind:
+WEB_SERVICE_ALLOWED_ORIGINS=https://leafbind.io,https://www.leafbind.io
+# Vercel preview origins are not supported here — Starlette's CORSMiddleware
+# does strict-equality on origins, not regex. Add NEXT_PUBLIC_API_URL override
+# at the Vercel preview-env level instead of trying to allow-list previews.
 # Optional overrides (defaults come from config/settings.json):
 # CALIBRE_PATH=/usr/bin/ebook-convert
 # WEB_SERVICE_DB_PATH=/opt/ebookautomation/data/jobs.db
