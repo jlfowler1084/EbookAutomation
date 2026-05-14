@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JsonLd from "../../../components/JsonLd";
+import {
+  buildSoftwareApplicationSchema,
+  type FAQPageSchema,
+  type HowToSchema,
+} from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "Convert Multi-Column PDFs to Kindle — leafbind",
@@ -12,6 +18,7 @@ export const metadata: Metadata = {
       "Reads each column independently. Text flows correctly on Kindle, not merged.",
     type: "website",
     url: "https://leafbind.io/convert/multi-column-pdf-kindle",
+    images: [{ url: "https://leafbind.io/quality/pipeline-columns.png", width: 800, height: 600 }],
   },
   twitter: {
     card: "summary",
@@ -56,9 +63,33 @@ const howToSteps = [
   },
 ];
 
+const faqSchema: FAQPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqItems.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: { "@type": "Answer", text: item.answer },
+  })),
+};
+
+const howToSchema: HowToSchema = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "Three steps to a correctly ordered Kindle book",
+  step: howToSteps.map((step) => ({
+    "@type": "HowToStep",
+    name: step.title,
+    text: step.body,
+  })),
+};
+
 export default function MultiColumnPdfKindlePage() {
   return (
     <div className="font-sans bg-surface min-h-screen">
+      <JsonLd schema={buildSoftwareApplicationSchema()} />
+      <JsonLd schema={faqSchema} />
+      <JsonLd schema={howToSchema} />
       {/* Navigation */}
       <nav className="bg-brand">
         <div className="max-w-6xl mx-auto px-8 h-14 flex items-center justify-between">

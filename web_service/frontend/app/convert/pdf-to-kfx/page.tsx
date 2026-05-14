@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JsonLd from "../../../components/JsonLd";
+import {
+  buildSoftwareApplicationSchema,
+  type FAQPageSchema,
+  type HowToSchema,
+} from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "Convert PDF to KFX for Kindle — leafbind",
@@ -13,6 +19,7 @@ export const metadata: Metadata = {
       "multi-column layouts handled correctly.",
     type: "website",
     url: "https://leafbind.io/convert/pdf-to-kfx",
+    images: [{ url: "https://leafbind.io/quality/pipeline-columns.png", width: 800, height: 600 }],
   },
   twitter: {
     card: "summary",
@@ -40,9 +47,45 @@ const faqItems = [
   },
 ];
 
+const faqSchema: FAQPageSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqItems.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
+const howToSchema: HowToSchema = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How to convert your PDF to KFX",
+  step: [
+    {
+      "@type": "HowToStep",
+      name: "Upload your PDF",
+      text: "Drag your PDF onto the upload area or click to browse. Files up to 100 MB are supported on premium plans. The upload is encrypted in transit and stored only for the duration of the conversion job.",
+    },
+    {
+      "@type": "HowToStep",
+      name: "Select KFX as the output format",
+      text: "After upload, choose KFX from the output format selector. This triggers the premium pipeline: column detection, heading classification, and footnote linking all run before the EPUB-to-KFX final step. You will be prompted to unlock a premium conversion if you have not already.",
+    },
+    {
+      "@type": "HowToStep",
+      name: "Download and send to your Kindle",
+      text: "When the conversion completes, download the KFX file. Transfer it to your Kindle via USB or email it to your Kindle's personal document address. The file will appear in your Kindle library under Documents.",
+    },
+  ],
+};
+
 export default function PdfToKfxPage() {
   return (
     <div className="font-sans bg-surface min-h-screen">
+      <JsonLd schema={buildSoftwareApplicationSchema()} />
+      <JsonLd schema={faqSchema} />
+      <JsonLd schema={howToSchema} />
 
       {/* Navigation */}
       <nav className="bg-brand">

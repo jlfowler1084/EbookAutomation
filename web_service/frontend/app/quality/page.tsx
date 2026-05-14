@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import JsonLd from "../../components/JsonLd";
+import { buildSoftwareApplicationSchema } from "../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "PDF to Kindle Quality Comparison — leafbind",
@@ -92,6 +94,7 @@ const comparisons = [
 export default function QualityPage() {
   return (
     <div className="font-sans bg-surface min-h-screen">
+      <JsonLd schema={buildSoftwareApplicationSchema()} />
       {/* Navigation */}
       <nav className="bg-brand">
         <div className="max-w-6xl mx-auto px-8 h-14 flex items-center justify-between">
