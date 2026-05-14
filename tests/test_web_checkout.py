@@ -377,3 +377,115 @@ class TestUnit4Contract:
             "stripe.PaymentIntent.modify must NOT be called in Unit 3 — "
             "this belongs to Unit 4's checkout.session.completed webhook handler"
         )
+
+
+# ---------------------------------------------------------------------------
+# EB-227: idempotency_key on Session.create
+# ---------------------------------------------------------------------------
+
+class TestEB227Idempotency:
+    """Session.create must include an idempotency_key to defend against
+    duplicate Sessions from client double-clicks or network retries.
+
+    Key derivation is SHA256(pack:client_ip:30s-time-bucket)[:32], so the
+    same (pack, client) within a 30s window produces the same key and
+    Stripe returns the existing Session instead of charging twice.
+    """
+
+    def _mock_session(self, session_id: str = "cs_test_idem") -> MagicMock:
+        mock = MagicMock()
+        mock.id = session_id
+        mock.url = f"https://checkout.stripe.com/pay/{session_id}"
+        return mock
+
+    def test_idempotency_key_is_passed_to_stripe(self, client):
+        """idempotency_key kwarg is present, 32-char lowercase hex (SHA256 truncated)."""
+        with patch(
+            "stripe.checkout.Session.create", return_value=self._mock_session()
+        ) as mock_create:
+            resp = client.post("/stripe/create-session", data={"pack": "starter"})
+
+        assert resp.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        idem_key = call_kwargs.get("idempotency_key")
+        assert idem_key is not None, "EB-227: idempotency_key must be passed"
+        assert isinstance(idem_key, str)
+        assert len(idem_key) == 32, (
+            f"Expected 32-char SHA256-truncated key, got len={len(idem_key)}"
+        )
+        assert all(c in "0123456789abcdef" for c in idem_key), (
+            f"Expected lowercase hex SHA256 chars, got: {idem_key!r}"
+        )
+
+    def test_idempotency_key_differs_across_packs(self, client):
+        """Distinct pack purchases must produce distinct idempotency keys.
+
+        Time is frozen so the time-bucket component is constant across calls;
+        only the pack varies, and that must change the key.
+        """
+        fixed_time = 1234567890.0  # arbitrary mid-bucket timestamp
+        with patch(
+            "web_service.routes.checkout.time.time", return_value=fixed_time
+        ):
+            with patch("stripe.checkout.Session.create") as mock_create:
+                mock_create.return_value = self._mock_session("cs_starter")
+                client.post("/stripe/create-session", data={"pack": "starter"})
+                starter_key = mock_create.call_args.kwargs["idempotency_key"]
+
+                mock_create.return_value = self._mock_session("cs_power")
+                client.post("/stripe/create-session", data={"pack": "power"})
+                power_key = mock_create.call_args.kwargs["idempotency_key"]
+
+        assert starter_key != power_key, (
+            "EB-227: distinct packs in the same window must get distinct keys"
+        )
+
+    def test_idempotency_key_stable_within_time_bucket(self, client):
+        """Same pack + same client + same 30s bucket → identical idempotency key.
+
+        Time is frozen so the bucket cannot roll between calls. This is what
+        lets Stripe's idempotency cache return the existing Session URL on a
+        rapid retry instead of creating a duplicate.
+        """
+        fixed_time = 1234567890.0
+        with patch(
+            "web_service.routes.checkout.time.time", return_value=fixed_time
+        ):
+            with patch(
+                "stripe.checkout.Session.create", return_value=self._mock_session()
+            ) as mock_create:
+                client.post("/stripe/create-session", data={"pack": "standard"})
+                first_key = mock_create.call_args.kwargs["idempotency_key"]
+
+                client.post("/stripe/create-session", data={"pack": "standard"})
+                second_key = mock_create.call_args.kwargs["idempotency_key"]
+
+        assert first_key == second_key, (
+            "EB-227: identical logical request within 30s must produce same key"
+        )
+
+    def test_idempotency_key_changes_across_time_buckets(self, client):
+        """Same pack + same client but different time buckets → different keys.
+
+        A 30s bucket means a retry attempted more than 30s after the original
+        request should get a fresh Session (different purchase intent).
+        """
+        with patch(
+            "stripe.checkout.Session.create", return_value=self._mock_session()
+        ) as mock_create:
+            with patch(
+                "web_service.routes.checkout.time.time", return_value=1234567890.0
+            ):
+                client.post("/stripe/create-session", data={"pack": "starter"})
+                bucket1_key = mock_create.call_args.kwargs["idempotency_key"]
+
+            # Advance to a clearly different bucket
+            with patch(
+                "web_service.routes.checkout.time.time", return_value=1234567950.0
+            ):
+                client.post("/stripe/create-session", data={"pack": "starter"})
+                bucket2_key = mock_create.call_args.kwargs["idempotency_key"]
+
+        assert bucket1_key != bucket2_key, (
+            "EB-227: distinct time buckets must produce distinct idempotency keys"
+        )

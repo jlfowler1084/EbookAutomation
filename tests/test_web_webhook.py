@@ -50,16 +50,27 @@ def _make_event(
     event_id: str = "evt_test_001",
     created: int | None = None,
     extra_obj_fields: dict | None = None,
+    payment_status: str = "paid",
 ) -> dict:
-    """Build a fake Stripe event dict."""
+    """Build a fake Stripe event dict.
+
+    EB-227: checkout.session.* events now include payment_status. Default is
+    "paid" so existing tests exercise the mint path; tests covering the unpaid
+    short-circuit (ACH/SEPA pre-settlement) override this argument.
+    """
     if created is None:
         created = int(time.time())
     obj: dict = {}
-    if event_type == "checkout.session.completed":
+    if event_type in (
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+        "checkout.session.async_payment_failed",
+    ):
         obj = {
             "id": session_id,
             "payment_intent": payment_intent_id,
             "metadata": {"pack": pack},
+            "payment_status": payment_status,
         }
     elif event_type == "charge.dispute.created":
         obj = {
@@ -1145,3 +1156,125 @@ class TestClockDriftWarning:
             if "drift" in r.getMessage().lower() or "drift" in str(getattr(r, "extra", {})).lower()
         ]
         assert drift_logs, "Expected webhook_clock_drift_warn log for >60s drift"
+
+
+# ---------------------------------------------------------------------------
+# EB-227: payment_status guard + async payment events
+# ---------------------------------------------------------------------------
+
+class TestEB227AsyncPaymentEvents:
+    """Webhook must not mint until payment_status == 'paid'.
+
+    Async payment methods (ACH, SEPA bank debit, etc.) fire
+    checkout.session.completed with payment_status='unpaid' on user submit;
+    the matching async_payment_succeeded event fires later (hours/days) with
+    payment_status='paid' once funds settle. Pre-EB-227 the webhook minted
+    unconditionally on completed, handing out premium access before capture.
+    """
+
+    def test_completed_with_unpaid_short_circuits_no_mint(self, client, caplog):
+        """checkout.session.completed with payment_status='unpaid' → 200, no mint."""
+        import logging
+        event = _make_event(payment_status="unpaid")
+
+        with caplog.at_level(logging.INFO, logger="web_service.routes.webhook"):
+            with (
+                patch("stripe.Webhook.construct_event", return_value=event),
+                patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+                patch("stripe.PaymentIntent.modify") as mock_pi_modify,
+            ):
+                resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"received": True}
+        mock_mint.assert_not_called()
+        mock_pi_modify.assert_not_called()
+        not_paid_logs = [
+            r for r in caplog.records
+            if "checkout_session_event_not_paid" in r.getMessage()
+        ]
+        assert not_paid_logs, "Expected checkout_session_event_not_paid info log"
+
+    def test_async_payment_succeeded_mints_tokens(self, client):
+        """checkout.session.async_payment_succeeded with payment_status='paid' mints tokens."""
+        event = _make_event(
+            event_type="checkout.session.async_payment_succeeded",
+            payment_status="paid",
+        )
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_abc"])
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"received": True}
+        mock_mint.assert_called_once()
+        args = mock_mint.call_args.args
+        assert args[0] == "cs_test_abc"        # session_id
+        assert args[1] == 3                     # count for starter pack
+        assert args[2] == "pi_test_abc"        # payment_intent_id
+
+    def test_async_payment_succeeded_with_unpaid_is_defensive_noop(self, client):
+        """Defensive guard: async_payment_succeeded should never carry unpaid,
+        but if Stripe payload shape drifts, the guard still protects."""
+        event = _make_event(
+            event_type="checkout.session.async_payment_succeeded",
+            payment_status="unpaid",
+        )
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify") as mock_pi_modify,
+        ):
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_mint.assert_not_called()
+        mock_pi_modify.assert_not_called()
+
+    def test_async_payment_failed_returns_200_no_side_effects(self, client, caplog):
+        """checkout.session.async_payment_failed logs WARNING and returns 200."""
+        import logging
+        event = _make_event(
+            event_type="checkout.session.async_payment_failed",
+            payment_status="unpaid",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="web_service.routes.webhook"):
+            with (
+                patch("stripe.Webhook.construct_event", return_value=event),
+                patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+                patch("web_service.token_store.mark_disputed") as mock_dispute,
+                patch("stripe.PaymentIntent.modify") as mock_pi_modify,
+            ):
+                resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"received": True}
+        mock_mint.assert_not_called()
+        mock_dispute.assert_not_called()
+        mock_pi_modify.assert_not_called()
+        fail_logs = [
+            r for r in caplog.records if "async_payment_failed" in r.getMessage()
+        ]
+        assert fail_logs, "Expected async_payment_failed warning log"
+
+    def test_completed_with_paid_still_mints(self, client):
+        """Regression guard: explicit payment_status='paid' on completed still mints."""
+        event = _make_event(payment_status="paid")
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_abc"])
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_mint.assert_called_once()

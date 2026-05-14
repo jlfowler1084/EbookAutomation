@@ -24,6 +24,8 @@ _PHASE2_ENV_DEFAULTS = {
     "STRIPE_PRICE_STARTER": "price_starter_test",
     "STRIPE_PRICE_STANDARD": "price_standard_test",
     "STRIPE_PRICE_POWER": "price_power_test",
+    # EB-227: explicit version pin matching code default. Tests can override.
+    "STRIPE_API_VERSION": "2026-04-22.dahlia",
 }
 
 

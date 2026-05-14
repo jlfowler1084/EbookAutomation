@@ -22,6 +22,7 @@ import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import stripe
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -139,6 +140,13 @@ async def lifespan(app: FastAPI):
 
     # --- Startup check 3: Middleware safety ---
     _check_middleware_safety(app)
+
+    # --- Pin Stripe API version (EB-227) ---
+    # Setting once at startup prevents drift if Stripe rolls the account default
+    # version. Webhook endpoint version in Workbench must match. Per-route
+    # stripe.api_key assignments don't override this.
+    stripe.api_version = settings.stripe_api_version
+    log.info("Pinned Stripe API version: %s", settings.stripe_api_version)
 
     job_store.init_db()
     # HOTFIX (EB-45): token_store.init_db() was missed in the Phase 2 lifespan
