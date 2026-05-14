@@ -68,6 +68,89 @@ than via CLI.
 4. Run the post-deploy verification ritual below **before** declaring the
    project healthy.
 
+### Alternative: CLI-link flow
+
+If you'd rather create the project from the CLI than the dashboard:
+
+```powershell
+cd web_service\frontend
+npx vercel link
+```
+
+Answer the prompts:
+
+| Prompt | Answer |
+|---|---|
+| `Link to existing project?` | **No** (creating new) |
+| `Project name?` | `leafbind` |
+| `In which directory is your code located?` | `./` (you're already in `web_service/frontend`) |
+
+Decline the Vercel Claude Code plugin install when prompted — adding new MCP
+servers should go through the INFRA-70 server-registry review, not happen
+mid-deploy.
+
+Then set the production env var:
+
+```powershell
+npx vercel env add NEXT_PUBLIC_API_URL production
+```
+
+**Critical caveat:** `vercel link` does **not** propagate Root Directory to
+the server. Even when you run it from `web_service/frontend/`, the project's
+server-side `rootDirectory` setting will be `null`. This means a future
+GitHub auto-deploy (which clones the repo fresh) will scan from repo root,
+find no `package.json`, and create the exact `[0ms]` ghost deploy described
+in "Why this matters" below.
+
+Manual `vercel deploy --prod` calls from the linked directory do work,
+because the CLI uploads files directly — server-side Root Directory isn't
+consulted for those. The trap is GitHub auto-deploys.
+
+After `vercel link` finishes, **always** run the verification below before
+connecting GitHub.
+
+### Critical post-link verification: Root Directory
+
+Regardless of which flow you used (dashboard import or CLI link), verify
+the server-side Root Directory is set:
+
+```powershell
+npx vercel pull --yes --environment=production
+Get-Content .vercel\project.json -Raw | Select-String "rootDirectory"
+```
+
+Expected: `"rootDirectory": "web_service/frontend"`
+
+**If you see `"rootDirectory": null`**, fix it with a one-shot REST API
+call. The Vercel CLI does not expose a subcommand for this setting (as of
+late 2025); `PATCH /v9/projects/{id}` is the only programmatic path.
+
+1. Generate a short-lived Personal Access Token at
+   https://vercel.com/account/settings/tokens — scope to your team, set
+   expiration to the shortest available (24h is typical).
+2. Run the PATCH:
+
+   ```powershell
+   $token = "PASTE_TOKEN_HERE"
+   $cfg = Get-Content .vercel\project.json -Raw | ConvertFrom-Json
+   $resp = Invoke-RestMethod -Method Patch `
+     -Uri "https://api.vercel.com/v9/projects/$($cfg.projectId)?teamId=$($cfg.orgId)" `
+     -Headers @{ Authorization = "Bearer $token" } `
+     -ContentType "application/json" `
+     -Body '{"rootDirectory":"web_service/frontend"}'
+   $resp | Select-Object id, name, rootDirectory, framework | ConvertTo-Json
+   ```
+
+3. **Delete the PAT** at https://vercel.com/account/settings/tokens after
+   the PATCH returns. The token has no further use and shouldn't linger.
+4. Re-run `vercel pull` and confirm `.vercel/project.json` now reads
+   `"rootDirectory": "web_service/frontend"`.
+
+Do this **before** connecting the project's Git repository (Settings →
+Git → Connect). Connecting Git on a project with `rootDirectory: null`
+will trigger an immediate ghost auto-deploy as soon as the next push
+lands on the production branch.
+
 ### Production domain attachment
 
 After the first successful deploy:
