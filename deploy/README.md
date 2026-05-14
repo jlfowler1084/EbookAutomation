@@ -105,6 +105,96 @@ sudo systemctl restart systemd-timesyncd
 
 The `/health` endpoint reports `"ntp_synced": true/false` at runtime.
 
+### Stripe Dashboard webhook registration
+
+After the env vars are in /etc/web_service.env and the service has restarted:
+
+1. Go to Stripe Dashboard → Developers → Webhooks → Add endpoint
+2. Endpoint URL: `https://leafbind.io/stripe/webhook`
+3. Events to send (subscribe to BOTH):
+   - `checkout.session.completed` (mints tokens after payment)
+   - `charge.dispute.created` (revokes tokens on chargeback)
+4. Click "Add endpoint"
+5. On the resulting endpoint page, click "Reveal" next to "Signing secret"
+6. Copy the `whsec_...` value and paste it into `/etc/web_service.env` as `STRIPE_WEBHOOK_SECRET`
+7. `sudo systemctl restart ebookweb.service`
+8. Send a test event from the Dashboard ("Send test webhook" → checkout.session.completed) and verify the response is 200 OK in the delivery log
+
+**Test mode vs live mode**: register a SEPARATE webhook endpoint per mode. Stripe issues different `whsec_*` per endpoint. For local development, use `stripe listen --forward-to http://localhost:8001/stripe/webhook` and capture the `whsec_test_*` it prints into `.env.local`.
+
+### Cloudflare rate-limit rule
+
+Defense-in-depth against scanner traffic on the webhook endpoint:
+
+1. Cloudflare Dashboard → leafbind.io zone → Security → WAF → Rate limiting rules
+2. Create rule:
+   - Name: `Stripe webhook abuse limit`
+   - Field: URI Path equals `/stripe/webhook`
+   - Action: Block
+   - Period: 1 minute
+   - Requests: 30 per IP
+   - Mitigation timeout: 10 minutes
+3. Deploy the rule
+
+This is defense-in-depth only — Stripe signature validation (already in the webhook handler) is the primary defense. The rate-limit reduces noise from internet scanners hitting the well-known `/stripe/webhook` path.
+
+**Do NOT IP-allowlist Stripe**: Stripe's webhook IPs change without notice (per docs.stripe.com/ips). The signature check provides cryptographic verification independent of source IP.
+
+### nginx hardening
+
+The repository's `deploy/nginx.conf` already includes:
+- `client_max_body_size 256k` on the `/stripe/webhook` location block (CVE-2026-40481 DoS mitigation, with headroom for future Stripe event subscriptions)
+- `proxy_read_timeout 30s` on the webhook endpoint (long timeouts mask app-layer bugs)
+
+To apply config changes on the VM:
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/leafbind
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Pre-launch checklist (test mode)
+
+Before flipping to live mode, verify all of the following:
+
+- [ ] Stripe account created; test mode API keys obtained (`sk_test_*`, `pk_test_*`)
+- [ ] `deploy/stripe_bootstrap.py` run against test mode; 3 `STRIPE_PRICE_*` IDs captured
+- [ ] `TOKEN_HMAC_SECRET` generated via `openssl rand -hex 32`
+- [ ] All 7 new env vars in `/etc/web_service.env`:
+      `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `TOKEN_HMAC_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STANDARD`, `STRIPE_PRICE_POWER`
+- [ ] Test-mode webhook endpoint registered in Stripe Dashboard with `checkout.session.completed` + `charge.dispute.created` events
+- [ ] Cloudflare rate-limit rule deployed on `/stripe/webhook`
+- [ ] `timedatectl status` shows `System clock synchronized: yes` (NTP startup check depends on this)
+- [ ] nginx config reloaded (`sudo nginx -t && sudo systemctl reload nginx`)
+- [ ] `sudo systemctl restart ebookweb.service`
+- [ ] `curl https://leafbind.io/health` returns `{"status":"ok","ntp_synced":true}`
+- [ ] Manual test-mode purchase end-to-end succeeds (visit `/pricing` → buy Starter → Stripe Checkout → success page shows 3 tokens → use one in `/convert`)
+- [ ] `stripe trigger charge.dispute.created` (after a real test purchase) correctly marks the matching tokens `disputed=1` in `web_service.db`
+
+### Live-mode switch
+
+When test-mode is fully validated:
+
+1. Swap `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` from `sk_test_*`/`pk_test_*` to `sk_live_*`/`pk_live_*` in `/etc/web_service.env`
+2. Register a NEW webhook endpoint in Stripe Dashboard LIVE mode (test-mode and live-mode webhook secrets are different)
+3. Copy the new live-mode `whsec_*` into `STRIPE_WEBHOOK_SECRET`
+4. `sudo systemctl restart ebookweb.service`
+5. Real purchase test with your own card (refund via Stripe Dashboard afterward)
+
+### Secret rotation runbook (TOKEN_HMAC_SECRET)
+
+The `key_version` column on the `tokens` table supports future rotation. Phase 2 ships with `key_version=1`. To rotate:
+
+1. Pause new purchases for 7 days (drain in-flight token window)
+2. After 7 days, all `key_version=1` tokens are either consumed or expired
+3. Generate new secret: `openssl rand -hex 32`
+4. Bump `key_version=2` constant in `web_service/crypto.py:derive_fernet_key(..., key_version=2)`
+5. Update `TOKEN_HMAC_SECRET` env var
+6. `sudo systemctl restart ebookweb.service`
+7. New tokens mint with `key_version=2` and the new secret
+
+In-flight rotation (rotating without draining the window) is NOT supported in Phase 2. Add `MultiFernet` support in a future ticket if needed.
+
 ## 5. Create the data directory
 
 ```bash

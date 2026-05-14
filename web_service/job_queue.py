@@ -3,6 +3,12 @@
 Wraps blocking pipeline calls in a ThreadPoolExecutor, gated by an asyncio
 Semaphore(max_concurrent_jobs). A background sweep task expires stale jobs
 and cleans their temp directories every 10 minutes.
+
+Unit 8 sweep tasks:
+  - cleanup_expired_tokens_sweep: hourly; purges consumed tokens >30 days past expiry.
+  - cleanup_failed_mints_sweep: daily; purges failed_mints records >7 days old.
+Both sweep tasks mirror the cleanup_expired_jobs pattern: while True → sleep →
+try/except that never lets the sweep crash and stop.
 """
 
 from __future__ import annotations
@@ -13,7 +19,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from web_service import job_store, pipeline_runner
+from web_service import job_store, pipeline_runner, token_store
 from web_service.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -100,6 +106,44 @@ async def cleanup_expired_jobs() -> None:
                 _cleanup_job(job)
         except Exception:
             log.exception("Error during expired-job cleanup sweep")
+
+
+async def cleanup_expired_tokens_sweep() -> None:
+    """Background sweep: delete consumed tokens >30 days past expiry.
+
+    Runs hourly via billing_executor so blocking SQLite I/O stays off the
+    event loop. Never lets an exception stop the sweep — error is logged and
+    the loop continues on the next iteration.
+    """
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            loop = asyncio.get_event_loop()
+            deleted = await loop.run_in_executor(
+                billing_executor, token_store.cleanup_expired_tokens
+            )
+            log.info("cleanup_expired_tokens_sweep: deleted %d rows", deleted)
+        except Exception:
+            log.exception("Error during expired-tokens cleanup sweep")
+
+
+async def cleanup_failed_mints_sweep() -> None:
+    """Background sweep: delete failed_mints records older than 7 days.
+
+    Runs daily via billing_executor so blocking SQLite I/O stays off the
+    event loop. Never lets an exception stop the sweep — error is logged and
+    the loop continues on the next iteration.
+    """
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            loop = asyncio.get_event_loop()
+            deleted = await loop.run_in_executor(
+                billing_executor, token_store.cleanup_failed_mints
+            )
+            log.info("cleanup_failed_mints_sweep: deleted %d rows", deleted)
+        except Exception:
+            log.exception("Error during failed-mints cleanup sweep")
 
 
 def _cleanup_job(job: dict) -> None:

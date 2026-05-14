@@ -32,6 +32,8 @@ from web_service.routes import checkout, convert, download, payment, recover, st
 log = logging.getLogger(__name__)
 
 _sweep_task: asyncio.Task | None = None
+_token_sweep_task: asyncio.Task | None = None
+_failed_mints_sweep_task: asyncio.Task | None = None
 
 # Module-level NTP state — set during lifespan startup, read by /health
 _ntp_synced: bool = True
@@ -119,7 +121,7 @@ def _check_middleware_safety(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _sweep_task, _ntp_synced
+    global _sweep_task, _token_sweep_task, _failed_mints_sweep_task, _ntp_synced
     settings = get_settings()
 
     # --- Startup check 1: NTP synchronization ---
@@ -142,12 +144,26 @@ async def lifespan(app: FastAPI):
     job_queue.init_queue()
     job_queue.init_billing_executor()
     _sweep_task = asyncio.create_task(job_queue.cleanup_expired_jobs())
+    _token_sweep_task = asyncio.create_task(job_queue.cleanup_expired_tokens_sweep())
+    _failed_mints_sweep_task = asyncio.create_task(job_queue.cleanup_failed_mints_sweep())
     log.info("EbookAutomation web service started")
     yield
     if _sweep_task is not None:
         _sweep_task.cancel()
         try:
             await _sweep_task
+        except asyncio.CancelledError:
+            pass
+    if _token_sweep_task is not None:
+        _token_sweep_task.cancel()
+        try:
+            await _token_sweep_task
+        except asyncio.CancelledError:
+            pass
+    if _failed_mints_sweep_task is not None:
+        _failed_mints_sweep_task.cancel()
+        try:
+            await _failed_mints_sweep_task
         except asyncio.CancelledError:
             pass
     if job_queue.billing_executor is not None:
