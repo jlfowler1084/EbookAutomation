@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   description:
     "Convert PDFs to Kindle KFX with smart heading detection, footnote linking, " +
     "and multi-column layout support. Free tier available.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
   openGraph: {
     siteName: "leafbind",
     url: "https://leafbind.io",
