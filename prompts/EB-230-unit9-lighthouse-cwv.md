@@ -19,10 +19,29 @@ All fixes (if any) go into this worktree. Do NOT open separate worktrees per fix
 
 ---
 
-## Step 1 — Pre-flight: confirm production is serving the new code
+## Step 1 — Purge Cloudflare cache, then verify production is serving the new code
 
-Run all four checks before touching Lighthouse. If any fails, STOP and report to the user.
-Do not attempt to fix deployment from inside this unit.
+**Do this before the curl checks below.** Even with query-string cache-busts, CF can serve
+stale HTML page shells if `Cache-Control: public` is set on the response. A stale-cached
+pre-Unit-7 page would make the JSON-LD grep check below falsely pass, causing the entire
+audit to run against the wrong content.
+
+Use the Cloudflare MCP to purge these URLs immediately after deployment:
+```
+zone: leafbind.io
+purge URLs:
+  https://leafbind.io/
+  https://leafbind.io/quality
+  https://leafbind.io/convert/pdf-to-kfx
+  https://leafbind.io/convert/academic-pdf-to-kindle
+  https://leafbind.io/convert/pdf-footnotes-kindle
+  https://leafbind.io/convert/multi-column-pdf-kindle
+  https://leafbind.io/sitemap.xml
+  https://leafbind.io/robots.txt
+```
+
+Wait ~10 seconds after purge, then run the four verification checks. If any fails,
+STOP and report to the user. Do not attempt to fix deployment from inside this unit.
 
 ```bash
 # All 4 must pass before proceeding
@@ -34,6 +53,7 @@ curl -sI https://leafbind.io/quality | grep -i "200 OK"
 
 If sitemap returns fewer than 7 `<url>` entries, the build did not deploy cleanly.
 If `application/ld+json` count is not 3 on `/convert/pdf-to-kfx`, Unit 7 is not live.
+If both look right but curl returns stale content, run the CF purge again and re-check.
 
 ---
 
