@@ -162,6 +162,13 @@ def _run_vqa(output_path: Path, cfg: Settings, job_id: str) -> dict:
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    # EB-245 VM-runtime discovery: visual_qa.py converts input to PDF via Calibre,
+    # whose PDF Output plugin uses Qt WebEngine (Chromium). Chromium refuses to
+    # run as root without --no-sandbox, and the web service runs as root on
+    # claude-dev-01. QTWEBENGINE_DISABLE_SANDBOX=1 is the supported workaround.
+    # Only PDF output triggers WebEngine — KFX/EPUB/MOBI from run_premium do not
+    # need this flag.
+    env["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 
     try:
         proc = subprocess.run(

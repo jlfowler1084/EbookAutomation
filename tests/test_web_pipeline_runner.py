@@ -563,3 +563,33 @@ class TestRunVqa:
         assert "--calibre" in captured_cmd
         idx = captured_cmd.index("--calibre")
         assert captured_cmd[idx + 1] == str(enabled_settings.calibre_path)
+
+    def test_sets_qtwebengine_disable_sandbox(self, tmp_path, settings, monkeypatch):
+        """EB-245: VQA subprocess must inject QTWEBENGINE_DISABLE_SANDBOX=1.
+
+        Calibre's PDF output plugin uses Qt WebEngine (Chromium), which
+        refuses to run as root without --no-sandbox. The web service runs as
+        root on claude-dev-01, so without this env var every VQA invocation
+        would fail at the Calibre input-to-PDF conversion step.
+        """
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        captured_env: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            _run_vqa(output, enabled_settings, "job_vqa_qt_flag")
+
+        assert captured_env.get("QTWEBENGINE_DISABLE_SANDBOX") == "1"
