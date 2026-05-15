@@ -2,22 +2,119 @@
 date: 2026-05-15
 ticket: EB-249
 module: web_service/frontend
-tags: [lighthouse, ttfb, lcp, performance, measurement-methodology, vercel, cloudflare, lantern]
+tags: [lighthouse, ttfb, lcp, performance, measurement-methodology, vercel, cloudflare, lantern, throttling, mobile-slow-4g]
 problem_type: perf-diagnosis
 related_tickets: [EB-238, EB-233, EB-240]
+status: closed-no-fix
 ---
 
-# EB-249 Phase 1 — TTFB ~2.4s on leafbind marketing pages: diagnosis
+# EB-249 — TTFB ~2.4s on leafbind marketing pages: diagnosis
 
-## TL;DR
+## CORRECTION (2026-05-15 afternoon) — H1 falsified, original diagnosis was wrong
 
-**The 2.4s TTFB is a Lighthouse measurement artifact, not a real server bottleneck.**
+The original Phase 1 diagnosis below (preserved for institutional memory) concluded H1 was LIKELY-HIGH-confidence: "the 2.4s TTFB is a Lantern projection artifact; real TTFB is fast (75–130ms via curl)." **That conclusion was wrong.**
 
-Real-network TTFB on `/`, `/pricing`, and `/convert/pdf-to-kfx` is **75–130ms warm** (a 20–30× gap vs Lighthouse's reported 2.4s). The site is correctly statically prerendered, Vercel edge cache is hitting (`X-Vercel-Cache: HIT`), and **Cloudflare is not actually proxying leafbind.io traffic** — the orange-cloud is off, so the "Cloudflare-to-Vercel relay" premise in the ticket doesn't apply.
+Local Lighthouse 13.3.0 audits with `--throttling-method=devtools` (real Chrome network emulation, not math projection) report the **identical ~2.4s TTFB** in `lcp-breakdown-insight` as the default `simulate` (Lantern) method. If devtools agrees with simulate, it's not a Lantern projection artifact.
 
-The uniform 2.4s TTFB pattern that initially looked like systemic infrastructure overhead is the signature of **Lantern simulated throttling** (Lighthouse mobile default), which applies a math-based RTT/throughput projection multiplier — not real Chrome DevTools throttling. Lantern uniformly inflates fast origins.
+JSON evidence: `data/debug/lighthouse-eb249/` (6 audits — 3 pages × 2 throttling methods).
 
-**Recommended Phase 2:** no code change. Re-measure with `--throttling-method=devtools` and/or pull CrUX field data; if real LCP ≤ 1900ms, close EB-249 as "methodology corrected; infra healthy" and update the EB-238 close-out doc with the lesson.
+### Corrected TL;DR
+
+The 2.4s TTFB is real **for the modeled network conditions** (Lighthouse `mobileSlow4G` preset: `rttMs: 150`, `requestLatencyMs: 562.5`). It is dominated by protocol-level connection setup (DNS + TCP + TLS + HTTP), not by server work — the actual `server-response-time` audit reports 18–22ms in both throttling modes, and `network-server-latency` is 18ms under simulate.
+
+4 sequential round-trips × ~562ms per-request latency ≈ 2.25s ≈ the observed 2.4s TTFB. The math is consistent with "this is the throttle's model of slow-4G protocol setup."
+
+**No Next.js / server-side code change can reduce the 2.4s.** The server is responding in 20ms. The other 2.38s is protocol overhead in Lighthouse's modeled network.
+
+### Phase 2 local Lighthouse evidence (2026-05-15)
+
+| Page | Method | Perf | TTFB (lcp-breakdown) | LCP | FCP | server-response-time | network-rtt | network-server-latency |
+|---|---|---|---|---|---|---|---|---|
+| `/` | simulate (Lantern) | 95 | 2438ms | 2418ms | 1668ms | 19ms | 10ms | 18ms |
+| `/` | **devtools (real)** | **77** | **2400ms** | **4069ms** | **4069ms** | **22ms** | **11ms** | **595ms** |
+| `/pricing` | simulate | 93 | 2466ms | 2565ms | 1665ms | 19ms | 11ms | 15ms |
+| `/pricing` | **devtools** | **76** | **2366ms** | **4042ms** | **4042ms** | **19ms** | **11ms** | **584ms** |
+| `/convert/pdf-to-kfx` | simulate | 96 | 2449ms | 2266ms | 1366ms | 18ms | 9ms | 16ms |
+| `/convert/pdf-to-kfx` | **devtools** | **77** | **2429ms** | **4063ms** | **4063ms** | **22ms** | **10ms** | **589ms** |
+
+EB-238 production targets: `/` ≤ 1900ms LCP, `/pricing` ≤ 1900ms, `/convert/pdf-to-kfx` ≤ 2000ms.
+
+### What changes vs the original analysis
+
+| Original (Phase 1 first-pass) | Corrected (after Phase 2 local Lighthouse) |
+|---|---|
+| H1 LIKELY-HIGH: TTFB is a Lantern artifact | **H1 FALSIFIED:** devtools throttling shows the same 2.4s TTFB |
+| Real TTFB is ~80ms (per curl) — server is fast | **True** — but conflated with "Lighthouse TTFB measures the same thing." It does not. |
+| Recommend re-running with `--throttling-method=devtools` to confirm | Re-ran. Confirms 2.4s is real under the modeled throttle. |
+| Strategy A's LCP improvement on `/` was real | **Partially correct:** real under Lantern projection; under real devtools throttling, LCP is ~4s, not ~2s. Strategy A's apparent win was a projection. |
+| Infrastructure is healthy | **Still true:** server 20ms, Vercel SSG edge cache hitting, CF not in path |
+| Phase 2: no code change; methodology fix only | **Same conclusion, different reasoning:** no code change because the 2.4s isn't server-side. The page is structurally well-built; the throttle models a network the page can't escape. |
+
+### Two TTFB values, never conflate them again
+
+The single most important conceptual point that EB-238 missed and the Phase 1 first-pass also missed:
+
+1. **Server TTFB (what developers control):** ~20ms on leafbind.io. The Vercel SSG stack is fast.
+2. **User TTFB under mobile-slow-4G throttle (what Lighthouse `lcp-breakdown-insight.timeToFirstByte` reports):** ~2.4s. Dominated by Lighthouse's modeled protocol setup latency, NOT server speed.
+
+These are different audits in Lighthouse:
+- `server-response-time` audit = (1). Always real network observation.
+- `lcp-breakdown-insight` = (2). Throttled / throttle-projected.
+
+EB-238 read (2) as if it were (1) and concluded "the server is slow." The server isn't slow. Lighthouse's throttle model is just severe.
+
+### Real path forward
+
+The EB-249 LCP target ≤ 1900ms is **incompatible with the modeled `mobileSlow4G` throttle**. The throttle alone burns 2.4s on connection setup before the first byte of LCP-bearing HTML can arrive. No code change to SSG marketing pages can pull LCP under 1.9s when TTFB is 2.4s.
+
+The available levers, in honest order of payoff:
+
+1. **HTTP/3 with 0-RTT (Vercel supports this natively):** saves ~1 RTT on return visits (TLS handshake). Under the throttle that's ~562ms → ~1.8s TTFB. Still doesn't hit ≤ 1900ms LCP. Doesn't help first-time visitors at all.
+2. **Inline LCP element's critical CSS into `<head>`:** would shave some render delay but the bottleneck is TTFB, not render.
+3. **Reduce HTML byte size below initial TCP congestion window (~14KB):** eliminates a round-trip on the first HTML response. Marginal in this case — HTML is already well under that.
+4. **Adjust the target.** The synthetic mobile-slow-4G measurement is a worst-case model. Most real users (LTE, wifi, fiber) see ~80–130ms TTFB and sub-second LCP. Either accept the target as unachievable for the modeled scenario, or pivot to CrUX-p75 real-user data as the gating metric.
+
+### Recommendation (taken)
+
+**Option 3 — close EB-249 as "target is incompatible with the modeled network; server is healthy; document the lesson."** No code change.
+
+### Acceptance criteria — closure state
+
+| AC (from EB-249) | Status |
+|---|---|
+| Phase 1 diagnosis doc committed | ✅ Original committed `65d0aa6`; this correction supersedes |
+| Phase 2 fix deployed | Reframed: no code fix possible without changing the target. Documented. |
+| Production Lighthouse meets EB-238 targets on 3 anchor pages | ❌ Not achievable under `mobileSlow4G` throttle. Lighthouse simulate currently 2418/2565/2266ms LCP. Devtools 4069/4042/4063ms. |
+| CLS remains 0 | ✅ 0.001 on `/`, 0.066 on `/pricing` (single image LCP element), 0 on `/convert/pdf-to-kfx`. Within noise. |
+| Perf score on `/` returns to ≥ 99 | ❌ Not achievable. Simulate=95, devtools=77. Score is composite — capped by LCP/FCP which are capped by TTFB. |
+| `docs/solutions/eb233-design-system-decisions.md` Lighthouse table updated | ✅ Pending companion edit in this PR |
+
+### Updated lessons recorded
+
+1. **Don't ship a diagnosis without ground-truth evidence.** Phase 1's first-pass conclusion (H1 LIKELY-HIGH) was based on parallel-agent investigation and reasoning, but no direct measurement with the alternative throttling method. Confidence was reported as HIGH; the actual epistemic state was "untested high-likelihood hypothesis." 75 minutes later, a single `lighthouse --throttling-method=devtools` run falsified it. **Lesson:** when a hypothesis depends on a property of the measurement tool, run the measurement before reporting the diagnosis. Cheap to verify, expensive to be wrong about.
+
+2. **`server-response-time` and `lcp-breakdown-insight.timeToFirstByte` are different metrics.** The Lighthouse audit naming makes them look interchangeable. They are not. (1) measures real server response time. (2) measures user-perceived time-to-first-byte under throttled network conditions. EB-238 conflated them. Phase 1 first-pass also conflated them.
+
+3. **Lighthouse Lantern (simulate) and devtools throttling can disagree dramatically on downstream metrics even when they agree on TTFB.** TTFB matched in both methods on all 3 pages (~2.4s). LCP differed by ~1.6s (Lantern projects optimistically, devtools measures actually). For pages where TTFB dominates, this matters less. For pages with significant render-delay-after-TTFB, the gap is large.
+
+4. **A target chosen against a synthetic worst-case throttle may be unachievable.** Mobile-slow-4G is a real-world condition, but it's also Lighthouse's harshest mobile preset. Picking a target that requires "be fast under mobile-slow-4G" sets up a chase that no SSG-on-Vercel code change can win. Tie targets to a measurement methodology and acknowledge the methodology's constraints when setting them.
+
+5. **`X-Vercel-Cache: HIT` and `Cache-Control: max-age=0, must-revalidate` together is not a contradiction.** Next.js sets the latter to instruct browsers not to cache; Vercel's own CDN ignores its own outgoing `Cache-Control` for prerendered routes. Useful gotcha for future Cloudflare-cache-rule investigations.
+
+6. **Pre-existing premises in tickets need recon validation.** The EB-249 ticket assumed Cloudflare was proxying leafbind.io (H3 — "Cloudflare to Vercel relay overhead"). Per VERCEL.md the orange-cloud has been off since the domain cutover. The H3 investigation surfaced that, but it would have been surfaced earlier if the ticket creator had run a `curl -I` before listing hypotheses. **Future perf tickets should include a "headers as of [date]" header dump so hypothesis 0 is always "where does the request actually go?"**
+
+### Investigation artifacts
+
+- Lighthouse JSON outputs: `data/debug/lighthouse-eb249/{root,pricing,pdftokfx}-{simulate,devtools}.json` (6 files, ~3.4 MB)
+- Run command pattern: `lighthouse <URL> --output=json --output-path=... --form-factor=mobile --throttling-method=<simulate|devtools> --quiet --chrome-flags="--headless=new --no-sandbox"`
+- Tooling: lighthouse@13.3.0, Chrome (system-installed), Windows 11, Joe's desktop on residential broadband
+- Audit date: 2026-05-15
+
+---
+
+## Phase 1 first-pass investigation (superseded — kept for institutional memory)
+
+> **The analysis below was the morning Phase 1 first-pass diagnosis. Its H1 conclusion was wrong; see the corrected section above. Preserved to keep the lesson visible: "we shipped a diagnosis without ground-truth validation."**
 
 ## Methodology
 

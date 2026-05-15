@@ -49,6 +49,8 @@ CLS = 0 on all three. Perf score 96 / 93 / 93. **No regression introduced.**
 
 ### What this tells us — TTFB is the real residual bottleneck
 
+> **CORRECTION (2026-05-15 afternoon, EB-249 close-out):** The "TTFB is the real residual bottleneck" framing in this section is **wrong** and was corrected by the EB-249 investigation. The 2.4s TTFB reported by `lcp-breakdown-insight` measures user-perceived TTFB under Lighthouse's `mobileSlow4G` throttle (rttMs: 150, requestLatencyMs: 562.5) — it is dominated by **protocol-level connection setup overhead under the modeled network**, not server speed. The actual `server-response-time` audit reports 18–22ms on these same pages. Both `--throttling-method=simulate` (Lantern) and `--throttling-method=devtools` (real Chrome network emulation) agree on the 2.4s figure, so it is not a Lantern projection artifact either. **No code change to SSG-on-Vercel marketing pages can reduce the 2.4s figure** — it's modeled connection-setup overhead that exists regardless of server implementation. The LCP target ≤ 1900ms is **incompatible with this throttle** since the throttle alone burns 2.4s before any LCP-bearing byte arrives. See `docs/solutions/eb249-ttfb-diagnosis-2026-05-15.md` for the full corrected analysis and the meta-lesson "don't ship a diagnosis without ground-truth evidence." EB-249 closed as no-fix; targets need to be re-tied to a methodology with bounded reachability (e.g., CrUX p75 field data).
+
 Strategy A delivered a clean **-329ms on `/`** but left the other two pages
 flat. The differential is the diagnostic: fonts mattered on `/` (Newsreader
 text was the LCP element), but **`/pricing` and `/convert/pdf-to-kfx` have a
@@ -68,6 +70,8 @@ the follow-up ticket: Vercel cold-start projection, RSC server rendering
 overhead, Cloudflare→Vercel relay latency, or Lighthouse simulated-4G
 projection inflation. **All three pages having near-identical TTFB makes
 cold-start less likely (cold-start would vary).**
+
+> **CORRECTION (2026-05-15 afternoon):** None of those hypotheses held. Local Lighthouse 13.3.0 runs with both `--throttling-method=simulate` and `--throttling-method=devtools` agreed on the 2.4s figure. The math: `mobileSlow4G` throttle applies `requestLatencyMs: 562.5` per request × ~4 round-trips (DNS+TCP+TLS+HTTP) ≈ 2.25s. The 2.4s is the throttle's model of mobile-slow-4G connection setup. The near-identical TTFB across pages is the signature of "same throttle, same connection-setup cost regardless of page content" — not infra overhead and not cold-start. See `docs/solutions/eb249-ttfb-diagnosis-2026-05-15.md` for evidence (6 audits in `data/debug/lighthouse-eb249/`).
 
 ### Lessons recorded
 
@@ -92,6 +96,8 @@ cold-start less likely (cold-start would vary).**
 Opening a sibling ticket for the TTFB investigation. EB-238 closes as
 **partial success** — the font preload bug is fixed and one page meets
 target ceiling; the other two need a separate TTFB-focused investigation.
+
+> **Update (2026-05-15 afternoon):** EB-249 closed as no-fix. The "TTFB-focused investigation" surfaced that the 2.4s is modeled-network-protocol-setup overhead under Lighthouse's `mobileSlow4G` throttle, not a server-side problem. The page is structurally fast (server-response-time 20ms, Vercel SSG edge cache hitting). The LCP target ≤ 1900ms is unachievable under this throttle without protocol-level changes (HTTP/3 0-RTT only helps return visits). Recommended next perf work, if any, should be tied to CrUX p75 real-user data as the gating metric instead of synthetic Lighthouse measurements. Full analysis in `docs/solutions/eb249-ttfb-diagnosis-2026-05-15.md`.
 
 ## EB-240 update (2026-05-15) — Newsreader/DM Sans + palette + Plex Mono
 
