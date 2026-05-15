@@ -21,24 +21,33 @@ All fixes (if any) go into this worktree. Do NOT open separate worktrees per fix
 
 ## Step 1 — Purge Cloudflare cache, then verify production is serving the new code
 
-**Do this before the curl checks below.** Even with query-string cache-busts, CF can serve
-stale HTML page shells if `Cache-Control: public` is set on the response. A stale-cached
-pre-Unit-7 page would make the JSON-LD grep check below falsely pass, causing the entire
-audit to run against the wrong content.
+**Do this before the curl checks below.** CF can serve stale HTML page shells if
+`Cache-Control: public` is set on the response. A stale-cached pre-Unit-7 page would
+make the JSON-LD grep check below falsely pass, causing the entire audit to run
+against the wrong content.
 
-Use the Cloudflare MCP to purge these URLs immediately after deployment:
+Use the Cloudflare MCP to purge these URLs immediately after deployment. The MCP
+token must have the `Cache Purge` scope on the `leafbind.io` zone — see
+`deploy/CLOUDFLARE.md` for the verification command to run **before** starting
+this unit. If `purge_cache` returns anything other than 200, stop and fix token
+scope before continuing — there is no fallback path inside this unit.
+
 ```
-zone: leafbind.io
-purge URLs:
-  https://leafbind.io/
-  https://leafbind.io/quality
-  https://leafbind.io/convert/pdf-to-kfx
-  https://leafbind.io/convert/academic-pdf-to-kindle
-  https://leafbind.io/convert/pdf-footnotes-kindle
-  https://leafbind.io/convert/multi-column-pdf-kindle
-  https://leafbind.io/sitemap.xml
-  https://leafbind.io/robots.txt
+mcp__cloudflare__execute
+  POST /zones/20967fb38b4e1feb6dfc01e4407d7225/purge_cache
+  body:
+    files:
+      - https://leafbind.io/
+      - https://leafbind.io/quality
+      - https://leafbind.io/convert/pdf-to-kfx
+      - https://leafbind.io/convert/academic-pdf-to-kindle
+      - https://leafbind.io/convert/pdf-footnotes-kindle
+      - https://leafbind.io/convert/multi-column-pdf-kindle
+      - https://leafbind.io/sitemap.xml
+      - https://leafbind.io/robots.txt
 ```
+
+Expected: 200 with `result.id` returned.
 
 Wait ~10 seconds after purge, then run the four verification checks. If any fails,
 STOP and report to the user. Do not attempt to fix deployment from inside this unit.
@@ -62,25 +71,20 @@ If both look right but curl returns stale content, run the CF purge again and re
 **DevTools "Disable cache" is NOT sufficient** — it only bypasses the browser cache.
 Cloudflare's edge cache is upstream and will still serve hot content.
 
-Two options (use whichever is available):
+Use the Cloudflare MCP to purge the three target URLs before each cold run. Real
+edge purge is the only acceptable cache-miss method for this audit — query-string
+cache-busting (`?cb=<timestamp>`) does NOT invalidate the Cloudflare edge cache
+and is retired (EB-234). The MCP token must have `Cache Purge` scope; verify
+once via the command in `deploy/CLOUDFLARE.md` before starting.
 
-**Option A — Query string cache-bust (always works):**
-Append `?cb=<unix-timestamp>` to each URL per run. Cloudflare treats each unique URL as a cache miss.
 ```
-https://leafbind.io/?cb=1747212000
-https://leafbind.io/quality?cb=1747212000
-https://leafbind.io/convert/pdf-to-kfx?cb=1747212000
-```
-Use the same timestamp for the cold-cache run; use a different timestamp for the warm-cache run.
-
-**Option B — Cloudflare MCP purge (cleaner):**
-Use the Cloudflare MCP to purge the three target URLs before each cold run:
-```
-zone: leafbind.io
-purge URLs:
-  https://leafbind.io/
-  https://leafbind.io/quality
-  https://leafbind.io/convert/pdf-to-kfx
+mcp__cloudflare__execute
+  POST /zones/20967fb38b4e1feb6dfc01e4407d7225/purge_cache
+  body:
+    files:
+      - https://leafbind.io/
+      - https://leafbind.io/quality
+      - https://leafbind.io/convert/pdf-to-kfx
 ```
 
 Warm-cache run: run Lighthouse again on the same URLs immediately after (without purging).
@@ -94,22 +98,22 @@ Install once: `npm install -g lighthouse`
 Run for each page — cold cache first, then warm cache immediately after:
 
 ```bash
-# Cold cache (after CF purge or with ?cb= suffix)
-npx lighthouse "https://leafbind.io/?cb=TIMESTAMP" \
+# Cold cache (run immediately after the Step 2 MCP purge_cache call)
+npx lighthouse "https://leafbind.io/" \
   --preset=desktop \
   --throttling-method=devtools \
   --output=html,json \
   --output-path=./lighthouse-home-cold \
   --chrome-flags="--headless"
 
-npx lighthouse "https://leafbind.io/quality?cb=TIMESTAMP" \
+npx lighthouse "https://leafbind.io/quality" \
   --preset=desktop \
   --throttling-method=devtools \
   --output=html,json \
   --output-path=./lighthouse-quality-cold \
   --chrome-flags="--headless"
 
-npx lighthouse "https://leafbind.io/convert/pdf-to-kfx?cb=TIMESTAMP" \
+npx lighthouse "https://leafbind.io/convert/pdf-to-kfx" \
   --preset=desktop \
   --throttling-method=devtools \
   --output=html,json \
@@ -117,7 +121,7 @@ npx lighthouse "https://leafbind.io/convert/pdf-to-kfx?cb=TIMESTAMP" \
   --chrome-flags="--headless"
 
 # Warm cache (same URLs, immediately after, no purge)
-npx lighthouse "https://leafbind.io/quality?cb=TIMESTAMP" \
+npx lighthouse "https://leafbind.io/quality" \
   --preset=desktop \
   --throttling-method=devtools \
   --output=html,json \
