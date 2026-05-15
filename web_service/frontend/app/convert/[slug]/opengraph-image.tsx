@@ -35,62 +35,62 @@ export default async function Image({
           padding: '80px',
         }}
       >
-        {/* Leaf glyph inline — paths from components/Logo.tsx LeafGlyphPaths() */}
+        {/* Leaf glyph inline — geometry matches components/Logo.tsx LeafGlyphPaths().
+            Satori (ImageResponse) does not support <defs>/<linearGradient>/<clipPath>,
+            so gradient on the folded flap is replaced with a solid back-of-paper tone. */}
         <svg
           width="120"
           height="120"
-          viewBox="0 0 64 64"
+          viewBox="0 0 100 100"
           style={{ marginBottom: '40px', display: 'block' }}
         >
+          {/* Leaf body — rounder Claude Design silhouette */}
           <path
-            d="M 32 4 C 34 16 50 22 52 32 C 54 50 40 58 32 60 C 24 58 10 50 12 32 C 14 22 30 16 32 4 Z"
-            fill="#2D4A2B"
+            d="M50 6 C72 14, 88 32, 88 54 C88 76, 72 92, 50 94 C28 92, 12 76, 12 54 C12 32, 28 14, 50 6 Z"
+            fill="#2f5d3a"
           />
+          {/* Central vein */}
           <path
-            d="M 32 4 C 34 16 50 22 52 32 C 54 50 40 58 32 60 L 32 4 Z"
-            fill="#F5F1E8"
-          />
-          <path d="M 42 8 L 50 20 L 38 14 Z" fill="#3a5a38" />
-          <path d="M 42 8 L 50 20 L 46 11 Z" fill="#E8DEC1" />
-          <line
-            x1="42"
-            y1="8"
-            x2="50"
-            y2="20"
-            stroke="#A89A75"
-            strokeWidth="0.3"
-            strokeLinecap="round"
-            opacity="0.6"
-          />
-          <rect x="35" y="26" width="14" height="1.3" rx="0.65" fill="#3a3a3a" />
-          <rect x="35" y="32" width="12" height="1.3" rx="0.65" fill="#3a3a3a" />
-          <rect x="35" y="38" width="14" height="1.3" rx="0.65" fill="#3a3a3a" />
-          <rect x="35" y="44" width="10" height="1.3" rx="0.65" fill="#3a3a3a" />
-          <rect x="35" y="50" width="13" height="1.3" rx="0.65" fill="#3a3a3a" />
-          <line
-            x1="32"
-            y1="6"
-            x2="32"
-            y2="58"
-            stroke="#1a3a1a"
-            strokeWidth="0.6"
-            strokeLinecap="round"
-          />
-          <path
-            d="M 30 22 Q 24 22 16 24"
-            stroke="#1a3a1a"
-            strokeWidth="0.5"
-            fill="none"
+            d="M50 12 Q49 50, 47 92"
+            stroke="#1f3f27"
+            strokeWidth="1.6"
             strokeLinecap="round"
             opacity="0.55"
-          />
-          <path
-            d="M 30 42 Q 22 44 14 46"
-            stroke="#1a3a1a"
-            strokeWidth="0.5"
             fill="none"
+          />
+          {/* Side veins */}
+          <path d="M49 28 Q40 30, 26 34" stroke="#1f3f27" strokeWidth="0.9" strokeLinecap="round" opacity="0.32" fill="none" />
+          <path d="M48 44 Q38 48, 22 54" stroke="#1f3f27" strokeWidth="0.9" strokeLinecap="round" opacity="0.32" fill="none" />
+          <path d="M47 60 Q38 66, 24 74" stroke="#1f3f27" strokeWidth="0.9" strokeLinecap="round" opacity="0.32" fill="none" />
+          <path d="M46 76 Q38 82, 28 86" stroke="#1f3f27" strokeWidth="0.9" strokeLinecap="round" opacity="0.32" fill="none" />
+          {/* Page body: top-right corner cut out along fold hinge — leaf green shows through */}
+          <path d="M50 12 L70 14 L84 28 L84 90 L50 94 Z" fill="#fbf7ec" />
+          {/* Text ruling on the flat page section */}
+          <line x1="55" y1="38" x2="79" y2="38" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          <line x1="55" y1="46" x2="81" y2="46" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          <line x1="55" y1="54" x2="77" y2="54" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          <line x1="55" y1="62" x2="80" y2="62" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          <line x1="55" y1="70" x2="74" y2="70" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          <line x1="55" y1="78" x2="78" y2="78" stroke="#2f5d3a" strokeWidth="1.4" strokeLinecap="round" opacity="0.82" />
+          {/* Folded flap: A(70,14) B(84,28) C'(70,28) — solid back-of-paper tone (no gradient in Satori) */}
+          <path d="M70 14 L84 28 L70 28 Z" fill="#e0d8c0" />
+          {/* Crease along the fold hinge */}
+          <path
+            d="M70 14 L84 28"
+            stroke="#1f3f27"
+            strokeWidth="0.7"
             strokeLinecap="round"
-            opacity="0.55"
+            opacity="0.4"
+            fill="none"
+          />
+          {/* Soft outline on flap free edges */}
+          <path
+            d="M70 14 L70 28 L84 28"
+            stroke="#1f3f27"
+            strokeWidth="0.4"
+            strokeLinejoin="round"
+            opacity="0.18"
+            fill="none"
           />
         </svg>
 
