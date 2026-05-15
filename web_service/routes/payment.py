@@ -162,14 +162,15 @@ def _render_success_page(session_id: str, tokens: list[str], expires_at: int) ->
 def _render_expired_page(session_id: str) -> str:
     """Render the 'tokens expired' page for revisits after the 7-day window."""
     body = (
-        "    <h1>Tokens Expired</h1>\n"
-        '    <p style="color: #555;">Your tokens for this session have expired. '
+        '    <span class="lb-eyebrow">TOKENS EXPIRED</span>\n'
+        '    <h1 class="lb-display">Session Expired</h1>\n'
+        '    <p class="lb-body">Your tokens for this session have expired. '
         "Tokens are valid for 7 days from the time of purchase.</p>\n"
-        "    <p>If you need assistance, please\n"
-        '    <a href="/recover" style="color: #0070f3;">visit the recovery page</a>\n'
-        "    or contact support.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
-        '    <p><a href="/pricing" style="color: #0070f3;">Buy new tokens &rarr;</a></p>'
+        '    <div class="lb-action-row">\n'
+        '        <a href="/recover" class="lb-button-ghost">Recover tokens</a>\n'
+        '        <a href="/pricing" class="lb-link">Buy new tokens &rarr;</a>\n'
+        '    </div>\n'
+        f'    <p class="lb-session-id">Session: {escape(session_id, quote=True)}</p>\n'
     )
     return _base_html("Tokens Expired — Leafbind", body)
 
@@ -209,15 +210,48 @@ def _render_pending_page(session_id: str) -> str:
 def _render_not_found_page(session_id: str) -> str:
     """Render a 404 page for session IDs that don't exist in Stripe."""
     body = (
-        "    <h1>Session Not Found</h1>\n"
-        '    <p style="color: #555;">We could not find a payment session matching '
-        "this URL. The URL may be incorrect or the session may have expired in "
-        "Stripe's records.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
-        '    <p><a href="/recover" style="color: #0070f3;">Try the recovery page</a> '
-        'or <a href="/pricing" style="color: #0070f3;">buy new tokens</a>.</p>'
+        '    <span class="lb-eyebrow">SESSION NOT FOUND</span>\n'
+        '    <h1 class="lb-display">Session Not Found</h1>\n'
+        '    <p class="lb-body">We could not find a payment session matching this URL. '
+        "The URL may be incorrect or the session may have expired in Stripe's records.</p>\n"
+        '    <div class="lb-action-row">\n'
+        '        <a href="/recover" class="lb-button-ghost">Try the recovery page</a>\n'
+        '        <a href="/pricing" class="lb-link">Buy new tokens &rarr;</a>\n'
+        '    </div>\n'
+        f'    <p class="lb-session-id">Session: {escape(session_id, quote=True)}</p>\n'
     )
     return _base_html("Session Not Found — Leafbind", body)
+
+
+def _render_invalid_session_page() -> str:
+    """Render a 422 page for session IDs that don't start with cs_."""
+    body = (
+        '    <span class="lb-eyebrow">INVALID URL</span>\n'
+        '    <h1 class="lb-display">Invalid Session ID</h1>\n'
+        '    <p class="lb-body">The session ID in this URL does not look valid. '
+        'Stripe session IDs start with <code>cs_</code>.</p>\n'
+        '    <div class="lb-action-row">\n'
+        '        <a href="/recover" class="lb-button-ghost">Try the recovery page</a>\n'
+        '    </div>\n'
+    )
+    return _base_html("Invalid Session — Leafbind", body)
+
+
+def _render_cancel_page() -> str:
+    """Render the static payment cancel page."""
+    body = (
+        '    <span class="lb-eyebrow">PAYMENT CANCELLED</span>\n'
+        '    <h1 class="lb-display">Payment Cancelled</h1>\n'
+        '    <p class="lb-body">Your payment was cancelled. No charge was made.</p>\n'
+        '    <div class="lb-action-row">\n'
+        '        <a href="/pricing" class="lb-button-primary">View pricing and try again &rarr;</a>\n'
+        '    </div>\n'
+        '    <p class="lb-recover-row">\n'
+        '        Already have tokens from a previous purchase? '
+        '<a href="/recover" class="lb-link">Recover your tokens</a>.\n'
+        '    </p>\n'
+    )
+    return _base_html("Payment Cancelled — Leafbind", body)
 
 
 # ---------------------------------------------------------------------------
@@ -247,13 +281,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
     if not session_id.startswith("cs_"):
         return HTMLResponse(
             status_code=422,
-            content=_base_html(
-                "Invalid Session — Leafbind",
-                "<h1>Invalid Session ID</h1>"
-                '<p style="color: #555;">The session ID in this URL does not look valid. '
-                "Stripe session IDs start with <code>cs_</code>.</p>"
-                '<p><a href="/recover" style="color: #0070f3;">Try the recovery page</a></p>',
-            ),
+            content=_render_invalid_session_page(),
             headers={"X-Error-Code": "INVALID_SESSION_ID"},
         )
 
@@ -447,19 +475,8 @@ async def payment_cancel() -> HTMLResponse:
     No charge was made. Links to /pricing (try again) and /recover (if tokens
     were previously purchased and need recovery).
     """
-    body = (
-        "    <h1>Payment Cancelled</h1>\n"
-        '    <p style="color: #555;">Your payment was cancelled. No charge was made.</p>\n'
-        "    <p>\n"
-        '        <a href="/pricing" style="color: #0070f3;">View pricing and try again &rarr;</a>\n'
-        "    </p>\n"
-        '    <p style="margin-top: 2em; font-size: 0.9em;">\n'
-        '        Already have tokens from a previous purchase? '
-        '<a href="/recover" style="color: #555;">Recover your tokens</a>.\n'
-        "    </p>"
-    )
     return HTMLResponse(
         status_code=200,
-        content=_base_html("Payment Cancelled — Leafbind", body),
+        content=_render_cancel_page(),
         headers=_PAYMENT_HEADERS,
     )

@@ -703,6 +703,58 @@ class TestBrandMarkup:
 
 
 # ---------------------------------------------------------------------------
+# TestErrorPageBrandMarkup  (EB-248 Unit 5)
+# ---------------------------------------------------------------------------
+
+class TestErrorPageBrandMarkup:
+    """Verify brand markup on error/recovery state pages."""
+
+    def test_expired_page_has_tokens_expired_eyebrow(self, client):
+        expires_at = int(time.time()) - 10
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=(["lb_pk_" + "A" * 43], expires_at),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success?session_id=cs_test_expired")
+        assert "TOKENS EXPIRED" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_not_found_page_has_session_not_found_eyebrow(self, client):
+        import stripe as stripe_lib
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                side_effect=stripe_lib.error.InvalidRequestError(
+                    "No such session", param="id"
+                ),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success?session_id=cs_test_notfound")
+        assert resp.status_code == 404
+        assert "SESSION NOT FOUND" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_cancel_page_has_payment_cancelled_eyebrow(self, client):
+        resp = client.get("/payment/cancel")
+        assert "PAYMENT CANCELLED" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_invalid_session_page_has_invalid_url_eyebrow(self, client):
+        resp = client.get("/payment/success?session_id=bad_no_prefix")
+        assert resp.status_code == 422
+        assert "INVALID URL" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # TestXSSInjectionGuards  (CRITICAL)
 # ---------------------------------------------------------------------------
 
