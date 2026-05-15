@@ -177,13 +177,14 @@ def _render_expired_page(session_id: str) -> str:
 def _render_retry_page(session_id: str, message: str) -> str:
     """Render a 'service degraded, please retry' page with auto-reload."""
     body = (
-        "    <h1>Temporarily Unavailable</h1>\n"
-        f'    <p style="color: #555;">{message}</p>\n'
-        "    <p>Your payment was received and your tokens are being generated. "
-        "Please refresh this page in 30 seconds to see your tokens.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
+        '    <span class="lb-eyebrow lb-pulse">CATCHING UP</span>\n'
+        '    <h1 class="lb-display" aria-live="polite">Generating Your Tokens</h1>\n'
+        f'    <p class="lb-body">{message}</p>\n'
+        '    <p class="lb-body">Your payment was received and your tokens are being generated. '
+        "This page will refresh automatically in 30 seconds.</p>\n"
+        f'    <p class="lb-session-id">Session: {escape(session_id, quote=True)}</p>\n'
         "    <script>\n"
-        "    setTimeout(function() {{ window.location.reload(); }}, 30000);\n"
+        "    setTimeout(function() { window.location.reload(); }, 30000);\n"
         "    </script>"
     )
     return _base_html("Generating Tokens — Leafbind", body)
@@ -192,13 +193,14 @@ def _render_retry_page(session_id: str, message: str) -> str:
 def _render_pending_page(session_id: str) -> str:
     """Render a 'payment not yet confirmed' page with auto-reload."""
     body = (
-        "    <h1>Payment Not Yet Confirmed</h1>\n"
-        '    <p style="color: #555;">Your payment is being processed by Stripe. '
+        '    <span class="lb-eyebrow lb-pulse">PROCESSING</span>\n'
+        '    <h1 class="lb-display" aria-live="polite">Payment Confirming</h1>\n'
+        '    <p class="lb-body">Your payment is being confirmed by Stripe. '
         "This usually takes just a few seconds.</p>\n"
-        "    <p>Please refresh this page in 30 seconds to see your tokens.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
+        '    <p class="lb-body">This page will refresh automatically in 30 seconds.</p>\n'
+        f'    <p class="lb-session-id">Session: {escape(session_id, quote=True)}</p>\n'
         "    <script>\n"
-        "    setTimeout(function() {{ window.location.reload(); }}, 30000);\n"
+        "    setTimeout(function() { window.location.reload(); }, 30000);\n"
         "    </script>"
     )
     return _base_html("Confirming Payment — Leafbind", body)

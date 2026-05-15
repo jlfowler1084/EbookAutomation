@@ -337,7 +337,7 @@ class TestPaymentSuccessEdgeCases:
             resp = client.get("/payment/success?session_id=cs_test_abc")
 
         assert resp.status_code == 200
-        assert "Payment Not Yet Confirmed" in resp.text or "not yet confirmed" in resp.text.lower()
+        assert "PROCESSING" in resp.text or "Payment Confirming" in resp.text
 
     def test_expired_tokens_renders_expired_page(self, client):
         """Tokens past expires_at → renders 'tokens expired' notice."""
@@ -526,6 +526,71 @@ class TestPaymentSuccessCircuitBreaker:
 
         assert resp.headers.get("referrer-policy") == "no-referrer"
         assert resp.headers.get("cache-control") == "private, no-store"
+
+
+# ---------------------------------------------------------------------------
+# TestAutoReloadBrandMarkup  (EB-248 Unit 4)
+# ---------------------------------------------------------------------------
+
+class TestAutoReloadBrandMarkup:
+    """Verify brand markup on the pending and retry auto-reload pages."""
+
+    def _pending_resp(self, client):
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                return_value=_make_stripe_session(payment_status="unpaid"),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            return client.get("/payment/success?session_id=cs_test_pending")
+
+    def _retry_resp(self, client):
+        with patch(
+            "web_service.routes.payment.circuit_breaker.circuit_is_open",
+            return_value=True,
+        ):
+            return client.get("/payment/success?session_id=cs_test_retry")
+
+    def test_pending_has_lb_pulse_eyebrow(self, client):
+        resp = self._pending_resp(client)
+        assert "lb-eyebrow" in resp.text
+        assert "lb-pulse" in resp.text
+
+    def test_pending_eyebrow_text_is_processing(self, client):
+        resp = self._pending_resp(client)
+        assert "PROCESSING" in resp.text
+
+    def test_pending_headline_has_aria_live(self, client):
+        resp = self._pending_resp(client)
+        assert 'aria-live="polite"' in resp.text
+
+    def test_pending_has_autoreload_script(self, client):
+        resp = self._pending_resp(client)
+        assert "setTimeout" in resp.text
+        assert "window.location.reload" in resp.text
+
+    def test_retry_has_lb_pulse_eyebrow(self, client):
+        resp = self._retry_resp(client)
+        assert "lb-eyebrow" in resp.text
+        assert "lb-pulse" in resp.text
+
+    def test_retry_eyebrow_text_is_catching_up(self, client):
+        resp = self._retry_resp(client)
+        assert "CATCHING UP" in resp.text
+
+    def test_retry_headline_has_aria_live(self, client):
+        resp = self._retry_resp(client)
+        assert 'aria-live="polite"' in resp.text
+
+    def test_retry_has_autoreload_script(self, client):
+        resp = self._retry_resp(client)
+        assert "setTimeout" in resp.text
+        assert "window.location.reload" in resp.text
 
 
 # ---------------------------------------------------------------------------
