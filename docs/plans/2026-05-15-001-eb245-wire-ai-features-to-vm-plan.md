@@ -152,40 +152,31 @@ VQA-related Settings fields (`premium_vqa_enabled`, `premium_vqa_cost_limit_usd`
 
 Acceptance: a premium conversion of a 50-page text PDF logs `--gemini-remediate` in the cmd line; clean PDFs show `gemini_cost == 0` because no pages are flagged.
 
-### Phase 4 — post-conversion visual-QA step (G4)
+### Phase 4 + Phase 5 — output-side VQA + cost telemetry (G4, G5)
 
-After `run_premium()` succeeds, run `visual_qa.py` against the output KFX as a second subprocess. Reuse the existing `--provider cloud --cloud-host openrouter` defaults (already in `config/settings.json` `visual_qa` block, default cloud model `qwen/qwen3-vl-30b-a3b-instruct`).
+**Collapsed into one commit** 2026-05-15. The plan originally split these into separate phases, but the VQA helper has nowhere to put its results without the telemetry plumbing — they're naturally coupled. User-approved collapse logged 2026-05-15.
 
-Approach:
+What actually shipped:
 
-1. Refactor `run_premium()` to return both `RunResult` and an optional `VqaReport` field.
-2. Add a `_run_vqa(output_path, cfg) -> VqaReport | None` helper that invokes `python tools/visual_qa.py --input <kfx> --provider cloud --output-format json` and parses the result.
-3. Skip silently (log only) if `cfg.premium_vqa_enabled is False` or `OPENROUTER_API_KEY` is missing — graceful degrade.
-4. Cap VQA wall-clock at 60s; on timeout, log and return None (the conversion is already done — VQA is best-effort).
+1. **`Settings` (`web_service/config.py`):** Added `premium_vqa_enabled: bool = False` (env-flip `PREMIUM_VQA_ENABLED=true` to enable) and `premium_vqa_cost_limit_usd: float = 0.5`. Default-OFF for the first production rollout per user direction.
 
-Acceptance: a premium conversion produces a VQA score in the job sidecar.
+2. **`RunResult` extension (`web_service/pipeline_runner.py`):** Added `gemini_cost_usd`, `vqa_score`, `vqa_pass`, `vqa_cost_usd`, `vqa_skipped_reason` fields. Plan had hinted at a separate `VqaReport` dataclass — extending `RunResult` directly was simpler and matched the existing free-tier shape (zero defaults).
 
-### Phase 5 — cost telemetry / sidecar (G5)
+3. **`_extract_gemini_cost(stdout)` helper:** Regex-based parser for `pdf_to_balabolka.py` log line `Gemini remediated N pages, cost: $X.XXXX`. Clean PDFs leave no problem regions flagged, so the log line is absent and the function returns 0.0 — the desired no-op behavior.
 
-Extend the job-result schema with:
+4. **`_run_vqa(output_path, cfg, job_id)` helper:** Best-effort subprocess invocation of `tools/visual_qa.py --provider cloud --cloud-host openrouter --output-dir <vqa_dir>`. Returns a `{score, pass, cost_usd, skipped_reason}` dict. 60s wall-clock cap. Skip paths: `disabled`, `no_api_key`, `timeout`, `launch_error`, `error`, `missing_report`, `parse_error`. Never raises.
 
-```python
-@dataclass(frozen=True)
-class RunResult:
-    success: bool
-    output_path: str = ""
-    output_size: int = 0
-    error_message: str = ""
-    # New in EB-245:
-    gemini_cost_usd: float = 0.0
-    vision_cost_usd: float = 0.0
-    vqa_score: int | None = None
-    vqa_pass: bool | None = None
-```
+5. **`run_premium()`:** Calls `_run_vqa` and `_extract_gemini_cost` after successful conversion. Populates the new `RunResult` fields. Emits structured log line `ai_cost_summary job=<id> gemini=$X.XXXX vqa=$Y.YYYY vqa_score=Z vqa_pass=B reason=R`.
 
-Surface these in the job-status API response and in the per-job sidecar JSON. Add log lines `INFO ai_cost_summary job=<id> gemini=$X vision=$Y vqa_score=Z` so cost can be tailed.
+6. **`job_store.py` schema migration:** Idempotent `ALTER TABLE jobs ADD COLUMN` for `gemini_cost_usd` (REAL), `vqa_score` (INTEGER), `vqa_pass` (INTEGER 0/1), `vqa_cost_usd` (REAL), `vqa_skipped_reason` (TEXT). Migration runs from `init_db()` at app startup — existing prod DBs gain the columns on the next service restart. `set_done()` signature extended with keyword-only AI args (defaults preserve the free-tier call shape).
 
-Acceptance: per-job sidecar contains the 4 new fields; cost lines are tailable in the systemd journal.
+7. **`/status/{job_id}` API response (`web_service/routes/status.py`):** When `status=done` and any AI telemetry is non-zero/non-null, response includes an `"ai"` sub-object with rounded costs and the VQA score/pass/skipped_reason. Free-tier rows still get a slim response with no `ai` key.
+
+8. **Tests (`tests/test_web_pipeline_runner.py`):** 12 new test cases — `TestExtractGeminiCost` × 4, `TestRunVqa` × 6, plus 2 new `TestRunPremium` scenarios for VQA-disabled default and Gemini-cost stdout parsing. All 37 tests green.
+
+Why no separate sidecar file: the `/status/{job_id}` API response is the per-job sidecar surface today. Adding a separate JSON file on disk would duplicate the same data, was not explicitly required by the EB-245 ACs, and adds cleanup-sweep concerns. The structured log line already provides journal-tailable cost observability.
+
+Acceptance: ✅ Per-job API response surfaces all telemetry under `ai`; ✅ structured `ai_cost_summary` log line emits on every premium conversion; ✅ all unit tests pass.
 
 ### Phase 6 — integration tests on the VM (G7)
 

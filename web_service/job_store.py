@@ -45,6 +45,29 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires  ON jobs(expires_at);
 """
 
+# EB-245: AI telemetry columns added via idempotent ALTER TABLE migrations.
+# SQLite lacks IF NOT EXISTS for ADD COLUMN, so we check PRAGMA table_info first.
+# vqa_pass is stored as INTEGER (0/1) — SQLite has no native BOOLEAN.
+_AI_TELEMETRY_COLUMNS: list[tuple[str, str]] = [
+    ("gemini_cost_usd",    "REAL    DEFAULT 0.0"),
+    ("vqa_score",          "INTEGER"),
+    ("vqa_pass",           "INTEGER"),
+    ("vqa_cost_usd",       "REAL    DEFAULT 0.0"),
+    ("vqa_skipped_reason", "TEXT"),
+]
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Apply idempotent column-add migrations.
+
+    Each migration is gated by a check against the live schema, so this is safe
+    to run on every startup. Re-running against a fully-migrated DB is a no-op.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    for col, type_clause in _AI_TELEMETRY_COLUMNS:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {type_clause}")
+
 
 @contextmanager
 def _get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None, None]:
@@ -66,9 +89,14 @@ def _get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None
 
 
 def init_db(db_path: Path | None = None) -> None:
-    """Create the jobs table if it does not exist. Idempotent."""
+    """Create the jobs table if it does not exist. Idempotent.
+
+    Also applies AI-telemetry column migrations (EB-245) so existing prod
+    databases gain the new columns on the first restart after deployment.
+    """
     with _get_conn(db_path) as conn:
         conn.executescript(_SCHEMA_SQL)
+        _apply_migrations(conn)
     log.info("web_service.db initialised at %s", db_path or get_settings().db_path)
 
 
@@ -125,12 +153,36 @@ def set_done(
     job_id: str,
     output_path: str,
     output_size: int,
+    *,
+    gemini_cost_usd: float = 0.0,
+    vqa_score: int | None = None,
+    vqa_pass: bool | None = None,
+    vqa_cost_usd: float = 0.0,
+    vqa_skipped_reason: str | None = None,
     db_path: Path | None = None,
 ) -> None:
+    """Mark a job as done and persist AI telemetry (EB-245).
+
+    AI fields default to no-op values so free-tier callers can keep the
+    positional 3-arg call shape. SQLite stores vqa_pass as 0/1 because it
+    has no native BOOLEAN; we coerce here.
+    """
+    vqa_pass_int = None if vqa_pass is None else int(bool(vqa_pass))
     with _get_conn(db_path) as conn:
         conn.execute(
-            "UPDATE jobs SET status = ?, output_path = ?, output_size = ? WHERE job_id = ?",
-            (STATUS_DONE, output_path, output_size, job_id),
+            """
+            UPDATE jobs SET
+                status = ?, output_path = ?, output_size = ?,
+                gemini_cost_usd = ?, vqa_score = ?, vqa_pass = ?,
+                vqa_cost_usd = ?, vqa_skipped_reason = ?
+            WHERE job_id = ?
+            """,
+            (
+                STATUS_DONE, output_path, output_size,
+                gemini_cost_usd, vqa_score, vqa_pass_int,
+                vqa_cost_usd, vqa_skipped_reason,
+                job_id,
+            ),
         )
 
 

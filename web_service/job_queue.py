@@ -91,7 +91,14 @@ async def dispatch_job(job_id: str) -> None:
             return
 
         if result.success:
-            job_store.set_done(job_id, result.output_path, result.output_size)
+            job_store.set_done(
+                job_id, result.output_path, result.output_size,
+                gemini_cost_usd=result.gemini_cost_usd,
+                vqa_score=result.vqa_score,
+                vqa_pass=result.vqa_pass,
+                vqa_cost_usd=result.vqa_cost_usd,
+                vqa_skipped_reason=result.vqa_skipped_reason,
+            )
         else:
             job_store.set_failed(job_id, result.error_message)
 

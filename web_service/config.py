@@ -66,6 +66,13 @@ class Settings:
     # typical --gemini-remediate run only re-extracts a handful of flagged pages
     # at ~$0.002/page, so most premium conversions stay well under this ceiling.
     premium_gemini_cost_limit_usd: float = 1.0
+    # EB-245 Phase 4: output-side visual QA pass via tools/visual_qa.py.
+    # Default OFF for first production rollout — flip via PREMIUM_VQA_ENABLED=true
+    # once Gemini-only economics are observed in real traffic.
+    premium_vqa_enabled: bool = False
+    # Per-conversion VQA cost cap. visual_qa.py samples 8 pages by default at
+    # ~$0.05-$0.10 per OpenRouter call, so $0.50 is generous headroom.
+    premium_vqa_cost_limit_usd: float = 0.5
 
 
 def load_settings() -> Settings:
@@ -135,6 +142,10 @@ def load_settings() -> Settings:
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
             os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")
+        ),
+        premium_vqa_enabled=os.environ.get("PREMIUM_VQA_ENABLED", "false").lower() == "true",
+        premium_vqa_cost_limit_usd=float(
+            os.environ.get("PREMIUM_VQA_COST_LIMIT_USD", "0.5")
         ),
     )
 
