@@ -47,7 +47,7 @@ export default function BuyButtons({ packs }: Props) {
             disabled={creating !== null}
             style={{
               padding: "0.75em 2em",
-              backgroundColor: creating === p.id ? "#ccc" : "#0070f3",
+              backgroundColor: creating === p.id ? "var(--color-border)" : "var(--color-accent)",
               color: "white",
               border: "none",
               borderRadius: 4,

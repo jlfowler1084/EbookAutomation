@@ -58,12 +58,12 @@ export default function UploadZone({ onJobStarted }: Props) {
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         style={{
-          border: `2px dashed ${dragging ? "#0070f3" : "#ccc"}`,
+          border: `2px dashed ${dragging ? "var(--color-accent)" : "var(--color-border)"}`,
           borderRadius: 8,
           padding: "40px 20px",
           textAlign: "center",
           cursor: "pointer",
-          background: dragging ? "#f0f7ff" : "#fafafa",
+          background: dragging ? "var(--color-surface-muted)" : "var(--color-surface-muted)",
           transition: "all 0.15s",
         }}
       >
@@ -93,7 +93,7 @@ export default function UploadZone({ onJobStarted }: Props) {
       </div>
 
       <details style={{ marginTop: "1em" }}>
-        <summary style={{ cursor: "pointer", color: "#0070f3" }}>I have a token</summary>
+        <summary style={{ cursor: "pointer", color: "var(--color-accent)" }}>I have a token</summary>
         <TokenField
           onValidToken={(t) => {
             setToken(t);

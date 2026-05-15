@@ -38,7 +38,7 @@ export default function TokenField({ onValidToken }: Props) {
           padding: "0.5em",
           width: "100%",
           maxWidth: 500,
-          border: "1px solid #ccc",
+          border: "1px solid var(--color-border)",
           borderRadius: 4,
           fontFamily: "monospace",
           fontSize: "0.95em",

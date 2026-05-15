@@ -39,9 +39,9 @@ export default function TokenList({ tokens, sessionId }: Props) {
                 padding: "0.2em 0.6em",
                 cursor: "pointer",
                 fontSize: "0.85em",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
-                background: "#fafafa",
+                background: "var(--color-surface-muted)",
               }}
             >
               Copy
@@ -55,9 +55,9 @@ export default function TokenList({ tokens, sessionId }: Props) {
           style={{
             padding: "0.5em 1em",
             cursor: "pointer",
-            border: "1px solid #ccc",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
-            background: "#fafafa",
+            background: "var(--color-surface-muted)",
             fontSize: "0.95em",
           }}
         >
@@ -68,9 +68,9 @@ export default function TokenList({ tokens, sessionId }: Props) {
           style={{
             padding: "0.5em 1em",
             cursor: "pointer",
-            border: "1px solid #ccc",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
-            background: "#fafafa",
+            background: "var(--color-surface-muted)",
             fontSize: "0.95em",
           }}
         >

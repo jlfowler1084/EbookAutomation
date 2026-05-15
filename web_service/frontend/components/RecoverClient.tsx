@@ -37,7 +37,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
       return (
         <p style={{ color: "#666" }}>
           Your tokens have expired (7-day window).{" "}
-          <a href="/pricing" style={{ color: "#0070f3" }}>
+          <a href="/pricing" style={{ color: "var(--color-accent)" }}>
             Buy more
           </a>
         </p>
@@ -69,7 +69,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
             padding: "0.5em",
             width: "100%",
             maxWidth: 500,
-            border: "1px solid #ccc",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
             fontFamily: "monospace",
             fontSize: "0.95em",
@@ -81,7 +81,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
           style={{
             marginLeft: "0.5em",
             padding: "0.5em 1.5em",
-            backgroundColor: "#0070f3",
+            backgroundColor: "var(--color-accent)",
             color: "white",
             border: "none",
             borderRadius: 4,
@@ -94,7 +94,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
         </button>
       </form>
       <p style={{ marginTop: "2em", color: "#666", fontSize: "0.9em" }}>
-        <a href="/pricing" style={{ color: "#0070f3" }}>
+        <a href="/pricing" style={{ color: "var(--color-accent)" }}>
           &larr; Back to pricing
         </a>
       </p>
