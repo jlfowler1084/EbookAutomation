@@ -87,6 +87,11 @@ class TestLoadSettings:
     def test_happy_path_linux_paths(self, monkeypatch, linux_config):
         _patch_project_root(monkeypatch, linux_config)
         monkeypatch.setattr(sys, "platform", "linux")
+        # EB-245: the cross-platform resolver only trusts a configured path when
+        # it exists on disk. The test's configured paths don't exist on the test
+        # runner's filesystem, so we mock is_file to assert the configured-path
+        # branch (not the fallback branch — that's tested separately below).
+        monkeypatch.setattr(Path, "is_file", lambda self: True)
 
         settings = load_settings()
 
@@ -103,6 +108,9 @@ class TestLoadSettings:
         """Windows config with .exe suffix — stripped when running on Linux."""
         _patch_project_root(monkeypatch, windows_config)
         monkeypatch.setattr(sys, "platform", "linux")
+        # Pretend the stripped path exists so we test the strip branch directly,
+        # not the shutil.which fallback (that has its own test).
+        monkeypatch.setattr(Path, "is_file", lambda self: True)
 
         settings = load_settings()
 
@@ -113,10 +121,67 @@ class TestLoadSettings:
         """Windows config with .exe suffix — preserved when running on Windows."""
         _patch_project_root(monkeypatch, windows_config)
         monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.setattr(Path, "is_file", lambda self: True)
 
         settings = load_settings()
 
         assert str(settings.calibre_path).endswith(".exe")
+
+    # ---------------------------------------------------------------------------
+    # EB-245: cross-platform path resolution fallback
+    # ---------------------------------------------------------------------------
+
+    def test_calibre_falls_back_to_shutil_which_when_configured_path_missing(
+        self, monkeypatch, windows_config
+    ):
+        """When the configured Calibre path doesn't exist on disk, fall back to
+        shutil.which('ebook-convert'). This is the production code path on the
+        Hetzner VM, where settings.json holds Windows defaults but the binary
+        lives at /usr/bin/ebook-convert."""
+        _patch_project_root(monkeypatch, windows_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+        # Configured path does NOT exist
+        monkeypatch.setattr(Path, "is_file", lambda self: False)
+        # shutil.which returns the live binary path
+        import web_service.config as cfg_module
+        monkeypatch.setattr(cfg_module.shutil, "which",
+                            lambda name: "/usr/bin/ebook-convert" if name == "ebook-convert" else None)
+
+        settings = load_settings()
+
+        assert settings.calibre_path == Path("/usr/bin/ebook-convert")
+
+    def test_python_falls_back_to_sys_executable_when_configured_path_missing(
+        self, monkeypatch, windows_config
+    ):
+        """When the configured Python path doesn't exist, fall back to
+        sys.executable (the currently-running interpreter is always valid)."""
+        _patch_project_root(monkeypatch, windows_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(Path, "is_file", lambda self: False)
+        monkeypatch.setattr(sys, "executable", "/usr/bin/python3.12")
+
+        settings = load_settings()
+
+        assert settings.python_path == Path("/usr/bin/python3.12")
+
+    def test_calibre_returns_configured_when_shutil_which_also_fails(
+        self, monkeypatch, windows_config
+    ):
+        """If both the configured path and shutil.which fail, return the
+        configured path unchanged. subprocess.run will raise FileNotFoundError
+        with a clear message — better than silent misbehavior."""
+        _patch_project_root(monkeypatch, windows_config)
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(Path, "is_file", lambda self: False)
+        import web_service.config as cfg_module
+        monkeypatch.setattr(cfg_module.shutil, "which", lambda name: None)
+
+        settings = load_settings()
+
+        # Returns the configured (stripped) path — subprocess will fail later
+        # with a helpful error rather than the helper masking the misconfiguration
+        assert "ebook-convert" in str(settings.calibre_path)
 
     def test_missing_config_file_raises(self, monkeypatch, tmp_path):
         """FileNotFoundError raised with clear message when settings.json is absent."""

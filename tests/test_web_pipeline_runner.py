@@ -16,7 +16,9 @@ from web_service.config import Settings, reset_settings
 from web_service.pipeline_runner import (
     RunResult,
     _extract_calibre_error,
+    _extract_gemini_cost,
     _find_newest_kfx,
+    _run_vqa,
     _timeout_for_size,
     _verify_output,
     run_free,
@@ -295,3 +297,299 @@ class TestRunPremium:
             run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
 
         assert captured_cwd[0] == str(settings.project_root)
+
+    def test_premium_passes_gemini_remediate_flag(self, small_pdf, temp_dir, settings):
+        """EB-245: premium tier must invoke --gemini-remediate (selective fallback).
+
+        Guards against a regression where the always-on --use-gemini flag gets
+        wired instead. The two are mutually exclusive in pdf_to_balabolka.py and
+        have very different cost profiles (~$0 vs ~$0.50 per conversion).
+        """
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            run_premium("job_eb245_a", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert "--gemini-remediate" in captured_cmd
+        assert "--use-gemini" not in captured_cmd
+
+    def test_premium_passes_gemini_cost_limit_from_settings(self, small_pdf, temp_dir, settings):
+        """EB-245: --gemini-cost-limit must read from Settings, not be hardcoded."""
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            run_premium("job_eb245_b", small_pdf, "epub", temp_dir, settings=settings)
+
+        # The flag and its value should appear as adjacent argv tokens
+        assert "--gemini-cost-limit" in captured_cmd
+        flag_idx = captured_cmd.index("--gemini-cost-limit")
+        assert captured_cmd[flag_idx + 1] == str(settings.premium_gemini_cost_limit_usd)
+
+    def test_premium_default_skips_vqa_and_reports_reason(self, small_pdf, temp_dir, settings):
+        """EB-245 Phase 4: with premium_vqa_enabled=False (default), VQA is skipped
+        and the RunResult records skipped_reason='disabled'."""
+
+        def fake_run(cmd, **kwargs):
+            # Only the pipeline subprocess should run (the cmd contains --cli),
+            # not the visual_qa.py subprocess (which contains visual_qa.py).
+            assert "visual_qa.py" not in " ".join(cmd), \
+                "VQA must NOT run when premium_vqa_enabled=False"
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0, stdout="No Gemini activity\n")
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_vqa_off", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success
+        assert result.vqa_score is None
+        assert result.vqa_pass is None
+        assert result.vqa_cost_usd == 0.0
+        assert result.vqa_skipped_reason == "disabled"
+        assert result.gemini_cost_usd == 0.0  # no Gemini line in fake stdout
+
+    def test_premium_parses_gemini_cost_from_stdout(self, small_pdf, temp_dir, settings):
+        """EB-245: gemini_cost_usd is parsed from pdf_to_balabolka.py stdout."""
+        gemini_log = (
+            "Other unrelated log line\n"
+            "  Gemini remediated 7 pages, cost: $0.0152\n"
+            "Conversion complete\n"
+        )
+
+        def fake_run(cmd, **kwargs):
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0, stdout=gemini_log)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_gemini", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success
+        assert result.gemini_cost_usd == pytest.approx(0.0152)
+
+
+# ---------------------------------------------------------------------------
+# EB-245 helper unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestExtractGeminiCost:
+    def test_matches_canonical_pattern(self):
+        stdout = "  Gemini remediated 3 pages, cost: $0.0072\n"
+        assert _extract_gemini_cost(stdout) == pytest.approx(0.0072)
+
+    def test_no_match_returns_zero(self):
+        assert _extract_gemini_cost("nothing about gemini here") == 0.0
+
+    def test_empty_stdout_returns_zero(self):
+        assert _extract_gemini_cost("") == 0.0
+        assert _extract_gemini_cost(None) == 0.0  # type: ignore[arg-type]
+
+    def test_picks_first_match_when_multiple(self):
+        stdout = (
+            "  Gemini remediated 2 pages, cost: $0.0050\n"
+            "  Gemini remediated 5 pages, cost: $0.0125\n"
+        )
+        # First match wins (re.search returns the leftmost)
+        assert _extract_gemini_cost(stdout) == pytest.approx(0.0050)
+
+
+class TestRunVqa:
+    """EB-245 Phase 4: _run_vqa subprocess helper."""
+
+    def _vqa_dir(self, output_path: Path) -> Path:
+        return output_path.parent / "vqa"
+
+    def test_skips_when_disabled(self, tmp_path, settings, monkeypatch):
+        """premium_vqa_enabled=False short-circuits before subprocess is touched."""
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        # If subprocess.run gets called, the test fails because there's no patch.
+        # We rely on the skip path returning before any subprocess invocation.
+        result = _run_vqa(output, settings, "job_skip_disabled")
+
+        assert result["score"] is None
+        assert result["pass"] is None
+        assert result["cost_usd"] == 0.0
+        assert result["skipped_reason"] == "disabled"
+
+    def test_skips_when_api_key_missing(self, tmp_path, settings, monkeypatch):
+        """No OPENROUTER_API_KEY → skipped_reason='no_api_key'."""
+        # Override settings to enable VQA but ensure no API key in env
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        result = _run_vqa(output, enabled_settings, "job_skip_no_key")
+
+        assert result["skipped_reason"] == "no_api_key"
+
+    def test_returns_score_when_report_parses(self, tmp_path, settings, monkeypatch):
+        """Happy path: visual_qa.py runs, writes report.json, _run_vqa extracts the score."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            # Simulate visual_qa.py writing its report file
+            vqa_dir = self._vqa_dir(output)
+            vqa_dir.mkdir(parents=True, exist_ok=True)
+            report = {
+                "overall_score": 87,
+                "overall_pass": True,
+                "token_counts": {"cost_usd": 0.0421},
+            }
+            (vqa_dir / "book_visual_qa_report.json").write_text(
+                json.dumps(report), encoding="utf-8"
+            )
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_vqa_happy")
+
+        assert result["score"] == 87
+        assert result["pass"] is True
+        assert result["cost_usd"] == pytest.approx(0.0421)
+        assert result["skipped_reason"] is None
+
+    def test_timeout_returns_skipped_reason(self, tmp_path, settings, monkeypatch):
+        """visual_qa.py timeout → skipped_reason='timeout', conversion success preserved."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            raise TimeoutExpired(cmd=cmd, timeout=60)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_vqa_timeout")
+
+        assert result["skipped_reason"] == "timeout"
+        assert result["score"] is None
+
+    def test_nonzero_exit_returns_skipped_reason(self, tmp_path, settings, monkeypatch):
+        """visual_qa.py exit != 0 → skipped_reason='error', no exception leaks."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            proc = MagicMock()
+            proc.returncode = 1
+            proc.stdout = ""
+            proc.stderr = "OpenRouter 503 Service Unavailable"
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_vqa_5xx")
+
+        assert result["skipped_reason"] == "error"
+
+    def test_missing_report_file_returns_skipped_reason(self, tmp_path, settings, monkeypatch):
+        """exit==0 but no report file → skipped_reason='missing_report'."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            # Don't write the report file
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_vqa_no_report")
+
+        assert result["skipped_reason"] == "missing_report"
+
+    def test_passes_calibre_path_from_settings(self, tmp_path, settings, monkeypatch):
+        """EB-245: --calibre is propagated from Settings so visual_qa.py doesn't
+        re-read settings.json and pick up the Windows default on a Linux VM."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        captured_cmd: list = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            # Skip writing a report — we only care about the cmd shape
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            _run_vqa(output, enabled_settings, "job_vqa_calibre_flag")
+
+        assert "--calibre" in captured_cmd
+        idx = captured_cmd.index("--calibre")
+        assert captured_cmd[idx + 1] == str(enabled_settings.calibre_path)
+
+    def test_sets_qtwebengine_disable_sandbox(self, tmp_path, settings, monkeypatch):
+        """EB-245: VQA subprocess must inject QTWEBENGINE_DISABLE_SANDBOX=1.
+
+        Calibre's PDF output plugin uses Qt WebEngine (Chromium), which
+        refuses to run as root without --no-sandbox. The web service runs as
+        root on claude-dev-01, so without this env var every VQA invocation
+        would fail at the Calibre input-to-PDF conversion step.
+        """
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        captured_env: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured_env.update(kwargs.get("env", {}))
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            _run_vqa(output, enabled_settings, "job_vqa_qt_flag")
+
+        assert captured_env.get("QTWEBENGINE_DISABLE_SANDBOX") == "1"

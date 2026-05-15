@@ -9,12 +9,60 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+def _resolve_calibre_path(paths: dict) -> Path:
+    """Resolve the Calibre ebook-convert path with cross-platform fallback.
+
+    Discovered during EB-245 integration testing: a Windows-default
+    `settings.json` (paths.calibre = `C:\\Program Files\\Calibre2\\ebook-convert.exe`)
+    deployed to a Linux VM resolves to a non-existent path. The previous code
+    trusted the configured value and only stripped the `.exe` suffix, which left
+    `subprocess.run` trying to execute a path that doesn't exist.
+
+    Resolution order:
+        1. Use `paths.calibre` from settings.json if the file exists on disk
+        2. Strip `.exe` on non-Windows and retry the existence check
+        3. Fall back to `shutil.which("ebook-convert")` (Linux/macOS apt/brew installs)
+        4. Last resort: return the configured value unchanged (subprocess.run will
+           raise a clear FileNotFoundError, which is better than silent misbehavior)
+
+    Same pattern as `tools/pdf_to_balabolka.py:2995` — keep them in sync.
+    """
+    raw = str(paths.get("calibre", "ebook-convert"))
+    if sys.platform != "win32" and raw.endswith(".exe"):
+        raw = raw[:-4]
+    if Path(raw).is_file():
+        return Path(raw)
+    fallback = shutil.which("ebook-convert")
+    if fallback:
+        return Path(fallback)
+    return Path(raw)
+
+
+def _resolve_python_path(paths: dict) -> Path:
+    """Resolve the Python interpreter path with cross-platform fallback.
+
+    Same EB-245 discovery as `_resolve_calibre_path`: a Windows-default
+    `settings.json` (`paths.python = C:\\Users\\...\\python.exe`) deployed to a
+    Linux VM resolved to a non-existent path, breaking the premium-tier
+    subprocess invocation.
+
+    Falls back to `sys.executable` (the currently-running interpreter) when the
+    configured path doesn't exist. `sys.executable` is always valid because the
+    web service is running through it.
+    """
+    raw = paths.get("python", sys.executable)
+    if Path(raw).is_file():
+        return Path(raw)
+    return Path(sys.executable)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -61,6 +109,18 @@ class Settings:
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
     allowed_origins: list[str] = field(default_factory=list)
+    # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
+    # Caps `--gemini-cost-limit` passed to pdf_to_balabolka.py. $1.00 is generous —
+    # typical --gemini-remediate run only re-extracts a handful of flagged pages
+    # at ~$0.002/page, so most premium conversions stay well under this ceiling.
+    premium_gemini_cost_limit_usd: float = 1.0
+    # EB-245 Phase 4: output-side visual QA pass via tools/visual_qa.py.
+    # Default OFF for first production rollout — flip via PREMIUM_VQA_ENABLED=true
+    # once Gemini-only economics are observed in real traffic.
+    premium_vqa_enabled: bool = False
+    # Per-conversion VQA cost cap. visual_qa.py samples 8 pages by default at
+    # ~$0.05-$0.10 per OpenRouter call, so $0.50 is generous headroom.
+    premium_vqa_cost_limit_usd: float = 0.5
 
 
 def load_settings() -> Settings:
@@ -77,13 +137,13 @@ def load_settings() -> Settings:
 
     paths = cfg.get("paths", {})
 
-    # Strip .exe suffix on non-Windows — matches EB-221/EB-224 fix pattern
-    calibre_raw = paths.get("calibre", "ebook-convert")
-    if sys.platform != "win32" and str(calibre_raw).endswith(".exe"):
-        calibre_raw = str(calibre_raw)[:-4]
-    calibre_path = Path(calibre_raw)
-
-    python_path = Path(paths.get("python", sys.executable))
+    # Cross-platform path resolution with shutil.which / sys.executable fallback.
+    # The shared settings.json holds Windows defaults; on Linux VMs those paths
+    # don't exist, so the helpers fall through to live system lookups. See the
+    # docstrings on _resolve_calibre_path and _resolve_python_path for the
+    # EB-245 discovery that motivated this.
+    calibre_path = _resolve_calibre_path(paths)
+    python_path = _resolve_python_path(paths)
 
     pipeline_script = _PROJECT_ROOT / "tools" / "pdf_to_balabolka.py"
 
@@ -128,6 +188,13 @@ def load_settings() -> Settings:
         stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
         allowed_origins=allowed_origins,
+        premium_gemini_cost_limit_usd=float(
+            os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")
+        ),
+        premium_vqa_enabled=os.environ.get("PREMIUM_VQA_ENABLED", "false").lower() == "true",
+        premium_vqa_cost_limit_usd=float(
+            os.environ.get("PREMIUM_VQA_COST_LIMIT_USD", "0.5")
+        ),
     )
 
 

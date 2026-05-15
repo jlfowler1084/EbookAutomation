@@ -14,8 +14,10 @@ Key design constraints (from institutional learnings):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -25,6 +27,16 @@ from subprocess import TimeoutExpired
 from web_service.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
+
+# EB-245 Phase 4: VQA subprocess gets a tight wall-clock cap. The conversion is
+# already done by the time VQA runs — VQA is best-effort. Don't let a hung
+# OpenRouter call extend total job latency by several minutes.
+_VQA_TIMEOUT_SECONDS = 60
+
+# Pattern matching pdf_to_balabolka.py log lines for Gemini remediation cost.
+# Source: tools/pdf_to_balabolka.py:13268-13269 emits:
+#   "Gemini remediated N pages, cost: $X.XXXX"
+_GEMINI_COST_PATTERN = re.compile(r"Gemini remediated \d+ pages,\s*cost:\s*\$([\d.]+)")
 
 # Tiered timeout by input file size (departure from R4f flat 120s — see plan Open Questions)
 _TIMEOUT_TIERS: list[tuple[int, int]] = [
@@ -41,6 +53,14 @@ class RunResult:
     output_path: str = ""
     output_size: int = 0
     error_message: str = ""
+    # EB-245 telemetry — populated for premium tier; remain at defaults for free.
+    gemini_cost_usd: float = 0.0
+    vqa_score: int | None = None
+    vqa_pass: bool | None = None
+    vqa_cost_usd: float = 0.0
+    # When VQA was not run, this records the reason ("disabled", "no_api_key",
+    # "timeout", "error", "skipped_free_tier"). None means VQA produced a result.
+    vqa_skipped_reason: str | None = None
 
 
 def _timeout_for_size(file_size: int) -> int:
@@ -74,6 +94,129 @@ def _find_newest_kfx(directory: Path, after_timestamp: float) -> Path | None:
         if p.stat().st_mtime >= after_timestamp
     ]
     return max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+
+
+def _extract_gemini_cost(stdout: str) -> float:
+    """Parse pdf_to_balabolka.py stdout for the Gemini remediation cost line.
+
+    Returns 0.0 when no Gemini run occurred (clean PDFs leave no problem regions
+    flagged, so --gemini-remediate is a no-op and emits no cost log).
+
+    Brittle on log-line wording — if pdf_to_balabolka.py changes the format,
+    this returns 0.0 silently. A follow-up should make pdf_to_balabolka.py emit
+    a structured cost field in --cli JSON output.
+    """
+    match = _GEMINI_COST_PATTERN.search(stdout or "")
+    if not match:
+        return 0.0
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return 0.0
+
+
+def _run_vqa(output_path: Path, cfg: Settings, job_id: str) -> dict:
+    """Run tools/visual_qa.py against the conversion output. Best-effort.
+
+    Always returns a dict with the four telemetry keys — never raises. When the
+    VQA pass is skipped or fails, the result dict captures the reason so the
+    caller can surface it in the job sidecar and log line without further branching.
+
+    Returns:
+        {
+          "score": int | None,        # 0-100, or None when skipped/failed
+          "pass": bool | None,
+          "cost_usd": float,
+          "skipped_reason": str | None,  # None means VQA ran and returned a score
+        }
+    """
+    empty: dict = {
+        "score": None, "pass": None, "cost_usd": 0.0, "skipped_reason": None,
+    }
+
+    if not cfg.premium_vqa_enabled:
+        log.info("[%s] VQA skipped: premium_vqa_enabled=False", job_id)
+        return {**empty, "skipped_reason": "disabled"}
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        log.info("[%s] VQA skipped: OPENROUTER_API_KEY not in environment", job_id)
+        return {**empty, "skipped_reason": "no_api_key"}
+
+    vqa_script = cfg.project_root / "tools" / "visual_qa.py"
+    vqa_dir = output_path.parent / "vqa"
+    vqa_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        str(cfg.python_path),
+        str(vqa_script),
+        "--input", str(output_path),
+        "--provider", "cloud",
+        "--cloud-host", "openrouter",
+        "--output-dir", str(vqa_dir),
+        # Propagate the cross-platform-resolved Calibre path. Without this,
+        # visual_qa.py reads paths.calibre from settings.json directly and gets
+        # the Windows default — which fails on the Hetzner VM. EB-245 discovery.
+        "--calibre", str(cfg.calibre_path),
+    ]
+    log.info("[%s] VQA cmd: %s (timeout=%ds)", job_id, cmd, _VQA_TIMEOUT_SECONDS)
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    # EB-245 VM-runtime discovery: visual_qa.py converts input to PDF via Calibre,
+    # whose PDF Output plugin uses Qt WebEngine (Chromium). Chromium refuses to
+    # run as root without --no-sandbox, and the web service runs as root on
+    # claude-dev-01. QTWEBENGINE_DISABLE_SANDBOX=1 is the supported workaround.
+    # Only PDF output triggers WebEngine — KFX/EPUB/MOBI from run_premium do not
+    # need this flag.
+    env["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_VQA_TIMEOUT_SECONDS,
+            shell=False,
+            env=env,
+            cwd=str(cfg.project_root),
+        )
+    except TimeoutExpired:
+        log.warning("[%s] VQA timed out after %ds", job_id, _VQA_TIMEOUT_SECONDS)
+        return {**empty, "skipped_reason": "timeout"}
+    except OSError as exc:
+        log.warning("[%s] VQA failed to launch: %s", job_id, exc)
+        return {**empty, "skipped_reason": "launch_error"}
+
+    if proc.returncode != 0:
+        log.warning(
+            "[%s] VQA exited %d: %s", job_id, proc.returncode,
+            (proc.stderr or "")[:200],
+        )
+        return {**empty, "skipped_reason": "error"}
+
+    # Report filename: <input_stem>_visual_qa_report.json in --output-dir
+    report_path = vqa_dir / f"{output_path.stem}_visual_qa_report.json"
+    if not report_path.exists():
+        log.warning("[%s] VQA produced no report file at %s", job_id, report_path)
+        return {**empty, "skipped_reason": "missing_report"}
+
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log.warning("[%s] VQA report unreadable: %s", job_id, exc)
+        return {**empty, "skipped_reason": "parse_error"}
+
+    # token_counts.cost_usd accumulates primary-provider + fallback cost when present.
+    cost_usd = float(report.get("token_counts", {}).get("cost_usd", 0.0) or 0.0)
+
+    return {
+        "score": report.get("overall_score"),
+        "pass": report.get("overall_pass"),
+        "cost_usd": cost_usd,
+        "skipped_reason": None,
+    }
 
 
 def _verify_output(expected_path: Path, job_start: float) -> Path | None:
@@ -202,6 +345,16 @@ def run_premium(
         "--input", str(input_path),
         "--output-dir", str(temp_dir),
         "--output-format", output_format,
+        # EB-245: selective Gemini OCR remediation. pdf_to_balabolka.py runs
+        # score_text_layer_quality(multi_sample=True) and only re-extracts pages
+        # in flagged problem regions, so clean text PDFs incur $0. Mutually
+        # exclusive with --use-gemini (full transcription) and --use-vision —
+        # gate at pdf_to_balabolka.py:13203 is `gemini_remediate and not use_gemini
+        # and not use_vision`. Graceful degrade is already wired at
+        # pdf_to_balabolka.py:12762-12772 — Gemini failures fall through to
+        # standard extraction without killing the conversion.
+        "--gemini-remediate",
+        "--gemini-cost-limit", str(cfg.premium_gemini_cost_limit_usd),
     ]
     log.info("[%s] premium-tier cmd: %s (timeout=%ds)", job_id, cmd, timeout)
 
@@ -239,8 +392,23 @@ def run_premium(
             error_message="Pipeline produced no output file.",
         )
 
+    # EB-245 telemetry: parse Gemini cost from stdout, run output-side VQA.
+    gemini_cost = _extract_gemini_cost(proc.stdout)
+    vqa = _run_vqa(actual_path, cfg, job_id)
+
+    log.info(
+        "[%s] ai_cost_summary gemini=$%.4f vqa=$%.4f vqa_score=%s vqa_pass=%s reason=%s",
+        job_id, gemini_cost, vqa["cost_usd"], vqa["score"], vqa["pass"],
+        vqa["skipped_reason"],
+    )
+
     return RunResult(
         success=True,
         output_path=str(actual_path),
         output_size=actual_path.stat().st_size,
+        gemini_cost_usd=gemini_cost,
+        vqa_score=vqa["score"],
+        vqa_pass=vqa["pass"],
+        vqa_cost_usd=vqa["cost_usd"],
+        vqa_skipped_reason=vqa["skipped_reason"],
     )
