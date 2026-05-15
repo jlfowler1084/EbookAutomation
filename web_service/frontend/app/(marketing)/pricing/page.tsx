@@ -5,7 +5,7 @@ import BuyButtons from "../../../components/BuyButtons";
 export const metadata: Metadata = {
   title: "Pricing — Leafbind",
   description:
-    "Credit packs for premium PDF-to-Kindle conversion with smart heading detection, footnote linking, and KFX output.",
+    "Free Calibre-based EPUB conversion, or premium leafbind smart pipeline — column-aware extraction, heading detection, bidirectional footnote linking, KFX output.",
 };
 
 const PACKS = [
@@ -38,13 +38,14 @@ const PACKS = [
 const FREE_FEATURES = [
   "3 conversions per day",
   "Files up to 20 MB",
-  "EPUB output",
-  "Basic footnote linking",
+  "EPUB output via Calibre",
+  "No account required",
 ];
 
 const PREMIUM_FEATURES = [
-  "Smart heading detection across all book types",
-  "Full footnote and endnote linking (bidirectional)",
+  "Column-aware extraction for multi-column PDFs",
+  "Smart heading detection — font-size classification produces a navigable Kindle TOC",
+  "Bidirectional footnote and endnote linking",
   "KFX output — Kindle's native enhanced typesetting format",
   "Files up to 100 MB",
   "No account required",
@@ -59,8 +60,13 @@ export default function PricingPage() {
           Pricing
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-xl">
-          Premium unlocks smart heading detection, footnote linking, KFX output, and
-          the 100 MB file limit. Pay once per conversion — no subscription required.
+          Free runs your PDF through Calibre for a quick EPUB. Premium runs
+          leafbind&apos;s smart pipeline — the column-aware extraction, heading
+          detection, and bidirectional footnote linking shown on the{" "}
+          <Link href="/quality" className="text-brand hover:underline font-medium">
+            quality page
+          </Link>
+          . Pay once per conversion — no subscription required.
         </p>
         <p className="font-sans text-sm text-text-muted mt-3">
           Tokens expire 7 days after purchase.{" "}
@@ -88,8 +94,9 @@ export default function PricingPage() {
               </li>
             ))}
           </ul>
-          <p className="font-sans text-xs text-text-muted">
-            No account required. Just upload and convert.
+          <p className="font-sans text-xs text-text-muted leading-relaxed">
+            Quick Calibre-based EPUB conversion. Works well for text-based PDFs
+            without complex column layouts or extensive footnotes.
           </p>
         </div>
 
@@ -99,8 +106,9 @@ export default function PricingPage() {
             Premium
           </h2>
           <p className="font-sans text-base text-text-muted mb-6 leading-relaxed">
-            One-time credit purchase. Credits unlock individual conversions — use
-            them at your own pace within 7 days.
+            leafbind&apos;s smart pipeline — the column, heading, and footnote
+            work that the free Calibre pass cannot do. One-time credit purchase;
+            credits unlock individual conversions — use within 7 days.
           </p>
           <ul className="space-y-3 mb-6">
             {PREMIUM_FEATURES.map((feature) => (
