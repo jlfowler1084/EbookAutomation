@@ -70,7 +70,7 @@ export default function ConversionStatus({ jobId }: Props) {
             display: "inline-block",
             marginTop: 8,
             padding: "8px 16px",
-            background: "#0070f3",
+            background: "var(--color-accent)",
             color: "#fff",
             borderRadius: 4,
             textDecoration: "none",

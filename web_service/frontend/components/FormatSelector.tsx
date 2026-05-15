@@ -21,7 +21,7 @@ export default function FormatSelector({ value, onChange, tier = "free" }: Props
         id="output-format"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ padding: "6px 12px", fontSize: 14, borderRadius: 4, border: "1px solid #ccc" }}
+        style={{ padding: "6px 12px", fontSize: 14, borderRadius: 4, border: "1px solid var(--color-border)" }}
       >
         {formats.map((fmt) => (
           <option key={fmt} value={fmt}>
