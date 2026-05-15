@@ -102,3 +102,5 @@ web_service/frontend/.baselines/**
 !web_service/frontend/.baselines/.gitkeep
 !web_service/frontend/.baselines/eb233-pre/
 !web_service/frontend/.baselines/eb233-pre/MANIFEST.md
+!web_service/frontend/.baselines/eb233-post/
+!web_service/frontend/.baselines/eb233-post/MANIFEST.md
