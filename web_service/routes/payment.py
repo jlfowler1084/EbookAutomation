@@ -26,8 +26,10 @@ import time
 import stripe
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+from html import escape
 
 from web_service import circuit_breaker, token_store
+from web_service.templates.shell import footer_html, header_html
 from web_service.config import get_settings
 from web_service.job_queue import billing_executor
 
@@ -54,7 +56,7 @@ _PAYMENT_HEADERS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def _base_html(title: str, body: str) -> str:
-    """Minimal page shell with the Phase 1 inline-style aesthetic."""
+    """Page shell with brand CSS, Google Fonts, and payment-flow header/footer."""
     return (
         "<!DOCTYPE html>\n"
         '<html lang="en">\n'
@@ -62,11 +64,19 @@ def _base_html(title: str, body: str) -> str:
         '    <meta charset="utf-8">\n'
         f"    <title>{title}</title>\n"
         '    <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        '    <link rel="preconnect" href="https://fonts.googleapis.com">\n'
+        '    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+        '    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader&amp;family=DM+Sans&amp;family=IBM+Plex+Mono&amp;display=swap">\n'
+        '    <link rel="stylesheet" href="/static/leafbind-tokens.css">\n'
+        '    <style>body{margin:0;background-color:var(--color-surface);color:var(--color-text-base);}</style>\n'
         "</head>\n"
-        '<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif; '
-        'max-width: 720px; margin: 2em auto; padding: 1em; color: #222;">\n'
-        f"{body}\n"
-        "</body>\n"
+        "<body>\n"
+        + header_html()
+        + '\n<main class="lb-main">\n'
+        + body
+        + "\n</main>\n"
+        + footer_html()
+        + "\n</body>\n"
         "</html>"
     )
 
@@ -89,28 +99,31 @@ def _render_success_page(session_id: str, tokens: list[str], expires_at: int) ->
         },
         ensure_ascii=True,
     )
-    body = f"""    <h1>Payment Successful &#127881;</h1>
-    <div style="background-color: #fffbe6; border: 1px solid #ffe58f; padding: 1em; border-radius: 4px; margin-bottom: 1em;">
-        <strong>Bookmark this page &mdash; it is your recovery path.</strong>
-        Your tokens are stored on this page for 7 days. If you close this tab without
-        copying them, you can return to this URL to see them again.
-    </div>
+    body = f"""\
+    <span class="lb-eyebrow lb-eyebrow--accent">PAYMENT CONFIRMED</span>
+    <h1 class="lb-display">Welcome to Leafbind.</h1>
+    <aside class="lb-callout">
+        <strong>Bookmark this page</strong> &mdash; it is your recovery path.
+        Your tokens are stored here for 7 days. If you close this tab without
+        copying them, return to this URL to see them again.
+    </aside>
 
     <!-- Token data as JSON; parsed by sibling script. NO JS interpolation of raw values. -->
     <script type="application/json" id="leafbind-tokens">{token_payload}</script>
 
-    <h2>Your Tokens</h2>
-    <ol id="token-list" style="font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.95em;">
-        <!-- populated by the script below -->
-    </ol>
-
-    <div style="margin-top: 1em;">
-        <button onclick="downloadTokens()" style="margin-right: 0.5em; padding: 0.5em 1em; cursor: pointer;">Download tokens.txt</button>
-        <button onclick="window.print()" style="padding: 0.5em 1em; cursor: pointer;">Print tokens</button>
+    <div class="lb-card lb-token-card">
+        <ol id="token-list" class="lb-token-list">
+            <!-- populated by the script below -->
+        </ol>
     </div>
 
-    <p style="margin-top: 2em;">
-        <a href="/" style="color: #0070f3;">Start converting &rarr;</a>
+    <div class="lb-action-row">
+        <button class="lb-button-primary" onclick="downloadTokens()">Download tokens.txt</button>
+        <button class="lb-button-ghost" onclick="window.print()">Print</button>
+    </div>
+
+    <p class="lb-recover-row">
+        <a href="/" class="lb-link">Start converting &rarr;</a>
     </p>
 
     <script>
@@ -121,7 +134,6 @@ def _render_success_page(session_id: str, tokens: list[str], expires_at: int) ->
         const list = document.getElementById('token-list');
         data.tokens.forEach(function(t) {{
             const li = document.createElement('li');
-            li.style.padding = '0.25em 0';
             li.textContent = t;
             list.appendChild(li);
         }});
@@ -156,7 +168,7 @@ def _render_expired_page(session_id: str) -> str:
         "    <p>If you need assistance, please\n"
         '    <a href="/recover" style="color: #0070f3;">visit the recovery page</a>\n'
         "    or contact support.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {session_id}</p>\n'
+        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
         '    <p><a href="/pricing" style="color: #0070f3;">Buy new tokens &rarr;</a></p>'
     )
     return _base_html("Tokens Expired — Leafbind", body)
@@ -169,7 +181,7 @@ def _render_retry_page(session_id: str, message: str) -> str:
         f'    <p style="color: #555;">{message}</p>\n'
         "    <p>Your payment was received and your tokens are being generated. "
         "Please refresh this page in 30 seconds to see your tokens.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {session_id}</p>\n'
+        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
         "    <script>\n"
         "    setTimeout(function() {{ window.location.reload(); }}, 30000);\n"
         "    </script>"
@@ -184,7 +196,7 @@ def _render_pending_page(session_id: str) -> str:
         '    <p style="color: #555;">Your payment is being processed by Stripe. '
         "This usually takes just a few seconds.</p>\n"
         "    <p>Please refresh this page in 30 seconds to see your tokens.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {session_id}</p>\n'
+        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
         "    <script>\n"
         "    setTimeout(function() {{ window.location.reload(); }}, 30000);\n"
         "    </script>"
@@ -199,7 +211,7 @@ def _render_not_found_page(session_id: str) -> str:
         '    <p style="color: #555;">We could not find a payment session matching '
         "this URL. The URL may be incorrect or the session may have expired in "
         "Stripe's records.</p>\n"
-        f'    <p style="color: #666; font-size: 0.85em;">Session: {session_id}</p>\n'
+        f'    <p style="color: #666; font-size: 0.85em;">Session: {escape(session_id, quote=True)}</p>\n'
         '    <p><a href="/recover" style="color: #0070f3;">Try the recovery page</a> '
         'or <a href="/pricing" style="color: #0070f3;">buy new tokens</a>.</p>'
     )
