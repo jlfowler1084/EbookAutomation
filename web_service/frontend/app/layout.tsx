@@ -1,6 +1,7 @@
 import "./globals.css";
 import { type Metadata } from "next";
 import { Newsreader, DM_Sans, IBM_Plex_Mono } from "next/font/google";
+import PlausibleProvider from "next-plausible";
 
 /**
  * EB-240 / EB-238: Font swap
@@ -64,6 +65,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${newsreader.variable} ${dmSans.variable} ${ibmPlexMono.variable}`}
     >
+      <head>
+        {/* EB-252: Plausible analytics. Privacy-first (no cookies, no PII,
+            GDPR-compliant by default). Script served same-origin via the
+            withPlausibleProxy rewrite in next.config.js to bypass ad-blockers.
+            trackOutboundLinks captures clicks to external domains in the
+            dashboard (useful for measuring referral flow back from Reddit /
+            MobileRead / blogs once those channels are active per EB-242). */}
+        <PlausibleProvider domain="leafbind.io" trackOutboundLinks />
+      </head>
       <body style={{ margin: 0, background: "#fff", color: "#111" }}>
         {children}
       </body>
