@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -127,11 +128,11 @@ def find_poppler_path(explicit_path=None):
 
 
 def find_calibre(explicit_path=None):
-    """Locate ebook-convert.exe."""
+    """Locate ebook-convert binary (cross-platform)."""
     if explicit_path and os.path.isfile(explicit_path):
         return explicit_path
 
-    # Check common install locations
+    # Check common Windows install locations
     candidates = [
         r"C:\Program Files\Calibre2\ebook-convert.exe",
         r"C:\Program Files (x86)\Calibre2\ebook-convert.exe",
@@ -140,7 +141,8 @@ def find_calibre(explicit_path=None):
         if os.path.isfile(p):
             return p
 
-    return None
+    # Fallback: resolve from PATH (covers Linux/macOS apt/brew installs)
+    return shutil.which("ebook-convert")
 
 
 def load_settings_json():
@@ -1193,7 +1195,10 @@ def main():
     paths = settings.get("paths", {})
 
     # Resolve defaults from settings.json
-    default_calibre = paths.get("calibre", r"C:\Program Files\Calibre2\ebook-convert.exe")
+    default_calibre = paths.get(
+        "calibre",
+        shutil.which("ebook-convert") or r"C:\Program Files\Calibre2\ebook-convert.exe",
+    )
     default_poppler = paths.get("poppler", "")
     if default_poppler and not os.path.isabs(default_poppler):
         # Resolve relative to project root; find_poppler_path will search for the bin dir

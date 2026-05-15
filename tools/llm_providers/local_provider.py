@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import sys
 import time
 
 import openai
@@ -360,6 +361,16 @@ class LocalVisionProvider:
     name = "local"
 
     def __init__(self, base_url: str = "http://localhost:8000/v1"):
+        # EB-210: sb-chat runs on the primary desktop only.  If this provider
+        # is instantiated on Linux (the Hetzner VM), it will never reach the
+        # endpoint — fail loudly so the operator fixes config before any
+        # silent fallback can mask the mismatch.
+        if sys.platform.startswith("linux"):
+            raise RuntimeError(
+                "LocalVisionProvider is not available on Linux. "
+                "Update your config to use provider='openrouter' with "
+                "model='qwen/qwen3-vl-30b-a3b-instruct' and set OPENROUTER_API_KEY."
+            )
         self._base_url = base_url
 
     # ------------------------------------------------------------------
