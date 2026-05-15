@@ -14,12 +14,19 @@ import { Newsreader, DM_Sans, IBM_Plex_Mono } from "next/font/google";
  * headings. EB-238 absorbed.
  */
 
+// EB-238: preload disabled. Chrome measures LCP as the first paint of the
+// largest element; with display:swap the hero h1 paints with the
+// adjustFontFallback metrics-adjusted fallback immediately. Preloading
+// every weight × style (6 Newsreader + 4 DM Sans = 10 preload tags) was
+// racing critical CSS for browser request slots, delaying that first paint.
+// Disabling preload lets the fallback render unblocked; the font swap
+// happens later and is not counted by Lighthouse LCP.
 const newsreader = Newsreader({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   display: "swap",
-  preload: true,
+  preload: false,
   variable: "--font-newsreader",
 });
 
@@ -27,7 +34,7 @@ const dmSans = DM_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
-  preload: true,
+  preload: false,
   variable: "--font-dm-sans",
 });
 
