@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import RecoverClient from "../../components/RecoverClient";
+import RecoverClient from "../../../components/RecoverClient";
 
 export const metadata: Metadata = {
   title: "Recover Tokens — Leafbind",
@@ -15,19 +15,19 @@ export default async function RecoverPage({ searchParams }: Props) {
   const { session_id } = await searchParams;
 
   return (
-    <main
-      style={{
-        maxWidth: 720,
-        margin: "2em auto",
-        padding: "1em",
-        fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
-      }}
-    >
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Recover Tokens</h1>
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-serif text-3xl text-text-base">Recover Tokens</h1>
+        <p className="mt-2 text-text-muted">
+          Enter your Stripe session ID to retrieve your premium tokens.
+        </p>
+      </div>
 
-      <Suspense fallback={<p>Loading&hellip;</p>}>
-        <RecoverClient initialSessionId={session_id} />
-      </Suspense>
-    </main>
+      <div className="rounded-md border border-border bg-surface-muted p-6 min-w-0">
+        <Suspense fallback={<p className="text-text-muted">Loading&hellip;</p>}>
+          <RecoverClient initialSessionId={session_id} />
+        </Suspense>
+      </div>
+    </div>
   );
 }
