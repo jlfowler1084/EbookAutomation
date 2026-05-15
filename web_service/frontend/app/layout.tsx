@@ -65,17 +65,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${newsreader.variable} ${dmSans.variable} ${ibmPlexMono.variable}`}
     >
-      <head>
-        {/* EB-252: Plausible analytics. Privacy-first (no cookies, no PII,
-            GDPR-compliant by default). Script served same-origin via the
-            withPlausibleProxy rewrite in next.config.js to bypass ad-blockers.
-            trackOutboundLinks captures clicks to external domains in the
-            dashboard (useful for measuring referral flow back from Reddit /
-            MobileRead / blogs once those channels are active per EB-242). */}
-        <PlausibleProvider domain="leafbind.io" trackOutboundLinks />
-      </head>
       <body style={{ margin: 0, background: "#fff", color: "#111" }}>
-        {children}
+        {/* EB-252 v2: PlausibleProvider wraps children inside <body>. The v1
+            placement self-closed in <head> emitted only the preload link, not
+            the actual <script> tag. Wrapping children lets next-plausible's
+            internal <Script> component render correctly under Next.js 16 App
+            Router. Pageview events POST to /api/event, which is manually
+            proxied via app/api/event/route.ts to bypass the Next 16 /api/*
+            rewrite precedence bug (withPlausibleProxy's /api/event rewrite
+            returns 404 even though its /js/script.js rewrite works). */}
+        <PlausibleProvider domain="leafbind.io" trackOutboundLinks>
+          {children}
+        </PlausibleProvider>
       </body>
     </html>
   );
