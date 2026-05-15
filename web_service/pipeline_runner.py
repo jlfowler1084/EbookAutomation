@@ -323,44 +323,55 @@ def run_premium(
     temp_dir: Path,
     settings: Settings | None = None,
 ) -> RunResult:
-    """Run a premium-tier conversion: full smart pipeline via subprocess CLI.
+    """Run a premium-tier conversion: two-step text-extraction + Calibre conversion.
 
-    Invokes tools/pdf_to_balabolka.py as a subprocess to avoid tkinter import
-    on headless Linux (EB-221/BookSmith plan lesson). The subprocess uses the
-    existing --cli entry point with JSON output.
+    Step 1: Invoke ``tools/pdf_to_balabolka.py --mode kindle`` to produce a
+    clean text extraction (``<stem>_kindle.txt``) with Markdown headings
+    suitable for Calibre TOC. Selective Gemini OCR remediation runs on
+    quality-flagged pages (EB-245).
+
+    Step 2: Invoke Calibre ``ebook-convert`` to convert the ``.txt`` to the
+    requested output format (epub/kfx/mobi/etc.).
+
+    Step 3 (best-effort, premium-only): post-conversion visual QA via
+    ``tools/visual_qa.py``. Skipped silently when ``premium_vqa_enabled``
+    is False or ``OPENROUTER_API_KEY`` is missing.
+
+    Background: pdf_to_balabolka.py does not produce ebook output directly —
+    it emits ``.txt`` formatted for Calibre to consume. Earlier versions of
+    this function invoked the script with non-existent ``--cli`` and
+    ``--output-format`` flags and skipped the Calibre step, so premium tier
+    had never produced a usable output in production. EB-256 fix.
     """
     cfg = settings or get_settings()
-    output_path = temp_dir / f"output.{output_format}"
+    final_output_path = temp_dir / f"output.{output_format}"
     job_start = time.time()
     file_size = input_path.stat().st_size
     timeout = _timeout_for_size(file_size)
 
+    # ── Step 1: text extraction via pdf_to_balabolka.py --mode kindle ──
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"  # ensure clean UTF-8 output on all platforms
 
-    cmd = [
+    extract_cmd = [
         str(cfg.python_path),
         str(cfg.pipeline_script),
-        "--cli",
         "--input", str(input_path),
         "--output-dir", str(temp_dir),
-        "--output-format", output_format,
+        "--mode", "kindle",
         # EB-245: selective Gemini OCR remediation. pdf_to_balabolka.py runs
         # score_text_layer_quality(multi_sample=True) and only re-extracts pages
-        # in flagged problem regions, so clean text PDFs incur $0. Mutually
-        # exclusive with --use-gemini (full transcription) and --use-vision —
-        # gate at pdf_to_balabolka.py:13203 is `gemini_remediate and not use_gemini
-        # and not use_vision`. Graceful degrade is already wired at
-        # pdf_to_balabolka.py:12762-12772 — Gemini failures fall through to
-        # standard extraction without killing the conversion.
+        # in flagged problem regions, so clean text PDFs incur $0. Graceful
+        # degrade is already wired at pdf_to_balabolka.py:12762-12772 — Gemini
+        # failures fall through to standard extraction without killing the run.
         "--gemini-remediate",
         "--gemini-cost-limit", str(cfg.premium_gemini_cost_limit_usd),
     ]
-    log.info("[%s] premium-tier cmd: %s (timeout=%ds)", job_id, cmd, timeout)
+    log.info("[%s] extract cmd: %s (timeout=%ds)", job_id, extract_cmd, timeout)
 
     try:
-        proc = subprocess.run(
-            cmd,
+        extract_proc = subprocess.run(
+            extract_cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -371,7 +382,7 @@ def run_premium(
             cwd=str(cfg.project_root),  # settings.json resolves relative to project root
         )
     except TimeoutExpired:
-        log.warning("[%s] Premium pipeline timed out after %ds", job_id, timeout)
+        log.warning("[%s] Extraction timed out after %ds", job_id, timeout)
         return RunResult(
             success=False,
             error_message=f"Conversion timed out after {timeout} seconds.",
@@ -380,20 +391,63 @@ def run_premium(
         log.error("[%s] Failed to launch pipeline: %s", job_id, exc)
         return RunResult(success=False, error_message=f"Pipeline could not be launched: {exc}")
 
-    if proc.returncode != 0:
-        error = _extract_calibre_error(proc.stdout, proc.stderr, proc.returncode)
-        log.warning("[%s] Pipeline exited %d: %s", job_id, proc.returncode, error)
+    if extract_proc.returncode != 0:
+        error = _extract_calibre_error(extract_proc.stdout, extract_proc.stderr, extract_proc.returncode)
+        log.warning("[%s] Pipeline exited %d: %s", job_id, extract_proc.returncode, error)
         return RunResult(success=False, error_message=error)
 
-    actual_path = _verify_output(output_path, job_start)
+    # pdf_to_balabolka.py --mode kindle writes <input_stem>_kindle.txt in --output-dir
+    # (default suffix per its CLI). The file is the input to Calibre below.
+    extracted_text = temp_dir / f"{input_path.stem}_kindle.txt"
+    if not extracted_text.is_file() or extracted_text.stat().st_size == 0:
+        log.warning("[%s] Extraction produced no .txt at %s", job_id, extracted_text)
+        return RunResult(
+            success=False,
+            error_message="Extraction produced no text output.",
+        )
+
+    # ── Step 2: Calibre ebook-convert to the requested format ──
+    calibre_cmd = [
+        str(cfg.calibre_path),
+        str(extracted_text),
+        str(final_output_path),
+    ]
+    log.info("[%s] calibre cmd: %s", job_id, calibre_cmd)
+
+    try:
+        calibre_proc = subprocess.run(
+            calibre_cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            shell=False,
+        )
+    except TimeoutExpired:
+        log.warning("[%s] Calibre conversion timed out after %ds", job_id, timeout)
+        return RunResult(
+            success=False,
+            error_message=f"Conversion timed out after {timeout} seconds.",
+        )
+    except OSError as exc:
+        log.error("[%s] Failed to launch Calibre: %s", job_id, exc)
+        return RunResult(success=False, error_message=f"Calibre could not be launched: {exc}")
+
+    if calibre_proc.returncode != 0:
+        error = _extract_calibre_error(calibre_proc.stdout, calibre_proc.stderr, calibre_proc.returncode)
+        log.warning("[%s] Calibre exited %d: %s", job_id, calibre_proc.returncode, error)
+        return RunResult(success=False, error_message=error)
+
+    actual_path = _verify_output(final_output_path, job_start)
     if actual_path is None:
         return RunResult(
             success=False,
             error_message="Pipeline produced no output file.",
         )
 
-    # EB-245 telemetry: parse Gemini cost from stdout, run output-side VQA.
-    gemini_cost = _extract_gemini_cost(proc.stdout)
+    # ── Step 3: EB-245 telemetry (Gemini cost from stdout, post-conversion VQA) ──
+    gemini_cost = _extract_gemini_cost(extract_proc.stdout)
     vqa = _run_vqa(actual_path, cfg, job_id)
 
     log.info(
