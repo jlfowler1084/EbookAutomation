@@ -248,6 +248,11 @@ untouched"). They should map to `var(--color-text-muted)` in a follow-up.
    Vercel deploy fails on drift. Smoke-tested by intentionally diverging one
    hex, confirming exit 1, reverting. Confirmed passing in Unit 8 verification:
    "OK: 8 tokens in design-tokens.ts <-> globals.css :root all match."
+   **EB-248 extension (2026-05-15):** The token system was extended to the FastAPI
+   backend. `gen-fastapi-css.mjs` generates a committed `web_service/static/leafbind-tokens.css`
+   from `design-tokens.ts`; the drift guard was expanded to a 3-way check
+   (design-tokens.ts ↔ globals.css ↔ leafbind-tokens.css). See
+   `docs/solutions/best-practices/fastapi-nextjs-css-token-sharing-python-shell-2026-05-15.md`.
 
 3. **Unit 7 split into 7a/7b/7c.** Mechanical component palette swap (7a) is
    delegable; functional page refactor (7b) is template-driven; marketing
