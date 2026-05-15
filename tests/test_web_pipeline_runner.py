@@ -535,3 +535,31 @@ class TestRunVqa:
             result = _run_vqa(output, enabled_settings, "job_vqa_no_report")
 
         assert result["skipped_reason"] == "missing_report"
+
+    def test_passes_calibre_path_from_settings(self, tmp_path, settings, monkeypatch):
+        """EB-245: --calibre is propagated from Settings so visual_qa.py doesn't
+        re-read settings.json and pick up the Windows default on a Linux VM."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        captured_cmd: list = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            # Skip writing a report — we only care about the cmd shape
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            _run_vqa(output, enabled_settings, "job_vqa_calibre_flag")
+
+        assert "--calibre" in captured_cmd
+        idx = captured_cmd.index("--calibre")
+        assert captured_cmd[idx + 1] == str(enabled_settings.calibre_path)

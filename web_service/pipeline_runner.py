@@ -153,6 +153,10 @@ def _run_vqa(output_path: Path, cfg: Settings, job_id: str) -> dict:
         "--provider", "cloud",
         "--cloud-host", "openrouter",
         "--output-dir", str(vqa_dir),
+        # Propagate the cross-platform-resolved Calibre path. Without this,
+        # visual_qa.py reads paths.calibre from settings.json directly and gets
+        # the Windows default — which fails on the Hetzner VM. EB-245 discovery.
+        "--calibre", str(cfg.calibre_path),
     ]
     log.info("[%s] VQA cmd: %s (timeout=%ds)", job_id, cmd, _VQA_TIMEOUT_SECONDS)
 
