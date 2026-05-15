@@ -30,7 +30,7 @@ export default async function Image({
           justifyContent: 'center',
           width: '100%',
           height: '100%',
-          background: '#FAF8F3',
+          background: '#f4efe2',   /* EB-240: updated to --lb-cream */
           color: '#1a3a1a',
           padding: '80px',
         }}

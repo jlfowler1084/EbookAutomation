@@ -19,10 +19,13 @@ const config: Config = {
         border:          "var(--color-border)",
         "text-base":     "var(--color-text-base)",
         "text-muted":    "var(--color-text-muted)",
+        "paper-back":    "var(--color-paper-back)",   // EB-240: back of folded paper
       },
       fontFamily: {
-        sans:  ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
-        serif: ["var(--font-lora)", "ui-serif", "Georgia", "serif"],
+        // EB-240: Inter → DM Sans, Lora → Newsreader, + IBM Plex Mono
+        sans:  ["var(--font-dm-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["var(--font-newsreader)", "ui-serif", "Georgia", "serif"],
+        mono:  ["var(--font-ibm-plex-mono)", "ui-monospace", "'Courier New'", "monospace"],
       },
       fontSize: {
         xs:    typeTokens.scaleXs,

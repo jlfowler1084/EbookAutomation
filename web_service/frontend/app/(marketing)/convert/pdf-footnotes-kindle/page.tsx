@@ -89,7 +89,7 @@ export default function PdfFootnotesKindlePage() {
 
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-16">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Footnote conversion guide
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
@@ -107,7 +107,7 @@ export default function PdfFootnotesKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-16 items-start">
           <div className="md:col-span-3">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
               The problem
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -150,7 +150,7 @@ export default function PdfFootnotesKindlePage() {
           </div>
           <div className="md:col-span-2">
             <div className="bg-white rounded-md shadow-md border border-border p-6">
-              <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-4">
+              <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-4">
                 Typical Calibre output
               </p>
               <div className="font-serif text-sm text-text-base leading-relaxed space-y-3">
@@ -185,7 +185,7 @@ export default function PdfFootnotesKindlePage() {
 
       {/* Section 2 — How leafbind links footnotes */}
       <section className="mb-16 pb-16 border-b border-border">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
           The solution
         </p>
         <h2 className="font-serif text-3xl text-text-base mb-8 leading-snug max-w-2xl">
@@ -264,7 +264,7 @@ export default function PdfFootnotesKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-16 items-start">
           <div className="md:col-span-2">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
               Coverage
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -332,7 +332,7 @@ export default function PdfFootnotesKindlePage() {
 
       {/* Section 4 — HowTo */}
       <section className="mb-16 pb-16 border-b border-border">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
           How to convert
         </p>
         <h2 className="font-serif text-3xl text-text-base mb-10 leading-snug max-w-xl">
@@ -359,7 +359,7 @@ export default function PdfFootnotesKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-16 items-start">
           <div className="md:col-span-2">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
               FAQ
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-4 leading-snug">
