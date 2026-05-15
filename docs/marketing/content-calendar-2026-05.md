@@ -222,9 +222,9 @@ All drafts respect positioning rules: lead with user pain, don't say "I built th
 
 **Comment template:**
 
-> For multi-column academic PDFs to Kindle Scribe specifically (the case that breaks most converters): the options I've used are Calibre + KFX-output plugin, Send-to-Kindle, and leafbind.io. **Disclosure: I built leafbind.** Calibre + plugin is free, well-documented, and handles columns well — the friction is the install (especially on macOS) and the learning curve to get the heading-detection regex right. Send-to-Kindle is zero-friction but, in my experience, mashes columns into a single text flow about 80% of the time. leafbind is web-based, no install, with multi-column extraction tuned for academic layouts — it's a paid tool ($2.99-$14.99 per conversion) with a free tier capped at 20 MB.
+> For multi-column academic PDFs to Kindle Scribe specifically (the case that breaks most converters): the options I've used are Calibre + KFX-output plugin, Send-to-Kindle, and leafbind.io. **Disclosure: I built leafbind.** Calibre + plugin is free, well-documented, and handles columns well — the friction is the install (especially on macOS) and the learning curve to get the heading-detection regex right. Send-to-Kindle is zero-friction but, in my experience, mashes columns into a single text flow about 80% of the time. leafbind is web-based, no install, with multi-column extraction tuned for academic layouts — the Premium tier uses one-time credit packs ($2.99, $7.99, $14.99) and there's a free tier (20 MB, 3 conversions per day, EPUB output).
 >
-> Which approach fits depends on how often you convert. If it's a one-off, leafbind's free tier or Calibre + plugin both work. If you convert multiple papers per week and don't want to deal with Calibre's plugin updates, the paid leafbind tier amortizes quickly.
+> Which approach fits depends on how often you convert. If it's a one-off, leafbind's free tier or Calibre + plugin both work. If you convert multiple papers per week and don't want to deal with Calibre's plugin updates, the leafbind Premium credit packs amortize quickly — the larger pack drops the per-conversion cost meaningfully.
 
 **Voice check:** Maker disclosure clean (not buried), Calibre and Send-to-Kindle named first and fairly, honest about price + limit, no superlatives ("best", "amazing").
 
@@ -361,7 +361,7 @@ maker of leafbind.io
 
 > I'm Joe, the author. Leafbind started because I bought a Kindle Scribe to read research papers, and Send-to-Kindle mangled every multi-column PDF I tried — column flow collapsed, footnotes vanished, chapter list came out flat. The Calibre KFX-output plugin handles columns well but the macOS install is fiddly and there's no QA pass on the result.
 >
-> Leafbind is a web converter focused on the cases that break the free tools: multi-column academic layouts, footnote linking that survives the conversion, OCR fallback for scanned papers, and a visual-QA pass that catches when a heading got misclassified as body text. Pricing is per-conversion ($2.99-$14.99 by file size) with a 20 MB free tier. No subscription, no ads, files are deleted after conversion.
+> Leafbind is a web converter focused on the cases that break the free tools: multi-column academic layouts, footnote linking that survives the conversion, OCR fallback for scanned papers, and a visual-QA pass that catches when a heading got misclassified as body text. Pricing is one-time credit packs ($2.99, $7.99, $14.99) for the Premium tier, with a 20 MB free tier (3 conversions per day, EPUB output). No subscription, no ads, files are deleted after conversion.
 >
 > Tech notes for the curious:
 >
@@ -374,7 +374,7 @@ maker of leafbind.io
 >
 > - Highly graphical PDFs (figures-heavy textbooks) still need manual review.
 > - Scanned PDFs depend on OCR quality; we fall back to Gemini for hard cases but it's not magic.
-> - Large file size limit on the paid tier is 200 MB — anything bigger needs to be split first.
+> - Large file size limit on the Premium tier is 100 MB — anything bigger needs to be split first.
 >
 > Happy to answer technical questions, or feedback on cases the converter botches. The thing that surprised me most building this was how much the "academic PDF" category fragments — chemistry papers vs. CS papers vs. humanities monographs all have different structural quirks. Curious what cases would be most useful to harden.
 
@@ -397,7 +397,7 @@ maker of leafbind.io
 
 **Description (260-char limit):**
 
-> Web-based PDF-to-KFX converter for Kindle Scribe. Handles the cases that break Send-to-Kindle: multi-column academic papers, footnote popup links, proper chapter detection. Pay-per-conversion ($2.99-$14.99). 20 MB free tier. No subscription, no ads, files deleted after conversion.
+> Web-based PDF-to-KFX converter for Kindle Scribe. Multi-column papers, footnote popup links, chapter detection. One-time credit packs ($2.99 / $7.99 / $14.99). Free 20 MB / Premium 100 MB. No subscription, files deleted after conversion.
 
 **First comment (post on launch as the maker — PH convention):**
 
@@ -408,9 +408,9 @@ maker of leafbind.io
 > - Multi-column detection that survives academic journal layouts
 > - Footnote linking that converts in-text markers to popup links
 > - Visual QA pass that re-renders the output and checks heading hierarchy, TOC accuracy, footnote rendering against the source
-> - Per-conversion pricing — no subscription anchoring
+> - One-time credit-pack pricing — no subscription anchoring
 >
-> The free tier (20 MB) handles most journal articles. Paid tiers ($2.99-$14.99 by file size) cover books and large papers up to 200 MB.
+> The free tier (20 MB) handles most journal articles. The Premium tier (one-time credit packs at $2.99, $7.99, $14.99) covers books and large papers up to 100 MB.
 >
 > Open to questions, bug reports, or specific case requests — the converter handles different paper types differently and I'm always trying to harden the next failure mode.
 
