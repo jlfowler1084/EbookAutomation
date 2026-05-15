@@ -65,6 +65,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import statistics
 import subprocess
 import sys
@@ -646,7 +647,8 @@ def main() -> int:
     )
     _settings = load_settings_json()
     _default_calibre = _settings.get("paths", {}).get(
-        "calibre", r"C:\Program Files\Calibre2\ebook-convert.exe"
+        "calibre",
+        shutil.which("ebook-convert") or r"C:\Program Files\Calibre2\ebook-convert.exe",
     )
     audit_p.add_argument("--baseline-dir", type=Path,
                          default=Path("data/vqa_baseline_post_274/"),

@@ -20,6 +20,7 @@ Requirements: pip install pypdf ebooklib beautifulsoup4
 
 import argparse
 import logging
+import shutil
 import sys
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
@@ -2985,13 +2986,13 @@ def extract_text_via_calibre(input_path, log, calibre_path=None):
 
     ext = Path(input_path).suffix.lstrip('.').lower()
 
-    # Find Calibre
+    # Find Calibre — explicit path wins, then Windows install locations, then PATH
     if calibre_path and os.path.isfile(calibre_path):
         calibre = calibre_path
     elif os.path.isfile(r"C:\Program Files\Calibre2\ebook-convert.exe"):
         calibre = r"C:\Program Files\Calibre2\ebook-convert.exe"
     else:
-        calibre = "ebook-convert"  # hope it's on PATH
+        calibre = shutil.which("ebook-convert") or "ebook-convert"
 
     log(f"  Converting {ext.upper()} via Calibre...")
 
