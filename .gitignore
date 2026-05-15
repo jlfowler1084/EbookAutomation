@@ -59,6 +59,9 @@ tools/data/foh_session.json
 
 # Pattern database (local run data)
 data/ebook_patterns.db
+
+# PR screenshot artifacts (captured locally, not committed)
+.screenshots/
 data/covers/
 
 # Pipeline cache (local run data)
