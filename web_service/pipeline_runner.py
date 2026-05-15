@@ -28,10 +28,17 @@ from web_service.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
-# EB-245 Phase 4: VQA subprocess gets a tight wall-clock cap. The conversion is
-# already done by the time VQA runs — VQA is best-effort. Don't let a hung
-# OpenRouter call extend total job latency by several minutes.
-_VQA_TIMEOUT_SECONDS = 60
+# EB-245 Phase 4 + EB-256 tuning: VQA subprocess wall-clock cap. The conversion
+# is already done by the time VQA runs — VQA is best-effort. Cap exists so a
+# hung OpenRouter call cannot extend total job latency unbounded.
+#
+# 180s based on integration-test measurement (claude-dev-01, 2026-05-15):
+# Calibre EPUB→PDF + 8-page render + 8 Qwen3-VL calls + report write averages
+# ~50-90s for a 130KB EPUB. The 60s initial value was too tight and produced
+# `vqa_skipped_reason: timeout` consistently. 180s gives ~2x headroom for
+# OpenRouter latency spikes without making a stuck call wedge the worker slot
+# for the full conversion-tier timeout window (120-600s).
+_VQA_TIMEOUT_SECONDS = 180
 
 # Pattern matching pdf_to_balabolka.py log lines for Gemini remediation cost.
 # Source: tools/pdf_to_balabolka.py:13268-13269 emits:
