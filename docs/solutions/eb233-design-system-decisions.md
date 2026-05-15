@@ -2,13 +2,96 @@
 date: 2026-05-15
 ticket: EB-233
 module: web_service/frontend
-tags: [design-system, brand, tokens, frontend, lighthouse, swarm-pilot]
+tags: [design-system, brand, tokens, frontend, lighthouse, swarm-pilot, lcp, ttfb]
 problem_type: design-pass
 updated: 2026-05-15
-updated_ticket: EB-240
+updated_ticket: EB-238
 ---
 
 # EB-233 — Leafbind design system + custom logo
+
+## EB-238 update (2026-05-15) — Font preload disabled (partial close, TTFB discovered as new bottleneck)
+
+### What we believed vs. what was true
+
+The EB-240 commit (immediately below) claimed "EB-238 absorbed" on the theory
+that swapping Lora → Newsreader with `preload: true` would recover EB-233's LCP
+regression. **Production Lighthouse proved this wrong** — LCP got worse, not
+better: +517ms on `/`, +662ms on `/pricing`, +566ms on `/convert/pdf-to-kfx`
+relative to the EB-238 ceiling targets.
+
+EB-238 was then opened (real, not absorbed) with 6 candidate strategies. This
+update implements **Strategy A — disable preload on both Newsreader and DM
+Sans** (`web_service/frontend/app/layout.tsx`).
+
+### Why preload was hurting
+
+`next/font` preload is **binary, not per-weight**. Configuring Newsreader with
+weight `["400","500","600"]` × style `["normal","italic"]` emits 6
+`<link rel="preload">` tags. DM Sans with 4 weights emits 4 more. Total 10
+font preload tags competing with critical CSS for browser request slots.
+
+With `display: swap`, Chrome's LCP measures the **first paint** of the largest
+element — which uses `adjustFontFallback`'s metrics-adjusted Georgia fallback,
+**not** the actual Newsreader file. So preloading the font files only delayed
+the critical-path first paint; the visual swap to Newsreader happens later and
+is not measured by LCP.
+
+### Production Lighthouse — Strategy A result (mobile, post-promote)
+
+| Page | EB-230 baseline | EB-233 (Lora) | EB-240 (Newsreader+preload) | **Strategy A (now)** | EB-238 target | Δ vs target |
+|---|---|---|---|---|---|---|
+| `/` | 1700ms | 1986ms | 2417ms | **2088ms** | ≤1900ms | +188ms over |
+| `/pricing` | 1700ms | 2055ms | 2562ms | **2564ms** | ≤1900ms | +664ms over |
+| `/convert/pdf-to-kfx` | 1800ms | 2125ms | 2566ms | **2568ms** | ≤2000ms | +568ms over |
+
+CLS = 0 on all three. Perf score 96 / 93 / 93. **No regression introduced.**
+
+### What this tells us — TTFB is the real residual bottleneck
+
+Strategy A delivered a clean **-329ms on `/`** but left the other two pages
+flat. The differential is the diagnostic: fonts mattered on `/` (Newsreader
+text was the LCP element), but **`/pricing` and `/convert/pdf-to-kfx` have a
+different LCP element where fonts were never the bottleneck**.
+
+Lighthouse `lcp-breakdown-insight` audit confirms — TTFB dominates across all
+three pages:
+
+| Page | TTFB | Element render delay | Resource load |
+|---|---|---|---|
+| `/` | 2473ms | 282ms | 0ms |
+| `/pricing` | 2456ms | 301ms | 0ms |
+| `/convert/pdf-to-kfx` | 2440ms | 342ms | 0ms |
+
+A ~2.4s TTFB on Next.js marketing pages on Vercel is unusual. Hypotheses for
+the follow-up ticket: Vercel cold-start projection, RSC server rendering
+overhead, Cloudflare→Vercel relay latency, or Lighthouse simulated-4G
+projection inflation. **All three pages having near-identical TTFB makes
+cold-start less likely (cold-start would vary).**
+
+### Lessons recorded
+
+1. **`preload: true` on a swap-display font hurts LCP, not helps it.** Chrome
+   measures LCP as the *first paint*, and `display: swap` makes the fallback
+   the first paint. Preloading the swapped font only delays the critical
+   path. **The next person who reaches for `preload: true` here should read
+   this section first.** Comment added inline in `layout.tsx`.
+
+2. **"Absorbed" claims need post-deploy verification.** The EB-240 commit
+   message asserted "EB-238 absorbed" based on local Lighthouse and a
+   plausible-sounding font-swap theory. Production proved the opposite.
+   Going forward: do not mark a follow-up ticket absorbed by the work that
+   *should* fix it until production Lighthouse confirms.
+
+3. **Differential improvement is a diagnostic.** When a fix moves one page
+   and not another, treat that as a signal — the pages have different
+   bottlenecks. Don't keep trying font strategies on a TTFB-bound page.
+
+### Follow-up ticket required
+
+Opening a sibling ticket for the TTFB investigation. EB-238 closes as
+**partial success** — the font preload bug is fixed and one page meets
+target ceiling; the other two need a separate TTFB-focused investigation.
 
 ## EB-240 update (2026-05-15) — Newsreader/DM Sans + palette + Plex Mono
 
