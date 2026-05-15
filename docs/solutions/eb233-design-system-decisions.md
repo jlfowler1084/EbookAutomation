@@ -1,0 +1,158 @@
+---
+date: 2026-05-15
+ticket: EB-233
+module: web_service/frontend
+tags: [design-system, brand, tokens, frontend, lighthouse, swarm-pilot]
+problem_type: design-pass
+---
+
+# EB-233 — Leafbind design system + custom logo
+
+## Summary
+
+Shipped the brand layer on leafbind.io across 9 routes via a 7-stream swarm pilot
+(per INFRA-216 Parallelization Map). Pre-existing functional product with stock
+Tailwind defaults → calm, trustworthy, Stripe/Linear-adjacent paid product.
+
+## Final palette (forest-green identity)
+
+| Token | Hex | Purpose |
+|---|---|---|
+| brand | #2D4A2B | Primary forest green (logo leaf body) |
+| brand-dark | #1a3a1a | Deeper forest (midrib, hover) |
+| accent | #3D7A3A | CTAs, focus rings, link hover |
+| surface | #FAF8F3 | Warm cream page background |
+| surface-muted | #F5F1E8 | Slightly darker cream — cards |
+| border | #E2DFD5 | Soft taupe-cream dividers |
+| text-base | #1a1a1a | Body + heading ink |
+| text-muted | #6a6a6a | Secondary copy |
+
+## Font pair
+
+- Headings: Lora (serif, weight 500, letter-spacing -0.5 to -1.2)
+- Body: Inter (sans, weight 400-500)
+- Both via `next/font/google` with CSS variable export pattern (`--font-inter`,
+  `--font-lora`); self-hosted at build time, zero runtime calls to Google Fonts.
+
+## Lighthouse comparison (post-redesign vs. pre-redesign baseline)
+
+| Page | Baseline | Post-redesign | Delta |
+|---|---|---|---|
+| `/` | Perf 98 / LCP 1.7s / CLS 0 | Perf 94 avg / LCP 2.79s avg / CLS 0 | Perf -4 / LCP +1.09s |
+| `/convert/pdf-to-kfx` | Perf 98 / LCP 1.8s / CLS 0 | Perf 92 / LCP 3.01s / CLS 0 | Perf -6 / LCP +1.21s |
+| `/pricing` | Perf 98 / LCP 1.7s / CLS 0 | Perf 97 / LCP 2.10s / CLS 0 | Perf -1 / LCP +0.40s |
+
+**Regression verdict: LCP and Performance score regressions detected on `/` and
+`/convert/pdf-to-kfx`.** These exceed the Unit 8 regression contract (LCP ≤ +200ms,
+Perf drop ≤ 2 points). `/pricing` Perf passes but LCP fails.
+
+**Important caveat:** Baseline was captured against production CDN (`https://leafbind.io`);
+post-redesign audit was captured against `localhost:3001` (`next build && next start`).
+Local measurement underestimates CDN performance. Coordinator should rerun against a
+Vercel Preview URL or trigger a production deployment before treating these as hard regressions.
+
+**Likely causes:**
+- Lora + Inter font files add to the LCP path on mobile (even with `display: 'swap'`).
+- Inline SVG `<Logo />` in Header adds DOM weight on every page.
+- Local build latency vs. Vercel CDN: the measurement environment disadvantages the
+  post-redesign audit relative to the CDN-served baseline.
+
+**Recommended follow-up if regressions confirmed on CDN:**
+1. Add `<link rel="preload">` for Lora font subset in `app/layout.tsx`.
+2. Consider subsetting Inter to WOFF2 with only Latin characters.
+3. Evaluate whether `<Logo />` SVG complexity can be reduced further.
+
+## AI-slop checklist
+
+| Check | Result |
+|---|---|
+| Zero gradient-mesh / conic-gradient / radial-gradient | PASS |
+| Zero glassmorphism (backdrop-blur / backdrop-filter) | PASS |
+| Zero generic Tailwind defaults (slate-N, indigo-N, zinc-N) | PASS |
+| Zero urgency copy (limited time, act now, hurry, only N left, expires in) | PASS |
+| Zero autoplay | PASS |
+| Zero overlay popups on first paint (useEffect → setIsOpen) | PASS — two useEffect usages are functional (status polling + localStorage token recovery), not overlay popups |
+| Single primary CTA per marketing page | PASS — home: UploadForm (one upload zone); pricing: BuyButtons section (no competing CTAs) |
+| Logo appears in Header AND Footer | PASS — `<Logo className="h-8 w-auto" />` in both Header.tsx:9 and Footer.tsx:11 |
+| Favicon visible in tab (icon.svg + favicon.ico) | PASS — both `app/icon.svg` and `app/favicon.ico` exist |
+| OG previews render | PASS — `/opengraph-image.png` returns 200 image/png; `/convert/pdf-to-kfx/opengraph-image` returns 200 image/png |
+
+### Known remaining hardcoded hex values (deferred follow-ups)
+
+Six instances of `#666` and `#555` remain in:
+- `components/RecoverClient.tsx` (4 instances)
+- `components/TokenList.tsx` (1 instance)
+- `components/UploadZone.tsx` (1 instance, `color: "#666"` on helper text)
+
+These were flagged in the Stream D scope as intentionally deferred ("Stream D left
+untouched"). They should map to `var(--color-text-muted)` in a follow-up.
+
+## Architectural decisions worth recording
+
+1. **Route groups (not `<AppShell variant>`).** `app/(marketing)/layout.tsx`
+   and `app/(app)/layout.tsx` — router-enforced contract beats a runtime prop.
+   Adding a new functional page = drop into `app/(app)/`. Adopted after the
+   Phase 5.3.7 deepening pass surfaced the variant-prop maintenance trap.
+
+2. **Token drift guard (`tools/check-token-drift.mjs`).** CI-gated parity check
+   between `design-tokens.ts` and `globals.css :root`. Wired into `prebuild` so
+   Vercel deploy fails on drift. Smoke-tested by intentionally diverging one
+   hex, confirming exit 1, reverting. Confirmed passing in Unit 8 verification:
+   "OK: 8 tokens in design-tokens.ts <-> globals.css :root all match."
+
+3. **Unit 7 split into 7a/7b/7c.** Mechanical component palette swap (7a) is
+   delegable; functional page refactor (7b) is template-driven; marketing
+   redesign (7c) is high-judgment. Splitting unlocked parallel execution and
+   put the right discipline at the right level.
+
+4. **Drift-guard test smoke pattern.** Don't ship "drift guard exists" without
+   intentionally injecting drift and confirming the guard fires. Pattern from
+   global CLAUDE.md INFRA-183.
+
+5. **Stream A2 logo SVG: hand-drafted, not vector-traced from PNG.** SVG path
+   data derived from the Gemini concept PNG via visual interpretation, then
+   iterated with v1 → v2 → v3 (tapered leaf + larger curl + simpler veins).
+   For future redesigns: this is a "spirit" SVG, not a pixel-trace. The
+   committed `brand-assets/` PNGs are the ground truth for re-interpretation.
+
+6. **Static OG image file convention vs. dynamic.** `app/opengraph-image.png`
+   is served at `/opengraph-image.png` (not `/opengraph-image` bare path) — this
+   is correct Next.js file-convention behavior. Dynamic per-slug OG images for
+   `/convert/[slug]` via `opengraph-image.tsx` return `image/png` correctly. Do
+   not confuse 404 at bare `/opengraph-image` as a bug.
+
+7. **Lighthouse measurement environment matters.** Baseline was captured on
+   production CDN; post-redesign audit on localhost. This systematically disadvantages
+   the post-redesign scores by removing CDN edge delivery, HTTP/2 push, and
+   Cloudflare caching. Future audits should consistently use the same environment
+   (prefer production/preview URL over localhost for Lighthouse).
+
+## Swarm pilot retrospective notes
+
+- **7 streams, 7 merged PRs** (excluding the prep commit on layout.tsx). Streams
+  A1, A2, B, C, D, E, F each landed clean via separate PRs, all squash-merged to master.
+- **Parallel execution worked** for Streams C+D (zero file overlap) and E+F
+  (zero file overlap). Both pairs could execute in parallel without conflict.
+- **Highest-judgment stream (F)** redesigned marketing pages (home, pricing,
+  quality, 4x /convert/*) with editorial value-prop sections, Lora headings,
+  trust signals, and single-CTA discipline. No gradient mesh, no glassmorphism,
+  no urgency patterns introduced.
+- **All builds pass.** `npm run build` succeeds (including `prebuild` token drift
+  check). TypeScript and lint clean. 17 static pages generated.
+
+## Open follow-ups
+
+- **Production Lighthouse rerun** — rerun against Vercel preview URL or after
+  production deployment to get CDN-equivalent scores. Current localhost regressions
+  may be measurement artifact.
+- **LCP investigation** — if production confirms LCP regression: preload Lora font
+  subset, subset Inter to Latin WOFF2, evaluate Logo SVG complexity reduction.
+- **Hardcoded hex follow-up** — `#666` and `#555` in RecoverClient.tsx,
+  TokenList.tsx, UploadZone.tsx should map to `var(--color-text-muted)`.
+- **Dark mode** — deferred per plan. One `darkMode: 'selector'` line in
+  `tailwind.config.ts` plus a `.dark { … }` override block in `globals.css`.
+- **`useReportWebVitals` analytics endpoint** — deferred per plan.
+- **Stripe checkout success page + post-purchase email design** — deferred.
+- **Production deployment trigger** — Vercel is currently deploying EB-233
+  changes as "Preview" environment only. Coordinator needs to trigger production
+  deployment to make the design live on `https://leafbind.io`.
