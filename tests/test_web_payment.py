@@ -337,7 +337,7 @@ class TestPaymentSuccessEdgeCases:
             resp = client.get("/payment/success?session_id=cs_test_abc")
 
         assert resp.status_code == 200
-        assert "Payment Not Yet Confirmed" in resp.text or "not yet confirmed" in resp.text.lower()
+        assert "PROCESSING" in resp.text or "Payment Confirming" in resp.text
 
     def test_expired_tokens_renders_expired_page(self, client):
         """Tokens past expires_at → renders 'tokens expired' notice."""
@@ -529,6 +529,71 @@ class TestPaymentSuccessCircuitBreaker:
 
 
 # ---------------------------------------------------------------------------
+# TestAutoReloadBrandMarkup  (EB-248 Unit 4)
+# ---------------------------------------------------------------------------
+
+class TestAutoReloadBrandMarkup:
+    """Verify brand markup on the pending and retry auto-reload pages."""
+
+    def _pending_resp(self, client):
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                return_value=_make_stripe_session(payment_status="unpaid"),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            return client.get("/payment/success?session_id=cs_test_pending")
+
+    def _retry_resp(self, client):
+        with patch(
+            "web_service.routes.payment.circuit_breaker.circuit_is_open",
+            return_value=True,
+        ):
+            return client.get("/payment/success?session_id=cs_test_retry")
+
+    def test_pending_has_lb_pulse_eyebrow(self, client):
+        resp = self._pending_resp(client)
+        assert "lb-eyebrow" in resp.text
+        assert "lb-pulse" in resp.text
+
+    def test_pending_eyebrow_text_is_processing(self, client):
+        resp = self._pending_resp(client)
+        assert "PROCESSING" in resp.text
+
+    def test_pending_headline_has_aria_live(self, client):
+        resp = self._pending_resp(client)
+        assert 'aria-live="polite"' in resp.text
+
+    def test_pending_has_autoreload_script(self, client):
+        resp = self._pending_resp(client)
+        assert "setTimeout" in resp.text
+        assert "window.location.reload" in resp.text
+
+    def test_retry_has_lb_pulse_eyebrow(self, client):
+        resp = self._retry_resp(client)
+        assert "lb-eyebrow" in resp.text
+        assert "lb-pulse" in resp.text
+
+    def test_retry_eyebrow_text_is_catching_up(self, client):
+        resp = self._retry_resp(client)
+        assert "CATCHING UP" in resp.text
+
+    def test_retry_headline_has_aria_live(self, client):
+        resp = self._retry_resp(client)
+        assert 'aria-live="polite"' in resp.text
+
+    def test_retry_has_autoreload_script(self, client):
+        resp = self._retry_resp(client)
+        assert "setTimeout" in resp.text
+        assert "window.location.reload" in resp.text
+
+
+# ---------------------------------------------------------------------------
 # TestResponseHeaders
 # ---------------------------------------------------------------------------
 
@@ -591,6 +656,102 @@ class TestResponseHeaders:
 
         assert resp.headers.get("referrer-policy") == "no-referrer"
         assert resp.headers.get("cache-control") == "private, no-store"
+
+
+# ---------------------------------------------------------------------------
+# TestBrandMarkup  (EB-248 — brand pass verification)
+# ---------------------------------------------------------------------------
+
+class TestBrandMarkup:
+    """Verify the EB-248 brand pass on the success page."""
+
+    def _success_resp(self, client):
+        tokens = ["lb_pk_" + "A" * 43]
+        expires_at = int(time.time()) + 86400
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=(tokens, expires_at),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            return client.get("/payment/success?session_id=cs_test_brand")
+
+    def test_success_page_has_lb_eyebrow_class(self, client):
+        resp = self._success_resp(client)
+        assert "lb-eyebrow" in resp.text
+
+    def test_success_page_has_lb_display_class(self, client):
+        resp = self._success_resp(client)
+        assert "lb-display" in resp.text
+
+    def test_success_page_has_lb_token_list_class(self, client):
+        resp = self._success_resp(client)
+        assert "lb-token-list" in resp.text
+
+    def test_success_page_has_lb_button_primary_class(self, client):
+        resp = self._success_resp(client)
+        assert "lb-button-primary" in resp.text
+
+    def test_success_page_includes_brand_css_link(self, client):
+        resp = self._success_resp(client)
+        assert 'href="/static/leafbind-tokens.css"' in resp.text
+
+    def test_success_page_has_payment_confirmed_eyebrow(self, client):
+        resp = self._success_resp(client)
+        assert "PAYMENT CONFIRMED" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# TestErrorPageBrandMarkup  (EB-248 Unit 5)
+# ---------------------------------------------------------------------------
+
+class TestErrorPageBrandMarkup:
+    """Verify brand markup on error/recovery state pages."""
+
+    def test_expired_page_has_tokens_expired_eyebrow(self, client):
+        expires_at = int(time.time()) - 10
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=(["lb_pk_" + "A" * 43], expires_at),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success?session_id=cs_test_expired")
+        assert "TOKENS EXPIRED" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_not_found_page_has_session_not_found_eyebrow(self, client):
+        import stripe as stripe_lib
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                side_effect=stripe_lib.error.InvalidRequestError(
+                    "No such session", param="id"
+                ),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success?session_id=cs_test_notfound")
+        assert resp.status_code == 404
+        assert "SESSION NOT FOUND" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_cancel_page_has_payment_cancelled_eyebrow(self, client):
+        resp = client.get("/payment/cancel")
+        assert "PAYMENT CANCELLED" in resp.text
+        assert "lb-eyebrow" in resp.text
+
+    def test_invalid_session_page_has_invalid_url_eyebrow(self, client):
+        resp = client.get("/payment/success?session_id=bad_no_prefix")
+        assert resp.status_code == 422
+        assert "INVALID URL" in resp.text
+        assert "lb-eyebrow" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +901,83 @@ class TestXSSInjectionGuards:
 
         # Token should appear in the JSON block
         assert tok in json_block, "Token not found in JSON data block"
+
+    def test_session_id_html_special_chars_escaped_in_not_found_page(self, client):
+        """REGRESSION (EB-248): session_id with HTML special chars must be escaped.
+
+        A session_id that starts with cs_ (passes the prefix check) but contains
+        HTML tags must NOT be reflected as raw HTML. This exercises _render_not_found_page
+        which currently reflects session_id directly via f-string (pre-fix).
+        After the fix, html.escape() prevents <img onerror=...> injection.
+        """
+        import stripe as stripe_lib
+
+        payload = "cs_test<img onerror=alert(1)>"
+
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                side_effect=stripe_lib.error.InvalidRequestError(
+                    "No such checkout.session", "session_id"
+                ),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success", params={"session_id": payload})
+
+        assert resp.status_code == 404
+        html = resp.text
+        # The raw payload must NOT appear as executable HTML
+        assert "<img onerror=alert(1)>" not in html, (
+            "XSS: raw <img> tag found in rendered HTML — session_id not escaped"
+        )
+        # The escaped form must appear instead
+        assert "&lt;img onerror=alert(1)&gt;" in html, (
+            "Expected html.escape() output '&lt;img...' not found"
+        )
+
+    def test_session_id_escaped_in_retry_page(self, client):
+        """REGRESSION (EB-248): session_id escaped in _render_retry_page."""
+        payload = "cs_test<script>alert(2)</script>"
+
+        with patch(
+            "web_service.routes.payment.circuit_breaker.circuit_is_open",
+            return_value=True,
+        ):
+            resp = client.get("/payment/success", params={"session_id": payload})
+
+        assert resp.status_code == 503
+        html = resp.text
+        assert "<script>alert(2)</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_session_id_escaped_in_pending_page(self, client):
+        """REGRESSION (EB-248): session_id escaped in _render_pending_page."""
+        import stripe as stripe_lib
+
+        payload = "cs_test<b onmouseover=alert(3)>hover</b>"
+
+        with (
+            patch(
+                "web_service.routes.payment.token_store.get_tokens_for_session",
+                return_value=None,
+            ),
+            patch(
+                "web_service.routes.payment.stripe.checkout.Session.retrieve",
+                return_value=_make_stripe_session(payment_status="unpaid"),
+            ),
+            patch("web_service.routes.payment.billing_executor", None),
+        ):
+            resp = client.get("/payment/success", params={"session_id": payload})
+
+        assert resp.status_code == 200
+        html = resp.text
+        assert "<b onmouseover=alert(3)>hover</b>" not in html
+        assert "&lt;b onmouseover=alert(3)&gt;" in html
 
 
 # ---------------------------------------------------------------------------
