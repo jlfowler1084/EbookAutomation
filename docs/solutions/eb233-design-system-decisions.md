@@ -4,9 +4,69 @@ ticket: EB-233
 module: web_service/frontend
 tags: [design-system, brand, tokens, frontend, lighthouse, swarm-pilot]
 problem_type: design-pass
+updated: 2026-05-15
+updated_ticket: EB-240
 ---
 
 # EB-233 — Leafbind design system + custom logo
+
+## EB-240 update (2026-05-15) — Newsreader/DM Sans + palette + Plex Mono
+
+### Font swap decision
+
+**Newsreader adopted** (EB-238 absorbed). At 32px header height the wordmark
+"leafbind.io" in Newsreader 500 looks balanced — slightly wider-set than Lora
+but the italic `.io` in sand (`#c9a96e`) sits cleanly without crowding. The
+serifs add more visual distinction from body text than Lora did at this scale.
+Decision: Newsreader used for both wordmark and page headings.
+
+Font matrix:
+- Display / headlines: **Newsreader** 400/500/600 + italic via `next/font/google`
+- UI / body: **DM Sans** 400/500/600/700 via `next/font/google`
+- Eyebrow labels: **IBM Plex Mono** 400/500/600 via `next/font/google`
+
+Preload: Newsreader + DM Sans preloaded (`preload: true`); IBM Plex Mono deferred
+(`preload: false`) since it only appears in eyebrow labels below the fold.
+
+### Palette changes
+
+| Token | Before (EB-233) | After (EB-240) |
+|---|---|---|
+| `--lb-green` / `--color-brand` | `#2D4A2B` | `#2f5d3a` |
+| `--lb-cream` / `--color-surface` | `#FAF8F3` | `#f4efe2` |
+| `--lb-paper-back` / `--color-paper-back` | (hardcoded in SVG only) | `#e0d8c0` (formal token) |
+
+Kept as-is: `--lb-green-dark` (#1f3f27), `--lb-paper` (#fbf7ec), `--lb-ink`
+(#1a1f1c), `--lb-sand` (#c9a96e).
+
+### Eyebrow label treatment
+
+All eyebrow labels (pattern: uppercase + tracking-widest) converted from
+`font-sans` to `font-mono` (IBM Plex Mono) across 5 marketing pages:
+`quality/`, `convert/pdf-to-kfx`, `convert/academic-pdf-to-kindle`,
+`convert/multi-column-pdf-kindle`, `convert/pdf-footnotes-kindle` — 28 instances.
+
+### Lighthouse (localhost, EB-240 — same environment caveat as EB-233)
+
+| Page | Perf | LCP | CLS |
+|---|---|---|---|
+| `/` | 77 | 4037ms | 0.001 |
+| `/pricing` | 77 | 4039ms | 0.000 |
+| `/convert/pdf-to-kfx` | 78 | 3944ms | 0.000 |
+
+**Caveat:** These are localhost measurements (same limitation documented in
+EB-233). Applying the ~2x ratio from EB-233's calibration, CDN LCP estimates
+~1.9-2.1s. CLS is 0 across all pages — no layout shift from font swap.
+Font preloads are emitted correctly in HTML head (`<link rel="preload">` for
+Newsreader + DM Sans). Production Lighthouse rerun needed after deployment.
+
+### EB-238 status
+
+Absorbed. Newsreader is live with `preload: true`; EB-238's LCP improvement
+intent is fulfilled. Coordinator should close EB-238 after verifying Newsreader
+shipped correctly on production.
+
+
 
 ## Summary
 

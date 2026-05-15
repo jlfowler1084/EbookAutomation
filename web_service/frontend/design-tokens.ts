@@ -7,21 +7,26 @@
  *
  * Run `npm run check:tokens` after any edit here; this script runs automatically
  * as part of `prebuild`.
+ *
+ * EB-240: Updated brand (#2f5d3a) and surface (#f4efe2) to match Claude Design
+ * handoff palette. Added paperBack token (#e0d8c0 — back of folded paper).
  */
 export const colors = {
-  brand:        "#2D4A2B",
+  brand:        "#2f5d3a",   // EB-240: #2D4A2B → #2f5d3a (Claude Design --lb-green)
   brandDark:    "#1a3a1a",
   accent:       "#3D7A3A",
-  surface:      "#FAF8F3",
+  surface:      "#f4efe2",   // EB-240: #FAF8F3 → #f4efe2 (Claude Design --lb-cream)
   surfaceMuted: "#F5F1E8",
   border:       "#E2DFD5",
   textBase:     "#1a1a1a",
   textMuted:    "#6a6a6a",
+  paperBack:    "#e0d8c0",   // EB-240: back of folded paper (--lb-paper-back)
 } as const;
 
 export const type = {
-  fontSans:  "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
-  fontSerif: "var(--font-lora), ui-serif, Georgia, serif",
+  fontSans:  "var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif",
+  fontSerif: "var(--font-newsreader), ui-serif, Georgia, serif",
+  fontMono:  "var(--font-ibm-plex-mono), ui-monospace, 'Courier New', monospace",
   // Modular scale: 12/14/16/20/24/32/48
   scaleXs:  "0.75rem",
   scaleSm:  "0.875rem",

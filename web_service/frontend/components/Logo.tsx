@@ -21,26 +21,29 @@ export function Logo({ className, variant = "full" }: LogoProps) {
   }
 
   return (
+    // EB-240: viewBox widened 370→380 to fit italic .io suffix; font updated
+    // to Newsreader (EB-238 absorbed). The .io tspan uses sand accent + italic
+    // per Claude Design logos.jsx LogoLockup pattern.
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 340 100"
+      viewBox="0 0 380 100"
       role="img"
-      aria-label="leafbind"
+      aria-label="leafbind.io"
       fill="none"
       className={className}
     >
-      <title>leafbind</title>
+      <title>leafbind.io</title>
       <LeafGlyphPaths gradId="lbCurlShade_full" clipId="lbLeafClip_full" />
       <text
         x="116"
         y="68"
-        fontFamily="var(--font-lora), Georgia, serif"
+        fontFamily="var(--font-newsreader), Georgia, serif"
         fontSize="53"
         fontWeight="500"
         fill="currentColor"
         letterSpacing="-0.8"
       >
-        leafbind
+        leafbind<tspan fill="#c9a96e" fontStyle="italic">.io</tspan>
       </text>
     </svg>
   );

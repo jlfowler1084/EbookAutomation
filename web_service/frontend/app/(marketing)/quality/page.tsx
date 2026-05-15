@@ -98,7 +98,7 @@ export default function QualityPage() {
 
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-16">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Quality comparison
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
@@ -122,7 +122,7 @@ export default function QualityPage() {
 
               {/* Left column: section label, heading, explanation */}
               <div className="md:col-span-2">
-                <p className="font-sans text-text-muted text-sm font-medium mb-5 tracking-widest uppercase">
+                <p className="font-mono text-text-muted text-sm font-medium mb-5 tracking-widest uppercase">
                   {c.number}
                 </p>
                 <h2 className="font-serif text-2xl text-text-base mb-4 leading-snug">
@@ -148,7 +148,7 @@ export default function QualityPage() {
               <div className="md:col-span-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-2">
+                    <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-2">
                       Calibre raw
                     </p>
                     <img
@@ -161,7 +161,7 @@ export default function QualityPage() {
                     />
                   </div>
                   <div>
-                    <p className="font-sans text-xs font-medium text-brand uppercase tracking-widest mb-2">
+                    <p className="font-mono text-xs font-medium text-brand uppercase tracking-widest mb-2">
                       leafbind
                     </p>
                     <img

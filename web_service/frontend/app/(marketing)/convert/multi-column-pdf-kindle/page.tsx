@@ -93,7 +93,7 @@ export default function MultiColumnPdfKindlePage() {
 
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-16">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Multi-column PDF conversion
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
@@ -116,7 +116,7 @@ export default function MultiColumnPdfKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-12 items-start">
           <div className="md:col-span-3">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
               The problem
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -155,7 +155,7 @@ export default function MultiColumnPdfKindlePage() {
             </div>
           </div>
           <div className="md:col-span-2 bg-surface border border-border rounded-md p-6">
-            <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
+            <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
               The column-merge pattern
             </p>
             <div className="space-y-2 font-sans text-sm text-text-base leading-relaxed">
@@ -165,7 +165,7 @@ export default function MultiColumnPdfKindlePage() {
               <p className="text-text-muted line-through">Col 2 line 2: 47 adult subjects aged 22...</p>
             </div>
             <div className="mt-4 pt-4 border-t border-border space-y-2 font-sans text-sm text-text-base leading-relaxed">
-              <p className="font-sans font-medium text-brand text-xs uppercase tracking-widest mb-2">
+              <p className="font-mono font-medium text-brand text-xs uppercase tracking-widest mb-2">
                 What you want
               </p>
               <p>Col 1 line 1: The epistemological framework...</p>
@@ -182,7 +182,7 @@ export default function MultiColumnPdfKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-12 items-start">
           <div className="md:col-span-2">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
               The detection method
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -243,7 +243,7 @@ export default function MultiColumnPdfKindlePage() {
       {/* Section 3: Document types */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
             Document types
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -280,7 +280,7 @@ export default function MultiColumnPdfKindlePage() {
       {/* Section 4: HowTo */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
             How to convert
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-10 leading-snug">
@@ -311,7 +311,7 @@ export default function MultiColumnPdfKindlePage() {
       {/* Section 5: FAQ */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
             Frequently asked
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-10 leading-snug">

@@ -4,13 +4,24 @@
 
 @layer base {
   :root {
-    --color-brand:          #2D4A2B;
+    /* EB-240: Updated brand + surface to Claude Design palette values */
+    --color-brand:          #2f5d3a;
     --color-brand-dark:     #1a3a1a;
     --color-accent:         #3D7A3A;
-    --color-surface:        #FAF8F3;
+    --color-surface:        #f4efe2;
     --color-surface-muted:  #F5F1E8;
     --color-border:         #E2DFD5;
     --color-text-base:      #1a1a1a;
     --color-text-muted:     #6a6a6a;
+    --color-paper-back:     #e0d8c0;
+
+    /* Leafbind brand tokens (lb-namespaced — not checked by drift guard) */
+    --lb-green:             #2f5d3a;
+    --lb-green-dark:        #1f3f27;
+    --lb-cream:             #f4efe2;
+    --lb-paper:             #fbf7ec;
+    --lb-paper-back:        #e0d8c0;
+    --lb-ink:               #1a1f1c;
+    --lb-sand:              #c9a96e;
   }
 }

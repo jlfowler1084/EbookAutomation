@@ -89,7 +89,7 @@ export default function PdfToKfxPage() {
 
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-16">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Conversion guide
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
@@ -208,7 +208,7 @@ export default function PdfToKfxPage() {
 
             <div className="md:col-span-2 mt-2 md:mt-12">
               <div className="bg-white border border-border rounded-md p-6 shadow-sm">
-                <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
+                <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
                   See it in practice
                 </p>
                 <p className="text-base text-text-base leading-relaxed mb-4">
@@ -312,7 +312,7 @@ export default function PdfToKfxPage() {
 
         {/* ── Cross-links ── */}
         <section className="mb-16">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
             Related guides
           </p>
           <div className="flex flex-wrap gap-4">

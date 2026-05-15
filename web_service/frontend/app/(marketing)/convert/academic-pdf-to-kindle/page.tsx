@@ -93,7 +93,7 @@ export default function AcademicPdfToKindlePage() {
 
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-16">
-        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+        <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Academic PDF conversion
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
@@ -116,7 +116,7 @@ export default function AcademicPdfToKindlePage() {
       {/* Section 1: The academic PDF problem */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
               The problem
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -161,7 +161,7 @@ export default function AcademicPdfToKindlePage() {
       <section className="mb-16 pb-16 border-b border-border">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-12 items-start">
           <div className="md:col-span-2">
-            <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
               The fix
             </p>
             <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -240,7 +240,7 @@ export default function AcademicPdfToKindlePage() {
       {/* Section 3: Supported document types */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
             Compatibility
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
@@ -289,7 +289,7 @@ export default function AcademicPdfToKindlePage() {
       {/* Section 4: HowTo */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
             How to convert
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-8 leading-snug">
@@ -320,7 +320,7 @@ export default function AcademicPdfToKindlePage() {
       {/* Section 5: FAQ */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
-          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
             FAQ
           </p>
           <h2 className="font-serif text-3xl text-text-base mb-8 leading-snug">
