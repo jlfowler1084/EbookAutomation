@@ -39,12 +39,24 @@ This is the documented diagnosis chain so future similar incidents resolve faste
 
 ## The fix that worked
 
-**Dashboard (the only path):**
+**Dashboard (the only path) — DO NOT look under Settings → Git despite the URL slug suggesting so.** Vercel moved this setting to the Environments page:
 
-1. Open https://vercel.com/jlfowler1084s-projects/leafbind/settings/git
-2. Under "Production Branch", change `main` → `master`
-3. Click Save
-4. Verify: re-run `GET /v9/projects/<id>` via REST API, confirm `link.productionBranch: 'master'`
+1. Open https://vercel.com/jlfowler1084s-projects/leafbind/settings/environments
+2. Click the **Production** environment row
+3. Scroll to the **Branch Tracking** section
+4. Change the branch from `main` → `master`
+5. Click Save
+6. Verify: re-run `GET /v9/projects/<id>` via REST API, confirm `link.productionBranch: 'master'`
+
+### Why the `main` default happened in the first place
+
+Per Vercel's official docs (https://vercel.com/docs/git#default-configuration), when a new project is created from a Git repository, the Production Branch is chosen in this order:
+
+1. The `main` branch (if it exists in the repo)
+2. The `master` branch (if `main` doesn't exist)
+3. The Git repository's default branch
+
+The EbookAutomation repo has **only** a `master` branch — there is no `main`. So Vercel's auto-detection *should* have picked `master`. The fact that it instead stored `main` in `link.productionBranch` and then refused to fall through to step 2 is the actual Vercel-side bug. Workaround: always set the Production Branch explicitly via dashboard immediately after project creation, regardless of what the auto-detection picks.
 
 **Reason the API path doesn't work:** Vercel's documented REST API endpoints for project management do not expose `productionBranch` as an editable field. All four attempts during EB-257 failed:
 
@@ -90,7 +102,7 @@ npx vercel ls leafbind --scope team_CLMfllQxa3BgT7JdiGll4c6y | head -3
 Add to project-creation runbook (whenever spinning up a new Vercel project):
 
 1. Create the project as usual
-2. **Immediately after, set Production Branch explicitly via dashboard** — do not trust the default. Even if your repo's default branch IS `main`, set it explicitly so the next maintainer can see it was a deliberate choice.
+2. **Immediately after, set Production Branch explicitly via Settings → Environments → Production → Branch Tracking** — do not trust the auto-detection. Even if your repo's default branch IS `main`, set it explicitly so the next maintainer can see it was a deliberate choice.
 3. **Push a no-op commit** (a docs change to the README, a typo fix) and verify it lands as `Production` in `vercel ls`. This is the only proof the wire-up works.
 4. Record the verified `productionBranch` value in `docs/solutions/` for the project.
 
