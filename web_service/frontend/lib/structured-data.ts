@@ -26,7 +26,19 @@ export interface HowToSchema {
   step: Array<{ "@type": "HowToStep"; name: string; text: string }>;
 }
 
-export type SchemaData = SoftwareApplicationSchema | FAQPageSchema | HowToSchema;
+export interface ArticleSchema {
+  "@context": "https://schema.org";
+  "@type": "Article";
+  headline: string;
+  description: string;
+  author: { "@type": "Person"; name: string };
+  datePublished: string;
+  dateModified: string;
+  publisher: { "@type": "Organization"; name: string; url: string };
+  url: string;
+}
+
+export type SchemaData = SoftwareApplicationSchema | FAQPageSchema | HowToSchema | ArticleSchema;
 
 export function buildSoftwareApplicationSchema(): SoftwareApplicationSchema {
   return {
