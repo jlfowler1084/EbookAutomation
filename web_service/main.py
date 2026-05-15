@@ -25,6 +25,7 @@ from pathlib import Path
 import stripe
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 
 from web_service import job_queue, job_store, token_store
 from web_service.config import get_settings
@@ -185,6 +186,23 @@ async def lifespan(app: FastAPI):
     log.info("EbookAutomation web service stopped")
 
 
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+class _BrandStaticFiles(StaticFiles):
+    """StaticFiles with public caching for brand CSS assets (EB-248).
+
+    Brand CSS is not user-specific; public caching is safe and distinct from
+    the `private, no-store` policy on token-bearing payment-flow responses.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=3600, immutable"
+        return response
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(
@@ -206,6 +224,11 @@ def create_app() -> FastAPI:
     application.include_router(webhook.router)
     application.include_router(payment.router)
     application.include_router(recover.router)
+    application.mount(
+        "/static",
+        _BrandStaticFiles(directory=str(_STATIC_DIR), html=False),
+        name="static",
+    )
     return application
 
 

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node tools/check-token-drift.mjs",
+    "prebuild": "node tools/gen-fastapi-css.mjs && node tools/check-token-drift.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
