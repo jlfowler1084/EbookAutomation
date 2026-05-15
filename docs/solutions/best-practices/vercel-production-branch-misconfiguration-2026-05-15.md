@@ -114,6 +114,10 @@ The existing skill at `~/.claude/skills/vercel-deploy-verification/SKILL.md` cov
 
 Worth adding to the skill: a note that the `productionBranch` field is NOT visible via `vercel project inspect` CLI and requires REST API or dashboard to inspect. The current skill doesn't mention this gap.
 
+## Resolution (2026-05-15)
+
+Dashboard flip applied per the documented procedure (Settings → Environments → Production → Branch Tracking → `main` → `master` → Save). Post-fix REST GET confirms `link.productionBranch: 'master'`. This commit is the trivial post-fix push that verifies the next deploy lands as `Production` per the verification ritual at the top of this doc — the `vercel ls` result for this commit's deploy is the proof-point that closes EB-257.
+
 ## References
 
 - vercel-deploy-verification skill: `~/.claude/skills/vercel-deploy-verification/SKILL.md`
