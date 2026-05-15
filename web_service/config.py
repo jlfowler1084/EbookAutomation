@@ -61,6 +61,11 @@ class Settings:
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
     allowed_origins: list[str] = field(default_factory=list)
+    # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
+    # Caps `--gemini-cost-limit` passed to pdf_to_balabolka.py. $1.00 is generous —
+    # typical --gemini-remediate run only re-extracts a handful of flagged pages
+    # at ~$0.002/page, so most premium conversions stay well under this ceiling.
+    premium_gemini_cost_limit_usd: float = 1.0
 
 
 def load_settings() -> Settings:
@@ -128,6 +133,9 @@ def load_settings() -> Settings:
         stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
         allowed_origins=allowed_origins,
+        premium_gemini_cost_limit_usd=float(
+            os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")
+        ),
     )
 
 

@@ -295,3 +295,42 @@ class TestRunPremium:
             run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
 
         assert captured_cwd[0] == str(settings.project_root)
+
+    def test_premium_passes_gemini_remediate_flag(self, small_pdf, temp_dir, settings):
+        """EB-245: premium tier must invoke --gemini-remediate (selective fallback).
+
+        Guards against a regression where the always-on --use-gemini flag gets
+        wired instead. The two are mutually exclusive in pdf_to_balabolka.py and
+        have very different cost profiles (~$0 vs ~$0.50 per conversion).
+        """
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            run_premium("job_eb245_a", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert "--gemini-remediate" in captured_cmd
+        assert "--use-gemini" not in captured_cmd
+
+    def test_premium_passes_gemini_cost_limit_from_settings(self, small_pdf, temp_dir, settings):
+        """EB-245: --gemini-cost-limit must read from Settings, not be hardcoded."""
+        captured_cmd = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            output = temp_dir / "output.epub"
+            output.write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            run_premium("job_eb245_b", small_pdf, "epub", temp_dir, settings=settings)
+
+        # The flag and its value should appear as adjacent argv tokens
+        assert "--gemini-cost-limit" in captured_cmd
+        flag_idx = captured_cmd.index("--gemini-cost-limit")
+        assert captured_cmd[flag_idx + 1] == str(settings.premium_gemini_cost_limit_usd)

@@ -202,6 +202,16 @@ def run_premium(
         "--input", str(input_path),
         "--output-dir", str(temp_dir),
         "--output-format", output_format,
+        # EB-245: selective Gemini OCR remediation. pdf_to_balabolka.py runs
+        # score_text_layer_quality(multi_sample=True) and only re-extracts pages
+        # in flagged problem regions, so clean text PDFs incur $0. Mutually
+        # exclusive with --use-gemini (full transcription) and --use-vision —
+        # gate at pdf_to_balabolka.py:13203 is `gemini_remediate and not use_gemini
+        # and not use_vision`. Graceful degrade is already wired at
+        # pdf_to_balabolka.py:12762-12772 — Gemini failures fall through to
+        # standard extraction without killing the conversion.
+        "--gemini-remediate",
+        "--gemini-cost-limit", str(cfg.premium_gemini_cost_limit_usd),
     ]
     log.info("[%s] premium-tier cmd: %s (timeout=%ds)", job_id, cmd, timeout)
 

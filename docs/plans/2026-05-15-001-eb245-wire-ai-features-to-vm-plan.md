@@ -114,7 +114,16 @@ Acceptance: `grep -E '^(OPENROUTER|ANTHROPIC|GEMINI)_API_KEY=' .env.template` re
 
 ### Phase 3 — wire input-side AI flags into `run_premium()` (G3)
 
-Worktree branch `feat/eb-245-premium-ai-wiring` off whichever base Phase 0 chose.
+Worktree branch `feat/eb-245-premium-ai-wiring` off master.
+
+**Flag correction (2026-05-15, mid-execution).** Initial plan said `--use-gemini`. Re-reading `pdf_to_balabolka.py` revealed two distinct Gemini flags:
+
+| Flag | Behavior | Cost shape |
+|---|---|---|
+| `--use-gemini` | Always-on Tier 2.5 transcription on the entire book | $0.30-$0.50 per book × every premium conversion |
+| `--gemini-remediate` | Selective fallback — only re-extracts pages flagged by `score_text_layer_quality(multi_sample=True)` problem-region analysis | $0 for clean PDFs, ~$0.02-$0.06 when scanned/garbled pages are detected |
+
+`--gemini-remediate` matches the original EB-245 intent ("Gemini OCR fallback when text yield is below threshold"). User-approved correction logged 2026-05-15 — wire `--gemini-remediate`, not `--use-gemini`.
 
 Edit `web_service/pipeline_runner.py` `run_premium()`:
 
@@ -126,28 +135,22 @@ cmd = [
     "--input", str(input_path),
     "--output-dir", str(temp_dir),
     "--output-format", output_format,
-    "--use-gemini",
+    "--gemini-remediate",
     "--gemini-cost-limit", str(cfg.premium_gemini_cost_limit_usd),
-    # NOTE: --use-vision intentionally omitted by default. Vision is
-    # mutually exclusive with Gemini in pdf_to_balabolka.py and ~5× the cost.
-    # Defer enabling vision-tier transcription until cost telemetry has
-    # confirmed the Gemini-only path stays within budget.
 ]
 ```
 
-Open decision: include `--use-vision` from day one, or gate it behind a per-tier flag and ship Gemini-only first? Recommendation: **Gemini-only first.** Vision-tier transcription overlaps with the output-side VQA in Phase 4 and is 5× the cost. Add `--use-vision` in a follow-up ticket once Gemini economics are observed in production.
+`--use-vision` (full Claude Vision transcription) deferred to a follow-up ticket. It's mutually exclusive with the Gemini path in `pdf_to_balabolka.py` and ~5× the cost. Output-side VQA (Phase 4) covers the vision QA story without invoking input-side Claude Vision.
 
 Add to `web_service/config.py` `Settings`:
 
 ```python
-premium_gemini_cost_limit_usd: float  # default 1.00 — per-conversion cap
-premium_vision_cost_limit_usd: float  # default 0.50 — per-conversion cap for the post-conversion VQA
-premium_vqa_enabled: bool             # default True
+premium_gemini_cost_limit_usd: float = 1.0  # generous; typical use is $0.02-$0.06
 ```
 
-Default cost caps deliberately lower than the CLI defaults ($5 / $15) — premium pack is $0.80 / conversion, so allowing $5 per call would invert margin. $1.00 + $0.50 = $1.50/conversion worst case before margin questions get serious. Open question: is even $1.50 too aggressive? See Open Questions section.
+VQA-related Settings fields (`premium_vqa_enabled`, `premium_vqa_cost_limit_usd`) land in Phase 4 to keep each commit focused on its single responsibility.
 
-Acceptance: a premium conversion of a 50-page text PDF logs `--use-gemini` in the cmd line and surfaces a `gemini_cost_usd` field in the job result.
+Acceptance: a premium conversion of a 50-page text PDF logs `--gemini-remediate` in the cmd line; clean PDFs show `gemini_cost == 0` because no pages are flagged.
 
 ### Phase 4 — post-conversion visual-QA step (G4)
 
