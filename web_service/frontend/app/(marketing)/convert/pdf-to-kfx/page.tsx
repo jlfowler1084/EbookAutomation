@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import JsonLd from "../../../components/JsonLd";
+import JsonLd from "../../../../components/JsonLd";
 import {
   buildSoftwareApplicationSchema,
   type FAQPageSchema,
   type HowToSchema,
-} from "../../../lib/structured-data";
+} from "../../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "Convert PDF to KFX for Kindle — leafbind",
@@ -82,46 +82,29 @@ const howToSchema: HowToSchema = {
 
 export default function PdfToKfxPage() {
   return (
-    <div className="font-sans bg-surface min-h-screen">
+    <>
       <JsonLd schema={buildSoftwareApplicationSchema()} />
       <JsonLd schema={faqSchema} />
       <JsonLd schema={howToSchema} />
 
-      {/* Navigation */}
-      <nav className="bg-brand">
-        <div className="max-w-5xl mx-auto px-8 h-14 flex items-center justify-between">
-          <Link href="/" className="font-serif text-xl text-white no-underline">
-            leafbind
-          </Link>
-          <Link
-            href="/"
-            className="text-sm font-medium text-white no-underline border border-white/30 rounded-sm px-4 py-1.5 hover:bg-white/10"
-          >
-            Upload PDF →
-          </Link>
-        </div>
-      </nav>
-
-      {/* Hero */}
-      <header className="bg-brand pt-12 pb-16">
-        <div className="max-w-5xl mx-auto px-8">
-          <p className="text-accent text-sm font-medium uppercase tracking-widest mb-5">
-            Conversion guide
-          </p>
-          <h1 className="font-serif text-5xl leading-tight text-white mb-6 max-w-3xl">
-            Convert PDF to KFX for Kindle — Smart Formatting Preserved
-          </h1>
-          <p className="text-lg text-surface leading-relaxed max-w-2xl">
-            KFX is Kindle&rsquo;s native enhanced typesetting format. Getting a PDF
-            into KFX without losing headings, footnotes, or column order requires
-            more than a one-step conversion — this guide explains what goes wrong and
-            how leafbind handles it differently.
-          </p>
-        </div>
-      </header>
+      {/* Page header */}
+      <div className="py-12 md:py-16 border-b border-border mb-16">
+        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+          Conversion guide
+        </p>
+        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
+          Convert PDF to KFX for Kindle — Smart Formatting Preserved
+        </h1>
+        <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl">
+          KFX is Kindle&rsquo;s native enhanced typesetting format. Getting a PDF
+          into KFX without losing headings, footnotes, or column order requires
+          more than a one-step conversion — this guide explains what goes wrong and
+          how leafbind handles it differently.
+        </p>
+      </div>
 
       {/* Main content */}
-      <main className="max-w-5xl mx-auto px-8 py-16">
+      <div className="py-0">
 
         {/* ── Section 1: What is KFX ── */}
         <section className="mb-16 pb-16 border-b border-border">
@@ -225,7 +208,7 @@ export default function PdfToKfxPage() {
 
             <div className="md:col-span-2 mt-2 md:mt-12">
               <div className="bg-white border border-border rounded-md p-6 shadow-sm">
-                <p className="text-xs font-medium text-muted uppercase tracking-widest mb-3">
+                <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
                   See it in practice
                 </p>
                 <p className="text-base text-text-base leading-relaxed mb-4">
@@ -329,7 +312,7 @@ export default function PdfToKfxPage() {
 
         {/* ── Cross-links ── */}
         <section className="mb-16">
-          <p className="text-sm font-medium text-muted uppercase tracking-widest mb-4">
+          <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
             Related guides
           </p>
           <div className="flex flex-wrap gap-4">
@@ -353,73 +336,33 @@ export default function PdfToKfxPage() {
             </Link>
           </div>
         </section>
-      </main>
 
-      {/* CTA */}
-      <section className="bg-brand py-16 border-t border-border">
-        <div className="max-w-5xl mx-auto px-8">
-          <div className="max-w-lg">
-            <h2 className="font-serif text-3xl text-white mb-4 leading-snug">
-              Ready to convert your PDF to KFX?
-            </h2>
-            <p className="text-base text-surface leading-relaxed mb-3">
-              KFX output is a premium feature.{" "}
-              <Link
-                href="/pricing"
-                className="text-accent font-medium no-underline hover:underline"
-              >
-                See pricing
-              </Link>{" "}
-              — plans start at a single conversion credit with no subscription required.
-            </p>
-            <p className="text-base text-surface leading-relaxed mb-8">
-              Free tier: 3 EPUB conversions per day, up to 20 MB. No account required.
-            </p>
+        {/* Primary CTA */}
+        <section className="mb-0 border-t border-border pt-16 pb-8">
+          <h2 className="font-serif text-3xl text-text-base mb-4 leading-snug">
+            Ready to convert your PDF to KFX?
+          </h2>
+          <p className="font-sans text-base text-text-muted leading-relaxed mb-3 max-w-xl">
+            KFX output is a premium feature.{" "}
             <Link
-              href="/"
-              className="inline-block bg-accent text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
+              href="/pricing"
+              className="text-brand font-medium no-underline hover:underline"
             >
-              Upload your PDF
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-surface border-t border-border py-8">
-        <div className="max-w-5xl mx-auto px-8">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span className="text-sm font-medium text-muted">
-              Conversion guides:
-            </span>
-            <Link
-              href="/convert/academic-pdf-to-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Academic PDFs →
-            </Link>
-            <Link
-              href="/convert/pdf-footnotes-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Footnoted PDFs →
-            </Link>
-            <Link
-              href="/convert/multi-column-pdf-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Multi-column PDFs →
-            </Link>
-            <Link
-              href="/quality"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Quality comparison →
-            </Link>
-          </div>
-        </div>
-      </footer>
-
-    </div>
+              See pricing
+            </Link>{" "}
+            — plans start at a single conversion credit with no subscription required.
+          </p>
+          <p className="font-sans text-sm text-text-muted leading-relaxed mb-8">
+            Free tier: 3 EPUB conversions per day, up to 20 MB. No account required.
+          </p>
+          <Link
+            href="/"
+            className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
+          >
+            Upload your PDF
+          </Link>
+        </section>
+      </div>
+    </>
   );
 }

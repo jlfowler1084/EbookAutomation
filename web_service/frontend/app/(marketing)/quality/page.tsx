@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import JsonLd from "../../components/JsonLd";
-import { buildSoftwareApplicationSchema } from "../../lib/structured-data";
+import JsonLd from "../../../components/JsonLd";
+import { buildSoftwareApplicationSchema } from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "PDF to Kindle Quality Comparison — leafbind",
@@ -93,75 +93,52 @@ const comparisons = [
 
 export default function QualityPage() {
   return (
-    <div className="font-sans bg-surface min-h-screen">
+    <>
       <JsonLd schema={buildSoftwareApplicationSchema()} />
-      {/* Navigation */}
-      <nav className="bg-brand">
-        <div className="max-w-6xl mx-auto px-8 h-14 flex items-center justify-between">
-          <Link
-            href="/"
-            className="font-serif text-xl text-white no-underline"
-          >
-            leafbind
-          </Link>
-          <Link
-            href="/"
-            className="text-sm font-medium text-white no-underline border border-white/30 rounded-sm px-4 py-1.5 hover:bg-white/10"
-          >
-            Upload PDF →
-          </Link>
-        </div>
-      </nav>
 
-      {/* Hero */}
-      <header className="bg-brand pt-12 pb-16">
-        <div className="max-w-6xl mx-auto px-8">
-          <p className="text-accent text-sm font-medium uppercase tracking-widest mb-5">
-            Quality comparison
-          </p>
-          <h1 className="font-serif text-5xl leading-tight text-white mb-6 max-w-2xl">
-            Why leafbind converts academic PDFs better than Calibre
-          </h1>
-          <p className="text-lg text-surface leading-relaxed max-w-xl">
-            Three specific failure modes that break every other converter —
-            each one shown with screenshots from the same source document.
-          </p>
-        </div>
-      </header>
+      {/* Page header */}
+      <div className="py-12 md:py-16 border-b border-border mb-16">
+        <p className="font-sans text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+          Quality comparison
+        </p>
+        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
+          Why leafbind converts academic PDFs better than Calibre
+        </h1>
+        <p className="font-sans text-lg text-text-muted leading-relaxed max-w-xl">
+          Three specific failure modes that break every other converter —
+          each one shown with screenshots from the same source document.
+        </p>
+      </div>
 
-      {/* Main content */}
-      <main>
       {/* Comparison sections */}
-      {comparisons.map((c, i) => (
-        <section
-          key={c.id}
-          className={`py-16 border-t border-border ${
-            i % 2 === 0 ? "bg-surface" : "bg-white"
-          }`}
-        >
-          <div className="max-w-6xl mx-auto px-8">
+      <div className="space-y-16 mb-16">
+        {comparisons.map((c) => (
+          <section
+            key={c.id}
+            className="border-b border-border pb-16"
+          >
             {/* 40/60 asymmetric grid: 2 cols text + 3 cols images */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-8 md:gap-12 items-start">
 
               {/* Left column: section label, heading, explanation */}
               <div className="md:col-span-2">
-                <p className="text-accent text-sm font-medium mb-5 tracking-widest">
+                <p className="font-sans text-text-muted text-sm font-medium mb-5 tracking-widest uppercase">
                   {c.number}
                 </p>
-                <h2 className="font-serif text-2xl text-brand mb-4 leading-snug">
+                <h2 className="font-serif text-2xl text-text-base mb-4 leading-snug">
                   {c.heading}
                 </h2>
-                <p className="text-base text-text-base leading-relaxed mb-3">
-                  <span className="font-medium text-brand">The problem. </span>
+                <p className="font-sans text-base text-text-base leading-relaxed mb-3">
+                  <span className="font-medium">The problem. </span>
                   {c.problem}
                 </p>
-                <p className="text-base text-text-base leading-relaxed mb-8">
-                  <span className="font-medium text-accent">The fix. </span>
+                <p className="font-sans text-base text-text-base leading-relaxed mb-8">
+                  <span className="font-medium text-brand">The fix. </span>
                   {c.solution}
                 </p>
                 <Link
                   href={c.learnMoreHref}
-                  className="text-sm font-medium text-accent no-underline hover:underline"
+                  className="font-sans text-sm font-medium text-brand no-underline hover:underline"
                 >
                   {c.learnMoreLabel}
                 </Link>
@@ -171,7 +148,7 @@ export default function QualityPage() {
               <div className="md:col-span-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs font-medium text-muted uppercase tracking-widest mb-2">
+                    <p className="font-sans text-xs font-medium text-text-muted uppercase tracking-widest mb-2">
                       Calibre raw
                     </p>
                     <img
@@ -184,7 +161,7 @@ export default function QualityPage() {
                     />
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-accent uppercase tracking-widest mb-2">
+                    <p className="font-sans text-xs font-medium text-brand uppercase tracking-widest mb-2">
                       leafbind
                     </p>
                     <img
@@ -199,67 +176,26 @@ export default function QualityPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-      ))}
+          </section>
+        ))}
+      </div>
 
-      {/* CTA */}
-      <section className="bg-brand py-16 border-t border-border">
-        <div className="max-w-6xl mx-auto px-8">
-          <div className="max-w-lg">
-            <h2 className="font-serif text-3xl text-white mb-4 leading-snug">
-              See how your PDF converts
-            </h2>
-            <p className="text-base text-surface leading-relaxed mb-8">
-              Free tier: 3 conversions per day, up to 20 MB per file.
-              No account required.
-            </p>
-            <Link
-              href="/"
-              className="inline-block bg-accent text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
-            >
-              Upload your PDF
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      </main>
-
-      {/* Footer cross-links */}
-      <footer className="bg-surface border-t border-border py-8">
-        <div className="max-w-6xl mx-auto px-8">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span className="text-sm font-medium text-muted">
-              Conversion guides:
-            </span>
-            <Link
-              href="/convert/academic-pdf-to-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Academic PDFs →
-            </Link>
-            <Link
-              href="/convert/pdf-footnotes-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Footnoted PDFs →
-            </Link>
-            <Link
-              href="/convert/multi-column-pdf-kindle"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              Multi-column PDFs →
-            </Link>
-            <Link
-              href="/convert/pdf-to-kfx"
-              className="text-sm text-muted no-underline hover:text-text-base"
-            >
-              PDF to KFX →
-            </Link>
-          </div>
-        </div>
-      </footer>
-    </div>
+      {/* Primary CTA */}
+      <div className="border-t border-border pt-16 pb-8">
+        <h2 className="font-serif text-3xl text-text-base mb-4 leading-snug">
+          See how your PDF converts
+        </h2>
+        <p className="font-sans text-base text-text-muted leading-relaxed mb-8 max-w-md">
+          Free tier: 3 conversions per day, up to 20 MB per file.
+          No account required.
+        </p>
+        <Link
+          href="/"
+          className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
+        >
+          Upload your PDF
+        </Link>
+      </div>
+    </>
   );
 }
