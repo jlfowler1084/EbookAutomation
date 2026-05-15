@@ -245,6 +245,16 @@ class TestRunFree:
 
 
 class TestRunPremium:
+    """EB-256: run_premium is a two-step pipeline.
+
+    Step 1: pdf_to_balabolka.py --mode kindle produces <stem>_kindle.txt
+    Step 2: ebook-convert <stem>_kindle.txt output.<format>
+    Step 3 (optional): visual_qa.py for the post-conversion QA pass
+
+    The test helpers below mock both subprocess.run calls so the function can
+    proceed end-to-end. Each test then asserts the specific contract under test.
+    """
+
     def _make_proc(self, returncode, stdout="", stderr=""):
         proc = MagicMock()
         proc.returncode = returncode
@@ -252,107 +262,154 @@ class TestRunPremium:
         proc.stderr = stderr
         return proc
 
-    def test_uses_pipeline_script_with_cli_flag(self, small_pdf, temp_dir, settings):
-        """Premium run must invoke the pipeline script with --cli."""
-        captured_cmd = []
+    def _make_two_step_fake_run(self, small_pdf, temp_dir, extract_stdout="", captured_cmds=None):
+        """Build a fake subprocess.run that handles BOTH steps of run_premium.
+
+        On the extract call (cmd contains pdf_to_balabolka.py), writes the
+        intermediate <stem>_kindle.txt and returns extract_stdout. On the
+        Calibre call, writes the final output.<format>. Both succeed (returncode=0).
+        If captured_cmds is provided, each call's cmd is appended to it.
+        """
+        def fake_run(cmd, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd)
+            if captured_cmds is not None:
+                captured_cmds.append(list(cmd))
+            if "pdf_to_balabolka" in cmd_str:
+                # Step 1: extraction — write <stem>_kindle.txt
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
+                return self._make_proc(0, stdout=extract_stdout)
+            # Step 2: Calibre — write the requested final output
+            # output filename is parsed from cmd[2]: ebook-convert <input> <output>
+            output_path = Path(cmd[2])
+            output_path.write_bytes(b"epub content")
+            return self._make_proc(0)
+        return fake_run
+
+    def test_extract_step_uses_pipeline_script_with_mode_kindle(self, small_pdf, temp_dir, settings):
+        """EB-256: extract step must invoke pdf_to_balabolka.py with --mode kindle.
+
+        Replaces the prior test_uses_pipeline_script_with_cli_flag — pdf_to_balabolka.py
+        has no --cli flag; the CLI gate is --input presence and --mode controls
+        the output shape.
+        """
+        captured: list[list] = []
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, captured_cmds=captured)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success, f"two-step run should succeed; got {result.error_message}"
+        # Extract step (first call): pipeline_script + --mode kindle, no --cli
+        extract_cmd = captured[0]
+        assert str(settings.pipeline_script) in extract_cmd
+        assert "--mode" in extract_cmd
+        assert "kindle" in extract_cmd
+        assert "--cli" not in extract_cmd
+        assert "--output-format" not in extract_cmd
+
+    def test_calibre_step_runs_after_extract(self, small_pdf, temp_dir, settings):
+        """EB-256: a Calibre subprocess must run after the extract subprocess succeeds."""
+        captured: list[list] = []
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, captured_cmds=captured)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_two_step", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success
+        assert len(captured) == 2, f"expected 2 subprocess calls, got {len(captured)}"
+        # First call: extract via pdf_to_balabolka.py
+        assert any("pdf_to_balabolka" in str(c) for c in captured[0])
+        # Second call: Calibre — argv[0] is the calibre path
+        assert captured[1][0] == str(settings.calibre_path)
+
+    def test_pythonioencoding_set_in_extract_env(self, small_pdf, temp_dir, settings):
+        """PYTHONIOENCODING must be set to utf-8 in the extract subprocess env."""
+        captured_env: dict = {}
 
         def fake_run(cmd, **kwargs):
-            captured_cmd.extend(cmd)
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "pdf_to_balabolka" in cmd_str:
+                # Capture env from the extract call only
+                env = kwargs.get("env") or {}
+                captured_env.update(env)
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted")
+                return self._make_proc(0)
+            Path(cmd[2]).write_bytes(b"epub")
             return self._make_proc(0)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
-            run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
-
-        assert "--cli" in captured_cmd
-        assert str(settings.pipeline_script) in captured_cmd
-
-    def test_pythonioencoding_set_in_env(self, small_pdf, temp_dir, settings):
-        """PYTHONIOENCODING must be set to utf-8 in the subprocess environment."""
-        captured_env = {}
-
-        def fake_run(cmd, **kwargs):
-            captured_env.update(kwargs.get("env", {}))
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
-            return self._make_proc(0)
-
-        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
-            run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
+            run_premium("job_env", small_pdf, "epub", temp_dir, settings=settings)
 
         assert captured_env.get("PYTHONIOENCODING") == "utf-8"
 
-    def test_cwd_is_project_root(self, small_pdf, temp_dir, settings):
-        """Working directory must be project root so settings.json resolves correctly."""
-        captured_cwd = []
+    def test_extract_cwd_is_project_root(self, small_pdf, temp_dir, settings):
+        """Extract step's working directory must be project root so settings.json resolves."""
+        captured_cwd_for_extract = []
 
         def fake_run(cmd, **kwargs):
-            captured_cwd.append(kwargs.get("cwd"))
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "pdf_to_balabolka" in cmd_str:
+                captured_cwd_for_extract.append(kwargs.get("cwd"))
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted")
+                return self._make_proc(0)
+            Path(cmd[2]).write_bytes(b"epub")
             return self._make_proc(0)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
-            run_premium("job2", small_pdf, "epub", temp_dir, settings=settings)
+            run_premium("job_cwd", small_pdf, "epub", temp_dir, settings=settings)
 
-        assert captured_cwd[0] == str(settings.project_root)
+        assert captured_cwd_for_extract[0] == str(settings.project_root)
 
     def test_premium_passes_gemini_remediate_flag(self, small_pdf, temp_dir, settings):
-        """EB-245: premium tier must invoke --gemini-remediate (selective fallback).
+        """EB-245: extract step must pass --gemini-remediate (selective fallback).
 
         Guards against a regression where the always-on --use-gemini flag gets
-        wired instead. The two are mutually exclusive in pdf_to_balabolka.py and
-        have very different cost profiles (~$0 vs ~$0.50 per conversion).
+        wired instead. Cost profiles differ by ~25× ($0 vs ~$0.50 per conversion).
         """
-        captured_cmd = []
-
-        def fake_run(cmd, **kwargs):
-            captured_cmd.extend(cmd)
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
-            return self._make_proc(0)
+        captured: list[list] = []
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, captured_cmds=captured)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
             run_premium("job_eb245_a", small_pdf, "epub", temp_dir, settings=settings)
 
-        assert "--gemini-remediate" in captured_cmd
-        assert "--use-gemini" not in captured_cmd
+        extract_cmd = captured[0]
+        assert "--gemini-remediate" in extract_cmd
+        assert "--use-gemini" not in extract_cmd
 
     def test_premium_passes_gemini_cost_limit_from_settings(self, small_pdf, temp_dir, settings):
         """EB-245: --gemini-cost-limit must read from Settings, not be hardcoded."""
-        captured_cmd = []
-
-        def fake_run(cmd, **kwargs):
-            captured_cmd.extend(cmd)
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
-            return self._make_proc(0)
+        captured: list[list] = []
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, captured_cmds=captured)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
             run_premium("job_eb245_b", small_pdf, "epub", temp_dir, settings=settings)
 
-        # The flag and its value should appear as adjacent argv tokens
-        assert "--gemini-cost-limit" in captured_cmd
-        flag_idx = captured_cmd.index("--gemini-cost-limit")
-        assert captured_cmd[flag_idx + 1] == str(settings.premium_gemini_cost_limit_usd)
+        extract_cmd = captured[0]
+        assert "--gemini-cost-limit" in extract_cmd
+        flag_idx = extract_cmd.index("--gemini-cost-limit")
+        assert extract_cmd[flag_idx + 1] == str(settings.premium_gemini_cost_limit_usd)
 
     def test_premium_default_skips_vqa_and_reports_reason(self, small_pdf, temp_dir, settings):
         """EB-245 Phase 4: with premium_vqa_enabled=False (default), VQA is skipped
         and the RunResult records skipped_reason='disabled'."""
 
+        seen_visual_qa = False
+
         def fake_run(cmd, **kwargs):
-            # Only the pipeline subprocess should run (the cmd contains --cli),
-            # not the visual_qa.py subprocess (which contains visual_qa.py).
-            assert "visual_qa.py" not in " ".join(cmd), \
-                "VQA must NOT run when premium_vqa_enabled=False"
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
-            return self._make_proc(0, stdout="No Gemini activity\n")
+            nonlocal seen_visual_qa
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "visual_qa.py" in cmd_str:
+                seen_visual_qa = True
+            if "pdf_to_balabolka" in cmd_str:
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted")
+                return self._make_proc(0, stdout="No Gemini activity\n")
+            Path(cmd[2]).write_bytes(b"epub")
+            return self._make_proc(0)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
             result = run_premium("job_vqa_off", small_pdf, "epub", temp_dir, settings=settings)
 
+        assert not seen_visual_qa, "VQA subprocess must NOT run when premium_vqa_enabled=False"
         assert result.success
         assert result.vqa_score is None
         assert result.vqa_pass is None
@@ -360,24 +417,74 @@ class TestRunPremium:
         assert result.vqa_skipped_reason == "disabled"
         assert result.gemini_cost_usd == 0.0  # no Gemini line in fake stdout
 
-    def test_premium_parses_gemini_cost_from_stdout(self, small_pdf, temp_dir, settings):
-        """EB-245: gemini_cost_usd is parsed from pdf_to_balabolka.py stdout."""
+    def test_premium_parses_gemini_cost_from_extract_stdout(self, small_pdf, temp_dir, settings):
+        """EB-245: gemini_cost_usd is parsed from the extract subprocess stdout."""
         gemini_log = (
             "Other unrelated log line\n"
             "  Gemini remediated 7 pages, cost: $0.0152\n"
             "Conversion complete\n"
         )
-
-        def fake_run(cmd, **kwargs):
-            output = temp_dir / "output.epub"
-            output.write_bytes(b"epub")
-            return self._make_proc(0, stdout=gemini_log)
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, extract_stdout=gemini_log)
 
         with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
             result = run_premium("job_gemini", small_pdf, "epub", temp_dir, settings=settings)
 
         assert result.success
         assert result.gemini_cost_usd == pytest.approx(0.0152)
+
+    def test_premium_fails_when_extract_returns_nonzero(self, small_pdf, temp_dir, settings):
+        """EB-256: extract subprocess failure short-circuits before Calibre runs."""
+        call_count = {"extract": 0, "calibre": 0}
+
+        def fake_run(cmd, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "pdf_to_balabolka" in cmd_str:
+                call_count["extract"] += 1
+                return self._make_proc(2, stdout="error: bad input")
+            call_count["calibre"] += 1
+            Path(cmd[2]).write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_extract_fail", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert not result.success
+        assert call_count["extract"] == 1
+        assert call_count["calibre"] == 0, "Calibre must not run after extract failure"
+
+    def test_premium_fails_when_intermediate_txt_missing(self, small_pdf, temp_dir, settings):
+        """EB-256: extract subprocess returncode 0 but no .txt produced → clear failure."""
+
+        def fake_run(cmd, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "pdf_to_balabolka" in cmd_str:
+                # Don't write the .txt — simulate a silent failure
+                return self._make_proc(0)
+            Path(cmd[2]).write_bytes(b"epub")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_no_txt", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert not result.success
+        assert "text output" in result.error_message.lower() or "extraction" in result.error_message.lower()
+
+    def test_premium_fails_when_calibre_returns_nonzero(self, small_pdf, temp_dir, settings):
+        """EB-256: Calibre subprocess failure surfaces the error message."""
+
+        def fake_run(cmd, **kwargs):
+            cmd_str = " ".join(str(c) for c in cmd)
+            if "pdf_to_balabolka" in cmd_str:
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
+                return self._make_proc(0)
+            # Calibre fails
+            return self._make_proc(1, stdout="Calibre error: bad format")
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_calibre_fail", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert not result.success
+        assert "calibre" in result.error_message.lower() or "bad format" in result.error_message.lower()
 
 
 # ---------------------------------------------------------------------------
