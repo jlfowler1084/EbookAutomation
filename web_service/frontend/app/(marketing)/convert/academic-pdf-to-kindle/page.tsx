@@ -47,7 +47,7 @@ const howToSteps = [
 const faqItems = [
   {
     q: "Does it work on scanned academic PDFs?",
-    a: "Partially. leafbind includes an OCR fallback for scanned pages, but complex mathematical notation, chemical structures, and hand-drawn diagrams are not fully reconstructed in the current version. For text-based PDFs — the vast majority of digital-born academic papers from IEEE, ACM, arXiv, and university repositories — the pipeline handles them reliably.",
+    a: "Not in the current production pipeline. leafbind's roadmap includes an OCR pass via Gemini for scanned/image pages, but it is not yet active in the live converter. For text-based PDFs — the vast majority of digital-born academic papers from IEEE, ACM, arXiv, and university repositories — the pipeline handles them reliably today.",
   },
   {
     q: "Will chapter and section numbers survive? What about headings like 1.1 or 2.3.4?",
@@ -275,12 +275,12 @@ export default function AcademicPdfToKindlePage() {
               Outside current scope:
             </p>
             <p className="font-sans text-sm text-text-muted leading-relaxed">
-              Scanned PDFs (image-only pages without selectable text) are partially
-              supported via an OCR fallback, but complex mathematical equations and
-              chemical structure diagrams are not fully reconstructed in v1. If your
-              paper is heavily equation-dense — e.g., pure mathematics or physics —
-              the body text will convert correctly, but inline equations may render
-              as plain text substitutes rather than properly formatted notation.
+              Scanned PDFs (image-only pages without selectable text) are not yet
+              supported in production — an OCR pass for scanned content is on the
+              roadmap. For digital-born academic PDFs, the pipeline handles the
+              body text well; inline mathematical equations may render as plain
+              text substitutes rather than properly formatted notation, and chemical
+              structures and hand-drawn diagrams are not reconstructed.
             </p>
           </div>
         </div>
