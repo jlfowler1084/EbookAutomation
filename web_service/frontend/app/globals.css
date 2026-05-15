@@ -1,2 +1,16 @@
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-brand:          #2D4A2B;
+    --color-brand-dark:     #1a3a1a;
+    --color-accent:         #3D7A3A;
+    --color-surface:        #FAF8F3;
+    --color-surface-muted:  #F5F1E8;
+    --color-border:         #E2DFD5;
+    --color-text-base:      #1a1a1a;
+    --color-text-muted:     #6a6a6a;
+  }
+}
