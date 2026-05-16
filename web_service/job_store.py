@@ -45,15 +45,18 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires  ON jobs(expires_at);
 """
 
-# EB-245: AI telemetry columns added via idempotent ALTER TABLE migrations.
+# EB-245 + EB-274: post-launch columns added via idempotent ALTER TABLE.
 # SQLite lacks IF NOT EXISTS for ADD COLUMN, so we check PRAGMA table_info first.
 # vqa_pass is stored as INTEGER (0/1) — SQLite has no native BOOLEAN.
-_AI_TELEMETRY_COLUMNS: list[tuple[str, str]] = [
+# original_filename (EB-274) is captured at upload time so the download response
+# can attach the user's original filename via Content-Disposition.
+_LATER_COLUMNS: list[tuple[str, str]] = [
     ("gemini_cost_usd",    "REAL    DEFAULT 0.0"),
     ("vqa_score",          "INTEGER"),
     ("vqa_pass",           "INTEGER"),
     ("vqa_cost_usd",       "REAL    DEFAULT 0.0"),
     ("vqa_skipped_reason", "TEXT"),
+    ("original_filename",  "TEXT"),
 ]
 
 
@@ -64,7 +67,7 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
     to run on every startup. Re-running against a fully-migrated DB is a no-op.
     """
     existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
-    for col, type_clause in _AI_TELEMETRY_COLUMNS:
+    for col, type_clause in _LATER_COLUMNS:
         if col not in existing:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {type_clause}")
 
@@ -113,8 +116,15 @@ def create_job(
     input_path: str = "",
     ttl: int | None = None,
     db_path: Path | None = None,
+    *,
+    original_filename: str | None = None,
 ) -> None:
-    """Insert a new job with status=queued."""
+    """Insert a new job with status=queued.
+
+    original_filename (EB-274) is the user's uploaded filename, used later by
+    the download endpoint to set Content-Disposition. Optional for backward
+    compat with pre-EB-274 callers and pre-migration DB rows.
+    """
     settings = get_settings()
     now = int(time.time())
     if ttl is None:
@@ -124,11 +134,11 @@ def create_job(
             """
             INSERT INTO jobs
                 (job_id, status, tier, input_fmt, output_fmt, temp_dir, input_path,
-                 created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at, expires_at, original_filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (job_id, STATUS_QUEUED, tier, input_fmt, output_fmt, temp_dir, input_path,
-             now, now + ttl),
+             now, now + ttl, original_filename),
         )
 
 
