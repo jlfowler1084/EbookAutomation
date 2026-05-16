@@ -178,7 +178,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-10 lg:gap-12 items-center">
             {/* Inputs */}
             <div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.4)] mb-4">
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.7)] mb-4">
                 Inputs
               </div>
               <div className="flex flex-wrap gap-2">
@@ -217,7 +217,7 @@ export default function HomePage() {
 
             {/* Outputs */}
             <div>
-              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.4)] mb-4">
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.7)] mb-4">
                 Outputs
               </div>
               <div className="flex flex-wrap gap-2">
@@ -230,7 +230,7 @@ export default function HomePage() {
                   </span>
                 ))}
               </div>
-              <p className="font-sans text-xs text-[rgba(244,239,226,0.45)] mt-4 max-w-xs">
+              <p className="font-sans text-xs text-[rgba(244,239,226,0.7)] mt-4 max-w-xs">
                 KFX is premium — Kindle's native enhanced typesetting format.
               </p>
             </div>

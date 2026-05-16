@@ -7,7 +7,10 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-6 py-12">
         <div className="grid gap-8 md:grid-cols-3">
           <div>
-            <Link href="/" aria-label="leafbind home" className="text-text-base">
+            {/* EB-269 (F4-02): block + w-fit takes the link out of an
+                "in-text-block" context for axe, so the logo isn't flagged
+                as an indistinguishable inline link sitting in a paragraph. */}
+            <Link href="/" aria-label="leafbind home" className="block w-fit text-text-base">
               <Logo className="h-8 w-auto" />
             </Link>
             <p className="mt-3 text-sm text-text-muted">

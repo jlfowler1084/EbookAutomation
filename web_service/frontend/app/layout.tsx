@@ -66,6 +66,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${newsreader.variable} ${dmSans.variable} ${ibmPlexMono.variable}`}
     >
       <body style={{ margin: 0, background: "#fff", color: "#111" }}>
+        {/* EB-269 (F4-05): skip link is the first focusable element. Visually
+            hidden until focused via Tab, then surfaces in the top-left so
+            keyboard users can jump past the chrome on every page. The <main>
+            target id is set in the route-group layouts. */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:text-text-base focus:shadow-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[var(--color-accent)]"
+        >
+          Skip to main content
+        </a>
         {/* EB-252 v2: PlausibleProvider wraps children inside <body>. The v1
             placement self-closed in <head> emitted only the preload link, not
             the actual <script> tag. Wrapping children lets next-plausible's

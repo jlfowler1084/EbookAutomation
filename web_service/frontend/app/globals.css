@@ -24,4 +24,27 @@
     --lb-ink:               #1a1f1c;
     --lb-sand:              #c9a96e;
   }
+
+  /* EB-269 (F4-01): visible focus ring sitewide. Browser-default 1px black
+     outline disappears against the dark ink band; this 2px accent outline
+     stays readable on both cream and ink backgrounds. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+/* EB-269 (F4-06): honour the OS-level reduce-motion preference.
+   Drops animations / transitions / smooth-scroll to near-zero for users
+   with vestibular sensitivity. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
