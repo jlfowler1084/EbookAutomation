@@ -12,10 +12,9 @@ zone_name = "leafbind.io"
 
 [[kv_namespaces]]
 binding = "CONTACT_KV"
-# KV namespace ID populated after: wrangler kv namespace create CONTACT_KV
-# Run: wrangler kv namespace create CONTACT_KV
-# Then replace the placeholder below with the returned id.
-id = "PLACEHOLDER_KV_NAMESPACE_ID"
+# Public Cloudflare resource ID (not a secret). wrangler emits this when the
+# namespace is created and the documented pattern is to commit it to source.
+id = "618da863fc134b249bb88f365adec450"
 
 # Secrets — set via: wrangler secret put <NAME>
 # TURNSTILE_SECRET_KEY: from Cloudflare Dashboard → Turnstile → leafbind.io site
