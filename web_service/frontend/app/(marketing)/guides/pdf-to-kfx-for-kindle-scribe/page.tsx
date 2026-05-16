@@ -25,9 +25,8 @@ const HERO_IMAGE = `${CANONICAL}/leafbind-columns.jpg`;
 export const metadata: Metadata = {
   title: "How to Convert PDFs to KFX for Kindle Scribe — leafbind",
   description:
-    "Send-to-Kindle loses footnotes, merges columns, and flattens headings. " +
-    "This guide explains why, covers Calibre's documented limitations, and shows " +
-    "how leafbind produces a correctly structured KFX file for Kindle Scribe.",
+    "Send-to-Kindle loses footnotes, merges columns, flattens headings. Learn why, " +
+    "what Calibre can fix, and how leafbind delivers a clean KFX for Kindle Scribe.",
   alternates: {
     canonical: CANONICAL,
   },

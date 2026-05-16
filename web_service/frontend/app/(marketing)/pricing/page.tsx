@@ -5,7 +5,7 @@ import JsonLd from "../../../components/JsonLd";
 import { buildPricingProductSchema } from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
-  title: "Pricing — Leafbind",
+  title: "Pricing — credits for the leafbind smart conversion pipeline",
   description:
     "Free Calibre-based EPUB conversion, or premium leafbind smart pipeline — column-aware extraction, heading detection, bidirectional footnote linking, KFX output.",
   alternates: { canonical: "/pricing" },

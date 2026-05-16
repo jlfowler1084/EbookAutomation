@@ -7,7 +7,7 @@ import JsonLd from "../../components/JsonLd";
 import { buildHomepageGraph } from "../../lib/structured-data";
 
 export const metadata: Metadata = {
-  title: "leafbind — PDF to Kindle, the calm way",
+  title: "leafbind — PDF to Kindle converter for Scribe & Paperwhite",
   description:
     "Smart PDF to Kindle conversion with heading detection, footnote linking, and multi-column support. Free tier available. No ads, no tracking.",
   alternates: { canonical: "/" },
