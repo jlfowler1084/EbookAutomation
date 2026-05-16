@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   description:
     "See how leafbind converts multi-column layouts, footnotes, and academic heading " +
     "structures that Calibre gets wrong. Side-by-side before/after screenshots.",
+  alternates: { canonical: "/quality" },
   openGraph: {
     title: "PDF to Kindle Quality Comparison — leafbind",
     description:

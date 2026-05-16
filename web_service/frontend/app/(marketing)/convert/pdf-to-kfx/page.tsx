@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   description:
     "Convert PDF to KFX for Kindle Scribe with smart heading detection, footnote linking, " +
     "and multi-column layout support. Premium pipeline. No account required.",
+  alternates: { canonical: "/convert/pdf-to-kfx" },
   openGraph: {
     title: "Convert PDF to KFX for Kindle Scribe — leafbind",
     description:

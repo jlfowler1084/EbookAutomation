@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   description:
     "Academic PDF to Kindle converter that preserves double-column layouts, " +
     "footnotes, section numbering, and figure captions. Free and premium tiers.",
+  alternates: { canonical: "/convert/academic-pdf-to-kindle" },
   openGraph: {
     title: "Convert Academic PDFs to Kindle — leafbind",
     description: "Preserves double-column layouts, footnotes, and section numbering.",

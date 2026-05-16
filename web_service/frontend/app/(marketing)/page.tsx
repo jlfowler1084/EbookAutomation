@@ -3,11 +3,15 @@ import { Suspense } from "react";
 import Link from "next/link";
 import UploadForm from "../UploadForm";
 import { Logo } from "../../components/Logo";
+import JsonLd from "../../components/JsonLd";
+import { buildHomepageGraph } from "../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "leafbind — PDF to Kindle, the calm way",
   description:
     "Smart PDF to Kindle conversion with heading detection, footnote linking, and multi-column support. Free tier available. No ads, no tracking.",
+  alternates: { canonical: "/" },
+  openGraph: { type: "website", url: "https://leafbind.io" },
 };
 
 const STEPS = [
@@ -100,6 +104,7 @@ const FAQS: [string, React.ReactNode][] = [
 export default function HomePage() {
   return (
     <>
+      <JsonLd schema={buildHomepageGraph()} />
       {/* Hero — two-column on lg, stacked on mobile */}
       <section
         id="convert"
