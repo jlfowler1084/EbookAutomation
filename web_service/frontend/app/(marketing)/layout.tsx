@@ -6,7 +6,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
     <>
       <Header />
       <main className="min-h-[60vh] bg-surface">
-        <div className="mx-auto max-w-7xl px-6 py-12 md:py-16">
+        <div className="mx-auto max-w-[1240px] px-6 py-20 md:py-28 lg:px-16">
           {children}
         </div>
       </main>
