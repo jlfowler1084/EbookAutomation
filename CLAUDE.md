@@ -269,7 +269,7 @@ Three-layer verification for the billing chain (Stripe → webhook → mint → 
 Full architecture, env-var reference, and "I paid but no tokens" troubleshooting flowchart: `web_service/docs/stripe-verification.md`.
 
 ## MCP Servers
-Allowed: Atlassian Rovo, Context7, Stripe, Cloudflare, Playwright, GitHub
+Allowed: Atlassian Rovo, Context7, Stripe, Cloudflare, Playwright, GitHub, Semrush
 All other cloud MCP servers should be disabled in this project (`/mcp disable <name>`).
 Source of truth: ClaudeInfra `configs/mcp-server-registry.json` (INFRA-70).
 
@@ -278,6 +278,8 @@ Stripe MCP (hosted at `https://mcp.stripe.com`, HTTP transport) is enabled via t
 Cloudflare MCP (hosted at `https://mcp.cloudflare.com/mcp`, HTTP transport) is wired in `.mcp.json` directly — not via a Claude Code plugin (the official `cloudflare` plugin is a separate skills/docs package, not an MCP server). Auth via OAuth on first call; ~2,500 endpoints incl. DNS, Workers, Zero Trust. Use to manage the leafbind.io zone, add subdomains, and tune cache rules. Added 2026-05-14 under INFRA-391.
 
 Playwright and GitHub are Claude Code plugins (enabled at project scope in `.claude/settings.json` `enabledPlugins`, auto-discovered after restart). Playwright provides browser automation for visual QA on the deployed leafbind.io site; GitHub collapses the `gh` CLI shell-out loop into direct PR/issue/CI tool calls. Both added 2026-05-14 under INFRA-391.
+
+Semrush MCP (hosted at `https://mcp.semrush.com/v1/mcp`, HTTP transport) is wired in `.mcp.json` directly. Auth via OAuth 2.1 on first call (browser redirect to Semrush login); queries consume API units from the authenticated Semrush account's plan. Tool surface covers Domain Analytics, Organic Research, Backlink Analytics, Keyword Reports, Keyword Gap, and Position Tracking. Use for EB-241 SEO keyword research (and future SEO work). Added 2026-05-16 for EB-241 Phase 1. Follow-up: promote to global ClaudeInfra `mcp-server-registry.json` if usage proves out.
 
 ## Current Priorities
 1. Stabilize 5-book regression suite — zero failures on all test cases
