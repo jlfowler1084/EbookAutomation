@@ -97,7 +97,7 @@ export default function AcademicPdfToKindlePage() {
         <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Academic PDF conversion
         </p>
-        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
+        <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
           Convert Academic PDFs to Kindle — Columns, Footnotes, and Headings Preserved
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl mb-8">

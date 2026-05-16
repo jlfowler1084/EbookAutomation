@@ -93,7 +93,7 @@ export default function PdfFootnotesKindlePage() {
         <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Footnote conversion guide
         </p>
-        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
+        <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
           PDF Footnotes on Kindle Scribe — Keep Them Linked and Readable
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-xl">
