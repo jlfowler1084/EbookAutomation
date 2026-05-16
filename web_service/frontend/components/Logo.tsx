@@ -4,17 +4,19 @@ type LogoProps = {
 };
 
 export function Logo({ className, variant = "full" }: LogoProps) {
+  // EB-269 (F4-03): SVG is presentational. All current call sites (Header,
+  // Footer, hero glyph) wrap Logo in a labeled link or sit in a labeled
+  // context; the prior `role="img"` + `aria-label` + `<title>` triple caused
+  // screen readers to announce "leafbind.io" twice on every wrapping link.
   if (variant === "glyph") {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 100 100"
-        role="img"
-        aria-label="leafbind"
+        aria-hidden="true"
         fill="none"
         className={className}
       >
-        <title>leafbind</title>
         <LeafGlyphPaths gradId="lbCurlShade_glyph" clipId="lbLeafClip_glyph" />
       </svg>
     );
@@ -27,12 +29,10 @@ export function Logo({ className, variant = "full" }: LogoProps) {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 380 100"
-      role="img"
-      aria-label="leafbind.io"
+      aria-hidden="true"
       fill="none"
       className={className}
     >
-      <title>leafbind.io</title>
       <LeafGlyphPaths gradId="lbCurlShade_full" clipId="lbLeafClip_full" />
       <text
         x="116"
