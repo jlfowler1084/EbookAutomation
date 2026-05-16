@@ -114,6 +114,7 @@ async def convert_file(
         output_fmt=output_format,
         temp_dir=str(temp_dir),
         input_path=str(input_path),
+        original_filename=file.filename or None,
     )
 
     asyncio.create_task(job_queue.dispatch_job(job_id))

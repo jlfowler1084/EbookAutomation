@@ -461,3 +461,112 @@ class TestDownloadEndpoint:
 
         resp = tc.get(f"/download/{jid}")
         assert resp.status_code == 410
+
+    # ------------------------------------------------------------------ EB-274
+
+    def _seed_done_job_with_filename(self, db_path, tmp_path, *,
+                                     original_filename: str | None,
+                                     output_fmt: str = "epub"):
+        """Seed a done job with a real on-disk output file and explicit
+        original_filename. Used by the EB-274 polish tests below."""
+        import web_service.job_store as js
+        jid = js.new_job_id()
+        output_file = tmp_path / f"{jid}.{output_fmt}"
+        output_file.write_bytes(b"fake ebook content")
+        js.create_job(
+            job_id=jid,
+            tier="free",
+            input_fmt="pdf",
+            output_fmt=output_fmt,
+            temp_dir=str(tmp_path),
+            input_path=str(tmp_path / "input.pdf"),
+            db_path=db_path,
+            original_filename=original_filename,
+        )
+        js.set_done(jid, str(output_file), output_file.stat().st_size, db_path=db_path)
+        return jid
+
+    def test_head_returns_200_with_headers_no_body(self, client, tmp_path):
+        """HEAD /download/{job_id} returns 200 + same headers as GET, empty body.
+
+        Pre-EB-274 the route was @router.get only, so HEAD probes (Lighthouse,
+        link-checkers, browser prefetch) all 405'd. F2-05 in the audit.
+        """
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename="leafbind-demo.pdf"
+        )
+
+        resp = tc.head(f"/download/{jid}")
+        assert resp.status_code == 200
+        assert resp.content == b""  # HEAD has no body
+        assert resp.headers["content-type"] == "application/epub+zip"
+        assert "content-disposition" in resp.headers
+        assert "leafbind-demo.epub" in resp.headers["content-disposition"]
+
+    def test_get_returns_format_specific_media_type(self, client, tmp_path):
+        """F2-04: serve application/epub+zip rather than octet-stream for EPUB."""
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename="paper.pdf", output_fmt="epub"
+        )
+
+        resp = tc.get(f"/download/{jid}")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/epub+zip"
+
+    def test_get_kfx_keeps_octet_stream(self, client, tmp_path):
+        """KFX has no registered IANA media type — must stay octet-stream."""
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename="paper.pdf", output_fmt="kfx"
+        )
+
+        resp = tc.get(f"/download/{jid}")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/octet-stream"
+
+    def test_content_disposition_uses_original_basename(self, client, tmp_path):
+        """F2-04: 'leafbind-demo.pdf' uploaded → 'leafbind-demo.epub' downloaded,
+        not the raw UUID-based output filename."""
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename="My Big Book.pdf", output_fmt="epub"
+        )
+
+        resp = tc.get(f"/download/{jid}")
+        assert resp.status_code == 200
+        assert 'filename="My Big Book.epub"' in resp.headers["content-disposition"]
+
+    def test_content_disposition_falls_back_to_output_name_when_no_original(
+        self, client, tmp_path
+    ):
+        """Pre-EB-274 jobs that predate the original_filename column still
+        download cleanly using the output file's own basename."""
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename=None, output_fmt="epub"
+        )
+
+        resp = tc.get(f"/download/{jid}")
+        assert resp.status_code == 200
+        # Output filename is "{jid}.epub" — the UUID-based name, but still a
+        # well-formed download with the right extension.
+        assert resp.headers["content-disposition"].endswith(f'{jid}.epub"')
+
+    def test_head_does_not_trigger_cleanup(self, client, tmp_path):
+        """HEAD probes must not delete the output file. Only GET schedules the
+        post-delivery cleanup task."""
+        import web_service.job_store as js
+        tc, db_path = client
+        jid = self._seed_done_job_with_filename(
+            db_path, tmp_path, original_filename="paper.pdf"
+        )
+        output_file = Path(js.get_job(jid, db_path=db_path)["output_path"])
+        assert output_file.exists()
+
+        resp = tc.head(f"/download/{jid}")
+        assert resp.status_code == 200
+        # File should still be on disk after a HEAD; job should still be DONE.
+        assert output_file.exists()
+        assert js.get_job(jid, db_path=db_path)["status"] == STATUS_DONE
