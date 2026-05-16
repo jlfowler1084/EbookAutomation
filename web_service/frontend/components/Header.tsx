@@ -12,6 +12,7 @@ export function Header() {
           <Link href="/convert/pdf-to-kfx"          className="hover:text-text-base transition">Convert</Link>
           <Link href="/pricing"                     className="hover:text-text-base transition">Pricing</Link>
           <Link href="/quality"                     className="hover:text-text-base transition">Quality</Link>
+          <Link href="/recover"                     className="hover:text-text-base transition">Recover</Link>
         </nav>
       </div>
     </header>

@@ -318,6 +318,12 @@ export default function PdfToKfxPage() {
           </p>
           <div className="flex flex-wrap gap-4">
             <Link
+              href="/guides/pdf-to-kfx-for-kindle-scribe"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
+            >
+              Full guide: PDF to KFX for Kindle Scribe →
+            </Link>
+            <Link
               href="/convert/academic-pdf-to-kindle"
               className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
             >
