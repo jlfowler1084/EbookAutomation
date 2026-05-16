@@ -12,13 +12,18 @@ const nextConfig = {
   // EB-267: proxy backend-served routes through the frontend domain so that
   // same-origin forms and Stripe success_url redirects reach FastAPI instead
   // of hitting Vercel's catch-all 404.
-  //   /api/recover     — RecoverClient form action (relative URL) lands here.
-  //   /payment/success — Stripe success_url is hard-coded to leafbind.io in
-  //                      web_service/routes/checkout.py; the page itself is
-  //                      server-rendered by FastAPI per the EB-248 design.
+  //   /api/recover                       — RecoverClient form action (relative URL).
+  //   /api/recovery-events/recover-view  — EB-292: RecoverClient page-load event log.
+  //   /payment/success                   — Stripe success_url is hard-coded to
+  //                                        leafbind.io in checkout.py; the page is
+  //                                        server-rendered by FastAPI per EB-248.
   async rewrites() {
     return [
       { source: "/api/recover", destination: `${API_URL}/api/recover` },
+      {
+        source: "/api/recovery-events/recover-view",
+        destination: `${API_URL}/api/recovery-events/recover-view`,
+      },
       { source: "/payment/success", destination: `${API_URL}/payment/success` },
     ];
   },

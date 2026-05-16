@@ -13,20 +13,56 @@ interface StoredTokens {
   expires_at: number;
 }
 
+// EB-292: fire-and-forget event log. The endpoint always returns 204 and
+// failures are absorbed server-side, so we don't need to wait or handle
+// errors here — keepalive lets the request survive a fast navigation away
+// from the page.
+function logRecoverView(state: string): void {
+  try {
+    void fetch("/api/recovery-events/recover-view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localStorage_state: state }),
+      keepalive: true,
+    }).catch(() => {
+      // Swallow — instrumentation must never break the recovery UX.
+    });
+  } catch {
+    // Synchronous throw (e.g. fetch unavailable) — swallow.
+  }
+}
+
 export default function RecoverClient({ initialSessionId }: Props) {
   const [storedTokens, setStoredTokens] = useState<StoredTokens | null>(null);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    let state: string = "empty";
+    let parsed: StoredTokens | null = null;
     try {
       const raw = localStorage.getItem("leafbind.tokens");
       if (raw) {
-        setStoredTokens(JSON.parse(raw) as StoredTokens);
+        try {
+          parsed = JSON.parse(raw) as StoredTokens;
+          if (parsed && Array.isArray(parsed.tokens) && parsed.tokens.length > 0) {
+            const expired = Date.now() / 1000 > parsed.expires_at;
+            state = expired ? "has_expired_tokens" : "has_tokens";
+          } else {
+            state = "invalid";
+          }
+        } catch {
+          state = "invalid";
+        }
+      }
+      if (parsed) {
+        setStoredTokens(parsed);
       }
     } catch {
-      // localStorage unavailable (incognito, SSR guard, etc.) — silently fall through
+      // localStorage unavailable (incognito, SSR guard, ITP, etc.)
+      state = "unavailable";
     }
     setChecked(true);
+    logRecoverView(state);
   }, []);
 
   if (!checked) return <p>Checking local storage&hellip;</p>;

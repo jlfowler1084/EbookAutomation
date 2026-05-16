@@ -28,7 +28,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from html import escape
 
-from web_service import circuit_breaker, token_store
+from web_service import circuit_breaker, recovery_events_store, token_store
 from web_service.templates.shell import footer_html, header_html
 from web_service.config import get_settings
 from web_service.job_queue import billing_executor
@@ -319,6 +319,21 @@ async def payment_success(session_id: str) -> HTMLResponse:
     # --- Step 4: Tokens exist in DB ---
     if result is not None:
         tokens, expires_at = result
+
+        # EB-292: this branch fires when the page is rendered for a session
+        # that already has tokens in the DB — i.e. an idempotent revisit, not
+        # a first-render-after-purchase. Fire-and-forget event log; failures
+        # are absorbed inside recovery_events_store.log_event().
+        try:
+            loop.run_in_executor(
+                billing_executor,
+                recovery_events_store.log_event,
+                "payment_success_revisit",
+                {"expired": int(time.time()) > expires_at, "n_tokens": len(tokens)},
+            )
+        except Exception:
+            # Defensive — log_event already swallows its own errors.
+            pass
 
         # --- Step 5: Check expiry on revisit ---
         if int(time.time()) > expires_at:
