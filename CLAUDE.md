@@ -260,6 +260,14 @@ including one unticketed "Stray Baseline" commit. This constraint is intentional
 - Don't confuse `settings.json` (pipeline config) with `.claude/settings.json` (Claude Code config)
 - **Never use `mklink /J` junctions inside a worktree to give it access to gitignored data dirs (`archive/`, `output/`, `inbox/`, `processing/`).** Windows `rmdir /s` and `Remove-Item -Recurse` traverse junctions and delete the *target* contents. When ExitWorktree (or any recursive delete of the worktree directory) runs, the linked source data is destroyed. **Recovered from this on 2026-04-22 during SCRUM-301**: the SCRUM-303 worktree's junctions caused archive/output/inbox/processing in the main repo to be wiped on cleanup. Recovery was possible because PDFs were available in `F:\books`. Safer pattern: run pipeline scripts from the main working tree (`F:\Projects\EbookAutomation\`), and keep worktrees scoped to code-only edits. If you must run scripts from a worktree, set an environment override on `ARCHIVE_DIR`/`OUTPUT_DIR` rather than creating filesystem junctions.
 
+## Stripe Verification (EB-273 + EB-291)
+Three-layer verification for the billing chain (Stripe → webhook → mint → success page):
+1. Mocked unit tests — `tests/test_web_payment.py`, `tests/test_web_webhook.py` (1200+ lines)
+2. Signed-event pytest e2e — `tests/test_web_payment_e2e.py` (runs in CI via `.github/workflows/web-tests.yml`)
+3. Manual Stripe CLI script — `tools/verify_stripe_e2e.ps1` (pre-deploy + customer-report triage)
+
+Full architecture, env-var reference, and "I paid but no tokens" troubleshooting flowchart: `web_service/docs/stripe-verification.md`.
+
 ## MCP Servers
 Allowed: Atlassian Rovo, Context7, Stripe, Cloudflare, Playwright, GitHub
 All other cloud MCP servers should be disabled in this project (`/mcp disable <name>`).

@@ -115,23 +115,33 @@ class TestHalfOpenAfterTimeout:
 
 
 class TestStaleFailureExpiry:
-    def test_old_failures_dont_accumulate(self):
+    # Why monkeypatch time.monotonic: the original tests subtracted 61 from a
+    # live time.monotonic() reading, which on freshly-booted GitHub Actions
+    # runners (uptime < 61s) produced a NEGATIVE _last_failure_time. The impl's
+    # `_last_failure_time > 0` sentinel then short-circuits, skipping the
+    # staleness reset. Anchoring to a fixed absolute value (1000.0) makes both
+    # the test and the impl see consistent monotonic readings regardless of
+    # actual system uptime. Discovered by EB-291's first CI run.
+    def test_old_failures_dont_accumulate(self, monkeypatch):
         """Failures with last_failure_time > 60s ago must reset the counter."""
-        # Simulate 4 old failures by setting last_failure_time to >60s ago
+        fake_now = 1000.0
+        monkeypatch.setattr(time, "monotonic", lambda: fake_now)
         cb._consecutive_failures = 4
-        cb._last_failure_time = time.monotonic() - 61.0
-        # One new failure — should restart the count from 1 (not 5)
+        cb._last_failure_time = fake_now - 61.0  # 939.0 — comfortably > 0
         cb.db_call_failed()
         # Counter should be 1 (stale failures expired), not 5
         assert cb._consecutive_failures == 1
         assert cb.circuit_is_open() is False
 
-    def test_four_fresh_plus_one_resets_not_five(self):
+    def test_four_fresh_plus_one_resets_not_five(self, monkeypatch):
         """4 fresh failures + 1 after >60s gap = counter reset to 1, no open."""
+        # Start with monotonic anchored so the 4 initial failures share a base.
+        base = 1000.0
+        monkeypatch.setattr(time, "monotonic", lambda: base)
         for _ in range(4):
             cb.db_call_failed()
-        # Simulate time passing (backdate last_failure_time)
-        cb._last_failure_time = time.monotonic() - 61.0
+        # Now advance the clock past the staleness window for the 5th call.
+        monkeypatch.setattr(time, "monotonic", lambda: base + 62.0)
         cb.db_call_failed()
         # If correctly expiring stale failures, counter is now 1, not 5
         assert cb._consecutive_failures == 1
