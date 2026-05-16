@@ -1,0 +1,15 @@
+# Node
+node_modules/
+
+# Wrangler build output
+.wrangler/
+dist/
+
+# Local dev secrets (real secrets go through wrangler secret put)
+.dev.vars
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Logs
+*.log

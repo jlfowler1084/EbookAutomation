@@ -1,0 +1,24 @@
+name = "contact-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# EB-264: Worker is bound to forms.leafbind.io/contact.
+# api.leafbind.io is reserved for the FastAPI conversion backend on Hetzner VM.
+# DO NOT change the route to api.leafbind.io.
+[[routes]]
+pattern = "forms.leafbind.io/contact"
+zone_name = "leafbind.io"
+
+[[kv_namespaces]]
+binding = "CONTACT_KV"
+# KV namespace ID populated after: wrangler kv namespace create CONTACT_KV
+# Run: wrangler kv namespace create CONTACT_KV
+# Then replace the placeholder below with the returned id.
+id = "PLACEHOLDER_KV_NAMESPACE_ID"
+
+# Secrets — set via: wrangler secret put <NAME>
+# TURNSTILE_SECRET_KEY: from Cloudflare Dashboard → Turnstile → leafbind.io site
+# RESEND_API_KEY:        from Resend dashboard (re_...)
+# SUPPORT_INBOX_ADDRESS: support@leafbind.io
+# These are referenced in src/types.ts Env interface and NOT committed to the repo.

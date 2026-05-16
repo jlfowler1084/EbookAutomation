@@ -46,4 +46,4 @@ Pricing uses one-time credit packs at $2.99, $7.99, and $14.99. A free tier hand
 - Site: https://leafbind.io
 - Domain registered: 2026-05
 - Source repository: private
-- Contact: via the conversion result page (no public contact form on the marketing site as of 2026-05)
+- Contact: https://leafbind.io/contact

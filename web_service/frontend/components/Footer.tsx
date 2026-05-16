@@ -5,7 +5,12 @@ export function Footer() {
   return (
     <footer className="border-t border-border bg-surface-muted">
       <div className="mx-auto max-w-7xl px-6 py-12">
-        <div className="grid gap-8 md:grid-cols-3">
+        {/*
+          EB-264: Expanded from md:grid-cols-3 to sm:grid-cols-2 lg:grid-cols-4.
+          Using sm:grid-cols-2 at 768-1023px (md breakpoint) to prevent 4-col cramping.
+          4 columns only at lg (≥1024px). At sm it stacks 2×2.
+        */}
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {/* EB-269 (F4-02): block + w-fit takes the link out of an
                 "in-text-block" context for axe, so the logo isn't flagged
@@ -31,7 +36,13 @@ export function Footer() {
             <ul className="mt-3 space-y-2 text-sm text-text-muted">
               <li><Link href="/pricing" className="hover:text-text-base transition">Pricing</Link></li>
               <li><Link href="/quality" className="hover:text-text-base transition">Quality</Link></li>
-              <li><Link href="/recover" className="hover:text-text-base transition">Recover tokens</Link></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-text-base">Support</h3>
+            <ul className="mt-3 space-y-2 text-sm text-text-muted">
+              <li><Link href="/contact"  className="hover:text-text-base transition">Contact</Link></li>
+              <li><Link href="/recover"  className="hover:text-text-base transition">Recover tokens</Link></li>
             </ul>
           </div>
         </div>

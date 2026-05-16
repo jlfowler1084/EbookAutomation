@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "build:icons": "node tools/build-icons.mjs",
-    "check:tokens": "node tools/check-token-drift.mjs"
+    "check:tokens": "node tools/check-token-drift.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "^16.2.6",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/lora": "^5.2.8",
+    "@playwright/test": "^1.50.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
