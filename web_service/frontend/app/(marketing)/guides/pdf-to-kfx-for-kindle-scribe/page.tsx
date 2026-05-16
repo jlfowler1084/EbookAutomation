@@ -1,10 +1,10 @@
-// Image manifest (public/guides/pdf-to-kfx-for-kindle-scribe/, all photographed on a real Kindle Scribe):
-//   s2k-columns-fail.jpg       — Calibre/Send-to-Kindle interleaved-columns failure (Glubb, Fate of Empires, Introduction)
-//   s2k-footnotes-stripped.jpg — Calibre flat endnote dump with no back-links (Jones, Mexico Illicit, Notes 21-37)
-//   calibre-output.jpg         — Same column-failure mode, alternate passage (Glubb, page 5%)
-//   leafbind-columns.jpg       — leafbind clean column flow, same passage as s2k-columns-fail (Glubb)
-//   leafbind-footnotes.jpg     — Tappable footnote popup open on Scribe (Jones, Chapter 1)
-//   scribe-toc.jpg             — Multi-part chapter list — PART ONE: GLADIATOR / PART TWO: SHOWDOWN (Cooper, The Oil Kings)
+// Image manifest (public/guides/pdf-to-kfx-for-kindle-scribe/):
+//   s2k-columns-fail.jpg       — Calibre interleaved-columns failure, Kindle Scribe photo (Glubb, Fate of Empires, page 12%)
+//   s2k-footnotes-stripped.jpg — Calibre flat endnote dump, Kindle Scribe photo (Jones, Mexico Illicit, Notes 21-37)
+//   calibre-output.jpg         — Same shot as s2k-columns-fail (reuse)
+//   leafbind-columns.jpg       — leafbind clean column flow, Kindle Scribe photo (Glubb, Introduction, landscape)
+//   leafbind-footnotes.jpg     — Tappable footnote popup open, Kindle Scribe photo (Jones, Ch.1, footnote 109)
+//   scribe-toc.jpg             — Chapter nav panel, Calibre viewer screenshot (Glubb: Introduction / The Fate of Empires / Search for Survival)
 
 import type { Metadata } from "next";
 import Image from "next/image";
