@@ -61,15 +61,26 @@ _LATER_COLUMNS: list[tuple[str, str]] = [
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
-    """Apply idempotent column-add migrations.
+    """Apply idempotent column-add migrations under a SQLite write lock (EB-293).
 
-    Each migration is gated by a check against the live schema, so this is safe
-    to run on every startup. Re-running against a fully-migrated DB is a no-op.
+    BEGIN IMMEDIATE acquires a RESERVED lock so that concurrent workers
+    (uvicorn runs the service with --workers 2 in prod) serialise correctly:
+    the loser waits up to PRAGMA busy_timeout for the winner to commit, then
+    re-reads PRAGMA table_info inside the same transaction and finds nothing
+    to add. Without the lock, two workers could both read a pre-migration
+    PRAGMA snapshot and both try to ALTER the same column, raising
+    "duplicate column name". Re-running against a fully-migrated DB is a no-op.
     """
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
-    for col, type_clause in _LATER_COLUMNS:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {type_clause}")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+        for col, type_clause in _LATER_COLUMNS:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {type_clause}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 @contextmanager
@@ -81,6 +92,10 @@ def _get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # EB-293: busy_timeout lets BEGIN IMMEDIATE writers wait for the lock
+    # instead of failing fast with "database is locked" when two uvicorn
+    # workers race on _apply_migrations during a fresh-column deploy.
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
         conn.commit()
