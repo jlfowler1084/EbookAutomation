@@ -61,10 +61,21 @@ export async function createCheckoutSession(pack: string): Promise<CheckoutRespo
   return resp.json();
 }
 
+// EB-271: typed error so callers can distinguish 404 (expired/unknown job)
+// from 5xx (backend outage) — both produced the same generic UI before.
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function getStatus(jobId: string): Promise<StatusResponse> {
   const resp = await fetch(`${API_URL}/status/${jobId}`);
   if (!resp.ok) {
-    throw new Error(`Status check failed: HTTP ${resp.status}`);
+    throw new ApiError(resp.status, `Status check failed: HTTP ${resp.status}`);
   }
   return resp.json();
 }

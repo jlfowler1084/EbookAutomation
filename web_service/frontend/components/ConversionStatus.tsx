@@ -1,15 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { type StatusResponse, getDownloadUrl, getStatus } from "../lib/api";
+import { ApiError, type StatusResponse, getDownloadUrl, getStatus } from "../lib/api";
 
 interface Props {
   jobId: string;
 }
 
+type ErrorKind = "not-found" | "server";
+
 export default function ConversionStatus({ jobId }: Props) {
   const [status, setStatus] = useState<StatusResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorKind | null>(null);
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -24,8 +27,12 @@ export default function ConversionStatus({ jobId }: Props) {
             intervalId = null;
           }
         }
-      } catch {
-        setError("Service unavailable. Please try again later.");
+      } catch (err: unknown) {
+        // EB-271: distinguish 404 (unknown/expired job) from other failures.
+        // Both used to surface as "Service unavailable", which masked the
+        // 24-hour file-deletion policy as a backend bug.
+        const kind: ErrorKind = err instanceof ApiError && err.status === 404 ? "not-found" : "server";
+        setError(kind);
         if (intervalId !== null) {
           clearInterval(intervalId);
           intervalId = null;
@@ -41,8 +48,31 @@ export default function ConversionStatus({ jobId }: Props) {
     };
   }, [jobId]);
 
-  if (error) {
-    return <p style={{ color: "red" }}>{error}</p>;
+  if (error === "not-found") {
+    return (
+      <div>
+        <p className="text-text-base font-medium">
+          We couldn&apos;t find that conversion.
+        </p>
+        <p className="mt-2 text-sm text-text-muted">
+          It may have expired — we delete files 24 hours after conversion — or the link may be incorrect.
+        </p>
+        <Link
+          href="/"
+          className="mt-4 inline-block rounded bg-[var(--color-accent)] px-4 py-2 text-sm text-white no-underline"
+        >
+          Convert another file
+        </Link>
+      </div>
+    );
+  }
+
+  if (error === "server") {
+    return (
+      <p style={{ color: "red" }}>
+        We can&apos;t reach the conversion service right now. Please try again in a minute.
+      </p>
+    );
   }
 
   if (!status) {

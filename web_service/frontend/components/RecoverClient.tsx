@@ -63,7 +63,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
           type="text"
           name="session_id"
           defaultValue={initialSessionId ?? ""}
-          placeholder="cs_test_..."
+          placeholder="cs_..."
           required
           style={{
             padding: "0.5em",
