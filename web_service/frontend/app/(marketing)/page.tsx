@@ -90,10 +90,91 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Formats matrix — full-bleed dark ink band */}
+      <section
+        className="mt-20 md:mt-28 mx-[calc(50%-50vw)] bg-[var(--lb-ink)] text-[var(--lb-cream)] py-20 md:py-24"
+      >
+        <div className="mx-auto max-w-[1240px] px-6 lg:px-16">
+          <span className="font-mono text-xs uppercase tracking-[0.16em] text-[var(--lb-sand)]">
+            02 · Formats
+          </span>
+          <h2 className="font-serif text-3xl md:text-4xl font-medium leading-[1.1] tracking-tight mt-3 mb-5 max-w-2xl">
+            Drop in <em className="italic text-[var(--lb-sand)] font-medium">anything</em>.
+            Get out a Kindle file that opens.
+          </h2>
+          <p className="font-sans text-base md:text-lg text-[rgba(244,239,226,0.7)] leading-relaxed max-w-xl mb-14">
+            Scanned PDF, messy EPUB, ancient AZW — leafbind normalizes the input
+            and produces a Kindle-ready file with the table of contents,
+            footnotes, and reflow intact.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-10 lg:gap-12 items-center">
+            {/* Inputs */}
+            <div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.4)] mb-4">
+                Inputs
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {["PDF", "EPUB", "MOBI", "AZW", "AZW3", "DJVU"].map((i) => (
+                  <span
+                    key={i}
+                    className="font-sans font-medium text-sm px-4 py-2.5 rounded-full border border-[rgba(244,239,226,0.2)]"
+                  >
+                    {i}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Center: stroke-only leaf + bind label */}
+            <div className="flex flex-col items-center gap-2 py-2 text-[var(--lb-sand)]">
+              <svg
+                viewBox="0 0 100 100"
+                className="h-16 w-16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                aria-hidden="true"
+              >
+                <path d="M50 6 C72 14, 88 32, 88 54 C88 76, 72 92, 50 94 C28 92, 12 76, 12 54 C12 32, 28 14, 50 6 Z" />
+                <path
+                  d="M50 12 Q49 50, 47 92"
+                  strokeWidth="1.4"
+                  opacity="0.75"
+                />
+              </svg>
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgba(244,239,226,0.5)]">
+                bind
+              </span>
+            </div>
+
+            {/* Outputs */}
+            <div>
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-[rgba(244,239,226,0.4)] mb-4">
+                Outputs
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {["EPUB", "MOBI", "KFX"].map((o) => (
+                  <span
+                    key={o}
+                    className="font-sans font-semibold text-sm px-4 py-2.5 rounded-full bg-[var(--lb-sand)] text-[var(--lb-ink)]"
+                  >
+                    {o}
+                  </span>
+                ))}
+              </div>
+              <p className="font-sans text-xs text-[rgba(244,239,226,0.45)] mt-4 max-w-xs">
+                KFX is premium — Kindle's native enhanced typesetting format.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Three capability cards */}
       <section className="mt-20 md:mt-28">
         <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
-          02 · Why leafbind
+          03 · Why leafbind
         </span>
         <h2 className="font-serif text-3xl md:text-4xl font-medium leading-tight tracking-tight text-text-base mt-3 mb-12 max-w-xl">
           The parts other converters{" "}
