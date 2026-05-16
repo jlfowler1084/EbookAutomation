@@ -16,6 +16,30 @@
  */
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import Script from "next/script";
+
+// Turnstile JS object shape we depend on. Cast through unknown because the library
+// is loaded via <Script> and not present in the Window typedef.
+interface TurnstileApi {
+  render: (
+    el: string | HTMLElement,
+    opts: {
+      sitekey: string;
+      callback: (token: string) => void;
+      "error-callback"?: () => void;
+      "expired-callback"?: () => void;
+      "timeout-callback"?: () => void;
+      execution?: "render" | "execute";
+      appearance?: "always" | "execute" | "interaction-only";
+      retry?: "auto" | "never";
+    }
+  ) => string;
+  reset: (widgetId: string) => void;
+  getResponse: (widgetId: string) => string | undefined;
+}
+interface TurnstileWindow extends Window {
+  turnstile?: TurnstileApi;
+}
 
 const WORKER_URL = "https://forms.leafbind.io/contact";
 
@@ -86,6 +110,38 @@ export default function ContactForm() {
 
   const successRef = useRef<HTMLDivElement>(null);
 
+  // Turnstile state: token is set once the widget solves (which Cloudflare does
+  // either invisibly or after a brief user interaction). widgetIdRef holds the
+  // handle so we can reset() after a submit to get a fresh token.
+  const [turnstileToken, setTurnstileToken] = useState<string>("");
+  const widgetIdRef = useRef<string | null>(null);
+
+  function onTurnstileScriptLoad() {
+    if (!TURNSTILE_SITE_KEY) return;
+    const tWindow = window as TurnstileWindow;
+    if (!tWindow.turnstile || widgetIdRef.current !== null) return;
+    widgetIdRef.current = tWindow.turnstile.render("#turnstile-container", {
+      sitekey: TURNSTILE_SITE_KEY,
+      callback: (token) => setTurnstileToken(token),
+      "error-callback": () => setTurnstileToken(""),
+      "expired-callback": () => setTurnstileToken(""),
+      "timeout-callback": () => setTurnstileToken(""),
+      // Default execution ("render"): widget challenges as soon as it mounts and
+      // calls back with the token. With appearance "interaction-only" it stays
+      // invisible unless Cloudflare decides interaction is needed.
+      appearance: "interaction-only",
+      retry: "auto",
+    });
+  }
+
+  function resetTurnstile() {
+    setTurnstileToken("");
+    const tWindow = window as TurnstileWindow;
+    if (tWindow.turnstile && widgetIdRef.current) {
+      tWindow.turnstile.reset(widgetIdRef.current);
+    }
+  }
+
   function handleChange(
     field: keyof FormFields,
     setter: (v: string) => void
@@ -118,43 +174,27 @@ export default function ContactForm() {
     return Object.keys(errors).length === 0;
   }
 
-  async function getTurnstileToken(): Promise<string> {
-    // If Turnstile widget is not rendered (SITE_KEY not set), return empty.
-    // The Worker will reject with "Bot challenge token missing." in that case.
-    // This path only occurs in development without .env.local configured.
-    if (!TURNSTILE_SITE_KEY) return "";
-
-    return new Promise((resolve) => {
-      // Turnstile invisible widget — programmatic challenge
-      // Cast through unknown because Turnstile is a third-party script not in the Window typedef.
-      type TurnstileWindow = { turnstile?: { render: (el: string, opts: Record<string, unknown>) => void } };
-      if (typeof window !== "undefined" && (window as unknown as TurnstileWindow).turnstile) {
-        (window as unknown as TurnstileWindow).turnstile!.render("#turnstile-container", {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token: string) => resolve(token),
-          "error-callback": () => resolve(""),
-          "expired-callback": () => resolve(""),
-          execution: "execute",
-          appearance: "interaction-only",
-        });
-      } else {
-        resolve("");
-      }
-    });
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setServerError(null);
 
     if (!validate()) return;
 
+    // Turnstile must have solved before submit. If the script hasn't loaded
+    // or the widget hasn't called back yet, ask the user to wait briefly.
+    // (Once the script has loaded, the widget usually solves in <1s, so this
+    // path is only hit on slow networks or if the widget failed to render.)
+    if (!turnstileToken) {
+      setServerError(
+        "Bot check is still loading. Please wait a moment and try again."
+      );
+      return;
+    }
+
     setSubmitting(true);
     saveDraft({ name, email, topic, message }); // persist before fetch
 
     try {
-      const turnstile_token = await getTurnstileToken();
-
       const resp = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -163,7 +203,7 @@ export default function ContactForm() {
           email: email.trim(),
           topic,
           message: message.trim(),
-          turnstile_token,
+          turnstile_token: turnstileToken,
           ...(honeypot ? { honeypot } : {}),
         }),
       });
@@ -188,6 +228,8 @@ export default function ContactForm() {
             data.error ?? "Something went wrong. Please check your details and try again."
           );
         }
+        // Turnstile tokens are single-use — get a fresh one before the user retries.
+        resetTurnstile();
         return;
       }
 
@@ -196,6 +238,8 @@ export default function ContactForm() {
       // Move focus to success message for screen readers
       setTimeout(() => successRef.current?.focus(), 50);
     } catch {
+      // Network error — also burn the token; next retry needs a fresh one.
+      resetTurnstile();
       setServerError(
         "Network error — check your connection and try again. If the problem persists, email support@leafbind.io."
       );
@@ -231,6 +275,18 @@ export default function ContactForm() {
 
   return (
     <>
+      {/*
+        Loads the Turnstile JS API and renders the widget into #turnstile-container
+        on script load. Uses ?render=explicit so Cloudflare does NOT auto-render
+        every .cf-turnstile element on the page — we control rendering explicitly
+        via onTurnstileScriptLoad so we can hold a widgetId for reset().
+      */}
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+        onLoad={onTurnstileScriptLoad}
+      />
+
       {/* Hidden Turnstile container — invisible widget renders here */}
       <div id="turnstile-container" aria-hidden="true" />
 
