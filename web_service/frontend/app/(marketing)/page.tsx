@@ -342,13 +342,13 @@ export default function HomePage() {
             Pay only if you want premium output (KFX, larger files, smart
             pipeline).
           </p>
-          <Link
+          <a
             href="#convert"
             className="inline-flex items-center gap-2 rounded-full bg-[var(--lb-ink)] text-[var(--lb-cream)] px-7 py-3.5 font-sans font-medium text-sm hover:opacity-90 transition"
           >
             Start converting
             <span aria-hidden="true">→</span>
-          </Link>
+          </a>
         </div>
       </section>
     </>
