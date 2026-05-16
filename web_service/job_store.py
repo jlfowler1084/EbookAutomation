@@ -90,12 +90,15 @@ def _get_conn(db_path: Path | None = None) -> Generator[sqlite3.Connection, None
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
+    # EB-293: busy_timeout MUST be set first, before any other PRAGMA, so
+    # that the very first lock contention (e.g. two uvicorn workers racing
+    # on the WAL-mode transition or on _apply_migrations) waits for the
+    # lock instead of failing fast with "database is locked". Setting it
+    # after journal_mode meant the first contended statement on a fresh
+    # connection had no busy-handler installed.
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    # EB-293: busy_timeout lets BEGIN IMMEDIATE writers wait for the lock
-    # instead of failing fast with "database is locked" when two uvicorn
-    # workers race on _apply_migrations during a fresh-column deploy.
-    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
         conn.commit()

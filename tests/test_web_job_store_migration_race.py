@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import sqlite3
+import traceback
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,8 @@ def _init_db_worker(db_path_str: str, barrier, results_queue) -> None:
     """Spawn-mode worker: wait at the barrier, then call init_db.
 
     Defined at module top level so multiprocessing.spawn (the default on Windows)
-    can pickle and re-import it in the child process.
+    can pickle and re-import it in the child process. Captures the full
+    traceback on failure so the test can report which statement raised.
     """
     # Re-import in the child — under spawn, the child has a fresh interpreter
     from web_service.job_store import init_db
@@ -38,7 +40,7 @@ def _init_db_worker(db_path_str: str, barrier, results_queue) -> None:
         init_db(Path(db_path_str))
         results_queue.put(("ok", None))
     except Exception as exc:
-        results_queue.put(("error", repr(exc)))
+        results_queue.put(("error", f"{exc!r}\n{traceback.format_exc()}"))
 
 
 @pytest.mark.parametrize("trial", range(3))
@@ -60,7 +62,15 @@ def test_concurrent_init_db_against_pre_migration_db(tmp_path: Path, trial: int)
     # Set up the pre-migration state: jobs table with the base schema only.
     # _SCHEMA_SQL deliberately omits the _LATER_COLUMNS entries; those are
     # applied by _apply_migrations on every init_db() call.
+    #
+    # Pre-set WAL mode in the seed DB to mirror production reality: in prod
+    # the DB has been WAL-mode for weeks, so the workers' first PRAGMA
+    # journal_mode=WAL is a no-op. Without this, both spawn-mode workers
+    # would race on the actual WAL transition (which needs an EXCLUSIVE lock)
+    # and the loser would fail-fast on Linux runners — masking the real race
+    # in _apply_migrations that this test is designed to exercise.
     conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA_SQL)
     conn.commit()
     conn.close()
