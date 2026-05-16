@@ -113,22 +113,22 @@ export default function HomePage() {
         {/* Left column — copy + CTA + trust strip */}
         <div>
           <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
-            01 · Convert
+            01 · For Kindle Scribe
           </span>
           <h1 className="font-serif text-5xl md:text-6xl font-normal leading-[1.02] tracking-tight text-text-base mt-5 mb-6">
-            Convert PDFs to Kindle,{" "}
-            <em className="italic text-brand font-medium">beautifully</em>.
+            Built for the Kindle{" "}
+            <em className="italic text-brand font-medium">Scribe</em>.
           </h1>
           <p className="font-sans text-lg text-text-muted leading-relaxed max-w-md mb-4">
-            Smart heading detection, footnote linking, multi-column support.
-            No ads. No malware.
+            Reflowable text, footnotes that survive, academic papers that read
+            like a book.
           </p>
           <p className="font-sans text-sm text-text-muted max-w-md mb-8">
-            Your file is never stored after conversion. No tracking, no ads.
+            Not the Send-to-Kindle mess. Your file is never stored.
           </p>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-xs text-text-muted">
-            <span>✓ no account required</span>
-            <span>✓ 20 MB free tier</span>
+            <span>✓ academic-paper tested</span>
+            <span>✓ multi-column ready</span>
             <span>✓ pay once, no subscription</span>
           </div>
         </div>
