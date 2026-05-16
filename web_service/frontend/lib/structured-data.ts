@@ -31,7 +31,8 @@ export interface ArticleSchema {
   "@type": "Article";
   headline: string;
   description: string;
-  author: { "@type": "Person"; name: string };
+  image: string | string[];
+  author: { "@type": "Person"; name: string; url?: string };
   datePublished: string;
   dateModified: string;
   publisher: { "@type": "Organization"; name: string; url: string };

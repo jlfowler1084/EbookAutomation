@@ -16,9 +16,11 @@ import {
   type ArticleSchema,
 } from "../../../../lib/structured-data";
 
-const PUBLISHED = "2026-05-15";
+// ISO 8601 with explicit ET offset — Schema.org Article date fields require timezone-qualified datetimes.
+const PUBLISHED = "2026-05-15T00:00:00-04:00";
 const SLUG = "pdf-to-kfx-for-kindle-scribe";
 const CANONICAL = `https://leafbind.io/guides/${SLUG}`;
+const HERO_IMAGE = `${CANONICAL}/leafbind-columns.jpg`;
 
 export const metadata: Metadata = {
   title: "How to Convert PDFs to KFX for Kindle Scribe — leafbind",
@@ -64,7 +66,8 @@ const articleSchema: ArticleSchema = {
     "A practical guide covering the three realistic options for PDF to KFX conversion — " +
     "Send-to-Kindle, Calibre with the KFX Output plugin, and leafbind — with honest " +
     "assessments of failure modes, setup requirements, and output quality.",
-  author: { "@type": "Person", name: "Joe Fowler" },
+  image: HERO_IMAGE,
+  author: { "@type": "Person", name: "Joe Fowler", url: "https://github.com/jlfowler1084" },
   datePublished: PUBLISHED,
   dateModified: PUBLISHED,
   publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
