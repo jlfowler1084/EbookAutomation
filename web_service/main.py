@@ -27,9 +27,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
-from web_service import job_queue, job_store, token_store
+from web_service import job_queue, job_store, recovery_events_store, token_store
 from web_service.config import get_settings
-from web_service.routes import checkout, convert, download, payment, recover, status, webhook
+from web_service.routes import (
+    checkout,
+    convert,
+    download,
+    payment,
+    recover,
+    recovery_events,
+    status,
+    webhook,
+)
 
 log = logging.getLogger(__name__)
 
@@ -156,6 +165,9 @@ async def lifespan(app: FastAPI):
     # render and tripping the circuit breaker. CREATE TABLE IF NOT EXISTS makes
     # this safe to call on existing DBs (no-op when tables already exist).
     token_store.init_db()
+    # EB-292: recovery-rail usage instrumentation. Append-only counter table.
+    # Same db_path as tokens/jobs; CREATE TABLE IF NOT EXISTS is idempotent.
+    recovery_events_store.init_db()
     job_queue.init_queue()
     job_queue.init_billing_executor()
     _sweep_task = asyncio.create_task(job_queue.cleanup_expired_jobs())
@@ -183,6 +195,7 @@ async def lifespan(app: FastAPI):
             pass
     if job_queue.billing_executor is not None:
         job_queue.billing_executor.shutdown(wait=True)
+        job_queue.billing_executor = None
     log.info("EbookAutomation web service stopped")
 
 
@@ -224,6 +237,7 @@ def create_app() -> FastAPI:
     application.include_router(webhook.router)
     application.include_router(payment.router)
     application.include_router(recover.router)
+    application.include_router(recovery_events.router)
     application.mount(
         "/static",
         _BrandStaticFiles(directory=str(_STATIC_DIR), html=False),
