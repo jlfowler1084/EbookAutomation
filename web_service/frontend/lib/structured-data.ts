@@ -85,6 +85,14 @@ export interface ArticleSchema {
   url: string;
 }
 
+export interface ContactPageSchema {
+  "@context": "https://schema.org";
+  "@type": "ContactPage";
+  name: string;
+  description: string;
+  url: string;
+}
+
 export type SchemaData =
   | SoftwareApplicationSchema
   | FAQPageSchema
@@ -92,7 +100,19 @@ export type SchemaData =
   | ArticleSchema
   | WebSiteSchema
   | ProductSchema
-  | GraphSchema;
+  | GraphSchema
+  | ContactPageSchema;
+
+export function buildContactPageSchema(): ContactPageSchema {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    name: "Contact leafbind Support",
+    description:
+      "Get help with PDF to Kindle conversion, billing, or send general feedback to the leafbind team.",
+    url: "https://leafbind.io/contact",
+  };
+}
 
 export function buildSoftwareApplicationSchema(): SoftwareApplicationSchema {
   return {
