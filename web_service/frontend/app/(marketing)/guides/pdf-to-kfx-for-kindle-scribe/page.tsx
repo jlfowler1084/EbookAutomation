@@ -165,9 +165,11 @@ export default function PdfToKfxGuide() {
           How to convert PDFs to KFX for Kindle Scribe
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl">
-          Send-to-Kindle gets the file onto the device. What it does not get right:
-          multi-column layouts, footnotes, and heading structure. This guide covers the
-          three realistic options and what each one actually produces.
+          To convert a PDF to KFX for Kindle Scribe, you have three realistic options:
+          Amazon&apos;s Send-to-Kindle, Calibre with the KFX Output plugin, or a web
+          service like leafbind. Each handles the same file differently — and only one
+          of them gets multi-column layouts, footnotes, and heading structure right.
+          This guide shows what each one actually produces.
         </p>
         <p className="font-mono text-xs text-text-muted mt-6">
           By Joe Fowler — Updated {new Date(PUBLISHED).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
