@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import BuyButtons from "../../../components/BuyButtons";
+import JsonLd from "../../../components/JsonLd";
+import { buildPricingProductSchema } from "../../../lib/structured-data";
 
 export const metadata: Metadata = {
   title: "Pricing — Leafbind",
   description:
     "Free Calibre-based EPUB conversion, or premium leafbind smart pipeline — column-aware extraction, heading detection, bidirectional footnote linking, KFX output.",
+  alternates: { canonical: "/pricing" },
+  openGraph: { type: "website", url: "https://leafbind.io/pricing" },
 };
 
 const PACKS = [
@@ -54,6 +58,7 @@ const PREMIUM_FEATURES = [
 export default function PricingPage() {
   return (
     <>
+      <JsonLd schema={buildPricingProductSchema(PACKS)} />
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-12">
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6">

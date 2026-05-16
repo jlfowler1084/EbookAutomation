@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   description:
     "Convert PDFs with footnotes to Kindle Scribe (EPUB or KFX). leafbind links footnote " +
     "markers to footnote text so you can tap a citation, read the popup, and return.",
+  alternates: { canonical: "/convert/pdf-footnotes-kindle" },
   openGraph: {
     title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
     description: "Footnote markers and text are linked — not stripped — in the Kindle output.",

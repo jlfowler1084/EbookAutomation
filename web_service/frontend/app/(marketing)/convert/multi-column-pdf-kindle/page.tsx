@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   description:
     "Multi-column PDF to Kindle converter. leafbind reads each column independently " +
     "so the text flows correctly on Kindle — not interleaved across columns.",
+  alternates: { canonical: "/convert/multi-column-pdf-kindle" },
   openGraph: {
     title: "Convert Multi-Column PDFs to Kindle — leafbind",
     description:
