@@ -8,13 +8,13 @@ import {
 } from "../../../../lib/structured-data";
 
 export const metadata: Metadata = {
-  title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
+  title: "PDF footnotes on Kindle Scribe — keep them linked — leafbind",
   description:
-    "Convert PDFs with footnotes to Kindle Scribe (EPUB or KFX). leafbind links footnote " +
-    "markers to footnote text so you can tap a citation, read the popup, and return.",
+    "Convert PDFs with footnotes to Kindle Scribe — leafbind links markers to footnote " +
+    "text so citations stay tappable as popup links.",
   alternates: { canonical: "/convert/pdf-footnotes-kindle" },
   openGraph: {
-    title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
+    title: "PDF footnotes on Kindle Scribe — keep them linked — leafbind",
     description: "Footnote markers and text are linked — not stripped — in the Kindle output.",
     type: "website",
     url: "https://leafbind.io/convert/pdf-footnotes-kindle",
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
+    title: "PDF footnotes on Kindle Scribe — keep them linked — leafbind",
     description: "Convert PDFs with footnotes to Kindle Scribe. Tappable popup links preserved.",
   },
 };

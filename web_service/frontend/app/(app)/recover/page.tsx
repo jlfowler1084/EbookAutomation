@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import RecoverClient from "../../../components/RecoverClient";
 
 export const metadata: Metadata = {
-  title: "Recover Tokens — Leafbind",
-  description: "Recover your Leafbind premium tokens using your Stripe session ID.",
+  title: "Recover tokens — leafbind",
+  description: "Recover your leafbind premium tokens using your Stripe session ID.",
 };
 
 interface Props {
