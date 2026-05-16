@@ -24,25 +24,25 @@ export function Footer() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-text-base">Convert</h3>
-            <ul className="mt-3 space-y-2 text-sm text-text-muted">
-              <li><Link href="/convert/pdf-to-kfx"               className="hover:text-text-base transition">PDF to KFX</Link></li>
-              <li><Link href="/convert/academic-pdf-to-kindle"   className="hover:text-text-base transition">Academic PDFs</Link></li>
-              <li><Link href="/convert/pdf-footnotes-kindle"     className="hover:text-text-base transition">PDFs with footnotes</Link></li>
-              <li><Link href="/convert/multi-column-pdf-kindle"  className="hover:text-text-base transition">Multi-column PDFs</Link></li>
+            <ul className="mt-3 space-y-1 text-sm text-text-muted">
+              <li><Link href="/convert/pdf-to-kfx"               className="block py-2 hover:text-text-base transition">PDF to KFX</Link></li>
+              <li><Link href="/convert/academic-pdf-to-kindle"   className="block py-2 hover:text-text-base transition">Academic PDFs</Link></li>
+              <li><Link href="/convert/pdf-footnotes-kindle"     className="block py-2 hover:text-text-base transition">PDFs with footnotes</Link></li>
+              <li><Link href="/convert/multi-column-pdf-kindle"  className="block py-2 hover:text-text-base transition">Multi-column PDFs</Link></li>
             </ul>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-text-base">Account</h3>
-            <ul className="mt-3 space-y-2 text-sm text-text-muted">
-              <li><Link href="/pricing" className="hover:text-text-base transition">Pricing</Link></li>
-              <li><Link href="/quality" className="hover:text-text-base transition">Quality</Link></li>
+            <ul className="mt-3 space-y-1 text-sm text-text-muted">
+              <li><Link href="/pricing" className="block py-2 hover:text-text-base transition">Pricing</Link></li>
+              <li><Link href="/quality" className="block py-2 hover:text-text-base transition">Quality</Link></li>
             </ul>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-text-base">Support</h3>
-            <ul className="mt-3 space-y-2 text-sm text-text-muted">
-              <li><Link href="/contact"  className="hover:text-text-base transition">Contact</Link></li>
-              <li><Link href="/recover"  className="hover:text-text-base transition">Recover tokens</Link></li>
+            <ul className="mt-3 space-y-1 text-sm text-text-muted">
+              <li><Link href="/contact"  className="block py-2 hover:text-text-base transition">Contact</Link></li>
+              <li><Link href="/recover"  className="block py-2 hover:text-text-base transition">Recover tokens</Link></li>
             </ul>
           </div>
         </div>

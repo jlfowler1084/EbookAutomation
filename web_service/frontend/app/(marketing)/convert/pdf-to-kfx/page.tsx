@@ -93,7 +93,7 @@ export default function PdfToKfxPage() {
         <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
           Conversion guide
         </p>
-        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
+        <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
           Convert PDF to KFX for Kindle Scribe — Smart Formatting Preserved
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl">
@@ -219,7 +219,7 @@ export default function PdfToKfxPage() {
                 </p>
                 <Link
                   href="/quality"
-                  className="text-sm font-medium text-accent no-underline hover:underline"
+                  className="inline-flex items-center min-h-[44px] text-sm font-medium text-accent no-underline hover:underline"
                 >
                   View quality comparison →
                 </Link>
@@ -319,25 +319,25 @@ export default function PdfToKfxPage() {
           <div className="flex flex-wrap gap-4">
             <Link
               href="/guides/pdf-to-kfx-for-kindle-scribe"
-              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
               Full guide: PDF to KFX for Kindle Scribe →
             </Link>
             <Link
               href="/convert/academic-pdf-to-kindle"
-              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
               Academic PDF to Kindle →
             </Link>
             <Link
               href="/quality"
-              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
               Quality comparison →
             </Link>
             <Link
               href="/pricing"
-              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-2 hover:bg-accent/5"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
               Premium plans →
             </Link>

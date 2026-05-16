@@ -46,7 +46,8 @@ export default function BuyButtons({ packs }: Props) {
             onClick={() => handleBuy(p.id)}
             disabled={creating !== null}
             style={{
-              padding: "0.75em 2em",
+              padding: "0.875em 2em",
+              minHeight: "44px",
               backgroundColor: creating === p.id ? "var(--color-border)" : "var(--color-accent)",
               color: "white",
               border: "none",

@@ -61,7 +61,7 @@ export default function PricingPage() {
       <JsonLd schema={buildPricingProductSchema(PACKS)} />
       {/* Page header */}
       <div className="py-12 md:py-16 border-b border-border mb-12">
-        <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6">
+        <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl leading-tight text-text-base mb-6">
           Pricing
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-xl">

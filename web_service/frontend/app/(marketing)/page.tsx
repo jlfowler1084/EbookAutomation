@@ -115,7 +115,7 @@ export default function HomePage() {
           <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
             01 · For Kindle Scribe
           </span>
-          <h1 className="font-serif text-5xl md:text-6xl font-normal leading-[1.02] tracking-tight text-text-base mt-5 mb-6">
+          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-normal leading-[1.05] md:leading-[1.02] tracking-tight text-text-base mt-5 mb-6">
             Built for the Kindle{" "}
             <em className="italic text-brand font-medium">Scribe</em>.
           </h1>

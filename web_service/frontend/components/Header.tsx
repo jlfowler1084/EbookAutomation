@@ -8,11 +8,11 @@ export function Header() {
         <Link href="/" aria-label="leafbind home" className="text-text-base">
           <Logo className="h-8 w-auto" />
         </Link>
-        <nav className="flex items-center gap-6 text-sm text-text-muted">
-          <Link href="/convert/pdf-to-kfx"          className="hover:text-text-base transition">Convert</Link>
-          <Link href="/pricing"                     className="hover:text-text-base transition">Pricing</Link>
-          <Link href="/quality"                     className="hover:text-text-base transition">Quality</Link>
-          <Link href="/recover"                     className="hover:text-text-base transition">Recover</Link>
+        <nav className="flex items-center gap-3 sm:gap-6 text-sm text-text-muted">
+          <Link href="/convert/pdf-to-kfx"          className="py-3 hover:text-text-base transition">Convert</Link>
+          <Link href="/pricing"                     className="py-3 hover:text-text-base transition">Pricing</Link>
+          <Link href="/quality"                     className="py-3 hover:text-text-base transition">Quality</Link>
+          <Link href="/recover"                     className="py-3 hover:text-text-base transition">Recover</Link>
         </nav>
       </div>
     </header>
