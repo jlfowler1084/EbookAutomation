@@ -46,6 +46,7 @@ export interface ProductSchema {
   "@type": "Product";
   name: string;
   description: string;
+  image: string | string[];
   brand: { "@type": "Brand"; name: string };
   offers: OfferSchema[];
 }
@@ -173,6 +174,11 @@ export function buildPricingProductSchema(packs: PricingPack[]): ProductSchema {
     description:
       "One-time credit packs that unlock premium PDF-to-KFX conversions: column-aware extraction, " +
       "heading detection, bidirectional footnote linking, and KFX output for Kindle Scribe.",
+    image: [
+      "https://leafbind.io/quality/pipeline-headings.png",
+      "https://leafbind.io/quality/pipeline-columns.png",
+      "https://leafbind.io/quality/pipeline-footnotes.png",
+    ],
     brand: { "@type": "Brand", name: "leafbind" },
     offers: packs.map((p) => ({
       "@type": "Offer",
