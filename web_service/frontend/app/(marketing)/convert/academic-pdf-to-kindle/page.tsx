@@ -286,6 +286,46 @@ export default function AcademicPdfToKindlePage() {
         </div>
       </section>
 
+      {/* Section 3b: Per-source notes — IEEE / arXiv / journal article */}
+      <section className="mb-16 pb-16 border-b border-border">
+        <div className="max-w-3xl">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-4">
+            Source notes
+          </p>
+          <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
+            Tuned for IEEE, arXiv, and academic journal articles
+          </h2>
+          <div className="font-sans space-y-4 text-base text-text-base leading-relaxed">
+            <p>
+              <strong>IEEE conference and journal papers</strong> use a strict two-column
+              layout with numbered section headings (I, II, III), and reference lists
+              numbered in citation order. The pipeline detects the column boundary from
+              coordinate clusters, reads each column top-to-bottom in sequence, and
+              preserves the numbered hierarchy as Kindle chapter entries. Footnote-style
+              references resolve to popup links on a Kindle Scribe.
+            </p>
+            <p>
+              <strong>arXiv preprints</strong> ship as text-based PDFs generated from
+              LaTeX, which gives the extraction layer high-quality coordinate data and
+              clean glyph mapping. Equations rendered as inline text typically survive
+              conversion as plain-text substitutes; equations rendered as vector graphics
+              are preserved as inline images. Bibliography sections and cross-references
+              are linked when the source PDF includes the underlying anchors.
+            </p>
+            <p>
+              <strong>Journal articles from publishers like Nature, PLOS, ACM, and
+              medical journals</strong> follow similar two-column patterns to IEEE but
+              with publisher-specific heading styles. The font-size histogram approach
+              picks up section headings regardless of font choice, so the pipeline
+              handles a wide range of journal templates without per-publisher tuning.
+              For the academic reader on a Kindle Scribe, the output reads like a
+              published book — with chapter navigation, font-size control, and tappable
+              footnote popups.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Section 4: HowTo */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
