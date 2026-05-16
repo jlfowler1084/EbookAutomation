@@ -1,13 +1,13 @@
-// TODO: Screenshots required before this page fully meets AC.
-// Capture and save to public/guides/pdf-to-kfx-for-kindle-scribe/:
-//   s2k-columns-fail.png     — Send-to-Kindle rendering of a two-column academic paper (interleaved columns)
-//   s2k-footnotes-stripped.png — Send-to-Kindle output showing footnotes appended without links
-//   calibre-output.png       — Calibre output of the same multi-column paper (same failure mode)
-//   leafbind-columns.png     — leafbind output showing correct column order
-//   leafbind-footnotes.png   — leafbind output showing tappable footnote popup
-//   scribe-toc.png           — Kindle Scribe chapter list from a correctly converted KFX
+// Image manifest (public/guides/pdf-to-kfx-for-kindle-scribe/, all photographed on a real Kindle Scribe):
+//   s2k-columns-fail.jpg       — Calibre/Send-to-Kindle interleaved-columns failure (Glubb, Fate of Empires, Introduction)
+//   s2k-footnotes-stripped.jpg — Calibre flat endnote dump with no back-links (Jones, Mexico Illicit, Notes 21-37)
+//   calibre-output.jpg         — Same column-failure mode, alternate passage (Glubb, page 5%)
+//   leafbind-columns.jpg       — leafbind clean column flow, same passage as s2k-columns-fail (Glubb)
+//   leafbind-footnotes.jpg     — Tappable footnote popup open on Scribe (Jones, Chapter 1)
+//   scribe-toc.jpg             — Multi-part chapter list — PART ONE: GLADIATOR / PART TWO: SHOWDOWN (Cooper, The Oil Kings)
 
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import JsonLd from "../../../../components/JsonLd";
 import {
@@ -236,7 +236,22 @@ export default function PdfToKfxGuide() {
               original page. Every line of every two-column page is interleaved this way.
             </p>
 
-            {/* TODO: insert s2k-columns-fail.png here once captured */}
+            <figure className="my-8 max-w-2xl">
+              <Image
+                src="/guides/pdf-to-kfx-for-kindle-scribe/s2k-columns-fail.jpg"
+                alt="Kindle Scribe showing the Introduction page of Glubb's Fate of Empires, with two-column source text interleaved line-by-line into a single broken text flow."
+                width={1500}
+                height={2000}
+                sizes="(min-width: 768px) 672px, 100vw"
+                className="w-full h-auto rounded-md border border-border shadow-sm"
+              />
+              <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                Send-to-Kindle and Calibre both interleave two-column text. Each line you
+                see is one line of the left column followed immediately by one line of the
+                right column from the source PDF. Source: J.B. Glubb, <em>The Fate of
+                Empires</em>, Introduction.
+              </figcaption>
+            </figure>
 
             <h3 className="font-serif text-xl text-text-base pt-2 leading-snug">Footnotes</h3>
             <p>
@@ -255,7 +270,23 @@ export default function PdfToKfxGuide() {
               this is impractical.
             </p>
 
-            {/* TODO: insert s2k-footnotes-stripped.png here once captured */}
+            <figure className="my-8 max-w-2xl">
+              <Image
+                src="/guides/pdf-to-kfx-for-kindle-scribe/s2k-footnotes-stripped.jpg"
+                alt="Kindle Scribe showing the Notes section of Mexico's Illicit Drug Networks: a flat numbered list of citations 21-37 with no links back to the body text."
+                width={1500}
+                height={2000}
+                sizes="(min-width: 768px) 672px, 100vw"
+                className="w-full h-auto rounded-md border border-border shadow-sm"
+              />
+              <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                Calibre output of the Notes section: a flat numbered list with no links
+                back to the citation markers in the body text. Locating a referenced
+                source means flipping to the back of the document and scanning manually.
+                Source: Nathan Jones, <em>Mexico&rsquo;s Illicit Drug Networks</em>, Notes
+                entries 21-37.
+              </figcaption>
+            </figure>
 
             <h3 className="font-serif text-xl text-text-base pt-2 leading-snug">Heading detection and chapter navigation</h3>
             <p>
@@ -305,6 +336,24 @@ export default function PdfToKfxGuide() {
               previous section applies equally to Calibre as to Send-to-Kindle. For a two-column
               journal article, Calibre and Send-to-Kindle produce structurally similar output.
             </p>
+
+            <figure className="my-8 max-w-2xl">
+              <Image
+                src="/guides/pdf-to-kfx-for-kindle-scribe/calibre-output.jpg"
+                alt="Kindle Scribe showing a Calibre conversion of Glubb's Fate of Empires, page 5%. The same column-interleaving artifact as the Send-to-Kindle output appears, confirming the architectural constraint."
+                width={1500}
+                height={2000}
+                sizes="(min-width: 768px) 672px, 100vw"
+                className="w-full h-auto rounded-md border border-border shadow-sm"
+              />
+              <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                Calibre output of an alternate Glubb passage. The interleaving artifact is
+                identical to the Send-to-Kindle output above — both tools are constrained
+                by the PDF text-stream order, not by their conversion logic. Source:
+                Glubb, <em>The Fate of Empires</em>, page 5% region.
+              </figcaption>
+            </figure>
+
             <p>
               For single-column PDFs — a novel, a business book, most non-fiction prose — Calibre
               performs well. The PDF extraction produces a clean EPUB, the heading heuristics work
@@ -372,6 +421,22 @@ export default function PdfToKfxGuide() {
                   would read if you were tracing the text manually on the physical page.
                 </p>
 
+                <figure className="my-8 max-w-2xl">
+                  <Image
+                    src="/guides/pdf-to-kfx-for-kindle-scribe/leafbind-columns.jpg"
+                    alt="Kindle Scribe showing the same Glubb Fate of Empires Introduction passage after leafbind conversion, with the left column read completely before the right column begins, producing a continuous readable flow."
+                    width={1500}
+                    height={2000}
+                    sizes="(min-width: 768px) 672px, 100vw"
+                    className="w-full h-auto rounded-md border border-border shadow-sm"
+                  />
+                  <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                    leafbind output of the same Glubb passage shown above. The left
+                    column reads completely before the right column begins. Compare with
+                    the interleaved Calibre/Send-to-Kindle output of the same source.
+                  </figcaption>
+                </figure>
+
                 <h3 className="font-serif text-xl text-text-base pt-2 leading-snug">Heading classification</h3>
                 <p>
                   The pipeline computes a font-size histogram across all text objects in the
@@ -388,6 +453,23 @@ export default function PdfToKfxGuide() {
                   converted KFX file.
                 </p>
 
+                <figure className="my-8 max-w-2xl">
+                  <Image
+                    src="/guides/pdf-to-kfx-for-kindle-scribe/scribe-toc.jpg"
+                    alt="Kindle Scribe chapter navigation panel for a leafbind-converted KFX of Cooper's The Oil Kings, showing PART ONE: GLADIATOR and PART TWO: SHOWDOWN with numbered chapters nested under each part."
+                    width={1500}
+                    height={2000}
+                    sizes="(min-width: 768px) 672px, 100vw"
+                    className="w-full h-auto rounded-md border border-border shadow-sm"
+                  />
+                  <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                    Kindle Scribe chapter list from a leafbind-converted KFX. Detected
+                    headings nest into the part / chapter hierarchy that the source
+                    document defined. Source: Andrew Scott Cooper, <em>The Oil Kings</em>,
+                    showing PART ONE: GLADIATOR and PART TWO: SHOWDOWN.
+                  </figcaption>
+                </figure>
+
                 <h3 className="font-serif text-xl text-text-base pt-2 leading-snug">Footnote linking</h3>
                 <p>
                   The pipeline identifies footnote markers in body text — superscript numerics,
@@ -400,6 +482,23 @@ export default function PdfToKfxGuide() {
                   footnote popups. Tapping a superscript in body text opens the footnote as an
                   overlay; tapping elsewhere closes it and returns to the reading position.
                 </p>
+
+                <figure className="my-8 max-w-2xl">
+                  <Image
+                    src="/guides/pdf-to-kfx-for-kindle-scribe/leafbind-footnotes.jpg"
+                    alt="Kindle Scribe showing a body paragraph from Mexico's Illicit Drug Networks Chapter 1 with a footnote popup open as an overlay, displaying the citation text for footnote 1."
+                    width={1500}
+                    height={2000}
+                    sizes="(min-width: 768px) 672px, 100vw"
+                    className="w-full h-auto rounded-md border border-border shadow-sm"
+                  />
+                  <figcaption className="mt-2 text-sm text-text-muted leading-relaxed">
+                    Tappable footnote popup on a Kindle Scribe. Tapping the superscript
+                    marker in the body text opens the citation as an overlay; tapping
+                    outside dismisses it and returns to the reading position. Source:
+                    Jones, <em>Mexico&rsquo;s Illicit Drug Networks</em>, Chapter 1.
+                  </figcaption>
+                </figure>
 
                 <h3 className="font-serif text-xl text-text-base pt-2 leading-snug">OCR for scanned documents</h3>
                 <p>
