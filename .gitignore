@@ -100,6 +100,9 @@ test-corpus/*
 # Playwright MCP runtime artifacts (console + page captures)
 .playwright-mcp/
 
+# Cloudflare Worker local dev secrets (real secrets go through wrangler secret put)
+cloudflare/contact-worker/.dev.vars
+
 # EB-233 visual baselines (binary PNGs + Lighthouse JSON — gitignored; MANIFEST.md and .gitkeep committed)
 web_service/frontend/.baselines/**
 !web_service/frontend/.baselines/.gitkeep

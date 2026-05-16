@@ -30,3 +30,7 @@ yarn-error.log*
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Playwright test artifacts (generated on each test run)
+test-results/
+playwright-report/
