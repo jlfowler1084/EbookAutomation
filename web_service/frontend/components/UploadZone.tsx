@@ -52,11 +52,17 @@ export default function UploadZone({ onJobStarted }: Props) {
       <div
         role="button"
         tabIndex={0}
+        aria-label="Upload a PDF or ebook — drop a file here, or press Enter or Space to browse"
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         style={{
           border: `2px dashed ${dragging ? "var(--color-accent)" : "var(--color-border)"}`,
           borderRadius: 8,
@@ -81,6 +87,7 @@ export default function UploadZone({ onJobStarted }: Props) {
         ref={inputRef}
         type="file"
         accept=".pdf,.epub,.mobi,.azw,.azw3,.djvu"
+        aria-label="Choose a file to convert"
         style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 const TOKEN_REGEX = /^lb_pk_[A-Za-z0-9_-]{43}$/;
 
@@ -11,6 +11,8 @@ interface Props {
 export default function TokenField({ onValidToken }: Props) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const inputId = useId();
+  const errorId = `${inputId}-error`;
 
   function handleBlur() {
     const trimmed = value.trim();
@@ -28,12 +30,18 @@ export default function TokenField({ onValidToken }: Props) {
 
   return (
     <div style={{ marginTop: "1em" }}>
+      <label htmlFor={inputId} className="sr-only">
+        Premium token
+      </label>
       <input
+        id={inputId}
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={handleBlur}
         placeholder="lb_pk_..."
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         style={{
           padding: "0.5em",
           width: "100%",
@@ -46,7 +54,9 @@ export default function TokenField({ onValidToken }: Props) {
         }}
       />
       {error && (
-        <p style={{ color: "red", fontSize: "0.9em", marginTop: "0.25em" }}>{error}</p>
+        <p id={errorId} style={{ color: "red", fontSize: "0.9em", marginTop: "0.25em" }}>
+          {error}
+        </p>
       )}
     </div>
   );
