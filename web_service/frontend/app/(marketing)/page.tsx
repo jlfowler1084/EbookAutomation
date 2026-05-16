@@ -1,5 +1,6 @@
 import { type Metadata } from "next";
 import { Suspense } from "react";
+import Link from "next/link";
 import UploadForm from "../UploadForm";
 import { Logo } from "../../components/Logo";
 
@@ -8,6 +9,29 @@ export const metadata: Metadata = {
   description:
     "Smart PDF to Kindle conversion with heading detection, footnote linking, and multi-column support. Free tier available. No ads, no tracking.",
 };
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Drop a file",
+    body: "PDF, EPUB, MOBI, AZW, AZW3, or DJVU. Up to 20 MB on the free tier; 100 MB on premium.",
+  },
+  {
+    n: "02",
+    title: "Pick a format",
+    body: "EPUB or MOBI on free. Premium adds KFX — Kindle's native enhanced typesetting format.",
+  },
+  {
+    n: "03",
+    title: "We convert",
+    body: "Smart heading detection, bidirectional footnote linking, and column-aware extraction run automatically.",
+  },
+  {
+    n: "04",
+    title: "Download",
+    body: "Grab the file and side-load it, or email it to your Kindle. Your source is wiped within 24 hours.",
+  },
+];
 
 const CAPABILITIES = [
   {
@@ -33,11 +57,54 @@ const CAPABILITIES = [
   },
 ];
 
+const FAQS: [string, React.ReactNode][] = [
+  [
+    "Does leafbind store my files?",
+    <>
+      No. Your file lives only inside the conversion job slot, and it&apos;s
+      wiped within 24 hours regardless of outcome. No accounts, no tracking,
+      no ads — and nothing is ever shared with third parties or used to train
+      models.
+    </>,
+  ],
+  [
+    "What's the difference between free and premium?",
+    <>
+      Free runs your PDF through Calibre for a quick EPUB or MOBI. Premium runs
+      leafbind&apos;s smart pipeline — column-aware extraction, font-size-based
+      heading detection, bidirectional footnote linking, and KFX output. See
+      the <Link href="/quality" className="text-brand hover:underline font-medium">quality page</Link> for
+      side-by-side examples on real books.
+    </>,
+  ],
+  [
+    "Why does Kindle care about KFX?",
+    <>
+      KFX is Kindle&apos;s native enhanced typesetting format. Pagination,
+      hyphenation, and reflow all render noticeably better than EPUB or MOBI on
+      the device. For long-form text — academic books especially — the
+      difference is visible at a glance.
+    </>,
+  ],
+  [
+    "What if my conversion fails?",
+    <>
+      Failed premium conversions don&apos;t burn a credit. Your token stays
+      valid for the full 7-day expiry and you can retry. If you&apos;ve already
+      lost track of your token, you can{" "}
+      <Link href="/recover" className="text-brand hover:underline font-medium">recover it by email</Link>.
+    </>,
+  ],
+];
+
 export default function HomePage() {
   return (
     <>
       {/* Hero — two-column on lg, stacked on mobile */}
-      <section className="grid grid-cols-1 gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:items-center">
+      <section
+        id="convert"
+        className="scroll-mt-24 grid grid-cols-1 gap-12 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:items-center"
+      >
         {/* Left column — copy + CTA + trust strip */}
         <div>
           <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
@@ -171,10 +238,39 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* How it works — 4-step paper cards */}
+      <section className="mt-20 md:mt-28">
+        <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
+          03 · Workflow
+        </span>
+        <h2 className="font-serif text-3xl md:text-4xl font-medium leading-tight tracking-tight text-text-base mt-3 mb-12 max-w-xl">
+          From drop to download in{" "}
+          <em className="italic text-brand">four steps</em>.
+        </h2>
+        <ol className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((s) => (
+            <li
+              key={s.n}
+              className="rounded-2xl border border-border bg-[var(--lb-paper)] p-7"
+            >
+              <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-brand mb-3">
+                {s.n}
+              </div>
+              <h3 className="font-serif text-xl text-text-base mb-3 leading-snug">
+                {s.title}
+              </h3>
+              <p className="font-sans text-sm text-text-muted leading-relaxed">
+                {s.body}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       {/* Three capability cards */}
       <section className="mt-20 md:mt-28">
         <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
-          03 · Why leafbind
+          04 · Why leafbind
         </span>
         <h2 className="font-serif text-3xl md:text-4xl font-medium leading-tight tracking-tight text-text-base mt-3 mb-12 max-w-xl">
           The parts other converters{" "}
@@ -200,6 +296,59 @@ export default function HomePage() {
               </p>
             </article>
           ))}
+        </div>
+      </section>
+
+      {/* FAQ — 2-column Q/A list */}
+      <section className="mt-20 md:mt-28">
+        <span className="font-mono text-xs uppercase tracking-[0.16em] text-brand">
+          05 · Questions
+        </span>
+        <h2 className="font-serif text-3xl md:text-4xl font-medium leading-tight tracking-tight text-text-base mt-3 mb-10 max-w-xl">
+          Things you&apos;ll{" "}
+          <em className="italic text-brand">ask anyway</em>.
+        </h2>
+        <div className="flex flex-col">
+          {FAQS.map(([q, a], i) => (
+            <div
+              key={i}
+              className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.4fr] md:gap-12 border-t border-border py-8"
+            >
+              <h3 className="font-serif text-xl md:text-2xl font-medium text-text-base leading-snug">
+                {q}
+              </h3>
+              <p className="font-sans text-base text-text-muted leading-relaxed">
+                {a}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Bottom CTA strip — paper-cream centered band with leaf bleed */}
+      <section className="mt-20 md:mt-28 relative overflow-hidden rounded-3xl border border-border bg-[var(--lb-paper)] px-8 py-14 md:px-16 md:py-20 text-center">
+        {/* Decorative leaf bleed (right edge, low opacity) */}
+        <div className="pointer-events-none absolute -right-12 -bottom-12 opacity-10 text-brand">
+          <Logo variant="glyph" className="h-64 w-64" />
+        </div>
+
+        <div className="relative">
+          <h2 className="font-serif text-3xl md:text-4xl font-medium leading-tight tracking-tight text-text-base mb-4 mx-auto max-w-xl">
+            Convert your first book —{" "}
+            <em className="italic text-brand">free</em>.
+          </h2>
+          <p className="font-sans text-base md:text-lg text-text-muted leading-relaxed max-w-xl mx-auto mb-8">
+            Drop a PDF, pick a format, get a Kindle file. No account required.
+            Pay only if you want premium output (KFX, larger files, smart
+            pipeline).
+          </p>
+          <Link
+            href="#convert"
+            className="inline-flex items-center gap-2 rounded-full bg-[var(--lb-ink)] text-[var(--lb-cream)] px-7 py-3.5 font-sans font-medium text-sm hover:opacity-90 transition"
+          >
+            Start converting
+            <span aria-hidden="true">→</span>
+          </Link>
         </div>
       </section>
     </>
