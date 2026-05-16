@@ -5,6 +5,7 @@ import RecoverClient from "../../../components/RecoverClient";
 export const metadata: Metadata = {
   title: "Recover tokens — leafbind",
   description: "Recover your leafbind premium tokens using your Stripe session ID.",
+  robots: { index: false, follow: false },
 };
 
 interface Props {

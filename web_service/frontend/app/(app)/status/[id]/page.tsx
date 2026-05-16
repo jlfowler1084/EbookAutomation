@@ -8,6 +8,7 @@ interface Props {
 
 export const metadata: Metadata = {
   title: "Conversion Status — Leafbind",
+  robots: { index: false, follow: false },
 };
 
 export default async function StatusPage({ params }: Props) {
