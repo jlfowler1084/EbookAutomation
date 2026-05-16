@@ -8,14 +8,14 @@ import {
 } from "../../../../lib/structured-data";
 
 export const metadata: Metadata = {
-  title: "Convert PDF to KFX for Kindle — leafbind",
+  title: "Convert PDF to KFX for Kindle Scribe — leafbind",
   description:
-    "Convert PDF to KFX Kindle format with smart heading detection, footnote linking, " +
+    "Convert PDF to KFX for Kindle Scribe with smart heading detection, footnote linking, " +
     "and multi-column layout support. Premium pipeline. No account required.",
   openGraph: {
-    title: "Convert PDF to KFX for Kindle — leafbind",
+    title: "Convert PDF to KFX for Kindle Scribe — leafbind",
     description:
-      "Smart PDF to KFX conversion for Kindle — heading structure, footnotes, and " +
+      "Smart PDF to KFX conversion for Kindle Scribe — heading structure, footnotes, and " +
       "multi-column layouts handled correctly.",
     type: "website",
     url: "https://leafbind.io/convert/pdf-to-kfx",
@@ -23,8 +23,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "Convert PDF to KFX for Kindle — leafbind",
-    description: "Smart PDF to KFX conversion for Kindle.",
+    title: "Convert PDF to KFX for Kindle Scribe — leafbind",
+    description: "Smart PDF to KFX conversion for Kindle Scribe.",
   },
 };
 
@@ -93,7 +93,7 @@ export default function PdfToKfxPage() {
           Conversion guide
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-3xl">
-          Convert PDF to KFX for Kindle — Smart Formatting Preserved
+          Convert PDF to KFX for Kindle Scribe — Smart Formatting Preserved
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl">
           KFX is Kindle&rsquo;s native enhanced typesetting format. Getting a PDF

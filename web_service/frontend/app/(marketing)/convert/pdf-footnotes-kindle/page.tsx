@@ -8,12 +8,12 @@ import {
 } from "../../../../lib/structured-data";
 
 export const metadata: Metadata = {
-  title: "PDF Footnotes on Kindle — Keep Them Linked | leafbind",
+  title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
   description:
-    "Convert PDFs with footnotes to Kindle EPUB or KFX. leafbind links footnote " +
-    "markers to footnote text so you can jump back and forth on device.",
+    "Convert PDFs with footnotes to Kindle Scribe (EPUB or KFX). leafbind links footnote " +
+    "markers to footnote text so you can tap a citation, read the popup, and return.",
   openGraph: {
-    title: "PDF Footnotes on Kindle — Keep Them Linked | leafbind",
+    title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
     description: "Footnote markers and text are linked — not stripped — in the Kindle output.",
     type: "website",
     url: "https://leafbind.io/convert/pdf-footnotes-kindle",
@@ -21,8 +21,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "PDF Footnotes on Kindle — Keep Them Linked | leafbind",
-    description: "Convert PDFs with footnotes to Kindle. Backreferences preserved.",
+    title: "PDF Footnotes on Kindle Scribe — Keep Them Linked | leafbind",
+    description: "Convert PDFs with footnotes to Kindle Scribe. Tappable popup links preserved.",
   },
 };
 
@@ -93,7 +93,7 @@ export default function PdfFootnotesKindlePage() {
           Footnote conversion guide
         </p>
         <h1 className="font-serif text-5xl md:text-6xl leading-tight text-text-base mb-6 max-w-2xl">
-          PDF Footnotes on Kindle — Keep Them Linked and Readable
+          PDF Footnotes on Kindle Scribe — Keep Them Linked and Readable
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-xl">
           Most PDF converters break footnotes the moment the page model

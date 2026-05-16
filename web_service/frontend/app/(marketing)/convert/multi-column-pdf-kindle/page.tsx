@@ -277,6 +277,46 @@ export default function MultiColumnPdfKindlePage() {
         </div>
       </section>
 
+      {/* Section 3b: K2pdfopt comparison */}
+      <section className="mb-16 pb-16 border-b border-border">
+        <div className="max-w-3xl">
+          <p className="font-mono text-sm font-medium text-text-muted uppercase tracking-widest mb-5">
+            Compared to K2pdfopt
+          </p>
+          <h2 className="font-serif text-3xl text-text-base mb-6 leading-snug">
+            How leafbind compares to K2pdfopt
+          </h2>
+          <div className="font-sans space-y-4 text-base text-text-base leading-relaxed">
+            <p>
+              K2pdfopt is the long-standing answer for multi-column PDF conversion in
+              the Kindle community. It is a free command-line tool (Willus Watkins,
+              willus.com) that reflows two-column academic PDFs by analyzing pixel
+              density to find column boundaries. For a technical user comfortable with
+              CLI tools and able to install local software, K2pdfopt is a reasonable
+              option with a long track record.
+            </p>
+            <p>
+              The friction is the install and the interface. K2pdfopt distributes as a
+              binary that requires command-line invocation with multiple flags
+              (<code>k2pdfopt -mode 2col -dev kpw3</code> and similar), and the project
+              has not seen a major release since 2021. There is no maintained web
+              interface. For converting a single paper this afternoon, the install plus
+              flag-tuning often exceeds the benefit. For batch workflows where the same
+              flag set works repeatedly, K2pdfopt remains practical.
+            </p>
+            <p>
+              leafbind is web-based with no install. The pipeline uses coordinate-based
+              extraction (not pixel-density analysis) and produces KFX output with
+              chapter detection and footnote linking — capabilities K2pdfopt does not
+              attempt. The trade-off: leafbind is paid for KFX output (a one-time
+              credit pack) where K2pdfopt is free for unlimited local use. The choice
+              depends on whether you value the conversion time saved or the install
+              freedom of running a local binary.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Section 4: HowTo */}
       <section className="mb-16 pb-16 border-b border-border">
         <div className="max-w-3xl">
