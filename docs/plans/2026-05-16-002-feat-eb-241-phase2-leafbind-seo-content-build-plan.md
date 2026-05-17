@@ -600,3 +600,21 @@ All SoftwareApplication entities reuse `SOFTWARE_APP_ID = "https://leafbind.io/#
 - SEO skill: `~/.claude/skills/seo/SKILL.md`
 - Semrush skill: `~/.claude/skills/semrush/SKILL.md` (built this session)
 - Worktree skill: `~/.claude/skills/worktree-management/SKILL.md`
+
+## Plan Amendments
+
+### 2026-05-17 — EB-295: reviewer pass on Units 1-2
+
+A reviewer pass after Unit 2 merged surfaced 5 gaps in this plan. Tracked in **[EB-295](https://jlfowler1084.atlassian.net/browse/EB-295)**. Summary below; full acceptance criteria in the ticket.
+
+**Operational thesis:** for a brand-new domain, every page PR must ship fully linked, sitemap-listed, and fact-checked on the same deploy. The original Unit 7 batching model leaves live pages orphaned and risks E-E-A-T downweighting.
+
+| # | Severity | Finding | Affects |
+|---|----------|---------|---------|
+| 1 | HIGH | Unit 2's merged page links to `/guides/how-to-send-pdf-to-kindle`, which 404s on master. No CI link-check gate exists. | Unit 2 (retroactive), Units 3-6 (new gate) |
+| 2 | HIGH | Sitemap + llms.txt batching to Unit 7 leaves Unit 2 orphaned post-merge. New rule: every page PR ships its own sitemap/llms.txt entry + nav/footer link. | Unit 7 (rescope), Units 3-6 (new shipping rule) |
+| 3 | HIGH | Send-to-Kindle facts on the live Unit 2 page are stale (MOBI listed as supported; Amazon dropped MOBI in late 2022). E-E-A-T risk. | Unit 2 (retroactive), Unit 3 (channel-specific restructure) |
+| 4 | MEDIUM | `buildArticleSchema` was merged in Unit 1 without `mainEntityOfPage`, contrary to Unit 1's stated requirement (line 176 above). | Unit 1 (retroactive), CE review gate going forward |
+| 5 | MEDIUM | `app/sitemap.ts:5` uses `const now = new Date()` for 7 of 10 entries, producing a non-deterministic `lastmod` that Googlebot may downweight. | Unit 7 (retroactive cleanup) |
+
+**Implementation note:** Findings 1, 2, and 4 should land before any further Phase 2 unit merges (Units 3-6) to prevent the same patterns from recurring. Findings 3 and 5 can be batched with the relevant unit work.
