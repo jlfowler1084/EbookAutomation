@@ -33,6 +33,18 @@ export default async function StatusPage({ params }: Props) {
           ← Convert another file
         </Link>
       </p>
+
+      <p className="text-xs text-text-muted">
+        Having trouble?{" "}
+        <Link href="/contact" className="text-brand hover:underline">
+          Contact support
+        </Link>{" "}
+        or email{" "}
+        <a href="mailto:support@leafbind.io" className="text-brand hover:underline">
+          support@leafbind.io
+        </a>
+        .
+      </p>
     </div>
   );
 }

@@ -10,6 +10,7 @@ export function Header() {
         </Link>
         <nav className="flex items-center gap-3 sm:gap-6 text-sm text-text-muted">
           <Link href="/convert/pdf-to-kfx"          className="py-3 hover:text-text-base transition">Convert</Link>
+          <Link href="/guides"                       className="py-3 hover:text-text-base transition">Guides</Link>
           <Link href="/pricing"                     className="py-3 hover:text-text-base transition">Pricing</Link>
           <Link href="/quality"                     className="py-3 hover:text-text-base transition">Quality</Link>
           <Link href="/recover"                     className="py-3 hover:text-text-base transition">Recover</Link>

@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   title: "Recover tokens — leafbind",
   description: "Recover your leafbind premium tokens using your Stripe session ID.",
   robots: { index: false, follow: false },
+  alternates: {
+    canonical: "/recover",
+  },
+  openGraph: {
+    url: "https://leafbind.io/recover",
+  },
 };
 
 interface Props {

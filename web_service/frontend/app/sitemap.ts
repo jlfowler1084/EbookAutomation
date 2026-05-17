@@ -15,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/convert/academic-pdf-to-kindle`,  lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/convert/pdf-footnotes-kindle`,    lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/convert/multi-column-pdf-kindle`, lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/guides`,                                   lastModified: new Date("2026-05-17"), changeFrequency: "weekly",  priority: 0.9 },
     { url: `${base}/guides/pdf-to-kfx-for-kindle-scribe`,     lastModified: new Date("2026-05-15"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/guides/send-to-kindle-not-working`,        lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/guides/how-to-send-pdf-to-kindle`,         lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },

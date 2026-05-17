@@ -93,6 +93,21 @@ export interface ContactPageSchema {
   url: string;
 }
 
+export interface ItemListSchema {
+  "@context": "https://schema.org";
+  "@type": "ItemList";
+  name: string;
+  description: string;
+  url: string;
+  itemListElement: Array<{
+    "@type": "ListItem";
+    position: number;
+    name: string;
+    url: string;
+    description?: string;
+  }>;
+}
+
 export type SchemaData =
   | SoftwareApplicationSchema
   | FAQPageSchema
@@ -101,7 +116,8 @@ export type SchemaData =
   | WebSiteSchema
   | ProductSchema
   | GraphSchema
-  | ContactPageSchema;
+  | ContactPageSchema
+  | ItemListSchema;
 
 export function buildContactPageSchema(): ContactPageSchema {
   return {
@@ -240,5 +256,29 @@ export function buildHowToSchema(args: HowToArgs): HowToSchema {
     "@type": "HowTo",
     name: args.name,
     step: args.step.map((s) => ({ "@type": "HowToStep", name: s.name, text: s.text })),
+  };
+}
+
+interface ItemListArgs {
+  name: string;
+  description: string;
+  url: string;
+  items: Array<{ name: string; url: string; description?: string }>;
+}
+
+export function buildItemListSchema(args: ItemListArgs): ItemListSchema {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: args.name,
+    description: args.description,
+    url: args.url,
+    itemListElement: args.items.map((item, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: item.name,
+      url: item.url,
+      ...(item.description ? { description: item.description } : {}),
+    })),
   };
 }

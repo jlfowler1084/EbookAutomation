@@ -17,6 +17,7 @@ Pricing uses one-time credit packs at $2.99, $7.99, and $14.99. A free tier hand
 
 ## Long-form guides
 
+- [Kindle & PDF guides hub](https://leafbind.io/guides): Index of all leafbind long-form guides covering Kindle PDF conversion, Send-to-Kindle troubleshooting, KFX format, and e-reader comparisons.
 - [How to convert PDFs to KFX for Kindle Scribe](https://leafbind.io/guides/pdf-to-kfx-for-kindle-scribe): Comprehensive guide covering Send-to-Kindle's specific failure modes (column collapse, footnote loss, flat headings), the Calibre KFX-output plugin's strengths and install friction (especially on macOS), and where a web-based converter helps. Includes step-by-step walkthrough and FAQ.
 - [Send to Kindle not working: 7 fixes and a backup that always works](https://leafbind.io/guides/send-to-kindle-not-working): Troubleshooting guide for all common Send-to-Kindle failures — approved sender list misconfiguration, file size limits, unsupported formats, delivery delays, Amazon service status, app-specific quirks, and email domain blocking. Includes a KFX sideload fallback for when Amazon's service keeps failing.
 - [How to send PDFs (and EPUBs, Docs, MOBI) to Kindle: every method](https://leafbind.io/guides/how-to-send-pdf-to-kindle): Mega-guide covering all four methods for sending files to any Kindle device — Send-to-Kindle email, the mobile app, USB cable transfer, and converting to KFX for sideloading. Includes a file-type × method decision table, step-by-step walkthroughs, size limits, format support, and quality tradeoffs.
