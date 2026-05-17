@@ -106,7 +106,7 @@ export default function MultiColumnPdfKindlePage() {
           flow exactly as written.
         </p>
         <Link
-          href="/"
+          href="/#convert"
           className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
         >
           Upload your PDF
@@ -384,7 +384,7 @@ export default function MultiColumnPdfKindlePage() {
         </p>
         <div className="flex flex-wrap gap-4 items-center">
           <Link
-            href="/"
+            href="/#convert"
             className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
           >
             Upload your PDF

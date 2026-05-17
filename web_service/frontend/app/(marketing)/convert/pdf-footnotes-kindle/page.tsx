@@ -404,7 +404,7 @@ export default function PdfFootnotesKindlePage() {
           required. Upload your PDF and see the difference in seconds.
         </p>
         <Link
-          href="/"
+          href="/#convert"
           className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
         >
           Upload your PDF
