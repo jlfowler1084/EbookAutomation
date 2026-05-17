@@ -44,6 +44,7 @@ export default function BuyButtons({ packs }: Props) {
         {packs.map((p) => (
           <button
             key={p.id}
+            type="button"
             onClick={() => handleBuy(p.id)}
             disabled={creating !== null}
             style={{
