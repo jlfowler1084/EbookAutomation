@@ -1,4 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.leafbind.io" }],
+      "destination": "https://leafbind.io/:path*",
+      "statusCode": 301
+    }
+  ]
 }
