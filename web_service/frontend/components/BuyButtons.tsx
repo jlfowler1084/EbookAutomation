@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { createCheckoutSession } from "../lib/api";
 
@@ -65,6 +66,17 @@ export default function BuyButtons({ packs }: Props) {
       {error && (
         <p style={{ color: "red", marginTop: "1em", textAlign: "center" }}>{error}</p>
       )}
+      <p style={{ marginTop: "1em", textAlign: "center", fontSize: "0.75em", color: "var(--color-text-muted)" }}>
+        By purchasing you agree to our{" "}
+        <Link href="/terms" style={{ color: "var(--color-accent)", textDecoration: "underline" }}>
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" style={{ color: "var(--color-accent)", textDecoration: "underline" }}>
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </div>
   );
 }

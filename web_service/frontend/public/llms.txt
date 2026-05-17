@@ -44,6 +44,12 @@ Pricing uses one-time credit packs at $2.99, $7.99, and $14.99. A free tier hand
 - File-size cap on the Premium tier is 100 MB. Larger files must be split before conversion.
 - leafbind targets Kindle's KFX format specifically. EPUB-to-Kindle conversion is supported but is not the primary use case.
 
+## Legal
+
+- [Privacy Policy](https://leafbind.io/privacy): How leafbind handles data. Uses Plausible Analytics (no cookies, no PII, no IP storage). Stripe email collected only for payment receipts. Uploaded files deleted 1 hour after conversion (free tier) or 24 hours (premium). Premium tier sends page images to Gemini (OCR) and Claude (visual QA); free tier does not. No account required. Effective 2026-05-17.
+- [Terms of Service](https://leafbind.io/terms): Acceptable use (no DRM-stripping, no copyrighted material the user doesn't own, no batch abuse). Credits consumed when conversion begins; expire 7 days after purchase. Best-effort availability; no formal SLA. Limitation of liability capped at amount paid in last 30 days. Governing law: State of Georgia, United States. Effective 2026-05-17.
+- [Refund Policy](https://leafbind.io/refund-policy): Credits refunded on request for technical failures. No refund for user error, pre-flight rejections (no credit consumed), buyer's remorse, or expired credits. Default resolution is credit re-added to token pool; cash refund via Stripe available within 30 days of purchase. Response within 3 business days. Effective 2026-05-17.
+
 ## About
 
 - Author: Joe Fowler
