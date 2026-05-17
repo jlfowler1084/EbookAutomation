@@ -10,7 +10,7 @@ Pricing uses one-time credit packs at $2.99, $7.99, and $14.99. A free tier hand
 
 ## Conversion tools (transactional)
 
-- [PDF to KFX](https://leafbind.io/convert/pdf-to-kfx): The primary conversion path for any PDF to Amazon's KFX format, suitable for Kindle Scribe, Paperwhite, and Oasis.
+- [PDF to KFX](https://leafbind.io/convert/pdf-to-kfx): Direction-explicit pillar guide covering PDF-to-Kindle conversion (KFX format) for academic papers, footnotes, and multi-column layouts. Includes comparison with Send-to-Kindle and Calibre, file format table, and 8-item FAQ. Eat-the-bounce note for Kindle→PDF visitors redirects to Calibre+DeDRM.
 - [Academic PDF to Kindle](https://leafbind.io/convert/academic-pdf-to-kindle): Tuned for journal articles, IEEE / arXiv / SAGE-style layouts, and papers with footnote-heavy structure.
 - [Multi-column PDF to Kindle](https://leafbind.io/convert/multi-column-pdf-kindle): Coordinate-based column-order extraction for two-column academic and technical PDFs that Send-to-Kindle and most free converters mis-flow.
 - [PDF footnotes to Kindle](https://leafbind.io/convert/pdf-footnotes-kindle): Footnote linking that converts in-document markers to popup links so citations remain tappable on the Kindle device.
