@@ -1,0 +1,5 @@
+# Pin generated FastAPI CSS to LF regardless of host OS.
+# Without this, `npm run build` on Windows regenerates web_service/static/leafbind-tokens.css
+# with CRLF every time, producing a phantom `M` in `git status` against the LF copy in the index.
+# Per EB-302 — surfaced repeatedly during EB-296/297/298/299/300 subagent runs.
+web_service/static/*.css text eol=lf
