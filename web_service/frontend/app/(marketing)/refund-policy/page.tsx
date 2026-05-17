@@ -70,7 +70,7 @@ export default function RefundPolicyPage() {
             </li>
             <li>
               — <strong className="text-text-base">Expired credits:</strong> Credits that expired
-              before use. Credits expire 7 days after purchase.
+              before use. Credits expire 30 days after purchase.
             </li>
           </ul>
         </section>
@@ -93,7 +93,7 @@ export default function RefundPolicyPage() {
         <section>
           <h2 className="font-serif text-2xl text-text-base mb-4">Credit expiry</h2>
           <p className="text-text-muted">
-            Credits expire 7 days after purchase. Expired credits cannot be refunded or extended.
+            Credits expire 30 days after purchase. Expired credits cannot be refunded or extended.
             If you are unsure whether your credits have expired, use the{" "}
             <Link href="/recover" className="text-brand hover:underline">
               token recovery page

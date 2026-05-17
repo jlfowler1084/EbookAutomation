@@ -643,3 +643,78 @@ class TestMintThenValidateIntegration:
         for token in result.tokens:
             vr = validate_and_consume(token, db_path=db)
             assert vr.ok is True, f"Token {token!r} failed to validate"
+
+
+class TestTokenTTL:
+    """EB-301: token TTL widened from 7 to 30 days.
+
+    Pins both the constant value and the runtime mint behavior so a future
+    accidental shrink (e.g. someone reverts the constant but the copy stays
+    at 30 days) fails CI rather than silently shipping a contract regression.
+    """
+
+    def test_ttl_constant_is_30_days(self):
+        from web_service.token_store import TOKEN_TTL_SECONDS
+
+        assert TOKEN_TTL_SECONDS == 30 * 24 * 3600
+
+    def test_fresh_mint_expires_at_is_30_days_from_creation(self, db):
+        mint_tokens_if_absent("cs_ttl_check", 1, "pi_ttl", db_path=db)
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT created_at, expires_at FROM tokens WHERE pack_id = ?",
+            ("cs_ttl_check",),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["expires_at"] - row["created_at"] == 30 * 24 * 3600
+
+    def test_token_valid_25_days_after_mint(self, db):
+        """A token consumed 25 days post-mint must succeed under the new TTL.
+
+        Under the old 7-day TTL this would have been INVALID_OR_EXPIRED. We
+        backdate created_at and expires_at to simulate a 25-day-old token.
+        """
+        from web_service.crypto import compute_token_hash
+
+        result = mint_tokens_if_absent("cs_ttl_25d", 1, "pi_25d", db_path=db)
+        token = result.tokens[0]
+        token_hash = compute_token_hash(token)
+
+        twenty_five_days_ago = int(time.time()) - (25 * 24 * 3600)
+        five_days_from_now = int(time.time()) + (5 * 24 * 3600)
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "UPDATE tokens SET created_at=?, expires_at=? WHERE token_hash=?",
+            (twenty_five_days_ago, five_days_from_now, token_hash),
+        )
+        conn.commit()
+        conn.close()
+
+        vr = validate_and_consume(token, db_path=db)
+        assert vr.ok is True
+
+    def test_token_expired_after_31_days_under_new_ttl(self, db):
+        """Mirror of the above — a token whose expires_at is in the past still
+        rejects, even with the wider 30-day window.
+        """
+        from web_service.crypto import compute_token_hash
+
+        result = mint_tokens_if_absent("cs_ttl_31d", 1, "pi_31d", db_path=db)
+        token = result.tokens[0]
+        token_hash = compute_token_hash(token)
+
+        thirty_one_days_ago = int(time.time()) - (31 * 24 * 3600)
+        one_day_ago = int(time.time()) - (24 * 3600)
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "UPDATE tokens SET created_at=?, expires_at=? WHERE token_hash=?",
+            (thirty_one_days_ago, one_day_ago, token_hash),
+        )
+        conn.commit()
+        conn.close()
+
+        vr = validate_and_consume(token, db_path=db)
+        assert vr.ok is False
+        assert vr.error.code == TokenValidationErrorCode.INVALID_OR_EXPIRED

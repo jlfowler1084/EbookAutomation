@@ -72,7 +72,7 @@ export default function RecoverClient({ initialSessionId }: Props) {
     if (expired) {
       return (
         <p style={{ color: "#666" }}>
-          Your tokens have expired (7-day window).{" "}
+          Your tokens have expired (30-day window).{" "}
           <a href="/pricing" style={{ color: "var(--color-accent)" }}>
             Buy more
           </a>

@@ -7,7 +7,7 @@ client-side; this endpoint handles the paste-form post case.
 
 On valid session_id shape, 302-redirects to /payment/success?session_id=<id>
 (the canonical recovery URL — Stripe stores completed sessions indefinitely
-and our pack_id index re-renders the original tokens within the 7-day window).
+and our pack_id index re-renders the original tokens within the 30-day window).
 
 EB-292: every call is logged to recovery_events_store as an
 `api_recover_post` event for the 30-60 day measurement window.

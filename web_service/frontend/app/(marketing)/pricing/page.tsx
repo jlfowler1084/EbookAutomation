@@ -74,7 +74,7 @@ export default function PricingPage() {
           . Pay once per conversion — no subscription required.
         </p>
         <p className="font-sans text-sm text-text-muted mt-3">
-          Tokens expire 7 days after purchase.{" "}
+          Tokens expire 30 days after purchase.{" "}
           <Link href="/recover" className="text-brand hover:underline font-medium">
             Lost your tokens?
           </Link>
@@ -113,7 +113,7 @@ export default function PricingPage() {
           <p className="font-sans text-base text-text-muted mb-6 leading-relaxed">
             leafbind&apos;s smart pipeline — the column, heading, and footnote
             work that the free Calibre pass cannot do. One-time credit purchase;
-            credits unlock individual conversions — use within 7 days.
+            credits unlock individual conversions — use within 30 days.
           </p>
           <ul className="space-y-3 mb-6">
             {PREMIUM_FEATURES.map((feature) => (
@@ -166,7 +166,7 @@ export default function PricingPage() {
       <div className="border-t border-border pt-8 pb-4">
         <p className="font-sans text-sm text-text-muted">
           No subscription. No account. Credits work on any premium conversion within
-          7 days of purchase.{" "}
+          30 days of purchase.{" "}
           <Link href="/recover" className="text-brand hover:underline font-medium">
             Recover existing tokens.
           </Link>

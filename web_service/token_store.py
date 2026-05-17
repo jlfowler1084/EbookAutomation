@@ -46,8 +46,11 @@ _TOKEN_REGEX = re.compile(r"^lb_pk_[A-Za-z0-9_-]{43}$")
 # Also documented in the schema SQL comment below for defense-in-depth.
 MAX_TOKENS_PER_SESSION = 25
 
-# Token time-to-live: 7 days from mint time (matches Stripe session expiry window)
-_TOKEN_TTL_SECONDS = 7 * 24 * 3600
+# Token time-to-live: 30 days from mint time.
+# Public symbol — payment.py imports this when rendering the success page so the
+# two layers cannot drift. See EB-301 for the widening rationale (was 7 days, raised
+# to industry-norm 30 days once the value became customer-visible via /refund-policy).
+TOKEN_TTL_SECONDS = 30 * 24 * 3600
 
 
 _SCHEMA_SQL = """
@@ -244,7 +247,7 @@ def mint_tokens_if_absent(
 
         # Step 2: No existing rows — generate tokens and INSERT.
         now = int(time.time())
-        expires_at = now + _TOKEN_TTL_SECONDS
+        expires_at = now + TOKEN_TTL_SECONDS
         f = get_fernet(key_version=1)
 
         generated: list[tuple[str, bytes, bytes]] = []  # (token_str, token_hash, encrypted)
@@ -396,7 +399,7 @@ def validate_and_consume(
                     code=TokenValidationErrorCode.INVALID_OR_EXPIRED,
                     message=(
                         "This token is invalid or has expired. "
-                        "Tokens are valid for 7 days after purchase."
+                        "Tokens are valid for 30 days after purchase."
                     ),
                     http_status=422,
                 ),
@@ -439,7 +442,7 @@ def validate_and_consume(
                 code=TokenValidationErrorCode.INVALID_OR_EXPIRED,
                 message=(
                     "This token has expired. "
-                    "Tokens are valid for 7 days after purchase."
+                    "Tokens are valid for 30 days after purchase."
                 ),
                 http_status=422,
             ),
