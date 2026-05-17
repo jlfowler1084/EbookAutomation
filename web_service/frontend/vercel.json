@@ -3,9 +3,9 @@
   "framework": "nextjs",
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "has": [{ "type": "host", "value": "www.leafbind.io" }],
-      "destination": "https://leafbind.io/:path*",
+      "destination": "https://leafbind.io/$1",
       "statusCode": 301
     }
   ]
