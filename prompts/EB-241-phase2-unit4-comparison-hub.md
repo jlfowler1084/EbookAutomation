@@ -10,16 +10,34 @@ This session executes **only Unit 4** of the plan. Do NOT execute Units 5-9 — 
 
 ## State at start of this session
 
-- Unit 1 (schema builders) ✓ shipped via PR #117, merged at `b0b6fe4`. Builders live in `web_service/frontend/lib/structured-data.ts`.
-- Unit 2 (pain pillar `/guides/send-to-kindle-not-working`) ✓ shipped via PR #119, merged at `a1ff945`.
-- Unit 3 (mega-guide `/guides/how-to-send-pdf-to-kindle`) ✓ shipped via PR #120 (verify merge state at session start — if still open, merge it before starting Unit 4 work so the internal link from Unit 4 resolves cleanly). Merge command: `gh pr merge 120 --squash --delete-branch`.
+This prompt was originally written before the EB-295 reviewer findings landed. The policy has changed — see "What changed since this prompt was first written" below before executing.
+
+- Unit 1 (schema builders) ✓ shipped via PR #117, merged at `b0b6fe4`. **Then revised in the EB-295 infrastructure PR to add `mainEntityOfPage`** — verify the merge before starting (look for the `fix(EB-295)` commit on master). Use the post-EB-295 `buildArticleSchema` which now emits `mainEntityOfPage`.
+- Unit 2 (pain pillar `/guides/send-to-kindle-not-working`) ✓ shipped via PR #119, then retroactively patched in the EB-295 PR (Amazon facts corrected, Sources footer added, mainEntityOfPage emitted, sitemap + llms.txt entries backfilled).
+- Unit 3 (mega-guide `/guides/how-to-send-pdf-to-kindle`) ✓ shipped via PR #120 (or its revised successor). Verify merge state at session start. If PR #120 is still open and has been revised under the new policy, merge it before starting Unit 4 work.
+- **EB-295 infrastructure PR** (CI link-check, sitemap freshness fix, ArticleSchema `mainEntityOfPage`, etc.) ✓ must be merged before this session. If it isn't, STOP and address that first — Unit 4 cannot ship under the new policy until the infrastructure exists.
 
 This page references all three prior units as internal links:
 - Pain pillar (`/guides/send-to-kindle-not-working`) — confirmed shipped
-- Mega-guide (`/guides/how-to-send-pdf-to-kindle`) — confirmed shipped or merging now
+- Mega-guide (`/guides/how-to-send-pdf-to-kindle`) — confirmed shipped
 - Scribe guide (`/guides/pdf-to-kfx-for-kindle-scribe`) — long-shipped reference
 
-All three internal links should resolve at PR merge time. No documented-404 exceptions for this page.
+All three internal links must resolve at PR merge time. The new CI link-check gate (from EB-295) will fail the build if any internal `<Link>` points to a path with no corresponding `page.tsx` — no exceptions.
+
+## What changed since this prompt was first written (EB-295)
+
+The original plan batched sitemap/llms.txt updates to Unit 7. **That policy is reversed**. Every page PR — including this one — must ship its own:
+
+1. `app/sitemap.ts` entry with explicit `lastModified: new Date("YYYY-MM-DD")` (NO `new Date()`)
+2. `public/llms.txt` entry under the long-form guides section
+3. Nav or footer link (or both) so the page is discoverable from elsewhere on the site
+
+Additionally:
+- **Article schema must include `mainEntityOfPage`** — pass the `url` arg to `buildArticleSchema`; the builder now emits the field
+- **CI link-check runs in prebuild** — any dead internal `<Link href="/...">` fails the build
+- **Sources footer block required on any page making third-party-fact claims** (Amazon, Apple, reMarkable device specs in this case) with `last verified YYYY-MM-DD` date
+
+See `docs/plans/2026-05-16-002-feat-eb-241-phase2-leafbind-seo-content-build-plan.md` "Plan Amendments" section (line 604+) and [EB-295](https://jlfowler1084.atlassian.net/browse/EB-295) for full rationale.
 
 ## Phase 0 — Branch setup
 
@@ -94,15 +112,20 @@ Per the plan's "One worktree per PR" decision and the [`worktree-management` ski
 
 1. `pnpm build` in `web_service/frontend/` passes with no TypeScript errors
 2. `tools/check-token-drift.mjs` (runs in `prebuild`) still passes
-3. Page renders at `http://localhost:3000/guides/kindle-scribe-vs-remarkable` (run `pnpm dev`, verify visually — especially the comparison table at mobile widths)
-4. **Schema validation**: count `@type` occurrences with `grep -oE '"@type":"[^"]*"' | sort -u` (per the JSON-LD Turbopack collapse gotcha). Expect: `"@type":"Article"`, `"@type":"FAQPage"`, `"@type":"Question"` (within FAQPage). **Do NOT expect HowTo** — this page intentionally omits HowTo schema.
+3. **`tools/check-internal-links.mjs`** (new in EB-295, runs in prebuild) passes — no dead internal `<Link>` hrefs
+4. Page renders at `http://localhost:3000/guides/kindle-scribe-vs-remarkable` (run `pnpm dev`, verify visually — especially the comparison table at mobile widths)
+5. **Schema validation**: count `@type` occurrences with `grep -oE '"@type":"[^"]*"' | sort -u` (per the JSON-LD Turbopack collapse gotcha). Expect: `"@type":"Article"`, `"@type":"FAQPage"`, `"@type":"Question"` (within FAQPage), `"@type":"WebPage"` (inside Article's `mainEntityOfPage`). **Do NOT expect HowTo** — this page intentionally omits HowTo schema.
+5a. **`mainEntityOfPage` present in Article schema** — verify the built HTML contains `"mainEntityOfPage":{"@type":"WebPage","@id":"https://leafbind.io/guides/kindle-scribe-vs-remarkable"}` (or equivalent), passed via the `url` arg to `buildArticleSchema`
 5. Lead paragraph word count 40-60
 6. FAQ items ≥5
 7. **All external retail product links use `rel="noopener nofollow"`** — grep the file to confirm: `grep -oE 'rel="[^"]*"' page.tsx | sort -u`. The `nofollow` qualifier is the load-bearing difference from prior units.
 8. **No $ pricing in copy** — `grep -E '\$[0-9]' page.tsx` should return nothing
-9. **Internal links resolve** — verify each `Link href="/guides/..."` and `Link href="/convert/..."` target exists in the current codebase (Unit 3's mega-guide is the most recent — ensure its slug matches `how-to-send-pdf-to-kindle`)
-10. Comparison table mobile-responsive (test at 320px, 375px, 414px)
-11. Visual smoke: AI-slop checklist passes; brand tokens used; Newsreader for H1/H2
+9. **Internal links resolve** — the post-EB-295 CI link-check catches this automatically. Spot-check that each `Link href="/guides/..."` and `Link href="/convert/..."` target exists.
+10. **Sitemap entry added** — `app/sitemap.ts` has a new entry for `/guides/kindle-scribe-vs-remarkable` with explicit `lastModified: new Date("YYYY-MM-DD")` (NO `new Date()`). Grep check: `grep -nE 'new Date\(\)' app/sitemap.ts` should still return nothing post-EB-295.
+11. **llms.txt entry added** — `public/llms.txt` has a one-line entry for the new page under the long-form guides section
+12. **Sources footer block present** — Unit 4 cites device specs from Amazon, Apple, reMarkable. Add a Sources footer block listing the canonical vendor URLs with `last verified YYYY-MM-DD` date (matches the EB-295 pattern for Amazon facts on Unit 2)
+13. Comparison table mobile-responsive (test at 320px, 375px, 414px)
+14. Visual smoke: AI-slop checklist passes; brand tokens used; Newsreader for H1/H2
 
 If verification fails, STOP — do not commit. Diagnose, fix, re-verify.
 
@@ -110,7 +133,11 @@ If verification fails, STOP — do not commit. Diagnose, fix, re-verify.
 
 After verification passes:
 
-1. Stage only the new page file. Do NOT update `sitemap.ts` or `llms.txt` (batched in Unit 7).
+1. Stage all the files this PR touches — under the new EB-295 policy, the PR ships discovery infrastructure alongside the page:
+   - `web_service/frontend/app/(marketing)/guides/kindle-scribe-vs-remarkable/page.tsx` (new page)
+   - `web_service/frontend/app/sitemap.ts` (new entry with explicit `lastModified`)
+   - `web_service/frontend/public/llms.txt` (new entry under long-form guides)
+   - `web_service/frontend/components/Footer.tsx` if the new page warrants a footer link — defer to Unit 8 if not (Unit 8 still adds the proper Guides column; Unit 4 just needs ONE nav/footer surface anywhere so the page isn't orphaned)
 2. Commit with this message structure:
    ```
    feat(EB-241): Phase 2 Unit 4 — kindle-scribe-vs-remarkable comparison hub
@@ -136,20 +163,25 @@ After verification passes:
    Framing rule per Phase 1 discovery: device-agnostic, evangelize PDF
    handling not device choice. Pick winners per use case, not overall.
 
-   sitemap.ts and llms.txt entries batched into Unit 7 per the plan.
+   Ships under the post-EB-295 policy: includes sitemap.ts entry, llms.txt
+   entry, and at least one discoverability surface. Article schema emits
+   mainEntityOfPage via the post-EB-295 buildArticleSchema. Device-spec
+   claims sourced from current vendor docs with a Sources footer block
+   recording "last verified YYYY-MM-DD".
 
-   Plan: docs/plans/2026-05-16-002-feat-eb-241-phase2-leafbind-seo-content-build-plan.md
+   Plan: docs/plans/2026-05-16-002-feat-eb-241-phase2-leafbind-seo-content-build-plan.md (incl. EB-295 amendment)
    ```
 3. Push to `origin` and open a PR titled `feat(EB-241): Phase 2 Unit 4 — kindle-scribe-vs-remarkable comparison hub`
 4. PR body must reference the plan path, the EB-241 ticket, and the Vercel preview URL once available
 5. After merge: post a comment to EB-241 (Atlassian MCP `addCommentToJiraIssue`, `cloudId: jlfowler1084.atlassian.net`) with the PR link and Unit 4 completion status
 
-## Key Constraints (from plan)
+## Key Constraints (from plan, post-EB-295)
 
 - **Do NOT write any other content pages** (Units 5, 6) in this session
-- **Do NOT touch `sitemap.ts` or `public/llms.txt`** — batched in Unit 7
-- **Do NOT touch `lib/structured-data.ts`** — Unit 1's builders are sufficient
-- **Do NOT touch `components/Footer.tsx`** — Unit 8 handles the Guides column
+- **DO touch `app/sitemap.ts`** — add this page's entry with explicit `lastModified` (NO `new Date()`). Reversed from the original prompt.
+- **DO touch `public/llms.txt`** — add this page's entry. Reversed from the original prompt.
+- **Do NOT touch `lib/structured-data.ts`** — Unit 1's builders (post-EB-295, now with `mainEntityOfPage`) are sufficient
+- **Touch `components/Footer.tsx` minimally** — just ensure the new page has at least ONE discoverability surface (existing Related rows, a new link in an existing footer column, etc.). Unit 8 still owns the full "Guides" column refactor.
 - **Do NOT emit Product schema** for any device (would be misleading; Google's structured-data guidelines explicitly require Product to be your own product, not a comparison subject)
 - **Do NOT emit HowTo schema** — comparison pages don't fit the HowTo model
 - **Do NOT include $ pricing** in the comparison table or anywhere on the page (pricing dates fast; link to vendor product pages for current prices). Use price *tier* language instead ("entry-level", "mid-range", "premium").
