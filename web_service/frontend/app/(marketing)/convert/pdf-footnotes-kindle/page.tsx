@@ -319,12 +319,13 @@ export default function PdfFootnotesKindlePage() {
             <div className="mt-8 p-4 rounded-sm border border-border bg-white">
               <p className="font-sans text-sm text-text-muted leading-relaxed">
                 <span className="font-medium text-text-base">Outside scope:</span>{" "}
-                Footnotes in scanned PDFs (image-only pages) require OCR to
-                extract the text first. A Gemini-based OCR pass for scanned
-                pages is on the leafbind roadmap but not yet active in the
-                production converter. For text-based PDFs — the standard
+                Footnotes in scanned PDFs (image-only pages) require OCR
+                before footnote detection can run. The premium tier includes
+                an AI-assisted OCR pass powered by Gemini for scanned pages —
+                once the text is extracted, footnote detection runs as it would
+                on a native-text page. For text-based PDFs — the standard
                 digital-born format — footnote detection is accurate and
-                well-tested.
+                well-tested without OCR.
               </p>
             </div>
           </div>

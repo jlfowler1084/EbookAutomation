@@ -9,7 +9,7 @@ import { buildHomepageGraph } from "../../lib/structured-data";
 export const metadata: Metadata = {
   title: "leafbind — PDF to Kindle converter for Scribe & Paperwhite",
   description:
-    "Smart PDF to Kindle conversion with heading detection, footnote linking, and multi-column support. Free tier available. No ads, no tracking.",
+    "Smart PDF to Kindle conversion with heading detection, footnote linking, and multi-column support. Free tier available. No ads, no cross-site tracking.",
   alternates: { canonical: "/" },
   openGraph: { type: "website", url: "https://leafbind.io" },
 };
@@ -66,9 +66,19 @@ const FAQS: [string, React.ReactNode][] = [
     "Does leafbind store my files?",
     <>
       No. Your file lives only inside the conversion job slot, and it&apos;s
-      wiped within 24 hours regardless of outcome. No accounts, no tracking,
-      no ads — and nothing is ever shared with third parties or used to train
-      models.
+      wiped within 24 hours regardless of outcome. No accounts, no ads, no
+      cross-site tracking — and nothing is ever shared with third parties or
+      used to train models. We use{" "}
+      <a
+        href="https://plausible.io"
+        className="text-brand hover:underline font-medium"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Plausible
+      </a>{" "}
+      for aggregate visit counts only — no cookies, no personal data, no IP
+      storage.
     </>,
   ],
   [
@@ -93,9 +103,10 @@ const FAQS: [string, React.ReactNode][] = [
   [
     "What if my conversion fails?",
     <>
-      Failed premium conversions don&apos;t burn a credit. Your token stays
-      valid for the full 7-day expiry and you can retry. If you&apos;ve already
-      lost track of your token, you can{" "}
+      Credits are consumed when conversion begins. If a conversion fails for
+      technical reasons (not user error), contact support and we&apos;ll refund
+      the credit. Your token stays valid for the full 7-day expiry and you can
+      retry. If you&apos;ve already lost track of your token, you can{" "}
       <Link href="/recover" className="text-brand hover:underline font-medium">recover it by email</Link>.
     </>,
   ],

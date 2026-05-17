@@ -48,7 +48,7 @@ const howToSteps = [
 const faqItems = [
   {
     q: "Does it work on scanned academic PDFs?",
-    a: "Not in the current production pipeline. leafbind's roadmap includes an OCR pass via Gemini for scanned/image pages, but it is not yet active in the live converter. For text-based PDFs — the vast majority of digital-born academic papers from IEEE, ACM, arXiv, and university repositories — the pipeline handles them reliably today.",
+    a: "Yes, on the premium tier. When the pipeline detects a scanned page — one where the PDF contains an image rather than selectable text — it routes that page through a Gemini OCR pass. Clean black-and-white scans of academic papers produce accurate OCR; heavily degraded or colour-heavy scans may produce more artifacts. For text-based PDFs — the vast majority of digital-born papers from IEEE, ACM, arXiv, and university repositories — the standard extraction path is used and OCR is not needed.",
   },
   {
     q: "Will chapter and section numbers survive? What about headings like 1.1 or 2.3.4?",
@@ -273,15 +273,18 @@ export default function AcademicPdfToKindlePage() {
           </div>
           <div className="bg-surface border border-border rounded-md p-5">
             <p className="font-sans text-sm font-medium text-text-base mb-2">
-              Outside current scope:
+              Scanned PDFs:
             </p>
             <p className="font-sans text-sm text-text-muted leading-relaxed">
-              Scanned PDFs (image-only pages without selectable text) are not yet
-              supported in production — an OCR pass for scanned content is on the
-              roadmap. For digital-born academic PDFs, the pipeline handles the
-              body text well; inline mathematical equations may render as plain
-              text substitutes rather than properly formatted notation, and chemical
-              structures and hand-drawn diagrams are not reconstructed.
+              Scanned PDFs (image-only pages) are supported on the premium tier
+              via an AI-assisted OCR pass powered by Gemini. Clean black-and-white
+              scans of academic papers produce accurate OCR; colour scans or
+              documents with complex embedded images may produce more artifacts.
+              For digital-born academic PDFs, OCR is not invoked — the standard
+              extraction path handles them directly. Inline mathematical equations
+              may render as plain text substitutes rather than properly formatted
+              notation, and chemical structures and hand-drawn diagrams are not
+              reconstructed.
             </p>
           </div>
         </div>
