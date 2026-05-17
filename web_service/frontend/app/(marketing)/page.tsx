@@ -105,7 +105,7 @@ const FAQS: [string, React.ReactNode][] = [
     <>
       Credits are consumed when conversion begins. If a conversion fails for
       technical reasons (not user error), contact support and we&apos;ll refund
-      the credit. Your token stays valid for the full 7-day expiry and you can
+      the credit. Your token stays valid for the full 30-day expiry and you can
       retry. If you&apos;ve already lost track of your token, you can{" "}
       <Link href="/recover" className="text-brand hover:underline font-medium">recover it by email</Link>.
     </>,

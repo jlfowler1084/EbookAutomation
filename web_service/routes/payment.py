@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse
 from html import escape
 
 from web_service import circuit_breaker, recovery_events_store, token_store
+from web_service.token_store import TOKEN_TTL_SECONDS
 from web_service.templates.shell import footer_html, header_html
 from web_service.config import get_settings
 from web_service.job_queue import billing_executor
@@ -104,7 +105,7 @@ def _render_success_page(session_id: str, tokens: list[str], expires_at: int) ->
     <h1 class="lb-display">Welcome to Leafbind.</h1>
     <aside class="lb-callout">
         <strong>Bookmark this page</strong> &mdash; it is your recovery path.
-        Your tokens are stored here for 7 days. If you close this tab without
+        Your tokens are stored here for 30 days. If you close this tab without
         copying them, return to this URL to see them again.
     </aside>
 
@@ -160,12 +161,12 @@ def _render_success_page(session_id: str, tokens: list[str], expires_at: int) ->
 
 
 def _render_expired_page(session_id: str) -> str:
-    """Render the 'tokens expired' page for revisits after the 7-day window."""
+    """Render the 'tokens expired' page for revisits after the 30-day window."""
     body = (
         '    <span class="lb-eyebrow">TOKENS EXPIRED</span>\n'
         '    <h1 class="lb-display">Session Expired</h1>\n'
         '    <p class="lb-body">Your tokens for this session have expired. '
-        "Tokens are valid for 7 days from the time of purchase.</p>\n"
+        "Tokens are valid for 30 days from the time of purchase.</p>\n"
         '    <div class="lb-action-row">\n'
         '        <a href="/recover" class="lb-button-ghost">Recover tokens</a>\n'
         '        <a href="/pricing" class="lb-link">Buy new tokens &rarr;</a>\n'
@@ -262,7 +263,7 @@ def _render_cancel_page() -> str:
 async def payment_success(session_id: str) -> HTMLResponse:
     """Render the payment success page for a completed Stripe Checkout session.
 
-    Idempotent: revisiting the same URL within the 7-day token expiry window
+    Idempotent: revisiting the same URL within the 30-day token expiry window
     re-displays the same tokens (decrypted from the DB, not re-minted).
 
     Flow:
@@ -460,10 +461,10 @@ async def payment_success(session_id: str) -> HTMLResponse:
 
     tokens = mint_result.tokens
 
-    # Determine expires_at for the newly minted tokens by reading back from DB
-    # (mint_tokens_if_absent doesn't return expires_at in MintResult, so we use the
-    # known TTL: mint_time + 7 days).
-    expires_at = int(time.time()) + (7 * 24 * 3600)
+    # Determine expires_at for the newly minted tokens. mint_tokens_if_absent
+    # doesn't return expires_at in MintResult; we recompute it from the same TTL
+    # constant the store uses so the two layers cannot drift.
+    expires_at = int(time.time()) + TOKEN_TTL_SECONDS
 
     log.info(
         "payment_success: minted %d tokens for session=%s (from_cache=%s)",

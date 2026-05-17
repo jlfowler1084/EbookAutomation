@@ -63,7 +63,7 @@ export default function TermsPage() {
           </ul>
           <p className="text-text-muted mb-3">
             One credit unlocks one premium conversion. A credit is consumed when a conversion
-            begins processing — not when you upload a file. Credits expire 7 days after purchase.
+            begins processing — not when you upload a file. Credits expire 30 days after purchase.
           </p>
           <p className="text-text-muted">
             For information about refunds when a conversion fails, see the{" "}

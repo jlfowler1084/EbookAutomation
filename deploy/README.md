@@ -214,8 +214,8 @@ When test-mode is fully validated:
 
 The `key_version` column on the `tokens` table supports future rotation. Phase 2 ships with `key_version=1`. To rotate:
 
-1. Pause new purchases for 7 days (drain in-flight token window)
-2. After 7 days, all `key_version=1` tokens are either consumed or expired
+1. Pause new purchases for 30 days (drain in-flight token window)
+2. After 30 days, all `key_version=1` tokens are either consumed or expired
 3. Generate new secret: `openssl rand -hex 32`
 4. Bump `key_version=2` constant in `web_service/crypto.py:derive_fernet_key(..., key_version=2)`
 5. Update `TOKEN_HMAC_SECRET` env var
