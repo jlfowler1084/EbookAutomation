@@ -363,7 +363,7 @@ export default function PdfToKfxPage() {
             Free tier: 3 EPUB conversions per day, up to 20 MB. No account required.
           </p>
           <Link
-            href="/"
+            href="/#convert"
             className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
           >
             Upload your PDF

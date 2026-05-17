@@ -107,7 +107,7 @@ export default function AcademicPdfToKindlePage() {
           navigable chapter list.
         </p>
         <Link
-          href="/"
+          href="/#convert"
           className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
         >
           Upload your PDF — free
@@ -398,7 +398,7 @@ export default function AcademicPdfToKindlePage() {
           No account required.
         </p>
         <Link
-          href="/"
+          href="/#convert"
           className="font-sans inline-block bg-brand text-white font-medium text-base px-8 py-3 rounded-sm no-underline hover:opacity-90"
         >
           Upload your PDF — free
