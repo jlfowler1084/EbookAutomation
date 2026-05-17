@@ -11,7 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/`,                                lastModified: new Date("2026-05-16"), changeFrequency: "weekly",  priority: 1.0 },
     { url: `${base}/pricing`,                         lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/quality`,                         lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.9 },
-    { url: `${base}/convert/pdf-to-kfx`,              lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.9 },
+    { url: `${base}/convert/pdf-to-kfx`,              lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/convert/academic-pdf-to-kindle`,  lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/convert/pdf-footnotes-kindle`,    lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.7 },
     { url: `${base}/convert/multi-column-pdf-kindle`, lastModified: new Date("2026-05-16"), changeFrequency: "monthly", priority: 0.7 },
