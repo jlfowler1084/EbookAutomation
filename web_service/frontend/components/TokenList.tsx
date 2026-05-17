@@ -33,6 +33,7 @@ export default function TokenList({ tokens, sessionId }: Props) {
           <li key={t} style={{ padding: "0.25em 0" }}>
             <span>{t}</span>
             <button
+              type="button"
               onClick={() => copyToken(t)}
               style={{
                 marginLeft: "0.75em",
@@ -51,6 +52,7 @@ export default function TokenList({ tokens, sessionId }: Props) {
       </ol>
       <div style={{ marginTop: "1em", display: "flex", gap: "0.75em" }}>
         <button
+          type="button"
           onClick={downloadAll}
           style={{
             padding: "0.5em 1em",
@@ -64,6 +66,7 @@ export default function TokenList({ tokens, sessionId }: Props) {
           Download tokens.txt
         </button>
         <button
+          type="button"
           onClick={() => window.print()}
           style={{
             padding: "0.5em 1em",
