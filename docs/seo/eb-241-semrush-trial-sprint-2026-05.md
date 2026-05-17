@@ -101,9 +101,94 @@ Net Session 2 budget estimate: ~3,500 units (within budget; well under 10K cap).
 
 ---
 
-## Session 2 — Day 2 close-out (placeholder)
+## Session 2 — same-day continuation close-out (2026-05-17)
 
-*Will be filled after Session 2 runs.*
+**Decision change from plan:** Joe asked to continue Session 2 on Day 1 rather than waiting for Day 2 (rationale: trial credits refresh daily and don't bank — unused credits are lost). Once Session 1 ran clean (no cap-surprise), the "split for safety" justification was empirically retired. The "split for reflection" justification remained partially intact, but for **research/data-collection** (not synthesis), reflection happens after collection — so continuing same-day was the higher-EV choice. Saved as feedback memory ([[feedback-split-daily-refresh-resources]]).
+
+**Reports run:**
+1. `phrase_questions` on `pdf to kindle`, top 30 by volume
+2. `phrase_related` on `send to kindle` (90,500/mo root), top 40 by volume
+3. `domain_organic` on pdf2kindle.com, top 30 by traffic
+4. `tracking_research` discovery (probe Position Tracking availability)
+
+**Units consumed today:** ~9,280 of ~10K daily Pro-tier budget. Stopped before pushing into Session 3 — diminishing-returns curve and tomorrow's fresh budget make further today-work low-EV.
+
+### Findings that genuinely reshape EB-303 Phase 3 scope
+
+#### FINDING A — The EPUB→Kindle cluster is the biggest single opportunity yet discovered
+
+Phase 1 seeded on PDF-to-Kindle keywords exclusively. Phase 2 LowFruits surfaced the 90,500/mo `send to kindle` root but didn't decompose it. Semrush `phrase_related` on that root surfaced eight EPUB-direction keywords totaling ~6,520/mo, none of which leafbind currently targets:
+
+| Keyword | Vol | CPC (intent signal) |
+|---|---|---|
+| can kindle read epub | 1,300 | $8.56 (high commercial) |
+| epub format to kindle | 1,300 | $3.54 |
+| does kindle read epub | 1,000 | $8.56 |
+| does kindle take epub | 880 | $8.56 |
+| epub format on kindle | 880 | $3.54 |
+| can kindle use epub | 720 | $8.56 |
+| does kindle read epub format | 720 | $8.56 |
+| does kindle support epub | 720 | $14.12 (highest commercial signal in entire trial) |
+
+leafbind already accepts EPUB inputs (per CLAUDE.md). The product capability exists; the content doesn't. Recommend **EB-303 Phase 3b adds an EPUB-to-Kindle pillar page** (or a dense FAQ cluster on the existing converter pillar) as the highest-priority new content target. **This single cluster dwarfs Phase 2's combined ~11,500/mo addressable.**
+
+Direction note: most of these are informational ("does Kindle support EPUB?") with high CPC suggesting commercial intent. The answer page should explain Kindle's EPUB story honestly (Amazon dropped MOBI for EPUB in late 2022 for send-to-kindle), then position leafbind as the path for EPUBs that don't behave well via Send-to-Kindle.
+
+#### FINDING B — pdf2kindle.com is structurally displaceable
+
+`domain_organic` on pdf2kindle.com shows their entire site traffic concentrated on a single keyword:
+
+- `pdf to kindle format` (1,000/mo, position #2): **50% of their entire site traffic**
+- All other keywords combined: 50% of traffic, spread across ~28 keywords
+- Top non-money keyword: `transformar pdf a kindle` (Spanish, 170/mo) at 16%
+
+Their AS 11 + ~30% spam backlinks + single-keyword dependency means: **out-rank them on ONE keyword and capture half their organic traffic.** Phase 2 Unit 5 is already targeting this keyword; the action item is **content depth audit** — verify Unit 5's content meaningfully out-depths pdf2kindle's one-pager. If not, expand Unit 5 before launching Phase 3.
+
+#### FINDING C — Two new FAQ candidates at >800/mo each
+
+- **`what file type does kindle use`** (880/mo) — pure informational. FAQ extension on existing converter pillar OR a dedicated short page. Pairs naturally with the EPUB cluster (Finding A).
+- **`kindle email address`** (1,000/mo) — pure informational, Send-to-Kindle workflow specific. FAQ extension on Phase 2 Unit 3 (mega-guide).
+
+#### FINDING D — Position Tracking requires manual Semrush web UI setup
+
+`tracking_research` MCP toolkit can READ existing tracking campaigns but cannot CREATE them. The Semrush web UI Projects feature is the only path to set up Position Tracking. **User action required (~10 min, one-time):**
+
+1. Log into Semrush web UI → Projects → Create Project for `leafbind.io`
+2. Add Position Tracking tool
+3. Configure the 8 Phase 2 target keywords (from EB-303 § Phase 3c table)
+4. Set tracking location to US
+5. Save — daily tracking begins automatically
+
+Once configured, the MCP can query `tracking_position_organic` (~800 units for 8 keywords) for daily snapshots until trial expires. Defer this setup to Joe; not blocking for the rest of the sprint.
+
+#### FINDING E — Phase 2 Unit 3 mega-guide scope justified by data
+
+`phrase_questions` on `pdf to kindle` surfaced 30+ variant phrasings totaling ~10,000/mo. The 3,000-4,000-word Unit 3 mega-guide scope is justified by the lexical-variant diversity — Google's intent classifier needs to see specific phrasings to attribute traffic. Action: cross-check Unit 3 against the variants in `phrase-questions-pdf-to-kindle.csv` to confirm coverage. Specifically watch for: `how to put pdf to kindle` (320/mo), `how to load pdf in kindle` (480/mo), `how to upload pdf to kindle` (480/mo), `how to read pdf on kindle` (390/mo) — these are the variants most likely to need explicit H3 anchors.
+
+### Methodology learning — for future SEO sprints
+
+Phase 1's seed-based methodology consistently misses entire semantic clusters. `phrase_related` on a single broad anchor keyword (`send to kindle`) surfaced the EPUB cluster that 4-6 hours of Phase 1 work + LowFruits triage never touched. **Future SEO discovery should run `phrase_related` on broad anchors AT THE START** (Phase 1 step 1b), not as a Phase 3 expansion. Recommended seed anchors for similar product launches: the product's broadest verb-phrase (`send to kindle`, `convert pdf`, `read on kindle`), then decompose. This is the highest-leverage Phase 1 methodology improvement surfaced by the sprint.
+
+### Action items routed to other tickets
+
+- **EB-303 Phase 3b — NEW TIER 1:** EPUB-to-Kindle pillar page or dense FAQ cluster targeting the 8-keyword ~6,520/mo cluster. Higher priority than the Phase 2 LowFruits triage candidates. Update EB-303 description to reflect this.
+- **EB-303 Phase 3b TIER 2 additions:** `what file type does kindle use` (880/mo) + `kindle email address` (1,000/mo) — FAQ extensions.
+- **EB-303 Phase 2 Unit 5 amendment:** content depth audit vs pdf2kindle's one-pager. If Unit 5 isn't meaningfully deeper, expand BEFORE Phase 3 launches.
+- **EB-303 Phase 2 Unit 3 amendment:** lexical-variant audit against `phrase-questions-pdf-to-kindle.csv`. Add H3 anchors for any high-volume phrasing not currently covered.
+- **EB-308 (this ticket) Position Tracking:** manual Semrush web UI setup needed by Joe (~10 min). Defer Day 3 query until campaign is configured.
+- **EB-241 final synthesis:** include "phrase_related early" methodology learning as a permanent Phase 1 process improvement.
+
+### Session 3 — what's still on the table
+
+If Joe chooses to spend Day 2 or Day 3 budget:
+
+1. **`phrase_kdi` on the 8 EPUB keywords** (~400 units) — confirm difficulty before committing to Phase 3 content.
+2. **`phrase_organic` on `can kindle read epub`** (~100 units) — see who currently ranks; if it's all Amazon authority pages, the difficulty is high regardless of KD.
+3. **`phrase_fullsearch` on `send to kindle`** (~1,000 units) — exact-match variants of the 90,500/mo root that `phrase_related` missed (related ≠ variant).
+4. **`domain_organic` on smallpdf.com top 30** (~300 units) — see what generic PDF-tool keywords they rank on; might reveal more leafbind-adjacent opportunities.
+5. **Position Tracking** — IF Joe completes the manual setup, can query via MCP (~800 units).
+
+Recommended Session 3 priority order: 1 → 2 → 5. Total budget: ~1,300-1,500 units. Highly compatible with Day 2's fresh 10K budget.
 
 ---
 
