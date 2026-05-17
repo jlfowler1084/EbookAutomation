@@ -2,7 +2,7 @@
 
 import { type DragEvent, useRef, useState } from "react";
 import { startConversion } from "../lib/api";
-import FormatSelector from "./FormatSelector";
+import FormatSelector, { isFormatGated } from "./FormatSelector";
 import TokenField from "./TokenField";
 
 interface Props {
@@ -19,8 +19,15 @@ export default function UploadZone({ onJobStarted }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const tier: "free" | "premium" = tokenValid ? "premium" : "free";
+  const premiumGated = isFormatGated(outputFormat, tier);
 
   const handleFile = async (file: File) => {
+    if (premiumGated) {
+      // Server would reject this with 422 anyway — block client-side so the
+      // user sees the upsell instead of a generic upload-failed error.
+      setError(`${outputFormat.toUpperCase()} requires premium credits. Buy credits to convert.`);
+      return;
+    }
     setError(null);
     setUploading(true);
     try {
@@ -68,14 +75,18 @@ export default function UploadZone({ onJobStarted }: Props) {
           borderRadius: 8,
           padding: "40px 20px",
           textAlign: "center",
-          cursor: "pointer",
+          cursor: premiumGated ? "not-allowed" : "pointer",
           background: dragging ? "var(--color-surface-muted)" : "var(--color-surface-muted)",
+          opacity: premiumGated ? 0.6 : 1,
           transition: "all 0.15s",
         }}
+        aria-disabled={premiumGated || undefined}
       >
         <p style={{ margin: 0 }}>
           {uploading
             ? "Uploading…"
+            : premiumGated
+            ? `${outputFormat.toUpperCase()} requires credits — buy credits below to enable upload`
             : "Drop your PDF or ebook here, or click to browse"}
         </p>
         <p style={{ margin: "8px 0 0", fontSize: 12, color: "#666" }}>
