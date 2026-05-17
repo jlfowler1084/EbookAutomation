@@ -101,6 +101,15 @@ test-corpus/*
 # Playwright MCP runtime artifacts (console + page captures)
 .playwright-mcp/
 
+# Tool caches and session scratch directories (Firecrawl runtime, prompt scratch, ad-hoc Python)
+.firecrawl/
+.scratch/
+scratch/
+
+# Ad-hoc session screenshots in repo root (move to scratch/ if you want to keep them)
+/f3-*.png
+/stripe-checkout-*.png
+
 # Cloudflare Worker local dev secrets (real secrets go through wrangler secret put)
 cloudflare/contact-worker/.dev.vars
 
