@@ -25,6 +25,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // is the lowest Google-accepted value that still signals the page is worth crawling.
     // Using "yearly" rather than omitting changeFrequency so crawlers don't apply defaults.
     { url: `${base}/contact`, lastModified: new Date("2026-05-16"), changeFrequency: "yearly", priority: 0.5 },
+    // EB-300: Legal pages — indexable for trust and ad-network reviewability.
+    { url: `${base}/privacy`,       lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.3 },
+    { url: `${base}/terms`,         lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.3 },
+    { url: `${base}/refund-policy`, lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.3 },
   ];
   // Excluded: /recover (utility page, low SEO value), /status/[id] (dynamic, non-indexable)
 }
