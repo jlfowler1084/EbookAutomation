@@ -1,0 +1,78 @@
+# EB-307: Frontend Playwright e2e gate.
+#
+# Runs the chromium-only Playwright suite for web_service/frontend on every PR
+# that touches the frontend tree. The suite lives in tests/*.spec.ts and covers:
+#   - tests/contact-form.spec.ts (EB-264) — contact form happy path + a11y
+#   - tests/format-selector-upsell.spec.ts (EB-304) — format-selector premium upsell
+#
+# The dev server starts automatically via playwright.config.ts webServer block —
+# this workflow does not need to spawn `next dev` separately.
+#
+# Path scope: only fires on web_service/frontend/** changes and on edits to this
+# workflow file itself. Backend or pipeline changes never trigger this job.
+#
+# Not in CI scope: visual regression snapshots, cross-browser matrix beyond
+# chromium, performance budgets. Add later as separate workflows if needed.
+name: frontend-e2e
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "web_service/frontend/**"
+      - ".github/workflows/frontend-e2e.yml"
+  push:
+    branches: [master]
+    paths:
+      - "web_service/frontend/**"
+      - ".github/workflows/frontend-e2e.yml"
+
+# Cancel older runs from the same ref when a newer commit lands.
+concurrency:
+  group: frontend-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: playwright (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: web_service/frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: web_service/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --with-deps installs the OS libraries Chromium needs on Ubuntu runners.
+      # Browser binaries are cached by setup-node's npm cache via Playwright's
+      # version-pinned download path under ~/.cache/ms-playwright.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+
+      # On failure, upload the HTML report + screenshots/traces so the PR
+      # author can debug without re-running locally.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            web_service/frontend/playwright-report/
+            web_service/frontend/test-results/
+          retention-days: 7
