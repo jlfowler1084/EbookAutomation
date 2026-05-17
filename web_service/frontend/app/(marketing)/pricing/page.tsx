@@ -139,6 +139,7 @@ export default function PricingPage() {
           {PACKS.map((pack) => (
             <div
               key={pack.id}
+              id={pack.id}
               className={`rounded-sm border p-6 ${
                 pack.recommended
                   ? "border-brand bg-white shadow-sm"

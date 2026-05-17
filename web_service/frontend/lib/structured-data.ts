@@ -24,11 +24,9 @@ export interface WebSiteSchema {
   name: string;
   description: string;
   publisher: { "@type": "Organization"; name: string; url: string };
-  potentialAction: {
-    "@type": "SearchAction";
-    target: { "@type": "EntryPoint"; urlTemplate: string };
-    "query-input": string;
-  };
+  // potentialAction (SearchAction) removed — EB-298: site has no search;
+  // emitting SearchAction without a real search endpoint violated Google's
+  // structured-data guidelines and could suppress the sitelinks search box.
 }
 
 export interface OfferSchema {
@@ -141,18 +139,14 @@ export function buildWebSiteSchema(): WebSiteSchema {
     name: "leafbind",
     description: "PDF to Kindle conversion focused on Kindle Scribe and academic reading.",
     publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
-    potentialAction: {
-      "@type": "SearchAction",
-      target: { "@type": "EntryPoint", urlTemplate: "https://leafbind.io/?q={search_term_string}" },
-      "query-input": "required name=search_term_string",
-    },
+    // potentialAction (SearchAction) intentionally omitted — EB-298
   };
 }
 
 export function buildHomepageGraph(): GraphSchema {
-  // @graph lets multiple top-level entities share one @context. WebSite gives
-  // sitelinks-search-box eligibility; SoftwareApplication establishes the
-  // app identity that other pages reference via SOFTWARE_APP_ID.
+  // @graph lets multiple top-level entities share one @context. WebSite declares
+  // the canonical site identity; SoftwareApplication establishes the app entity
+  // that other pages reference via SOFTWARE_APP_ID.
   const { "@context": _ctx, ...appNoContext } = buildSoftwareApplicationSchema();
   return {
     "@context": "https://schema.org",
