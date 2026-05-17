@@ -18,6 +18,7 @@ import {
 
 // ISO 8601 with explicit ET offset — Schema.org Article date fields require timezone-qualified datetimes.
 const PUBLISHED = "2026-05-15T00:00:00-04:00";
+const MODIFIED  = "2026-05-17T00:00:00-04:00";
 const SLUG = "pdf-to-kfx-for-kindle-scribe";
 const CANONICAL = `https://leafbind.io/guides/${SLUG}`;
 const HERO_IMAGE = `${CANONICAL}/leafbind-columns.jpg`;
@@ -68,7 +69,7 @@ const articleSchema: ArticleSchema = {
   image: HERO_IMAGE,
   author: { "@type": "Person", name: "Joe Fowler", url: "https://github.com/jlfowler1084" },
   datePublished: PUBLISHED,
-  dateModified: PUBLISHED,
+  dateModified: MODIFIED,
   publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
   url: CANONICAL,
   mainEntityOfPage: { "@type": "WebPage", "@id": CANONICAL },
@@ -102,6 +103,18 @@ const faqItems = [
   {
     q: "Which Kindle devices support KFX format?",
     a: "KFX is supported on all Kindle devices released from 2018 onward: Paperwhite (10th generation and later), basic Kindle (10th generation and later), Oasis (9th generation and later), and all Kindle Scribe hardware. For older devices, choose EPUB output — the free tier produces EPUB, which works on all Kindle devices but without the KFX-specific typography improvements.",
+  },
+  {
+    q: "How do I send a PDF to my Kindle Scribe?",
+    a: "The most direct path is: upload your PDF to leafbind to convert it to KFX, then either email the KFX file to your Kindle personal document address (found in Kindle Settings → Your Account → Send-to-Kindle Email Address) or transfer it via USB cable by copying it into the documents/ folder on the Scribe. The email method is more convenient; USB is more reliable. Both methods are covered in the transfer section of this guide.",
+  },
+  {
+    q: "Why does my PDF look wrong on the Kindle Scribe after sending?",
+    a: "Send-to-Kindle and Calibre both process the PDF text stream without column-order awareness. For multi-column academic papers, this causes the two columns to interleave line by line in the Kindle output — reading as scrambled text rather than a coherent paragraph. Footnotes are either dropped or appended unlinked at the document end. Converting with leafbind first (PDF → KFX) corrects both problems: coordinate-based extraction reads columns in the correct order, and the pipeline rewrites footnote markers as tappable Kindle popup links before you transfer the file.",
+  },
+  {
+    q: "Can I send a large PDF to the Kindle Scribe?",
+    a: "Amazon's Send-to-Kindle email accepts attachments up to 200 MB. The USB cable method has no size limit beyond the Scribe's available storage. If your PDF exceeds 100 MB before conversion, note that leafbind's premium tier handles PDFs up to 100 MB — larger files need to be split before conversion. Most academic papers and book chapters are well under 20 MB.",
   },
 ];
 
@@ -650,7 +663,100 @@ export default function PdfToKfxGuide() {
           </div>
         </section>
 
-        {/* ── Section 7: FAQ ── */}
+        {/* ── Section 7: Transfer-flow — send KFX to Kindle Scribe ── */}
+        <section className="mb-16 pb-16 border-b border-border">
+          <h2 className="font-serif text-3xl text-brand mb-5 leading-snug">
+            How to actually send your converted KFX to the Kindle Scribe
+          </h2>
+          <p className="text-base text-text-base leading-relaxed mb-8 max-w-2xl">
+            After downloading your KFX file from leafbind, two transfer paths get it onto
+            the Scribe: the Send-to-Kindle email and a USB cable. Both work with KFX —
+            email is more convenient, USB is more reliable.
+          </p>
+
+          <div className="max-w-3xl space-y-10">
+            <div>
+              <h3 className="font-serif text-xl text-brand mb-3 leading-snug">Method 1 — Send-to-Kindle email</h3>
+              <div className="text-text-base leading-relaxed space-y-3 text-base">
+                <p>
+                  Attach the KFX file to an email and send it to your Kindle personal document
+                  address — usually{" "}
+                  <code className="font-mono text-sm bg-surface-alt px-1 rounded">yourname@kindle.com</code>,
+                  found under Kindle Settings &rarr; Your Account &rarr; Send-to-Kindle Email
+                  Address. The email must come from an address on your{" "}
+                  <Link href="/guides/send-to-kindle-not-working" className="text-accent no-underline hover:underline font-medium">
+                    approved sender list
+                  </Link>{" "}
+                  — Amazon silently drops messages from unrecognized senders with no bounce notice.
+                </p>
+                <p>
+                  Amazon&rsquo;s file size limit for Send-to-Kindle email attachments is 200 MB. A typical
+                  40-page academic paper KFX file is well under 5 MB; book-length documents
+                  converted on the premium tier can approach 50 MB. For files above 200 MB, the
+                  USB method is required.
+                </p>
+                <p>
+                  After sending, Amazon delivers a confirmation email within a few minutes and the
+                  file appears in your Kindle library. Pull to refresh on the Scribe if it
+                  doesn&rsquo;t appear automatically.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-xl text-brand mb-3 leading-snug">Method 2 — USB cable transfer</h3>
+              <div className="text-text-base leading-relaxed space-y-3 text-base">
+                <p>
+                  The Kindle Scribe connects via USB-C. Plug it into your computer — it mounts
+                  as a drive on Windows (File Explorer) and macOS (Finder). Navigate to the{" "}
+                  <code className="font-mono text-sm bg-surface-alt px-1 rounded">documents/</code>{" "}
+                  folder on the device, copy the KFX file in, then eject before unplugging.
+                </p>
+                <p>
+                  The file appears in your Kindle library within seconds of unplugging. No
+                  internet connection required, no sender-list check, no size cap beyond the
+                  Scribe&rsquo;s available storage (16 GB or 64 GB depending on model).
+                </p>
+                <p>
+                  USB is the deterministic fallback: if the email method fails for any reason,
+                  USB always works.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-xl text-brand mb-3 leading-snug">Common transfer failures</h3>
+              <div className="text-text-base leading-relaxed space-y-3 text-base">
+                <p>
+                  <strong>File doesn&rsquo;t appear after emailing</strong> — the most common cause is
+                  that the sending address is not on the approved-sender list. Amazon drops those
+                  emails silently.{" "}
+                  <Link href="/guides/send-to-kindle-not-working" className="text-accent no-underline hover:underline font-medium">
+                    The Send-to-Kindle troubleshooting guide
+                  </Link>{" "}
+                  covers every failure mode in detail, including sender-list setup and what to
+                  check when delivery just stops working.
+                </p>
+                <p>
+                  <strong>File appears but won&rsquo;t open</strong> — usually a format mismatch. KFX
+                  is supported on all Scribe hardware and on Kindles released since 2018. If
+                  you&rsquo;re on an older device, use EPUB output from the free tier instead.
+                </p>
+                <p>
+                  <strong>Email confirmation never arrives</strong> — Amazon&rsquo;s service occasionally
+                  has delivery delays. Wait 10 minutes, check the service status, then switch to
+                  USB if the file still hasn&rsquo;t appeared. For{" "}
+                  <Link href="/guides/how-to-send-pdf-to-kindle" className="text-accent no-underline hover:underline font-medium">
+                    all methods for sending files to any Kindle device
+                  </Link>{" "}
+                  — including the web uploader and mobile app — see the transfer-methods guide.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Section 8: FAQ ── */}
         <section className="mb-16 pb-16 border-b border-border">
           <h2 className="font-serif text-3xl text-brand mb-8 leading-snug">
             Frequently asked questions
@@ -672,6 +778,24 @@ export default function PdfToKfxGuide() {
           </p>
           <div className="flex flex-wrap gap-4">
             <Link
+              href="/guides/send-to-kindle-not-working"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
+            >
+              Send to Kindle not working →
+            </Link>
+            <Link
+              href="/guides/how-to-send-pdf-to-kindle"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
+            >
+              How to send PDFs to Kindle →
+            </Link>
+            <Link
+              href="/guides/kindle-scribe-vs-remarkable"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
+            >
+              Kindle Scribe vs reMarkable →
+            </Link>
+            <Link
               href="/convert/pdf-to-kfx"
               className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
@@ -690,6 +814,12 @@ export default function PdfToKfxGuide() {
               Multi-column PDF conversion →
             </Link>
             <Link
+              href="/guides"
+              className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
+            >
+              All guides →
+            </Link>
+            <Link
               href="/quality"
               className="text-sm font-medium text-accent no-underline border border-accent/30 rounded-sm px-4 py-3 hover:bg-accent/5"
             >
@@ -702,6 +832,37 @@ export default function PdfToKfxGuide() {
               Premium plans →
             </Link>
           </div>
+        </section>
+
+        {/* ── Sources ── */}
+        <section className="mb-16 pb-16 border-b border-border">
+          <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">Sources</p>
+          <ul className="space-y-1 text-sm text-text-muted max-w-2xl">
+            <li className="source-item">
+              Amazon Send-to-Kindle Help —{" "}
+              <a
+                href="https://www.amazon.com/gp/help/customer/display.html?nodeId=200767340"
+                target="_blank"
+                rel="noopener nofollow"
+                className="text-accent no-underline hover:underline"
+              >
+                Personal Documents Service
+              </a>{" "}
+              (200 MB attachment limit, approved-sender list) (last verified 2026-05-17)
+            </li>
+            <li className="source-item">
+              Calibre User Manual v9.8.0 —{" "}
+              <a
+                href="https://manual.calibre-ebook.com/faq.html"
+                target="_blank"
+                rel="noopener"
+                className="text-accent no-underline hover:underline"
+              >
+                FAQ: Converting PDF files
+              </a>{" "}
+              (&ldquo;Complex, multi-column, and image-based documents are not supported.&rdquo;) (last verified 2026-05-17)
+            </li>
+          </ul>
         </section>
 
         {/* ── CTA + author bio ── */}
