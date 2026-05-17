@@ -7,11 +7,12 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-6 py-12">
         {/*
           EB-264: Expanded from md:grid-cols-3 to sm:grid-cols-2 lg:grid-cols-4.
-          Using sm:grid-cols-2 at 768-1023px (md breakpoint) to prevent 4-col cramping.
-          4 columns only at lg (≥1024px). At sm it stacks 2×2.
+          EB-296: Expanded to lg:grid-cols-5 to accommodate the new Guides column.
+          Using sm:grid-cols-2 at 768-1023px to stack 2×2 (logo spans full width on xs).
+          5 columns only at lg (≥1024px). At sm it stacks 2×2.
         */}
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="sm:col-span-2 lg:col-span-1">
             {/* EB-269 (F4-02): block + w-fit takes the link out of an
                 "in-text-block" context for axe, so the logo isn't flagged
                 as an indistinguishable inline link sitting in a paragraph. */}
@@ -29,6 +30,16 @@ export function Footer() {
               <li><Link href="/convert/academic-pdf-to-kindle"   className="block py-2 hover:text-text-base transition">Academic PDFs</Link></li>
               <li><Link href="/convert/pdf-footnotes-kindle"     className="block py-2 hover:text-text-base transition">PDFs with footnotes</Link></li>
               <li><Link href="/convert/multi-column-pdf-kindle"  className="block py-2 hover:text-text-base transition">Multi-column PDFs</Link></li>
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-text-base">Guides</h3>
+            <ul className="mt-3 space-y-1 text-sm text-text-muted">
+              <li><Link href="/guides"                                         className="block py-2 hover:text-text-base transition">All guides</Link></li>
+              <li><Link href="/guides/send-to-kindle-not-working"              className="block py-2 hover:text-text-base transition">Send to Kindle not working</Link></li>
+              <li><Link href="/guides/how-to-send-pdf-to-kindle"               className="block py-2 hover:text-text-base transition">How to send PDFs to Kindle</Link></li>
+              <li><Link href="/guides/kindle-scribe-vs-remarkable"             className="block py-2 hover:text-text-base transition">Kindle Scribe vs. reMarkable</Link></li>
+              <li><Link href="/guides/pdf-to-kfx-for-kindle-scribe"            className="block py-2 hover:text-text-base transition">PDF to KFX for Kindle Scribe</Link></li>
             </ul>
           </div>
           <div>
