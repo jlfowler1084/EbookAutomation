@@ -35,5 +35,13 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: {
+      // EB-307: Cloudflare-published always-passes test sitekey. ContactForm's
+      // onTurnstileScriptLoad() early-returns when this is empty, so without it
+      // the form never wires up — even with the window.turnstile stub from
+      // contact-form.spec.ts beforeEach. Setting it here keeps tests hermetic
+      // in CI and overrides any developer .env.local during local test runs.
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+    },
   },
 });

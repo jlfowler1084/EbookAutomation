@@ -19,6 +19,8 @@
 import { test, expect } from "@playwright/test";
 
 const WORKER_URL = "https://forms.leafbind.io/contact";
+const TURNSTILE_API_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/api.js**";
 
 function validPayload() {
   return {
@@ -30,6 +32,36 @@ function validPayload() {
 }
 
 test.describe("/contact page", () => {
+  // EB-307: Mock Cloudflare Turnstile so tests are hermetic in CI.
+  // The form's submit guard (ContactForm.tsx:187) blocks fetch until
+  // turnstileToken is set, which normally requires NEXT_PUBLIC_TURNSTILE_SITE_KEY
+  // + a live Cloudflare CDN load. Stub both:
+  //   - Route the api.js load to an empty 200 so <Script onLoad> fires
+  //   - Install a window.turnstile stub that synchronously delivers a token
+  //     via the render() callback the form passes in.
+  test.beforeEach(async ({ page }) => {
+    await page.route(TURNSTILE_API_URL, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/javascript",
+        body: "",
+      }),
+    );
+
+    await page.addInitScript(() => {
+      (window as unknown as { turnstile: unknown }).turnstile = {
+        render: (
+          _selector: string,
+          opts: { callback?: (token: string) => void },
+        ) => {
+          opts.callback?.("playwright-test-token");
+          return "playwright-widget-id";
+        },
+        reset: () => {},
+      };
+    });
+  });
+
   test("renders heading and all form fields", async ({ page }) => {
     await page.goto("/contact");
 
