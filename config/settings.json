@@ -149,6 +149,9 @@
     "comparison_low_threshold": 60,
     "comparison_high_threshold": 80
   },
+  "ocr_escalation": {
+    "threshold": 0.15
+  },
   "quality_gate": {
     "thresholds": {
       "clean": 90,

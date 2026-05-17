@@ -1475,6 +1475,102 @@ def run_spaced_letter_tests():
     return results
 
 
+def run_debris_tests():
+    """Unit tests for compute_ocr_debris_density (EB-215)."""
+    from pdf_to_balabolka import compute_ocr_debris_density
+
+    results = []
+    log_messages = []
+
+    def _log(msg):
+        log_messages.clear()
+        log_messages.append(msg)
+
+    def _run(name, fn):
+        P, F = [], []
+        t0 = time.time()
+        fn(P, F)
+        elapsed = time.time() - t0
+        passed = len(F) == 0
+        results.append((f"debris: {name}", passed, P, F, elapsed))
+
+    def test_clean_prose(P, F):
+        """Clean English prose should have near-zero debris density."""
+        text = ("The quick brown fox jumped over the lazy dog. "
+                "This is a normal sentence with standard punctuation, "
+                "including commas, periods, and an em-dash—like this. "
+                "Even footnote markers like [1] and [23] are fine here.") * 10
+        density = compute_ocr_debris_density(text)
+        (P if density < 0.05 else F).append(f"clean prose density {density:.1%} < 5%")
+
+    def test_catastrophic_origen(P, F):
+        """Origen-style scan garbage triggers high density."""
+        text = (
+            "L ' \"I(J 1 tf {'.ir\" run towards If to will the good "
+            "and to run have received from him But!!!.ey believe ro interpret "
+            "{.ir L ' \"I(J 1 tf {'.ir\" run towards If to will the good "
+        ) * 20
+        density = compute_ocr_debris_density(text)
+        (P if density >= 0.15 else F).append(
+            f"Origen garbage density {density:.1%} >= 15%")
+
+    def test_structural_chars(P, F):
+        """Tokens with braces/pipes/backslashes count as debris."""
+        text = "word {broken} another |pipe| one \\back\\ normal text here"
+        density = compute_ocr_debris_density(text)
+        (P if density > 0.0 else F).append(
+            f"structural chars detected: density {density:.1%}")
+
+    def test_triple_punctuation(P, F):
+        """Triple punctuation bursts (!!!, ???) count as debris."""
+        text = ("normal words " + "bad!!! more??? " * 5 + "normal again " * 10)
+        density = compute_ocr_debris_density(text)
+        (P if density > 0.0 else F).append(
+            f"triple punct detected: density {density:.1%}")
+
+    def test_garbled_mix(P, F):
+        """Letter-paren-letter garbles (I(J, B[ook) count as debris."""
+        text = ("normal words " + "I(J B[ook L(ife " * 5 + "normal text again " * 10)
+        density = compute_ocr_debris_density(text)
+        (P if density > 0.0 else F).append(
+            f"garbled mix detected: density {density:.1%}")
+
+    def test_hyphenated_splits_not_debris(P, F):
+        """Dollinger-style hyphenated splits do NOT trigger escalation."""
+        text = ("well-known long-term self-contained over-simplification "
+                "manu-script inter-governmental cross-reference ") * 20
+        density = compute_ocr_debris_density(text)
+        (P if density < 0.15 else F).append(
+            f"hyphenated splits density {density:.1%} below threshold")
+
+    def test_replacement_char(P, F):
+        """Replacement char (U+FFFD) tokens count as debris."""
+        text = "normal words �� garbage � more normal text here " * 5
+        density = compute_ocr_debris_density(text)
+        (P if density > 0.0 else F).append(
+            f"replacement chars detected: density {density:.1%}")
+
+    def test_below_threshold_moderate_artifacts(P, F):
+        """Books with light OCR artifacts (5% debris) stay below 15% threshold."""
+        good = "The history of western civilization spans millennia. " * 18
+        light_bad = "ligature fi broken. some artifact here. " * 2
+        text = good + light_bad
+        density = compute_ocr_debris_density(text)
+        (P if density < 0.15 else F).append(
+            f"moderate artifacts density {density:.1%} < 15% (no escalation)")
+
+    _run("clean prose near-zero density", test_clean_prose)
+    _run("Origen-style garbage >= 15%", test_catastrophic_origen)
+    _run("structural chars detected", test_structural_chars)
+    _run("triple punctuation detected", test_triple_punctuation)
+    _run("garbled letter-paren-letter detected", test_garbled_mix)
+    _run("hyphenated splits below threshold", test_hyphenated_splits_not_debris)
+    _run("replacement char detected", test_replacement_char)
+    _run("moderate artifacts below threshold", test_below_threshold_moderate_artifacts)
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser(description="Test harness for pdfminer HTML extraction pipeline")
     ap.add_argument("test_name", nargs="?", default=None,
@@ -1661,11 +1757,13 @@ def main():
                           if args.test_name.lower() in b.stem.lower()]
         run_filters = 'filter' in args.test_name.lower()
         run_spaced = 'spaced' in args.test_name.lower()
-        if not hc_matches and not cap_matches and not corpus_matches and not run_filters and not run_spaced:
+        run_debris = 'debris' in args.test_name.lower()
+        if not hc_matches and not cap_matches and not corpus_matches and not run_filters and not run_spaced and not run_debris:
             print(f"No test case matching '{args.test_name}'")
             all_names = list(TEST_CASES.keys()) + list(extra_captured.keys()) + [b.stem for b in corpus_books]
             all_names.append("filter (16 unit + integration tests)")
-            all_names.append("spaced (11 character spacing collapse tests)")
+            all_names.append("spaced (22 character spacing collapse tests)")
+            all_names.append("debris (8 OCR debris density tests)")
             print(f"Available: {', '.join(all_names)}")
             sys.exit(1)
     else:
@@ -1674,10 +1772,12 @@ def main():
         corpus_matches = corpus_books
         run_filters = True
         run_spaced = True
+        run_debris = True
 
     n_filter = 16 if run_filters else 0
     n_spaced = 22 if run_spaced else 0  # 11 spaced + 5 HTML (EB-213/214) + 6 EB-212 pnd tests
-    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter + n_spaced
+    n_debris = 8 if run_debris else 0   # EB-215 OCR debris density tests
+    total_tests = len(hc_matches) + len(cap_matches) + len(corpus_matches) + n_filter + n_spaced + n_debris
     mode = "QUICK (HTML only)" if args.quick else "FULL (HTML + KFX)"
     print(f"\n{'=' * 60}")
     print(f"  EbookAutomation Pipeline Test Suite")
@@ -1685,8 +1785,9 @@ def main():
     corpus_note = f", {len(corpus_matches)} corpus" if corpus_matches else ""
     filter_note = f", {n_filter} filter" if n_filter else ""
     spaced_note = f", {n_spaced} spaced" if n_spaced else ""
+    debris_note = f", {n_debris} debris" if n_debris else ""
     print(f"  Tests: {total_tests} ({len(hc_matches)} hardcoded, "
-          f"{len(cap_matches)} captured{corpus_note}{filter_note}{spaced_note})")
+          f"{len(cap_matches)} captured{corpus_note}{filter_note}{spaced_note}{debris_note})")
     print(f"{'=' * 60}\n")
 
     results = {}
@@ -1791,6 +1892,26 @@ def main():
     if run_spaced:
         spaced_results = run_spaced_letter_tests()
         for name, passed, passes, failures, elapsed in spaced_results:
+            check_count = len(passes) + len(failures)
+            status = "PASS" if passed else "FAIL"
+            print(f"  {status}: {name} ({len(passes)}/{check_count} checks, {elapsed:.1f}s)")
+
+            if failures:
+                for f in failures:
+                    print(f"    FAIL: {f}")
+            elif args.verbose:
+                for p in passes:
+                    print(f"    PASS: {p}")
+
+            if passed:
+                total_pass += 1
+            else:
+                total_fail += 1
+
+    # Run OCR debris density tests
+    if run_debris:
+        debris_results = run_debris_tests()
+        for name, passed, passes, failures, elapsed in debris_results:
             check_count = len(passes) + len(failures)
             status = "PASS" if passed else "FAIL"
             print(f"  {status}: {name} ({len(passes)}/{check_count} checks, {elapsed:.1f}s)")

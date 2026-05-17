@@ -735,6 +735,46 @@ def score_text_layer_quality(text, log=None, multi_sample=False):
     }
 
 
+# Chars that signal OCR garbage — never appear in correctly typeset prose
+_DEBRIS_CHARS = frozenset('{}|\\^~�\x00')
+_DEBRIS_PUNCT_RE = re.compile(r'[!?*]{3,}')
+_DEBRIS_MIX_RE = re.compile(r'[a-zA-Z][(\[{][a-zA-Z]')
+
+
+def compute_ocr_debris_density(text, sample_chars=60_000):
+    """Compute ratio of OCR-garbage tokens to total tokens (0.0–1.0).
+
+    Targets catastrophic OCR from bad scan layers: structural/bracket chars
+    embedded in tokens ({'.ir, I(J), replacement chars, punctuation bursts.
+    Moderate artifacts (hyphenated splits, ligature remnants) do NOT trigger.
+
+    Samples up to ``sample_chars`` from 5 evenly-spaced windows to avoid
+    being dominated by front-matter or back-matter.
+    """
+    if not text:
+        return 0.0
+    if len(text) > sample_chars:
+        window = sample_chars // 5
+        step = max(window, len(text) // 5)
+        chunks = [text[i:i + window] for i in range(0, len(text), step)][:5]
+        text = ' '.join(chunks)
+
+    tokens = text.split()
+    if not tokens:
+        return 0.0
+
+    debris = 0
+    for tok in tokens:
+        if any(c in _DEBRIS_CHARS for c in tok):
+            debris += 1
+        elif _DEBRIS_PUNCT_RE.search(tok):
+            debris += 1
+        elif _DEBRIS_MIX_RE.search(tok):
+            debris += 1
+
+    return debris / len(tokens)
+
+
 def extract_cover_image(pdf_path, output_path, log, dpi=300, poppler_path=None):
     """
     Render the first page of a PDF as a JPEG cover image.
@@ -12843,6 +12883,47 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             for check, detail in quality['details'].items():
                 if isinstance(detail, dict) and 'score' in detail:
                     log(f"    {check}: {detail['score']}/100")
+
+        # ── EB-215: OCR debris density auto-escalation ─────────────────
+        _debris_density = compute_ocr_debris_density(all_text_for_scoring)
+        log(f"  OCR debris density: {_debris_density:.1%}")
+        try:
+            import json as _json
+            _cfg_path = Path(__file__).resolve().parent.parent / "config" / "settings.json"
+            _debris_threshold = float(
+                _json.loads(_cfg_path.read_text(encoding='utf-8'))
+                .get('ocr_escalation', {})
+                .get('threshold', 0.15)
+            ) if _cfg_path.exists() else 0.15
+        except Exception:
+            _debris_threshold = 0.15
+        if _debris_density >= _debris_threshold and not use_gemini and not use_vision:
+            _book_label = getattr(pdf_path, 'name', str(pdf_path))
+            log(f"  [WARN] OCR debris density {_debris_density:.1%} on '{_book_label}'"
+                f" — escalating to Gemini OCR (threshold: {_debris_threshold:.0%})")
+            try:
+                from gemini_ocr import extract_text_gemini
+                _esc_result = extract_text_gemini(
+                    pdf_path, log,
+                    poppler_path=poppler_path,
+                    dpi=200,
+                    batch_size=5,
+                    cost_limit=gemini_cost_limit,
+                    model=gemini_model,
+                )
+                if _esc_result and _esc_result.get('text'):
+                    _esc_text, _ = normalize_encoding(_esc_result['text'], log=log)
+                    para_dicts, body_size = vision_text_to_para_dicts(_esc_text, log)
+                    tier_used = 2
+                    extraction_method = 'gemini_flash'
+                    gemini_cost = _esc_result.get('cost_usd', 0)
+                    log(f"  Gemini escalation succeeded — cost: ${gemini_cost:.4f}")
+                else:
+                    log("  Gemini escalation returned no text — continuing with pdfminer output")
+            except RuntimeError as e:
+                log(f"  Gemini escalation not available: {e} — continuing with pdfminer output")
+            except Exception as e:
+                log(f"  Gemini escalation error (non-blocking): {e}")
 
         log("\n-- STEP 1a: Fixing word merges in extraction output ----")
         _fix_word_merges_html(para_dicts, log)
