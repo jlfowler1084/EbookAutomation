@@ -191,3 +191,58 @@ export function buildPricingProductSchema(packs: PricingPack[]): ProductSchema {
     })),
   };
 }
+
+export function buildFAQPageSchema(items: Array<{ q: string; a: string }>): FAQPageSchema {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  };
+}
+
+interface ArticleArgs {
+  headline: string;
+  description: string;
+  image: string | string[];
+  author?: { name: string; url?: string };
+  datePublished: string;
+  dateModified: string;
+  url: string;
+}
+
+export function buildArticleSchema(args: ArticleArgs): ArticleSchema {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: args.headline,
+    description: args.description,
+    image: args.image,
+    author: {
+      "@type": "Person",
+      name: args.author?.name ?? "leafbind team",
+      ...(args.author?.url ? { url: args.author.url } : {}),
+    },
+    datePublished: args.datePublished,
+    dateModified: args.dateModified,
+    publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
+    url: args.url,
+  };
+}
+
+interface HowToArgs {
+  name: string;
+  step: Array<{ name: string; text: string }>;
+}
+
+export function buildHowToSchema(args: HowToArgs): HowToSchema {
+  return {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    name: args.name,
+    step: args.step.map((s) => ({ "@type": "HowToStep", name: s.name, text: s.text })),
+  };
+}
