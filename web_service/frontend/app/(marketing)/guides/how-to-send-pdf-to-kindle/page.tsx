@@ -78,7 +78,7 @@ const faqItems = [
   },
   {
     q: "What file formats can I send to Kindle?",
-    a: "Send-to-Kindle (email and app) accepts: PDF, EPUB (DRM-free), DOC/DOCX, RTF, TXT, HTML, MOBI. USB cable accepts: PDF, EPUB, MOBI, AZW3, TXT, and KFX. Amazon's full list of supported personal document types is at amazon.com/sendtokindle in the Help section — check there for the most current version, as Amazon periodically updates format support.",
+    a: "Send-to-Kindle (email and web uploader) currently accepts: PDF, EPUB (DRM-free), DOC/DOCX, RTF, TXT, HTML, PNG, GIF, JPG, BMP. MOBI is no longer accepted — Amazon removed MOBI support in 2022. USB cable accepts: PDF, EPUB, MOBI, AZW3, TXT, and KFX (MOBI still works via USB even though it was dropped from email/app). Amazon's full current list is at amazon.com/sendtokindle.",
   },
   {
     q: "How long does it take for a file to appear on my Kindle after sending?",
@@ -260,10 +260,10 @@ export default function HowToSendPdfToKindle() {
                   },
                   {
                     type: "MOBI",
-                    email: "✓",
-                    emailNote: "deprecated format",
-                    app: "✓",
-                    appNote: "deprecated format",
+                    email: "✗",
+                    emailNote: "removed 2022",
+                    app: "✗",
+                    appNote: "removed 2022",
                     usb: "✓",
                     usbNote: "native",
                     leafbind: "—",
@@ -758,6 +758,37 @@ export default function HowToSendPdfToKindle() {
               Kindle Scribe vs reMarkable →
             </Link>
           </div>
+        </section>
+
+        {/* ── Sources ── */}
+        <section className="mb-16 pb-8 border-b border-border">
+          <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
+            Sources
+          </p>
+          <ul className="space-y-1">
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/sendtokindle"
+                target="_blank"
+                rel="noopener"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Send to Kindle — supported file types and web uploader
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/sendtokindle/email"
+                target="_blank"
+                rel="noopener"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Send to Kindle for Email — step-by-step instructions
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+          </ul>
         </section>
 
         {/* ── CTA ── */}

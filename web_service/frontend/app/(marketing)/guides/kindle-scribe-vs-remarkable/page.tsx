@@ -664,6 +664,48 @@ export default function KindleScribeVsRemarkable() {
           </div>
         </section>
 
+        {/* ── Sources ── */}
+        <section className="mb-16 pb-8 border-b border-border">
+          <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
+            Sources
+          </p>
+          <ul className="space-y-1">
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/kindle-scribe"
+                target="_blank"
+                rel="noopener nofollow"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Kindle Scribe product page
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/kindle-paperwhite"
+                target="_blank"
+                rel="noopener nofollow"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Kindle Paperwhite product page
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://remarkable.com/store/remarkable-paper-pro"
+                target="_blank"
+                rel="noopener nofollow"
+                className="text-accent no-underline hover:underline"
+              >
+                reMarkable Paper Pro product page
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+          </ul>
+        </section>
+
         {/* ── CTA ── */}
         <section className="border-t border-border pt-16 pb-8">
           <h2 className="font-serif text-3xl text-text-base mb-4 leading-snug">

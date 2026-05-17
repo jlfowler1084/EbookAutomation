@@ -71,6 +71,7 @@ const articleSchema: ArticleSchema = {
   dateModified: PUBLISHED,
   publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
   url: CANONICAL,
+  mainEntityOfPage: { "@type": "WebPage", "@id": CANONICAL },
 };
 
 const faqItems = [

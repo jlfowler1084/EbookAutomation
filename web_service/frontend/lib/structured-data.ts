@@ -84,6 +84,7 @@ export interface ArticleSchema {
   dateModified: string;
   publisher: { "@type": "Organization"; name: string; url: string };
   url: string;
+  mainEntityOfPage: { "@type": "WebPage"; "@id": string };
 }
 
 export interface ContactPageSchema {
@@ -230,6 +231,7 @@ export function buildArticleSchema(args: ArticleArgs): ArticleSchema {
     dateModified: args.dateModified,
     publisher: { "@type": "Organization", name: "leafbind", url: "https://leafbind.io" },
     url: args.url,
+    mainEntityOfPage: { "@type": "WebPage", "@id": args.url },
   };
 }
 

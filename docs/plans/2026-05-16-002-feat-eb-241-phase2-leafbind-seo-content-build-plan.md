@@ -371,8 +371,8 @@ All SoftwareApplication entities reuse `SOFTWARE_APP_ID = "https://leafbind.io/#
 
 **Files:**
 - Modify: `web_service/frontend/app/convert/pdf-to-kfx/page.tsx` (existing converter page)
-- Modify: `web_service/frontend/app/sitemap.ts` (bump `lastModified`; batch with Unit 7)
-- Modify: `web_service/frontend/public/llms.txt` (no URL change; bump description if applicable; batch with Unit 7)
+- Modify: `web_service/frontend/app/sitemap.ts` — **ship in same PR** (EB-295 policy: every page PR ships its own sitemap entry)
+- Modify: `web_service/frontend/public/llms.txt` — **ship in same PR** (EB-295 policy)
 
 **Approach:**
 - Update H1 and `<title>` to be direction-explicit: "Convert PDF to Kindle (KFX) — Online & Free Tier" (existing) becomes something like "Convert PDF to Kindle Format (KFX): Online Converter for Academic & Multi-Column PDFs" — the words "PDF to Kindle" + "Kindle Format" target the queries directly.
@@ -421,7 +421,8 @@ All SoftwareApplication entities reuse `SOFTWARE_APP_ID = "https://leafbind.io/#
 
 **Files:**
 - Modify: `web_service/frontend/app/(marketing)/guides/pdf-to-kfx-for-kindle-scribe/page.tsx`
-- Modify: `web_service/frontend/app/sitemap.ts` (bump `lastModified`; batch with Unit 7)
+- Modify: `web_service/frontend/app/sitemap.ts` — **ship in same PR** (EB-295 policy: bump `lastModified` for this page)
+- Modify: `web_service/frontend/public/llms.txt` — **ship in same PR** (EB-295 policy: update description if content materially changed)
 
 **Approach:**
 - Preserve the existing structure and the EB-281 extended lede (don't undo that work).
@@ -448,36 +449,37 @@ All SoftwareApplication entities reuse `SOFTWARE_APP_ID = "https://leafbind.io/#
 
 ---
 
-- [ ] **Unit 7: Sitemap + llms.txt updates for all new pages** (infrastructure)
+- [ ] **Unit 7: Sitemap + llms.txt retroactive cleanup** (infrastructure)
 
-**Goal:** Ensure all 4 new pages and the updated Scribe guide are discoverable to search engines and AI crawlers. Single consolidated PR that gathers up the sitemap/llms.txt changes at the end (rather than touching these files in every page PR).
+> **⚠ Scope rescoped by EB-295 (2026-05-17):** The original "batch all sitemap/llms.txt updates here" model was replaced. Units 2, 3, 4 entries were backfilled in the EB-295 PR. New policy: **every page PR ships its own sitemap.ts entry + llms.txt entry** — see the Plan Amendments section. Unit 7 is now a retroactive-cleanup unit for any entries that were still missed after EB-295 shipped, plus Unit 5's `lastModified` bump and Unit 6's update.
+
+**Goal:** Catch any remaining sitemap/llms.txt gaps after EB-295 retroactive backfill, and bump `lastModified` for Units 5 and 6 post-modification.
 
 **Requirements:** R5
 
-**Dependencies:** Units 2, 3, 4, 5, 6 (all pages should exist before sitemap/llms.txt is updated to reference them)
+**Dependencies:** Units 5, 6 (so their `lastModified` dates are final)
 
 **Files:**
-- Modify: `web_service/frontend/app/sitemap.ts`
-- Modify: `web_service/frontend/public/llms.txt`
+- Modify: `web_service/frontend/app/sitemap.ts` (bump Unit 5/6 `lastModified`; audit for any missed entries)
+- Modify: `web_service/frontend/public/llms.txt` (update Unit 5/6 descriptions if applicable; audit for gaps)
 
 **Approach:**
-- Add 4 new sitemap entries (Units 2, 3, 4, plus Unit 5's `lastModified` bump) and 1 updated entry (Unit 6).
-- Each new guide gets `priority: 0.9, changeFrequency: "monthly"` (matches existing Scribe guide priority).
-- Append 4 new URL entries to llms.txt with one-line descriptions per the existing llms.txt format.
+- Audit: run `grep url sitemap.ts` and verify every deployed page has an entry with an explicit `lastModified` date (no `new Date()`).
+- Bump `lastModified` for `/convert/pdf-to-kfx` (Unit 5) and `/guides/pdf-to-kfx-for-kindle-scribe` (Unit 6) to their merge dates.
+- Update llms.txt descriptions for Units 5 and 6 if the content was materially changed.
 - Verify sitemap renders at `https://leafbind.io/sitemap.xml` post-deploy.
 
 **Patterns to follow:**
-- Existing `app/sitemap.ts` entry format
-- Existing `public/llms.txt` entry format (one-line URL + description per line, alphabetically grouped or topically grouped per current convention — preserve)
+- `app/sitemap.ts` convention: explicit `new Date("YYYY-MM-DD")` per EB-295, no `new Date()`
+- `public/llms.txt` entry format (one-line URL + description)
 
 **Test scenarios:**
-- Happy path: `pnpm build` succeeds; sitemap.xml at build output includes all new URLs
-- Happy path: llms.txt is valid (text/plain, no trailing whitespace, no broken URLs)
-- Edge case: GSC `Inspect URL` for one new page returns "Discovered via sitemap" (post-deploy verification)
-- Integration: existing 9 sitemap entries preserved unchanged; no `lastModified` regressions on unrelated pages
+- Happy path: `pnpm build` succeeds; sitemap.xml includes all URLs
+- Happy path: `grep -E "new Date\(\)" app/sitemap.ts` returns nothing
+- Integration: no regressions on existing entries; all dates are explicit
 
 **Verification:**
-- Live `/sitemap.xml` lists all 4 new URLs; live `/llms.txt` lists them too; GSC submission via Search Console after deploy
+- Live `/sitemap.xml` accurate; live `/llms.txt` accurate; GSC submission via Search Console after deploy
 
 ---
 
@@ -618,3 +620,9 @@ A reviewer pass after Unit 2 merged surfaced 5 gaps in this plan. Tracked in **[
 | 5 | MEDIUM | `app/sitemap.ts:5` uses `const now = new Date()` for 7 of 10 entries, producing a non-deterministic `lastmod` that Googlebot may downweight. | Unit 7 (retroactive cleanup) |
 
 **Implementation note:** Findings 1, 2, and 4 should land before any further Phase 2 unit merges (Units 3-6) to prevent the same patterns from recurring. Findings 3 and 5 can be batched with the relevant unit work.
+
+**EB-295 PR scope (2026-05-17):** The EB-295 PR addresses all 5 findings in one commit. It also retroactively applies Finding 3 to Units 3 and 4 (expanded from the original Unit 2-only scope), per reviewer guidance. Units 3 and 4 sitemap/llms.txt entries are also backfilled here.
+
+**Schema drift process change (Finding 4):** Before any future Phase 2 unit merges, the CE review gate must include a plan-vs-implementation diff check: explicitly verify that every field required by the plan's schema spec (especially `mainEntityOfPage`) is present in the builder output. Do not merge a unit PR if the schema emitted at runtime doesn't match the plan's stated requirements.
+
+**New shipping rule (Finding 2, applies to Units 5-6):** Every page PR must ship its own `sitemap.ts` entry + `llms.txt` entry in the same commit. Reviewer checklist item: "Does this PR include sitemap.ts and llms.txt entries for the new/modified page?" — fail review if absent.

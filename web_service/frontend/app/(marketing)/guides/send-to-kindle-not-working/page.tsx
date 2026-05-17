@@ -53,7 +53,7 @@ const faqItems = [
   },
   {
     q: "What is the file size limit for Send to Kindle?",
-    a: "Send to Kindle via email has a 50 MB limit for personal documents. There is no size limit when transferring files via USB cable directly to your Kindle device. If your file exceeds 50 MB, use USB transfer or compress the PDF before sending.",
+    a: "The Send to Kindle web uploader (amazon.com/sendtokindle) accepts files up to 200 MB. The email method historically imposed a 50 MB limit; Amazon's current email page does not explicitly state this limit. USB cable transfers have no size limit. If your file exceeds 200 MB, use USB transfer or split the PDF.",
   },
   {
     q: "Why does my PDF look wrong after Send to Kindle converts it?",
@@ -69,7 +69,7 @@ const faqItems = [
   },
   {
     q: "Which file formats does Send to Kindle accept?",
-    a: "Send to Kindle accepts PDF, DOC, DOCX, RTF, TXT, EPUB, MOBI, and HTML files. It does not accept EPUB3 files with DRM. For formats not on this list — such as CBZ, ODT, or Pages files — convert to PDF first, then send.",
+    a: "Send to Kindle currently accepts PDF, DOC, DOCX, RTF, TXT, HTML, PNG, GIF, JPG, BMP, and EPUB (DRM-free only). MOBI is no longer accepted — Amazon removed MOBI support in 2022. For formats not on this list — such as CBZ, ODT, or Pages files — convert to PDF first, then send.",
   },
   {
     q: "How long does Send to Kindle take to deliver a file?",
@@ -113,9 +113,9 @@ export default function SendToKindleNotWorking() {
         </h1>
         <p className="font-sans text-lg text-text-muted leading-relaxed max-w-2xl">
           If Send to Kindle isn&apos;t working, the most common causes are
-          email-approval-list misconfiguration, file size limits (50 MB for
-          personal documents via email), and Amazon&apos;s intermittent server
-          issues — but if Amazon&apos;s native flow keeps failing,{" "}
+          email-approval-list misconfiguration, file size limits, and
+          Amazon&apos;s intermittent server issues — but if Amazon&apos;s native
+          flow keeps failing,{" "}
           <Link href="/convert/pdf-to-kfx" className="text-accent no-underline hover:underline font-medium">
             leafbind converts PDFs to KFX
           </Link>{" "}
@@ -212,32 +212,39 @@ export default function SendToKindleNotWorking() {
           </h2>
           <div className="max-w-3xl text-text-base leading-relaxed space-y-4 text-base">
             <p>
-              Send to Kindle via email has a{" "}
-              <strong>50 MB limit for personal documents</strong>. Files
-              larger than 50 MB are rejected. Amazon&apos;s{" "}
+              Amazon&apos;s{" "}
               <a
                 href="https://www.amazon.com/sendtokindle"
                 target="_blank"
                 rel="noopener"
                 className="text-accent no-underline hover:underline font-medium"
               >
-                Send to Kindle documentation
+                Send to Kindle web uploader
               </a>{" "}
-              confirms this limit applies to email delivery.
+              accepts files up to <strong>200 MB</strong>. The email method
+              historically capped attachments at 50 MB; Amazon&apos;s current
+              email documentation no longer explicitly states this limit.
+              USB cable transfers have no size restriction.
             </p>
-            <p>If your file exceeds 50 MB, you have two options:</p>
+            <p>If your file is too large, you have two options:</p>
             <ul className="list-disc pl-6 space-y-2 text-base">
+              <li>
+                <strong>Use the web uploader.</strong> Go to{" "}
+                <a
+                  href="https://www.amazon.com/sendtokindle"
+                  target="_blank"
+                  rel="noopener"
+                  className="text-accent no-underline hover:underline font-medium"
+                >
+                  amazon.com/sendtokindle
+                </a>{" "}
+                and upload the file directly — the 200 MB limit covers most PDFs.
+              </li>
               <li>
                 <strong>Transfer via USB.</strong> Connect your Kindle with a
                 USB cable, open the device in File Explorer, and copy the file
                 into the <code className="font-mono text-sm bg-gray-100 px-1 rounded">Documents</code> folder. No size
                 limit applies to USB transfers.
-              </li>
-              <li>
-                <strong>Reduce the file size.</strong> For PDFs, use a tool
-                like Acrobat or Smallpdf to compress the file before sending.
-                Image-heavy PDFs compress significantly; text-native PDFs often
-                do not.
               </li>
             </ul>
           </div>
@@ -258,20 +265,20 @@ export default function SendToKindleNotWorking() {
               <li>DOC, DOCX (Microsoft Word)</li>
               <li>RTF</li>
               <li>TXT</li>
-              <li>EPUB (note: not EPUB3 with DRM)</li>
-              <li>MOBI</li>
-              <li>HTML</li>
+              <li>HTML, HTM</li>
+              <li>EPUB (DRM-free only)</li>
+              <li>PNG, GIF, JPG, JPEG, BMP (images)</li>
             </ul>
             <p>
-              Formats commonly confused as supported but not accepted: CBZ
-              (comic archives), ODT (LibreOffice), Pages (Apple), and DRM-protected
-              EPUB3 files. If your file is in an unsupported format, convert it
-              to PDF first.
+              Formats <strong>no longer accepted</strong>: MOBI — Amazon removed
+              MOBI support in 2022. If you have a .mobi file, open it in Calibre
+              and export to EPUB or PDF before sending.
             </p>
             <p>
-              Note that EPUB files with DRM (digital rights management) — the
-              copy protection used by most commercial ebook stores — cannot be
-              sent via Send to Kindle. Only DRM-free EPUB files are accepted.
+              Formats commonly confused as supported but not accepted: CBZ
+              (comic archives), ODT (LibreOffice), Pages (Apple), AZW3 (Kindle
+              store books with DRM), and DRM-protected EPUB3 files. If your file
+              is in an unsupported format, convert it to PDF first.
             </p>
           </div>
         </section>
@@ -501,6 +508,37 @@ export default function SendToKindleNotWorking() {
               PDF to KFX for Kindle Scribe →
             </Link>
           </div>
+        </section>
+
+        {/* ── Sources ── */}
+        <section className="mb-16 pb-8 border-b border-border">
+          <p className="font-mono text-xs font-medium text-text-muted uppercase tracking-widest mb-3">
+            Sources
+          </p>
+          <ul className="space-y-1">
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/sendtokindle"
+                target="_blank"
+                rel="noopener"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Send to Kindle — supported file types and web uploader
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+            <li className="font-sans text-sm text-text-muted">
+              <a
+                href="https://www.amazon.com/sendtokindle/email"
+                target="_blank"
+                rel="noopener"
+                className="text-accent no-underline hover:underline"
+              >
+                Amazon Send to Kindle for Email — step-by-step instructions
+              </a>{" "}
+              (last verified 2026-05-17)
+            </li>
+          </ul>
         </section>
 
         {/* ── CTA ── */}
