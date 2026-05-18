@@ -41,6 +41,15 @@ const guides = [
     lastUpdated: "2026-05-17",
   },
   {
+    slug: "does-kindle-support-epub",
+    title: "Does Kindle support EPUB? Yes — here's how (and where to convert)",
+    summary:
+      "Honest guide to EPUB on Kindle: yes, Send-to-Kindle accepts EPUB since 2022 and " +
+      "converts it to KFX server-side. When STK works, when Calibre is the right alternative, " +
+      "and where a hosted converter helps.",
+    lastUpdated: "2026-05-17",
+  },
+  {
     slug: "kindle-scribe-vs-remarkable",
     title: "Kindle Scribe vs. reMarkable vs. iPad vs. Paperwhite: which is best for reading PDFs?",
     summary:

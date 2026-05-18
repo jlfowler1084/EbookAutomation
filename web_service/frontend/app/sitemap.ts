@@ -19,6 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/guides/pdf-to-kfx-for-kindle-scribe`,     lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/guides/send-to-kindle-not-working`,        lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/guides/how-to-send-pdf-to-kindle`,         lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
+    { url: `${base}/guides/does-kindle-support-epub`,          lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     { url: `${base}/guides/kindle-scribe-vs-remarkable`,       lastModified: new Date("2026-05-17"), changeFrequency: "monthly", priority: 0.9 },
     // EB-264: /contact at priority 0.5, changeFrequency: "yearly".
     // Convention would suggest "never" for a near-static contact page, but "yearly"
