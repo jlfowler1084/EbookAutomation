@@ -279,6 +279,128 @@ Both are nice-to-have, not critical. The EPUB Tier 1 case is now strong enough t
 
 ---
 
+## Session 3 follow-up — Day 3 candidate sweep (2026-05-18 afternoon)
+
+**Decision change:** Joe approved spending leftover Day 2 budget on the deferred queue. Scope expanded from the 2 Session 2 deferred items to a broader research sweep covering EPUB pillar authoring inputs, send-to-kindle cluster mapping, and competitor footprint analysis.
+
+**Reports run (6 queries, all in parallel after schema load):**
+
+1. `phrase_questions` on `kindle epub` broad seed (~2,000 units, 50 results)
+2. `phrase_organic` on `does kindle support epub` top 20 (~200 units)
+3. `phrase_fullsearch` on `send to kindle` (~1,000 units, 50 results)
+4. `domain_organic` on smallpdf.com top 30 (~300 units)
+5. `domain_organic` on kindlepreneur.com top 30 (~300 units)
+6. `phrase_these` on the 2 Session 2 FAQ candidates + `tracking_overview_organic` (~120 units)
+
+**Units consumed (afternoon sweep):** ~3,920 of remaining ~8,700 budget. Day 2 total: ~5,220 / ~10K (~52%).
+
+### Six findings
+
+#### FINDING J — EPUB question cluster is ~18,350/mo — 2.8× the Session 2 estimate
+
+`phrase_questions` on the broad `kindle epub` seed returned 50 question variants totaling ~18,350/mo. The Session 2 "Finding A" estimate of 6,520/mo was based on 8 specific phrasings; the full lexical-variant cluster is materially larger.
+
+Four authoring buckets emerge from the data:
+
+**Bucket 1 — Capability questions** (~10,400/mo): "can/does/will Kindle support/read/take/use/play/accept EPUB" plus 20+ variants. Direct yes/no questions that need a definitive first-paragraph answer. Drives PAA + AIO eligibility.
+
+**Bucket 2 — "How to {verb} EPUB to Kindle" workflow** (~3,300/mo across 9 verbs): send (1,000), send-an (720), add (390), put (390), upload (320), get (320), load (320), transfer (210), download (210). Each verb needs its own H3 anchor — lexical-variant diversity is the ranking moat.
+
+**Bucket 3 — Conversion-specific** (~250/mo): "how to convert epub to kindle" (140), "how to convert epub to kindle format" (110). Low absolute volume but high direct-product-fit — these are the queries leafbind exists to serve.
+
+**Bucket 4 — Hybrid "can I read EPUB on Kindle"** (~650+/mo): "can I/you read epub on kindle", "can epub be read on kindle". Bridge questions between capability and workflow.
+
+**EB-303 Phase 3b EPUB pillar structure implication:** the page is not a single FAQ — it's a 4-section authority page with H2 anchors for each bucket and verb-named H3s under bucket 2. This is materially more depth than the existing top-ranking pages (Mashable, kindlepreneur), which is the displacement opportunity.
+
+#### FINDING K — `does kindle support epub` SERP is slightly tougher than KD 20 suggests
+
+The easiest EPUB target by KD has mainstream tech-pub presence the harder KD 35 query did not: **Digital Trends, BGR, ZDNet** all appear in the top 20. Authority-page pressure is real but the SERP is still content-quality-gated — 6+ forum/social results, plus 4 small content sites (kindlepreneur, takecontrolbooks, digitalpublishing101, bookfunnel), plus 1 new entrant (automateed.com — automated-answer aggregator).
+
+| Class | Top 20 count | Pressure level |
+|---|---|---|
+| Mainstream tech pub | 3 (Digital Trends, BGR, ZDNet) | Authority pressure — not present in KD 35 SERP |
+| Forum / social / Q&A | 6 (Reddit, YouTube ×4, TikTok, Amazon Forum) | Standard for the niche |
+| Small content / pub blog | 5 (kindlepreneur, takecontrolbooks ×2, digitalpublishing101, bookfunnel) | Direct competitors |
+| Automated answer aggregator | 2 (automateed.com ×2) | Low-quality competitor |
+| Amazon authority | 1 (help page at #2) | Present and elevated vs KD 35 SERP |
+| SaaS help | 1 (savory.global) | Niche |
+
+**Pillar copy implication:** Definitive answer + structured data (Q&A schema) + comprehensive verb coverage will beat the BGR / Digital Trends / ZDNet generalist treatment. The Amazon help page at #2 is informational-only and doesn't offer a conversion path — leafbind's conversion CTA is the differentiator.
+
+#### FINDING L — The `send to kindle` cluster has a 5,300/mo troubleshooting sub-cluster
+
+`phrase_fullsearch` on `send to kindle` returned the 50 highest-volume exact-match variants. Beyond the expected root volume (74,000/mo), one subcluster stands out:
+
+| Pain keyword | Vol | Signal |
+|---|---|---|
+| e999 - send to kindle internal error | 2,900 | Specific error code — people copy-paste from the Kindle app |
+| e999 - send to kindle internal error: | 2,400 | Variant with trailing colon |
+| an authentication failure occured send to kindle app | 1,000 | App auth failure copy-paste |
+| send to kindle doesn't work | 480 | Generic frustration |
+| **Total troubleshooting sub-cluster** | **~6,780/mo** | |
+
+The e999 + e999: pair alone is 5,300/mo of pure-pain traffic. These searchers are mid-task, frustrated, looking for an immediate fix. **This is a Tier 2 candidate for a dedicated troubleshooting page** — high commercial signal (failed Send-to-Kindle is exactly when users would convert and try a third-party tool like leafbind).
+
+Two EPUB-direction variants also showed up in this cluster:
+- `send epub to kindle` — 1,300/mo
+- `how to send epub to kindle` — 1,000/mo
+
+These should be H2/H3 anchors inside the EPUB pillar (Finding J Bucket 2 confirmation).
+
+#### FINDING M — smallpdf is not a real EPUB-pillar competitor
+
+`domain_organic` on smallpdf.com top 30 returned a pure PDF-utility footprint: compress-pdf, merge-pdf, word-to-pdf, jpg-to-pdf, edit-pdf, split-pdf, image-to-pdf, png-to-pdf, heic-to-pdf, etc. **Zero keywords are ebook/kindle/epub adjacent.** Smallpdf is a generalist PDF tool, not a Kindle-format competitor.
+
+**This reframes Session 1's "3-tier competitive ladder":**
+- **pdf2kindle** — direct competitor on the PDF-to-Kindle cluster only (single-keyword dependency, displaceable)
+- **smallpdf / online2pdf** — generalist PDF tools, NOT direct leafbind competitors. Adjacent only in domain name.
+- **Real direct EPUB-pillar competitors** (newly identified): kindlepreneur, takecontrolbooks, digitalpublishing101, bookfunnel — all small content sites with broader scope.
+
+**EB-309 implication:** deprioritize smallpdf as a link-prospecting target. The relevant prospecting pool is small-content-site editorial outreach, not generalist PDF-tool backlinks.
+
+#### FINDING N — Kindlepreneur is a generalist author-resource site, not a focused EPUB competitor
+
+`domain_organic` on kindlepreneur.com top 30 reveals their traffic profile is dominated by writing-software reviews and literary-vocabulary definitions:
+
+- **#1 traffic driver (12.77%):** Grammarly review (2.24M/mo, position #8)
+- **2nd-12th:** "kindlepreneur" brand, "synopsis definition", Wattpad review, "book writing software", Atticus review, "unabridged meaning", "parts of a book", ProWritingAid review, "slick write", "writing software"
+- **13th-30th:** mostly more software reviews and literary vocabulary
+
+Their `epub-to-kindle` page that ranks in our EPUB SERPs is a **tail page**, not a core driver. The ranking benefits from domain authority and topical adjacency, not from page-level optimization or deep coverage. **A focused, conversion-tool-anchored leafbind pillar with the 4-bucket structure (Finding J) and the verb-anchored workflow can plausibly out-rank them** — the same content-quality-displaces-authority pattern Session 1 found for pdf2kindle.
+
+#### FINDING O — FAQ candidates confirmed: pure informational
+
+`phrase_these` returned full metrics for the 2 Session 2 candidates:
+
+| Keyword | Vol | CPC | Competition | Verdict |
+|---|---|---|---|---|
+| what file type does kindle use | 880 | $0 | 0 | Pure informational |
+| kindle email address | 1,000 | $0 | 0 | Pure informational |
+
+Zero CPC and zero competition on both = no commercial-intent buyer cohort. **These are correctly scoped as FAQ extensions on existing pages, not standalone landing targets.** Pair `what file type does kindle use` with the EPUB pillar (Finding J Bucket 1) and `kindle email address` with the Phase 2 Unit 3 mega-guide (already routed to EB-303 in Session 2).
+
+### Action items routed (additions to Session 3 morning's list)
+
+- **EB-303 Phase 3b EPUB pillar copy structure:** four H2 buckets per Finding J — capability questions / "how to {verb}" workflow with verb-named H3s / conversion-specific / hybrid. Author for AIO citation (Bucket 1 first-paragraph definitive answer) and PAA capture (Bucket 1 Q&A schema).
+- **EB-303 Phase 3b TIER 2 NEW candidate:** "Send to Kindle troubleshooting" page — targets the 5,300/mo e999 + 1,000/mo authentication-failure pain-keyword cluster. Highest commercial-intent signal yet identified (failed Send-to-Kindle = peak conversion moment for leafbind alternative).
+- **EB-309 Phase 4a re-scoping:** deprioritize smallpdf as a link-prospecting target. Real EPUB-pillar competitors are kindlepreneur, takecontrolbooks, digitalpublishing101, bookfunnel — small content sites where editorial outreach is the right link-acquisition channel, not generalist PDF-tool directories.
+- **EB-303 Phase 3 sequencing recommendation:** the EPUB pillar (Tier 1) should ship before the send-to-kindle troubleshooting page (Tier 2), since the pillar is structurally novel work and the troubleshooting page is structurally similar to existing Phase 2 Unit 3.
+
+### Day 2 close — what's left for Days 3-5
+
+Daily Pro-tier budgets refresh midnight UTC. Trial expires 2026-05-23. Today's usage: ~5,220 / ~10K (~52%). Four more daily budgets of ~10K = ~40K units total potential remaining.
+
+**Most of the high-value research is now done.** The remaining defensible uses:
+
+1. **Daily freshness check on Position Tracking** (~800 units/day × 4 = ~3,200) — captures the indexation moment when leafbind first appears in Semrush's index
+2. **`phrase_kdi` on the 6,780/mo troubleshooting cluster** (~250 units) — confirms KD before EB-303 Tier 2 commits to a troubleshooting page
+3. **`phrase_questions` on `convert pdf to kindle`** (~2,000 units) — symmetric to Finding J for the PDF cluster; would catch the verb-family lexical variants Phase 2 Unit 5 might still be missing
+4. **`backlinks_overview` + `backlinks_refdomains` on kindlepreneur.com + takecontrolbooks.com + bookfunnel.com** (~300 units total) — refreshes the EB-309 prospecting list with the real EPUB-pillar competitors per Finding N
+
+Total potential Day 3-5 spend: ~5,750 units. Comfortable within the ~40K remaining budget. Recommend running these on Day 3 morning if useful, then leaving Days 4-5 as buffer.
+
+---
+
 ## Final synthesis (placeholder)
 
 *Will be compiled after all sessions complete and posted as a comment on EB-241.*
