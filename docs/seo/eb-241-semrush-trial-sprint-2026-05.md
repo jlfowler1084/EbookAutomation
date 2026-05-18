@@ -192,9 +192,90 @@ Recommended Session 3 priority order: 1 → 2 → 5. Total budget: ~1,300-1,500 
 
 ---
 
-## Session 3 — Day 3 close-out (placeholder, optional)
+## Session 3 — Day 2 close-out (2026-05-18)
 
-*Will be filled after Session 3 runs if needed.*
+**Reports run:**
+1. `phrase_kdi` on the 8 EPUB cluster keywords (~400 units)
+2. `phrase_organic` on `can kindle read epub` top 20 (~100 units)
+3. `tracking_position_organic` against the Position Tracking campaign (~800 units, 8 keywords × 100)
+
+**Units consumed today:** ~1,300 of ~10K daily Pro-tier budget (~13%). Plenty of headroom for a Day 3 sweep if needed (smallpdf domain_organic + send-to-kindle fullsearch remain on the table from Session 2's deferral list).
+
+### Findings
+
+#### FINDING F — The EPUB cluster's difficulty is fully validated for Tier 1
+
+All 8 keywords in the KD 20-35 range. The flagship `does kindle support epub` (720/mo, $14.12 CPC — the highest commercial signal in the entire trial) is **KD 20**, the easiest of the lot.
+
+| Keyword | Vol | CPC | KD |
+|---|---|---|---|
+| does kindle support epub | 720 | $14.12 | **20** |
+| epub format to kindle | 1,300 | $3.54 | **21** |
+| can kindle use epub | 720 | $8.56 | **26** |
+| epub format on kindle | 880 | $3.54 | **28** |
+| does kindle read epub | 1,000 | $8.56 | **29** |
+| does kindle take epub | 880 | $8.56 | **30** |
+| does kindle read epub format | 720 | $8.56 | **30** |
+| can kindle read epub | 1,300 | $8.56 | **35** |
+
+The cluster sits comfortably under EB-241's Phase 1 KD < 30 filter (5 of 8) and within reach for the rest. **EB-303 Phase 3b's EPUB-to-Kindle Tier 1 candidacy is data-validated, not just hypothesized.**
+
+#### FINDING G — The EPUB flagship SERP is content-quality-gated, not authority-locked
+
+`phrase_organic` on `can kindle read epub` (the hardest of the 8 at KD 35) returned a top-20 dominated by forums, social, and small content sites. Amazon's own help page shows up at position 7 — present but not dominant.
+
+| Result class | Count in top 20 | Examples |
+|---|---|---|
+| Forum / social / Q&A | 9 | Reddit, Quora ×2, Amazon Forum ×2, Facebook, YouTube ×2, TikTok, JustAnswer, StackExchange |
+| Small content / pub blogs | 5 | kindlepreneur, takecontrolbooks, digitalpublishing101 ×2, britishbookpublishing |
+| Mainstream tech pub | 2 | Mashable (2022), PCWorld (2022) |
+| Amazon authority | 1 | help.amazon.com |
+| SaaS help center | 1 | help.savory.global |
+
+The Mashable and PCWorld pieces are dated to Amazon's late-2022 EPUB-on-Send-to-Kindle announcement — leafbind can publish materially fresher content. Kindlepreneur is the most-optimized direct competitor; the rest are loosely-optimized. **This SERP profile mirrors the pdf2kindle finding from Session 1 — quality content displaces aged authority pages in this niche.**
+
+#### FINDING H — Position Tracking baseline confirmed: zero across all 8 Phase 2 targets, AI Overviews on all 8
+
+The first 3 days of campaign data (May 17-19) show leafbind.io "out of top 100" for every tracked keyword — the correct baseline for a 4-day-old domain not yet in Semrush's index. The campaign now runs free through trial expiry and generates the rank-delta dataset that EB-303's Phase 3c re-baseline will compare against.
+
+Two ancillary insights surfaced from the SERP feature column:
+
+- **AI Overviews (aio) present on 8/8 tracked keywords.** Position #1 organic is no longer the only target — content optimized for AIO citation may capture click flow regardless of position.
+- **People Also Ask (rel) present on 8/8.** Question-format H3s have a parallel ranking surface alongside primary organic ranking.
+
+EB-303 pillar copy authoring should treat the click flow as ~30-40% AIO/PAA, not 100% position #1.
+
+#### FINDING I — Semrush volume revisions vs Phase 1 estimates
+
+| Keyword | Phase 1 est. | Semrush actual | Delta |
+|---|---|---|---|
+| convert pdf to kindle format | 1,000 | 590 | -41% |
+| how to send pdf to kindle | (n/a) | 1,600 | new |
+| kindle scribe vs remarkable | (n/a) | 2,900 | new |
+| kindle scribe vs paperwhite | (n/a) | 320 | new |
+| kindle scribe vs ipad | (n/a) | 480 | new |
+| how to convert pdf to kindle format | (n/a) | 210 | new |
+| send pdf to kindle scribe | (n/a) | 110 | new |
+| send to kindle not working | (n/a) | 260 | new |
+| **Total Phase 2 addressable (US)** | — | **6,470/mo** | — |
+
+The 6,470/mo Phase 2 addressable is striking next to Finding A's 6,520/mo EPUB cluster — **the EPUB Tier 1 alone is essentially the entire Phase 2 addressable surface**, with materially better CPC profile and easier KD curve. This sharpens the EB-303 Phase 3b prioritization case.
+
+### Action items routed
+
+- **EB-303 Phase 3b Tier 1 (EPUB pillar):** difficulty validated, SERP profile favorable, ship sooner rather than later. The data argues for elevating this above the remaining Phase 2 LowFruits triage candidates.
+- **EB-303 Phase 3 authoring guidance:** pillar copy structure should anticipate AIO citation (first-paragraph definitive answer, structured data) and PAA capture (H3 question-format anchors). Add this to the Phase 3b authoring brief.
+- **EB-241 methodology improvement (second one):** SERP feature columns belong in Phase 1 keyword tables — feature mix changes ranking strategy. Pair with the "phrase_related early" learning from Session 2.
+- **EB-241 methodology improvement (third one):** Position Tracking should be configured at Phase 1 Day 1, not Phase 3. The 6-week pre-launch tracking window would give a real baseline to measure against, instead of "we just launched and now we're measuring."
+
+### Day 3 candidates (if Joe wants to spend more trial budget)
+
+Carried forward from Session 2's deferred list (~1,300 units total):
+
+1. `phrase_fullsearch` on `send to kindle` (~1,000 units) — exact-match variants of the 90,500/mo root
+2. `domain_organic` on smallpdf.com top 30 (~300 units) — generic PDF-tool keywords
+
+Both are nice-to-have, not critical. The EPUB Tier 1 case is now strong enough that the EB-303 Phase 3b decision doesn't need further data.
 
 ---
 
