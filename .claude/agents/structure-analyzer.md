@@ -78,7 +78,7 @@ RECOMMENDATION:
 - `agents/structure-analysis/system-prompt.md` — The pipeline agent's detection rules
 - `agents/structure-analysis/contract.md` — Input/output contract
 - `tools/detect_headings_font.py` — Font-based heading detection
-- `tools/pdf_to_balabolka.py` — Core extraction engine (calls the structure agent)
+- `tools/extract_tts_text.py` — Core extraction engine (calls the structure agent)
 - `test-corpus/` — Regression test books
 - `feature-manifest.json` — Feature catalog with test expectations
 
