@@ -140,19 +140,19 @@
 
   "python_cli_modes": [
     {
-      "script": "tools/pdf_to_balabolka.py",
+      "script": "tools/extract_tts_text.py",
       "mode": "gui",
       "flags": [],
       "description": "Tkinter GUI mode (no args)"
     },
     {
-      "script": "tools/pdf_to_balabolka.py",
+      "script": "tools/extract_tts_text.py",
       "mode": "balabolka",
       "flags": ["--input", "--output-dir", "--suffix", "--quiet", "--api-key", "--chapter-hints", "--ocr", "--force-columns", "--tts-enhance", "--dialogue-voices"],
       "description": "TTS text extraction (default --mode)"
     },
     {
-      "script": "tools/pdf_to_balabolka.py",
+      "script": "tools/extract_tts_text.py",
       "mode": "kindle",
       "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes", "--no-images"],
       "description": "Kindle HTML extraction with font metadata"
@@ -213,7 +213,7 @@
   "critical_files": [
     {"path": "module/EbookAutomation.psm1", "type": "powershell_module", "min_lines": 4742},
     {"path": "module/EbookAutomation.psd1", "type": "manifest", "min_lines": 31},
-    {"path": "tools/pdf_to_balabolka.py", "type": "python_script", "min_lines": 9636},
+    {"path": "tools/extract_tts_text.py", "type": "python_script", "min_lines": 9636},
     {"path": "tools/preflight_analysis.py", "type": "python_script", "min_lines": 899},
     {"path": "tools/pattern_db.py", "type": "python_script", "min_lines": 2704},
     {"path": "tools/batch_qa.py", "type": "python_script", "min_lines": 1800},

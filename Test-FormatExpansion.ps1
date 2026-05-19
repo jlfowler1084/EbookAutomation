@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Regression test suite for the Expanded Format Support changes to pdf_to_balabolka.py
+    Regression test suite for the Expanded Format Support changes to extract_tts_text.py
     and Convert-ToTTS in EbookAutomation.psm1.
 
 .DESCRIPTION
@@ -64,7 +64,7 @@ function Write-Tier {
 # -- Setup ----------------------------------------------------------
 $projectRoot = $PSScriptRoot
 if (-not $projectRoot) { $projectRoot = Get-Location }
-$toolPath    = Join-Path $projectRoot 'tools\pdf_to_balabolka.py'
+$toolPath    = Join-Path $projectRoot 'tools\extract_tts_text.py'
 $python      = 'python'
 $tempDir     = Join-Path $env:TEMP "ebook_test_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
 New-Item $tempDir -ItemType Directory -Force | Out-Null
@@ -99,7 +99,7 @@ try {
 
 # 1.2 SUPPORTED_FORMATS constant exists and has expected values
 try {
-    $formats = & $python -c "import sys; sys.path.insert(0, '$projectRootUnix/tools'); from pdf_to_balabolka import SUPPORTED_FORMATS; print(','.join(SUPPORTED_FORMATS))" 2>&1
+    $formats = & $python -c "import sys; sys.path.insert(0, '$projectRootUnix/tools'); from extract_tts_text import SUPPORTED_FORMATS; print(','.join(SUPPORTED_FORMATS))" 2>&1
     if ($LASTEXITCODE -eq 0) {
         $fmtList = $formats.Trim()
         $expected = @('pdf','epub','mobi','azw','azw3','djvu')
@@ -118,7 +118,7 @@ try {
 
 # 1.3 New functions are importable
 try {
-    $r = & $python -c "import sys; sys.path.insert(0, '$projectRootUnix/tools'); from pdf_to_balabolka import extract_text_auto, extract_text_from_epub, extract_text_via_calibre; print('OK')" 2>&1
+    $r = & $python -c "import sys; sys.path.insert(0, '$projectRootUnix/tools'); from extract_tts_text import extract_text_auto, extract_text_from_epub, extract_text_via_calibre; print('OK')" 2>&1
     if ($r -like '*OK*') {
         Write-TestResult "New extraction functions importable" "PASS"
     } else {
@@ -258,7 +258,7 @@ print('CREATED:' + outpath)
         $extractPy = @"
 import sys
 sys.path.insert(0, '$projectRootUnix/tools')
-from pdf_to_balabolka import extract_text_from_epub
+from extract_tts_text import extract_text_from_epub
 
 text = extract_text_from_epub('$testEpubUnix', lambda msg: None)
 words = len(text.split())
@@ -300,7 +300,7 @@ print('HTML_LEAKED:' + str(has_html))
         $dispatchPy = @"
 import sys
 sys.path.insert(0, '$projectRootUnix/tools')
-from pdf_to_balabolka import extract_text_auto
+from extract_tts_text import extract_text_auto
 
 text = extract_text_auto('$testEpubUnix', lambda msg: None)
 print('DISPATCH_OK:' + str(len(text) > 100))
@@ -359,7 +359,7 @@ try {
         $calibreErrPy = @"
 import sys
 sys.path.insert(0, '$projectRootUnix/tools')
-from pdf_to_balabolka import extract_text_via_calibre
+from extract_tts_text import extract_text_via_calibre
 try:
     text = extract_text_via_calibre('nonexistent.mobi', lambda msg: None,
                                      calibre_path=r'$calibrePath')

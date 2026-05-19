@@ -262,12 +262,12 @@ Verifies SHA-256 extraction cache with pipeline version tracking.
 
 **Verify cache is functional:**
 ```powershell
-python tools/pdf_to_balabolka.py --input "F:\Projects\EbookAutomation\archive\The_Oil_Kings_by_Andrew_Scott_Cooper.pdf" --mode kindle --html-extraction
+python tools/extract_tts_text.py --input "F:\Projects\EbookAutomation\archive\The_Oil_Kings_by_Andrew_Scott_Cooper.pdf" --mode kindle --html-extraction
 ```
 
 **Run a second time — should hit cache:**
 ```powershell
-python tools/pdf_to_balabolka.py --input "F:\Projects\EbookAutomation\archive\The_Oil_Kings_by_Andrew_Scott_Cooper.pdf" --mode kindle --html-extraction
+python tools/extract_tts_text.py --input "F:\Projects\EbookAutomation\archive\The_Oil_Kings_by_Andrew_Scott_Cooper.pdf" --mode kindle --html-extraction
 ```
 
 **Expected:**

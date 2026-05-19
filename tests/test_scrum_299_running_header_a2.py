@@ -26,7 +26,7 @@ if sys.platform == "win32":
 # ---------------------------------------------------------------------------
 # Path resolution — handles both worktree and main-project contexts
 # ---------------------------------------------------------------------------
-# WORKTREE_ROOT: where the code under test lives (tools/pdf_to_balabolka.py)
+# WORKTREE_ROOT: where the code under test lives (tools/extract_tts_text.py)
 # DATA_ROOT: where archive/ and inbox/ live (may differ in a worktree)
 # ---------------------------------------------------------------------------
 
@@ -45,7 +45,7 @@ INBOX_DIR = DATA_ROOT / "inbox"
 
 sys.path.insert(0, str(TOOLS_DIR))
 
-from pdf_to_balabolka import (  # noqa: E402
+from extract_tts_text import (  # noqa: E402
     extract_with_pdfminer_html,
     format_paragraphs_as_html,
     _mark_a2_running_headers,

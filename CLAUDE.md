@@ -110,7 +110,7 @@ EbookAutomation/
 ├── EbookAutomation.psm1    # Main PowerShell module
 ├── settings.json            # Pipeline configuration (paths, voices, options)
 ├── tools/
-│   ├── pdf_to_balabolka.py  # Core Python extraction engine
+│   ├── extract_tts_text.py  # Core Python extraction engine
 │   ├── test_pipeline.py     # Regression test harness
 │   ├── test_columns.ps1     # Column detection tests
 │   └── hooks/
@@ -156,7 +156,7 @@ Contains paths for Calibre, Balabolka, FFmpeg, inbox/output directories, voice s
 Main module exporting: `Convert-PdfToKindle`, `Convert-PdfToAudiobook`, `New-DailyBrief`,
 `Import-EbookSettings`, `Write-EbookLog`, `Test-EbookPipeline`
 
-### pdf_to_balabolka.py — Extraction Engine
+### extract_tts_text.py — Extraction Engine
 Three extraction paths based on PDF characteristics:
 1. **pdfminer** — default text extraction
 2. **pypdf** — fallback for pdfminer failures

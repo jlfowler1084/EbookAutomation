@@ -116,7 +116,7 @@ def _assess_text_quality(pdf_path, page_count, log_fn):
     }
     try:
         from pypdf import PdfReader
-        from pdf_to_balabolka import score_text_layer_quality
+        from extract_tts_text import score_text_layer_quality
     except ImportError as e:
         log_fn(f"  Text quality: skipped (import failed: {e})")
         return default

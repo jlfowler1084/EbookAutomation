@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-# Matches SAPI XML voice/silence/rate tags emitted by pdf_to_balabolka.py
+# Matches SAPI XML voice/silence/rate tags emitted by extract_tts_text.py
 _SAPI_TAG_RE = re.compile(
     r'<voice[^>]*>|</voice>'
     r'|<silence\s+msec="\d+"\s*/?>'

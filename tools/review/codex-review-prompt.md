@@ -115,7 +115,7 @@ Output a single JSON object.
       "id": "X2-001",
       "severity": "major",
       "category": "regression_risk",
-      "file": "tools/pdf_to_balabolka.py",
+      "file": "tools/extract_tts_text.py",
       "line": 198,
       "current_code": "if font_size > threshold:",
       "proposed_code": "if font_size > threshold and not _is_running_header(line):",

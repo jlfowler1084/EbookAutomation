@@ -2,7 +2,7 @@
 
 Wraps both conversion tiers as controlled subprocess calls:
   - Free tier:    ebook-convert <input> <output.fmt>  (direct Calibre pass-through)
-  - Premium tier: python tools/pdf_to_balabolka.py --cli ...  (full smart pipeline)
+  - Premium tier: python tools/extract_tts_text.py --cli ...  (full smart pipeline)
 
 Key design constraints (from institutional learnings):
   - shell=False on all calls: prevents shell injection from user-supplied filenames
@@ -40,8 +40,8 @@ log = logging.getLogger(__name__)
 # for the full conversion-tier timeout window (120-600s).
 _VQA_TIMEOUT_SECONDS = 180
 
-# Pattern matching pdf_to_balabolka.py log lines for Gemini remediation cost.
-# Source: tools/pdf_to_balabolka.py:13268-13269 emits:
+# Pattern matching extract_tts_text.py log lines for Gemini remediation cost.
+# Source: tools/extract_tts_text.py:13268-13269 emits:
 #   "Gemini remediated N pages, cost: $X.XXXX"
 _GEMINI_COST_PATTERN = re.compile(r"Gemini remediated \d+ pages,\s*cost:\s*\$([\d.]+)")
 
@@ -104,13 +104,13 @@ def _find_newest_kfx(directory: Path, after_timestamp: float) -> Path | None:
 
 
 def _extract_gemini_cost(stdout: str) -> float:
-    """Parse pdf_to_balabolka.py stdout for the Gemini remediation cost line.
+    """Parse extract_tts_text.py stdout for the Gemini remediation cost line.
 
     Returns 0.0 when no Gemini run occurred (clean PDFs leave no problem regions
     flagged, so --gemini-remediate is a no-op and emits no cost log).
 
-    Brittle on log-line wording — if pdf_to_balabolka.py changes the format,
-    this returns 0.0 silently. A follow-up should make pdf_to_balabolka.py emit
+    Brittle on log-line wording — if extract_tts_text.py changes the format,
+    this returns 0.0 silently. A follow-up should make extract_tts_text.py emit
     a structured cost field in --cli JSON output.
     """
     match = _GEMINI_COST_PATTERN.search(stdout or "")
@@ -332,7 +332,7 @@ def run_premium(
 ) -> RunResult:
     """Run a premium-tier conversion: two-step text-extraction + Calibre conversion.
 
-    Step 1: Invoke ``tools/pdf_to_balabolka.py --mode kindle`` to produce a
+    Step 1: Invoke ``tools/extract_tts_text.py --mode kindle`` to produce a
     clean text extraction (``<stem>_kindle.txt``) with Markdown headings
     suitable for Calibre TOC. Selective Gemini OCR remediation runs on
     quality-flagged pages (EB-245).
@@ -344,7 +344,7 @@ def run_premium(
     ``tools/visual_qa.py``. Skipped silently when ``premium_vqa_enabled``
     is False or ``OPENROUTER_API_KEY`` is missing.
 
-    Background: pdf_to_balabolka.py does not produce ebook output directly —
+    Background: extract_tts_text.py does not produce ebook output directly —
     it emits ``.txt`` formatted for Calibre to consume. Earlier versions of
     this function invoked the script with non-existent ``--cli`` and
     ``--output-format`` flags and skipped the Calibre step, so premium tier
@@ -356,7 +356,7 @@ def run_premium(
     file_size = input_path.stat().st_size
     timeout = _timeout_for_size(file_size)
 
-    # ── Step 1: text extraction via pdf_to_balabolka.py --mode kindle ──
+    # ── Step 1: text extraction via extract_tts_text.py --mode kindle ──
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"  # ensure clean UTF-8 output on all platforms
 
@@ -366,10 +366,10 @@ def run_premium(
         "--input", str(input_path),
         "--output-dir", str(temp_dir),
         "--mode", "kindle",
-        # EB-245: selective Gemini OCR remediation. pdf_to_balabolka.py runs
+        # EB-245: selective Gemini OCR remediation. extract_tts_text.py runs
         # score_text_layer_quality(multi_sample=True) and only re-extracts pages
         # in flagged problem regions, so clean text PDFs incur $0. Graceful
-        # degrade is already wired at pdf_to_balabolka.py:12762-12772 — Gemini
+        # degrade is already wired at extract_tts_text.py:12762-12772 — Gemini
         # failures fall through to standard extraction without killing the run.
         "--gemini-remediate",
         "--gemini-cost-limit", str(cfg.premium_gemini_cost_limit_usd),
@@ -403,7 +403,7 @@ def run_premium(
         log.warning("[%s] Pipeline exited %d: %s", job_id, extract_proc.returncode, error)
         return RunResult(success=False, error_message=error)
 
-    # pdf_to_balabolka.py --mode kindle writes <input_stem>_kindle.txt in --output-dir
+    # extract_tts_text.py --mode kindle writes <input_stem>_kindle.txt in --output-dir
     # (default suffix per its CLI). The file is the input to Calibre below.
     extracted_text = temp_dir / f"{input_path.stem}_kindle.txt"
     if not extracted_text.is_file() or extracted_text.stat().st_size == 0:

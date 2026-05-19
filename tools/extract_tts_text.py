@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-Ebook to Balabolka Converter
+TTS Text Extraction Engine (formerly pdf_to_balabolka.py — renamed EB-317 after
+Balabolka was replaced by Kokoro TTS in SCRUM-325).
+
 Extracts and cleans ebook text (PDF, EPUB, MOBI, AZW, DJVU),
 removes front/back matter, and formats chapter headings in ALL CAPS
-for Balabolka TTS splitting.
+for TTS splitting.
 
 Usage:
     GUI mode (no arguments):
-        python pdf_to_balabolka.py
+        python extract_tts_text.py
 
     CLI mode (for pipeline / PowerShell automation):
-        python pdf_to_balabolka.py --input book.pdf --output-dir output/balabolka-txt
-        python pdf_to_balabolka.py --input book.epub --output-dir output/balabolka-txt
-        python pdf_to_balabolka.py --input book.pdf --output-dir . --suffix _tts.txt
-        python pdf_to_balabolka.py --input book.pdf   (output defaults to same folder as input)
+        python extract_tts_text.py --input book.pdf --output-dir output/balabolka-txt
+        python extract_tts_text.py --input book.epub --output-dir output/balabolka-txt
+        python extract_tts_text.py --input book.pdf --output-dir . --suffix _tts.txt
+        python extract_tts_text.py --input book.pdf   (output defaults to same folder as input)
 
 Requirements: pip install pypdf ebooklib beautifulsoup4
 """
@@ -14208,7 +14210,7 @@ def run_cli():
         sys.stderr.reconfigure(encoding='utf-8', errors='replace') # type: ignore
 
     ap = argparse.ArgumentParser(
-        description="Ebook to Balabolka Converter -- extract and format ebook text for TTS or Kindle",
+        description="TTS Text Extraction Engine -- extract and format ebook text for TTS or Kindle",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Modes:
@@ -14216,12 +14218,12 @@ Modes:
   kindle     Keep full content, Markdown chapter headings for Calibre TOC
 
 Examples:
-  python pdf_to_balabolka.py --input book.pdf --output-dir output/balabolka-txt
-  python pdf_to_balabolka.py --input book.epub --output-dir output/balabolka-txt
-  python pdf_to_balabolka.py --input book.mobi --mode kindle --calibre-path "C:\\Program Files\\Calibre2\\ebook-convert.exe"
-  python pdf_to_balabolka.py --input book.pdf --mode kindle --output-dir output/kindle
-  python pdf_to_balabolka.py --input book.pdf --mode kindle --suffix _kindle.txt
-  python pdf_to_balabolka.py          (no args -- launches GUI)
+  python extract_tts_text.py --input book.pdf --output-dir output/balabolka-txt
+  python extract_tts_text.py --input book.epub --output-dir output/balabolka-txt
+  python extract_tts_text.py --input book.mobi --mode kindle --calibre-path "C:\\Program Files\\Calibre2\\ebook-convert.exe"
+  python extract_tts_text.py --input book.pdf --mode kindle --output-dir output/kindle
+  python extract_tts_text.py --input book.pdf --mode kindle --suffix _kindle.txt
+  python extract_tts_text.py          (no args -- launches GUI)
         """,
     )
     ap.add_argument("--input", required=True,
@@ -14413,6 +14415,8 @@ Examples:
     # Build output filename
     stem = Path(input_path).stem
     safe_stem = re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
+    # Legacy suffix kept to avoid breaking existing artifacts; renaming this would
+    # invalidate scripts that grep outputs by name (e.g. kokoro_synth.py stem logic).
     default_suffix = "_kindle.txt" if args.mode == "kindle" else "_balabolka.txt"
     suffix = args.suffix if args.suffix else default_suffix
     output_path = os.path.join(out_dir, safe_stem + suffix)
@@ -14873,6 +14877,8 @@ class App(tk.Tk):
         stem = Path(input_path).stem
         # Sanitise filename
         safe_stem = re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
+        # Legacy suffix kept to avoid breaking existing artifacts; renaming this would
+        # invalidate scripts that grep outputs by name (e.g. kokoro_synth.py stem logic).
         output_path = os.path.join(out_dir, safe_stem + "_balabolka.txt")
 
         self._clear_log()

@@ -45,7 +45,7 @@ cd ~/EbookAutomation
 source .venv/bin/activate
 
 # Extract + generate HTML + convert to EPUB via Calibre
-python tools/pdf_to_balabolka.py \
+python tools/extract_tts_text.py \
     --input ~/ebook-data/inbox/book.pdf \
     --output-dir ~/ebook-data/output
 

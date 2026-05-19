@@ -70,7 +70,7 @@ def _safe_test_name(pdf_path: str, book_name: str) -> str:
     229+ chars; with the test suffix ``_test_<book_name>.html`` appended the
     filename reaches 256 chars — one over the NTFS limit — causing
     [Errno 22] on open(), regardless of the output directory.  Shortening the
-    test_name is the only safe fix that doesn't touch pdf_to_balabolka.py.
+    test_name is the only safe fix that doesn't touch extract_tts_text.py.
     """
     import re as _re
     stem = Path(pdf_path).stem

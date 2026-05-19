@@ -69,7 +69,7 @@ foreach ($test in $tests) {
     # Build the Python detect script as a string and pass via temp file
     $pyContent  = "import sys, os`n"
     $pyContent += "sys.path.insert(0, os.path.join(r'" + $projectRoot + "', 'tools'))`n"
-    $pyContent += "from pdf_to_balabolka import detect_column_layout`n"
+    $pyContent += "from extract_tts_text import detect_column_layout`n"
     $pyContent += "result = detect_column_layout(r'" + $file.FullName + "', print)`n"
     $pyContent += "print(f'RESULT: columns={result[`"num_columns`"]} confidence={result[`"confidence`"]:.0%} multicolumn={result[`"is_multicolumn`"]}')`n"
 

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import re
 import pytest
-from pdf_to_balabolka import (
+from extract_tts_text import (
     detect_scene_breaks,
     detect_emphatic_closers,
     apply_voice_tags,
@@ -1135,7 +1135,7 @@ class TestPerCharacterVoices:
         import unittest.mock as mock
         paragraphs = ['She said "Hello there, friend."']
         cs = {'parts': [], 'chapters': []}
-        with mock.patch('pdf_to_balabolka._build_book_attribution') as mock_attr:
+        with mock.patch('extract_tts_text._build_book_attribution') as mock_attr:
             apply_voice_tags(
                 paragraphs, cs,
                 options={'dialogue_voices': True, 'per_character_voices': False,
