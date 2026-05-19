@@ -1,7 +1,7 @@
 import "./globals.css";
 import { type Metadata } from "next";
 import { Newsreader, DM_Sans, IBM_Plex_Mono } from "next/font/google";
-import PlausibleProvider from "next-plausible";
+import Script from "next/script";
 
 /**
  * EB-240 / EB-238: Font swap
@@ -76,17 +76,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to main content
         </a>
-        {/* EB-252 v2: PlausibleProvider wraps children inside <body>. The v1
-            placement self-closed in <head> emitted only the preload link, not
-            the actual <script> tag. Wrapping children lets next-plausible's
-            internal <Script> component render correctly under Next.js 16 App
-            Router. Pageview events POST to /api/event, which is manually
-            proxied via app/api/event/route.ts to bypass the Next 16 /api/*
-            rewrite precedence bug (withPlausibleProxy's /api/event rewrite
-            returns 404 even though its /js/script.js rewrite works). */}
-        <PlausibleProvider domain="leafbind.io" trackOutboundLinks>
-          {children}
-        </PlausibleProvider>
+        {/* EB-265: Direct Plausible script tag pointing at the self-hosted CE
+            instance (plausible.leafbind.io). Replaces the PlausibleProvider
+            wrapper from next-plausible which defaulted to plausible.io and
+            required customDomain to be set. strategy="afterInteractive" loads
+            after hydration so it never blocks first paint. */}
+        <Script
+          defer
+          data-domain="leafbind.io"
+          src="https://plausible.leafbind.io/js/script.js"
+          strategy="afterInteractive"
+        />
+        {children}
       </body>
     </html>
   );
