@@ -34,3 +34,6 @@ yarn-error.log*
 # Playwright test artifacts (generated on each test run)
 test-results/
 playwright-report/
+
+# EB-326 verification touch (frontend-tree edit to confirm ignoreCommand triggers build)
+
