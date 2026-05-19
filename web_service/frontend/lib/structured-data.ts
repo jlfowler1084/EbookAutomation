@@ -183,8 +183,8 @@ export function buildPricingProductSchema(packs: PricingPack[]): ProductSchema {
     "@type": "Product",
     name: "leafbind Premium Conversion Credits",
     description:
-      "One-time credit packs that unlock premium PDF-to-KFX conversions: column-aware extraction, " +
-      "heading detection, bidirectional footnote linking, and KFX output for Kindle Scribe.",
+      "One-time credit packs that unlock premium conversions: column-aware extraction, heading detection, " +
+      "bidirectional footnote linking, KFX output for Kindle Scribe, and (BETA) chaptered audiobook output as M4B + MP3.",
     image: [
       "https://leafbind.io/quality/pipeline-headings.png",
       "https://leafbind.io/quality/pipeline-columns.png",

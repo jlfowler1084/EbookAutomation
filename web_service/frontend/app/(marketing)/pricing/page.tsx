@@ -51,6 +51,7 @@ const PREMIUM_FEATURES = [
   "Smart heading detection — font-size classification produces a navigable Kindle TOC",
   "Bidirectional footnote and endnote linking",
   "KFX output — Kindle's native enhanced typesetting format",
+  "Chaptered audiobook output — M4B + MP3, ~30–90 min English narration (BETA)",
   "Files up to 100 MB",
   "No account required",
 ];
@@ -116,12 +117,22 @@ export default function PricingPage() {
             credits unlock individual conversions — use within 30 days.
           </p>
           <ul className="space-y-3 mb-6">
-            {PREMIUM_FEATURES.map((feature) => (
-              <li key={feature} className="flex items-start gap-3">
-                <span className="font-sans text-sm text-brand mt-0.5 font-medium">✓</span>
-                <span className="font-sans text-sm text-text-base leading-relaxed">{feature}</span>
-              </li>
-            ))}
+            {PREMIUM_FEATURES.map((feature) => {
+              const betaIndex = feature.indexOf(" (BETA)");
+              const hasBeta = betaIndex !== -1;
+              const displayText = hasBeta ? feature.slice(0, betaIndex) : feature;
+              return (
+                <li key={feature} className="flex items-start gap-3">
+                  <span className="font-sans text-sm text-brand mt-0.5 font-medium">✓</span>
+                  <span className="font-sans text-sm text-text-base leading-relaxed">
+                    {displayText}
+                    {hasBeta && (
+                      <span className="ml-2 inline-block rounded-sm border border-brand px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand">BETA</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
