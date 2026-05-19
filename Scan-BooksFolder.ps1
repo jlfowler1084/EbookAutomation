@@ -19,7 +19,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
-# -- Supported formats (match SUPPORTED_FORMATS in pdf_to_balabolka.py) --
+# -- Supported formats (match SUPPORTED_FORMATS in extract_tts_text.py) --
 $supportedExts = @('pdf','epub','mobi','azw','azw3','djvu')
 $allEbookExts  = $supportedExts + @('txt','docx','cbz','cbr','fb2','lit','pdb','rtf')
 
@@ -129,7 +129,7 @@ if ($TestSamples) {
     Write-Host ("=" * 65) -ForegroundColor Cyan
     Write-Host ""
 
-    $toolPath = Join-Path $ProjectRoot 'tools\pdf_to_balabolka.py'
+    $toolPath = Join-Path $ProjectRoot 'tools\extract_tts_text.py'
     $python   = 'python'
     $tempDir  = Join-Path $env:TEMP "ebook_bookscan_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
     New-Item $tempDir -ItemType Directory -Force | Out-Null

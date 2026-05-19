@@ -303,7 +303,7 @@ function Convert-ToTTS {
     .SYNOPSIS
         Convert an ebook (PDF/EPUB/MOBI/AZW/DJVU) to Balabolka TTS text.
     .DESCRIPTION
-        Extracts text from the input ebook using pdf_to_balabolka.py.
+        Extracts text from the input ebook using extract_tts_text.py.
         PDF: native pypdf extraction. EPUB: native ebooklib extraction.
         MOBI/AZW/DJVU: converted via Calibre, then text extracted.
     .PARAMETER InputFile
@@ -357,7 +357,7 @@ function Convert-ToTTS {
     }
 
     $python    = $cfg.paths.python          # 'python' or full path
-    $toolPath  = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
+    $toolPath  = Join-Path $script:ModuleRoot 'tools' 'extract_tts_text.py'
     $ext       = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
 
     if ($ext -notin $cfg.tts.input_formats) {
@@ -408,12 +408,12 @@ function Convert-ToTTS {
         }
     }
 
-    # All formats now handled natively by pdf_to_balabolka.py
+    # All formats now handled natively by extract_tts_text.py
     # PDF: pypdf extraction, EPUB: ebooklib, MOBI/AZW/DJVU: Calibre (called from Python)
     $workFile = $InputFile
 
     # Reconstruct the output TXT path so we can poll its size (mirrors safe_stem
-    # logic in pdf_to_balabolka.py: strip non-word/space/hyphen chars, collapse spaces to _)
+    # logic in extract_tts_text.py: strip non-word/space/hyphen chars, collapse spaces to _)
     $stem       = [System.IO.Path]::GetFileNameWithoutExtension($workFile)
     $safeStem   = ($stem -replace '[^\w\s\-]', '').Trim() -replace ' ', '_'
     $outputTxt  = Join-Path $OutputDir ($safeStem + $cfg.tts.output_suffix)
@@ -1021,7 +1021,7 @@ print(json.dumps(output))
         Write-EbookLog "Kindle: extracting clean text from PDF (preserving full content)..."
 
         $python    = $cfg.paths.python
-        $toolPath  = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
+        $toolPath  = Join-Path $script:ModuleRoot 'tools' 'extract_tts_text.py'
 
         if (-not (Test-Path $toolPath)) {
             Write-EbookLog "Kindle: text extractor not found at $toolPath -- falling back to raw PDF" -Level WARN
@@ -1387,7 +1387,7 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
         Write-EbookLog "Kindle: extracting HTML from EPUB (preserving formatting)..."
 
         $python   = $cfg.paths.python
-        $toolPath = Join-Path $script:ModuleRoot 'tools' 'pdf_to_balabolka.py'
+        $toolPath = Join-Path $script:ModuleRoot 'tools' 'extract_tts_text.py'
 
         if (Test-Path $toolPath) {
             $tempDir = Join-Path $script:TempDir ("ebook_kindle_{0}" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -3866,7 +3866,7 @@ function Invoke-EbookPipeline {
             $mp3Volume  = if ($null -ne $userDefaults.volume) { $userDefaults.volume } else { $cfg.mp3.volume }
 
             # Reconstruct the TXT filename that Convert-ToTTS produced.
-            # Mirrors the safe_stem logic in pdf_to_balabolka.py.
+            # Mirrors the safe_stem logic in extract_tts_text.py.
             $stem     = [System.IO.Path]::GetFileNameWithoutExtension($workCopy)
             $safeStem = ($stem -replace '[^\w\s\-]', '').Trim() -replace ' ', '_'
             $txtFile  = Join-Path $ttsOutDir ($safeStem + $cfg.tts.output_suffix)

@@ -4,7 +4,7 @@
 
 # Core pipeline files that trigger the test suite
 $coreFiles = @(
-    'tools/pdf_to_balabolka.py',
+    'tools/extract_tts_text.py',
     'tools/pattern_db.py',
     'tools/visual_qa.py',
     'tools/test_pipeline.py',

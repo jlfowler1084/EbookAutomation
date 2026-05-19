@@ -5,7 +5,7 @@ This project is a **PDF/EPUB → TTS + Kindle automation pipeline**. It extracts
 ## Tech stack
 
 - **PowerShell 5.1+** — primary orchestration, module (`EbookAutomation.psm1`), inbox automation
-- **Python 3.12** — core extraction and HTML generation in `tools/pdf_to_balabolka.py`
+- **Python 3.12** — core extraction and HTML generation in `tools/extract_tts_text.py`
 - **pdfminer.six / pypdf / PyMuPDF** — layered PDF extraction (fallback chain)
 - **Balabolka + FFmpeg** — local TTS and audio post-processing
 - **Calibre (KFX output)** — Kindle delivery format conversion
@@ -23,7 +23,7 @@ module/                     .psm1 module source + manifest
   processing/               active conversions
   output/                   finished artifacts (audio + KFX)
 tools/
-  pdf_to_balabolka.py       core extraction + HTML generation engine
+  extract_tts_text.py       core extraction + HTML generation engine
   test_pipeline.py          6-book regression harness
   test_voice_tags.py        TTS SSML regression suite (also gates SecondBrain SB-PSModules)
 tests/                      regression corpus (the 6 books)
@@ -44,8 +44,8 @@ python tools/test_pipeline.py
 python tools/test_voice_tags.py
 
 # Convert a single book from the command line
-python tools/pdf_to_balabolka.py --input book.pdf --mode balabolka
-python tools/pdf_to_balabolka.py --input book.pdf --mode kindle
+python tools/extract_tts_text.py --input book.pdf --mode balabolka
+python tools/extract_tts_text.py --input book.pdf --mode kindle
 
 # PowerShell inbox automation
 Invoke-EbookPipeline
@@ -64,7 +64,7 @@ This project has a **6-book baseline regression suite** that must pass before an
 | **Sapiens** | Long chapter boundaries |
 | **Extreme Ownership** | Baseline smoke test |
 
-Before shipping any change that touches `pdf_to_balabolka.py`, chapter detection, heading classification, or the PowerShell pipeline, run `python tools/test_pipeline.py` and verify:
+Before shipping any change that touches `extract_tts_text.py`, chapter detection, heading classification, or the PowerShell pipeline, run `python tools/test_pipeline.py` and verify:
 - Endnote count matches expected
 - Body vs. heading classification is correct
 - Chapter count matches expected

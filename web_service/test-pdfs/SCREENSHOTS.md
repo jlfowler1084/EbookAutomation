@@ -53,7 +53,7 @@ Run from the repo root (not from the worktree):
 
 ```powershell
 cd F:\Projects\EbookAutomation
-python tools/pdf_to_balabolka.py `
+python tools/extract_tts_text.py `
   --input "web_service/test-pdfs/leafbind-demo.pdf" `
   --html-extraction `
   --force-columns `

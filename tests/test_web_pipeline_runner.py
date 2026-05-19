@@ -247,7 +247,7 @@ class TestRunFree:
 class TestRunPremium:
     """EB-256: run_premium is a two-step pipeline.
 
-    Step 1: pdf_to_balabolka.py --mode kindle produces <stem>_kindle.txt
+    Step 1: extract_tts_text.py --mode kindle produces <stem>_kindle.txt
     Step 2: ebook-convert <stem>_kindle.txt output.<format>
     Step 3 (optional): visual_qa.py for the post-conversion QA pass
 
@@ -265,7 +265,7 @@ class TestRunPremium:
     def _make_two_step_fake_run(self, small_pdf, temp_dir, extract_stdout="", captured_cmds=None):
         """Build a fake subprocess.run that handles BOTH steps of run_premium.
 
-        On the extract call (cmd contains pdf_to_balabolka.py), writes the
+        On the extract call (cmd contains extract_tts_text.py), writes the
         intermediate <stem>_kindle.txt and returns extract_stdout. On the
         Calibre call, writes the final output.<format>. Both succeed (returncode=0).
         If captured_cmds is provided, each call's cmd is appended to it.
@@ -274,7 +274,7 @@ class TestRunPremium:
             cmd_str = " ".join(str(c) for c in cmd)
             if captured_cmds is not None:
                 captured_cmds.append(list(cmd))
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 # Step 1: extraction — write <stem>_kindle.txt
                 (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
                 return self._make_proc(0, stdout=extract_stdout)
@@ -286,9 +286,9 @@ class TestRunPremium:
         return fake_run
 
     def test_extract_step_uses_pipeline_script_with_mode_kindle(self, small_pdf, temp_dir, settings):
-        """EB-256: extract step must invoke pdf_to_balabolka.py with --mode kindle.
+        """EB-256: extract step must invoke extract_tts_text.py with --mode kindle.
 
-        Replaces the prior test_uses_pipeline_script_with_cli_flag — pdf_to_balabolka.py
+        Replaces the prior test_uses_pipeline_script_with_cli_flag — extract_tts_text.py
         has no --cli flag; the CLI gate is --input presence and --mode controls
         the output shape.
         """
@@ -317,8 +317,8 @@ class TestRunPremium:
 
         assert result.success
         assert len(captured) == 2, f"expected 2 subprocess calls, got {len(captured)}"
-        # First call: extract via pdf_to_balabolka.py
-        assert any("pdf_to_balabolka" in str(c) for c in captured[0])
+        # First call: extract via extract_tts_text.py
+        assert any("extract_tts_text" in str(c) for c in captured[0])
         # Second call: Calibre — argv[0] is the calibre path
         assert captured[1][0] == str(settings.calibre_path)
 
@@ -328,7 +328,7 @@ class TestRunPremium:
 
         def fake_run(cmd, **kwargs):
             cmd_str = " ".join(str(c) for c in cmd)
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 # Capture env from the extract call only
                 env = kwargs.get("env") or {}
                 captured_env.update(env)
@@ -348,7 +348,7 @@ class TestRunPremium:
 
         def fake_run(cmd, **kwargs):
             cmd_str = " ".join(str(c) for c in cmd)
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 captured_cwd_for_extract.append(kwargs.get("cwd"))
                 (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted")
                 return self._make_proc(0)
@@ -400,7 +400,7 @@ class TestRunPremium:
             cmd_str = " ".join(str(c) for c in cmd)
             if "visual_qa.py" in cmd_str:
                 seen_visual_qa = True
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted")
                 return self._make_proc(0, stdout="No Gemini activity\n")
             Path(cmd[2]).write_bytes(b"epub")
@@ -438,7 +438,7 @@ class TestRunPremium:
 
         def fake_run(cmd, **kwargs):
             cmd_str = " ".join(str(c) for c in cmd)
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 call_count["extract"] += 1
                 return self._make_proc(2, stdout="error: bad input")
             call_count["calibre"] += 1
@@ -457,7 +457,7 @@ class TestRunPremium:
 
         def fake_run(cmd, **kwargs):
             cmd_str = " ".join(str(c) for c in cmd)
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 # Don't write the .txt — simulate a silent failure
                 return self._make_proc(0)
             Path(cmd[2]).write_bytes(b"epub")
@@ -474,7 +474,7 @@ class TestRunPremium:
 
         def fake_run(cmd, **kwargs):
             cmd_str = " ".join(str(c) for c in cmd)
-            if "pdf_to_balabolka" in cmd_str:
+            if "extract_tts_text" in cmd_str:
                 (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
                 return self._make_proc(0)
             # Calibre fails

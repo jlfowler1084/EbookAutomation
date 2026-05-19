@@ -34,7 +34,7 @@ def _resolve_calibre_path(paths: dict) -> Path:
         4. Last resort: return the configured value unchanged (subprocess.run will
            raise a clear FileNotFoundError, which is better than silent misbehavior)
 
-    Same pattern as `tools/pdf_to_balabolka.py:2995` — keep them in sync.
+    Same pattern as `tools/extract_tts_text.py:2995` — keep them in sync.
     """
     raw = str(paths.get("calibre", "ebook-convert"))
     if sys.platform != "win32" and raw.endswith(".exe"):
@@ -110,7 +110,7 @@ class Settings:
     token_hmac_secret: str
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
-    # Caps `--gemini-cost-limit` passed to pdf_to_balabolka.py. $1.00 is generous —
+    # Caps `--gemini-cost-limit` passed to extract_tts_text.py. $1.00 is generous —
     # typical --gemini-remediate run only re-extracts a handful of flagged pages
     # at ~$0.002/page, so most premium conversions stay well under this ceiling.
     premium_gemini_cost_limit_usd: float = 1.0
@@ -145,7 +145,7 @@ def load_settings() -> Settings:
     calibre_path = _resolve_calibre_path(paths)
     python_path = _resolve_python_path(paths)
 
-    pipeline_script = _PROJECT_ROOT / "tools" / "pdf_to_balabolka.py"
+    pipeline_script = _PROJECT_ROOT / "tools" / "extract_tts_text.py"
 
     db_path = _PROJECT_ROOT / "data" / "web_service.db"
 

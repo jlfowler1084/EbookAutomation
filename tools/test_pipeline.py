@@ -567,7 +567,7 @@ def run_extraction(pdf_path, use_pdfminer=True, test_name="test"):
 
     suffix = f"_test_{test_name.replace(' ', '_').lower()}.txt"
     cmd = [
-        sys.executable, str(SCRIPT_DIR / "pdf_to_balabolka.py"),
+        sys.executable, str(SCRIPT_DIR / "extract_tts_text.py"),
         "--input", pdf_path,
         "--mode", "kindle",
         "--output-dir", str(OUTPUT_DIR),
@@ -1221,7 +1221,7 @@ def run_spaced_letter_tests():
     """
     if str(SCRIPT_DIR) not in sys.path:
         sys.path.insert(0, str(SCRIPT_DIR))
-    from pdf_to_balabolka import fix_ocr_artifacts, _fix_ligature_splits
+    from extract_tts_text import fix_ocr_artifacts, _fix_ligature_splits
 
     results = []
     log_messages = []
@@ -1399,7 +1399,7 @@ def run_spaced_letter_tests():
 
     # ── Page-number debris removal (EB-212): _strip_page_number_debris ──
 
-    from pdf_to_balabolka import _strip_page_number_debris as _spnd
+    from extract_tts_text import _strip_page_number_debris as _spnd
 
     def _debrise(text):
         """Run a single paragraph through _strip_page_number_debris and return text."""
@@ -1477,7 +1477,7 @@ def run_spaced_letter_tests():
 
 def run_debris_tests():
     """Unit tests for compute_ocr_debris_density (EB-215)."""
-    from pdf_to_balabolka import compute_ocr_debris_density
+    from extract_tts_text import compute_ocr_debris_density
 
     results = []
     log_messages = []

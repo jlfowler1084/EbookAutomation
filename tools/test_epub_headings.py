@@ -21,7 +21,7 @@ if sys.platform == 'win32':
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from pdf_to_balabolka import (
+from extract_tts_text import (
     _extract_epub_nav_headings,
     extract_epub_headings,
     match_epub_headings_to_paragraphs,

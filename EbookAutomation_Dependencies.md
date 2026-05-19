@@ -26,25 +26,25 @@ All packages are installed via `py -3.12 -m pip install -r requirements.txt`. Th
 
 | Package | Pinned Version | Purpose | Used By |
 |---|---|---|---|
-| **pypdf** | `6.9.2` | Primary PDF text extraction (fast digital PDFs) | `pdf_to_balabolka.py` |
-| **pdfminer.six** | `20260107` | Fallback PDF extraction for word-merging / column-bleed PDFs | `pdf_to_balabolka.py` |
-| **PyMuPDF** | `1.27.2.2` | Column-aware extraction for two-column academic PDFs | `pdf_to_balabolka.py`, `visual_qa.py` |
-| **pdf2image** | `1.17.0` | PDF → PNG rendering for cover extraction, OCR, Visual QA | `pdf_to_balabolka.py`, `visual_qa.py`, `gemini_ocr.py` |
-| **pytesseract** | `0.3.13` | Python ↔ Tesseract bridge for Tier 2 OCR | `pdf_to_balabolka.py` |
-| **EbookLib** | `0.20` | EPUB parsing for native EPUB extraction path | `pdf_to_balabolka.py` |
-| **beautifulsoup4** | `4.14.3` | HTML parsing for EPUB / Kindle HTML post-processing | `pdf_to_balabolka.py` |
+| **pypdf** | `6.9.2` | Primary PDF text extraction (fast digital PDFs) | `extract_tts_text.py` |
+| **pdfminer.six** | `20260107` | Fallback PDF extraction for word-merging / column-bleed PDFs | `extract_tts_text.py` |
+| **PyMuPDF** | `1.27.2.2` | Column-aware extraction for two-column academic PDFs | `extract_tts_text.py`, `visual_qa.py` |
+| **pdf2image** | `1.17.0` | PDF → PNG rendering for cover extraction, OCR, Visual QA | `extract_tts_text.py`, `visual_qa.py`, `gemini_ocr.py` |
+| **pytesseract** | `0.3.13` | Python ↔ Tesseract bridge for Tier 2 OCR | `extract_tts_text.py` |
+| **EbookLib** | `0.20` | EPUB parsing for native EPUB extraction path | `extract_tts_text.py` |
+| **beautifulsoup4** | `4.14.3` | HTML parsing for EPUB / Kindle HTML post-processing | `extract_tts_text.py` |
 | **google-genai** | `1.68.0` | Gemini 2.5 Flash — Tier 2.5 OCR (10-20× cheaper than Claude Vision) | `gemini_ocr.py`, `visual_qa.py` fallback |
 | **openai** | `1.109.1` | OpenAI-compatible client for OpenRouter (cloud VLMs) and local vLLM endpoints | `tools/llm_providers/` |
 | **requests** | `2.33.0` | HTTP client — FOH forum scraping, Kindle email webhooks | `foh_scraper.py`, `email_to_kindle.py` |
-| **pyspellchecker** | `0.9.0` | Dictionary validation for OCR artifact correction (rn ↔ m, ligature splits) | `pdf_to_balabolka.py` → `fix_ocr_artifacts()` |
+| **pyspellchecker** | `0.9.0` | Dictionary validation for OCR artifact correction (rn ↔ m, ligature splits) | `extract_tts_text.py` → `fix_ocr_artifacts()` |
 | **python-dotenv** | `1.2.2` | Loads API keys from `.env` at runtime | All tools that touch external APIs |
 
 ### Optional (features degrade gracefully when missing)
 
 | Package | Pinned Version | Purpose | Used By |
 |---|---|---|---|
-| **pdfplumber** | `0.11.5` | Coordinate-based heading resolution for font-metadata heading detection | `pdf_to_balabolka.py` → `detect_headings_font.py` |
-| **tkinter** | (stdlib) | GUI mode for `pdf_to_balabolka.py` | `pdf_to_balabolka.py` |
+| **pdfplumber** | `0.11.5` | Coordinate-based heading resolution for font-metadata heading detection | `extract_tts_text.py` → `detect_headings_font.py` |
+| **tkinter** | (stdlib) | GUI mode for `extract_tts_text.py` | `extract_tts_text.py` |
 
 ### Transitive / required by other packages
 
@@ -76,7 +76,7 @@ Every Python script in `tools/` that ships with the project, grouped by role. Te
 
 | Script | Purpose |
 |---|---|
-| `pdf_to_balabolka.py` | Core extraction engine (GUI + CLI). Routes through tiered extraction, heading detection, footnote handling, Balabolka/Kindle output. |
+| `extract_tts_text.py` | Core extraction engine (GUI + CLI). Routes through tiered extraction, heading detection, footnote handling, Balabolka/Kindle output. |
 | `preflight_analysis.py` | Analyzes a source document in <10s, picks extraction strategy + conversion recipe. |
 | `classify_source.py` | Classifies PDFs as digital / scan / OCR based on text density and producer metadata. |
 | `detect_headings_font.py` | pdfplumber-based font-metadata heading detection. |

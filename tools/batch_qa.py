@@ -68,7 +68,7 @@ except ImportError:
     HAS_TEST_PIPELINE = False
 
 try:
-    from pdf_to_balabolka import score_text_layer_quality
+    from extract_tts_text import score_text_layer_quality
     HAS_TEXT_SCORER = True
 except ImportError:
     HAS_TEXT_SCORER = False
@@ -579,7 +579,7 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True, is_scan=None):
     ext = Path(pdf_path).suffix.lstrip('.').lower()
 
     cmd = [
-        sys.executable, str(SCRIPT_DIR / "pdf_to_balabolka.py"),
+        sys.executable, str(SCRIPT_DIR / "extract_tts_text.py"),
         "--input", str(pdf_path),
         "--mode", "kindle",
         "--output-dir", str(output_dir),
@@ -653,7 +653,7 @@ def run_extraction_for_book(pdf_path, output_dir, quick=True, is_scan=None):
         return None, None, "", f"TIMEOUT: extraction exceeded {timeout}s", -1
 
     # Find the output file (HTML or TXT)
-    # Must match pdf_to_balabolka.py's sanitization (line ~8821)
+    # Must match extract_tts_text.py's sanitization (line ~8821)
     stem = Path(pdf_path).stem
     safe_stem = re.sub(r"[^\w\s\-]", "", stem).strip().replace(" ", "_")
 
@@ -890,7 +890,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
 
         # DE-2: Bookmark depth and count
         try:
-            from pdf_to_balabolka import extract_bookmarks as _extract_bm
+            from extract_tts_text import extract_bookmarks as _extract_bm
             _bms = _extract_bm(str(file_path), lambda msg: None)
             diag["structure"]["bookmark_count"] = len(_bms) if _bms else 0
             if _bms:
@@ -903,7 +903,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         # Recorded for diagnostics only — classify_pdf() inside
         # run_extraction_for_book() decides OCR routing.
         try:
-            from pdf_to_balabolka import detect_image_density
+            from extract_tts_text import detect_image_density
             _density = detect_image_density(str(file_path), lambda msg: None)
             diag["metadata"]["image_density"] = _density
             if _density.get('likely_scan'):
@@ -952,7 +952,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                 "fixes": 0, "mojibake": 0, "control_chars": 0}
             if html_content and len(html_content) > 100:
                 try:
-                    from pdf_to_balabolka import normalize_encoding
+                    from extract_tts_text import normalize_encoding
                     cleaned_html, enc_stats = normalize_encoding(html_content)
                     if enc_stats['replacements_made'] > 0:
                         diag["encoding_normalization"] = {
@@ -970,7 +970,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
 
             # Script detection
             try:
-                from pdf_to_balabolka import detect_scripts
+                from extract_tts_text import detect_scripts
                 import re as _re
                 _plain_text = _re.sub(r'<[^>]+>', '', html_content)
                 scripts = detect_scripts(_plain_text)
@@ -1039,7 +1039,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
                 pass
         if _body_for_encoding and len(_body_for_encoding) > 100:
             try:
-                from pdf_to_balabolka import analyze_encoding_distribution
+                from extract_tts_text import analyze_encoding_distribution
                 diag["encoding"] = analyze_encoding_distribution(_body_for_encoding)
                 if diag["encoding"].get('latin_ext_pct', 0) > 5:
                     diag["extraction"]["warnings"].append(
@@ -1079,7 +1079,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
     if ext == 'pdf' and diag["extraction"]["success"]:
         # Probe column layout for diagnostics
         try:
-            from pdf_to_balabolka import detect_column_layout
+            from extract_tts_text import detect_column_layout
             col_info = detect_column_layout(
                 str(file_path), lambda msg: None)
             diag["source_classification"]["is_multicolumn"] = col_info.get(

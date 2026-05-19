@@ -2,7 +2,7 @@
 import sys, os, unittest
 sys.path.insert(0, os.path.dirname(__file__))
 
-from pdf_to_balabolka import _flush_line_group
+from extract_tts_text import _flush_line_group
 
 
 class TestFlushLineGroupY0(unittest.TestCase):
@@ -138,7 +138,7 @@ class TestFootnoteHTMLRendering(unittest.TestCase):
 
     def test_footnotes_in_div(self):
         """Footnote paragraphs should be wrapped in <div class="footnotes">."""
-        from pdf_to_balabolka import format_paragraphs_as_html
+        from extract_tts_text import format_paragraphs_as_html
         paras = [
             self._make_para('', page=1, is_page_marker=True),
             self._make_para('Body paragraph text.', page=1),
@@ -153,7 +153,7 @@ class TestFootnoteHTMLRendering(unittest.TestCase):
 
     def test_skip_footnotes_removes_them(self):
         """With skip_footnotes=True, footnotes should not appear in output."""
-        from pdf_to_balabolka import format_paragraphs_as_html
+        from extract_tts_text import format_paragraphs_as_html
         paras = [
             self._make_para('', page=1, is_page_marker=True),
             self._make_para('Body paragraph text.', page=1),

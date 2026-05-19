@@ -43,7 +43,7 @@ preflight_analysis.py                    ← classify source (digital / scan / O
                                            pick extraction strategy + recipe
   │
   ▼
-pdf_to_balabolka.py                      ← tiered extraction:
+extract_tts_text.py                      ← tiered extraction:
   │                                        pypdf → pdfminer.six → PyMuPDF → OCR
   │                                        (Tesseract → Gemini Flash)
   ▼
@@ -88,7 +88,7 @@ EbookAutomation/
 │   ├── Run-Pipeline.ps1        # Scheduled-task entry point
 │   └── launch.bat              # Quick-launch wrapper
 ├── tools/
-│   ├── pdf_to_balabolka.py     # Core extraction engine (GUI + CLI)
+│   ├── extract_tts_text.py     # Core extraction engine (GUI + CLI)
 │   ├── preflight_analysis.py   # Source classification + strategy recipe
 │   ├── classify_source.py      # Digital / scan / OCR detection
 │   ├── gemini_ocr.py           # Tier 2.5 OCR via Gemini Flash
@@ -125,7 +125,7 @@ EbookAutomation/
 ### Balabolka mode (plaintext with voice tags)
 
 ```powershell
-py -3.12 tools\pdf_to_balabolka.py --input "book.pdf" --output-dir output\balabolka-txt
+py -3.12 tools\extract_tts_text.py --input "book.pdf" --output-dir output\balabolka-txt
 ```
 
 Output: `<title>_balabolka.txt` with ALL CAPS chapter headings, embedded SAPI voice tags, and silence markers. Feed it to Balabolka to split into per-chapter MP3s.
@@ -133,7 +133,7 @@ Output: `<title>_balabolka.txt` with ALL CAPS chapter headings, embedded SAPI vo
 ### Kindle HTML mode
 
 ```powershell
-py -3.12 tools\pdf_to_balabolka.py --input "book.pdf" --mode kindle --html-extraction --output-dir output\kindle
+py -3.12 tools\extract_tts_text.py --input "book.pdf" --mode kindle --html-extraction --output-dir output\kindle
 ```
 
 Output: semantic HTML with proper heading hierarchy, blockquotes, and endnote links. Calibre converts it to KFX/AZW3.
@@ -271,4 +271,4 @@ py -3.12 -m pytest tests/
 
 ## Status
 
-Active personal project. Not accepting contributions, but feel free to browse the code — the interesting bits are in `tools/pdf_to_balabolka.py` (tiered extraction), `tools/visual_qa.py` + `tools/llm_providers/` (multi-provider VLM routing), `tools/pattern_db.py` (the learning store), and `module/EbookAutomation.psm1` (the orchestration surface).
+Active personal project. Not accepting contributions, but feel free to browse the code — the interesting bits are in `tools/extract_tts_text.py` (tiered extraction), `tools/visual_qa.py` + `tools/llm_providers/` (multi-provider VLM routing), `tools/pattern_db.py` (the learning store), and `module/EbookAutomation.psm1` (the orchestration surface).

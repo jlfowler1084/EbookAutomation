@@ -24,7 +24,7 @@ from web_service.config import Settings
 log = logging.getLogger(__name__)
 
 # MIME types filetype can positively identify as supported ebook formats.
-# Source: tools/pdf_to_balabolka.py SUPPORTED_FORMATS list.
+# Source: tools/extract_tts_text.py SUPPORTED_FORMATS list.
 DETECTABLE_MIME_TYPES: dict[str, str] = {
     "application/pdf": "pdf",
     "application/epub+zip": "epub",

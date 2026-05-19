@@ -91,7 +91,7 @@ def _safe_test_name(pdf_path: str, book_name: str) -> str:
     over the NTFS hard limit — causing Python 3.12 to raise
     [Errno 22] Invalid argument on open(), regardless of which output
     directory is used.  Shortening the test_name is the only safe fix that
-    doesn't touch pdf_to_balabolka.py.
+    doesn't touch extract_tts_text.py.
     """
     import re as _re
     stem = Path(pdf_path).stem
