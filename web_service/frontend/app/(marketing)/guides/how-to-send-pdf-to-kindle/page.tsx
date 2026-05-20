@@ -194,9 +194,11 @@ export default function HowToSendPdfToKindle() {
               arrives in minutes. For academic papers with two-column layouts or
               tappable footnote links, Send-to-Kindle&apos;s conversion strips that
               structure; use USB cable to transfer the original file, or convert
-              to KFX with leafbind first. For EPUBs and MOBI files,
-              Send-to-Kindle email and the app both work natively. For files
-              over 50 MB, only USB cable transfer works without size restrictions.
+              to KFX with leafbind first. EPUB files work natively via
+              Send-to-Kindle email and the app (DRM-free only). MOBI files are
+              not accepted via email or app (Amazon removed MOBI support in
+              2022); use USB cable for MOBI. For files over 50 MB, only USB
+              cable transfer works without size restrictions.
             </p>
           </div>
 
@@ -453,11 +455,14 @@ export default function HowToSendPdfToKindle() {
               </h3>
               <div className="text-text-base leading-relaxed space-y-3 text-base">
                 <p>
-                  MOBI is an older Kindle format that Amazon deprecated in 2022 for
-                  newer devices, but Send-to-Kindle email still accepts MOBI files
-                  and delivers them. If you have MOBI files from older Calibre
-                  conversions or older ebook purchases, they will still work via
-                  email delivery on supported devices.
+                  Amazon deprecated MOBI from Send-to-Kindle email and the app
+                  in 2022. Attaching a MOBI file to a Send-to-Kindle email will
+                  not deliver — the file is rejected at Amazon&apos;s server.
+                  MOBI still works via USB cable: copy the file into the
+                  Kindle&apos;s Documents folder and it opens normally on
+                  supported devices. If you have MOBI files from older
+                  Calibre conversions, USB sideload (or converting them to
+                  EPUB or AZW3 first) is the path forward.
                 </p>
               </div>
             </div>
@@ -477,11 +482,14 @@ export default function HowToSendPdfToKindle() {
               Files or another app, tap Share, then Send to Kindle.
             </p>
             <p>
-              The app delivers the same formats as the email method (PDF, EPUB, DOC,
-              TXT, MOBI) with the same 50 MB limit and the same conversion behavior
-              for PDFs. The main advantage over email is convenience — no email client
-              required, and the share sheet integration works from any app that can
-              share files.
+              The app delivers the same formats as the email method (PDF, EPUB,
+              DOC/DOCX, RTF, TXT, HTML, and common image formats) with the same
+              50 MB limit and the same conversion behavior for PDFs. MOBI is not
+              accepted via the app — Amazon deprecated MOBI from Send-to-Kindle
+              email and app in 2022; USB sideload is the path for MOBI files. The
+              main advantage over email is convenience — no email client required,
+              and the share sheet integration works from any app that can share
+              files.
             </p>
             <p>
               The app requires your sending device&apos;s Amazon account email address to
