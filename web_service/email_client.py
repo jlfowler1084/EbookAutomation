@@ -23,6 +23,7 @@ plus test_kindle_send_error_has_no_context_or_cause):
 
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -114,12 +115,25 @@ def send_with_attachment(
     from web_service.config import get_settings as _get_settings
     resend_module.api_key = _get_settings().resend_api_key
 
+    # Resend's local-attachment contract is Base64-encoded string content; the
+    # 40 MB limit is measured AFTER encoding. The Python SDK does NOT
+    # auto-encode raw bytes — passing bytes either fails or corrupts the
+    # attachment. Encode here so callers can hand us raw bytes from
+    # Path.read_bytes() without thinking about the wire format.
+    encoded_attachments: list[dict[str, Any]] = []
+    for att in attachments:
+        att_out = dict(att)
+        content = att_out.get("content")
+        if isinstance(content, bytes):
+            att_out["content"] = base64.b64encode(content).decode("ascii")
+        encoded_attachments.append(att_out)
+
     payload: dict[str, Any] = {
         "from": from_addr,
         "to": to,
         "subject": subject,
         "html": html,
-        "attachments": attachments,
+        "attachments": encoded_attachments,
     }
 
     # Same pattern as the import block: capture the failure condition inside

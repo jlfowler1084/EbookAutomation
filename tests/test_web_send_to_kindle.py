@@ -538,3 +538,104 @@ class TestSendToKindleSetsDeliveryStatus:
             f"winning send. Got: {row[1]!r}. Unit 10's webhook expects this "
             f"as the baseline state to transition from."
         )
+
+
+# ---------------------------------------------------------------------------
+# F6 — Disabled deploys must boot even when Resend env vars are absent
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleDisabledStartupTolerance:
+    """Production deploys that ship this PR with WEB_SEND_TO_KINDLE_ENABLED
+    unset (default false) must not be blocked from booting just because
+    the Resend env vars haven't been configured yet. _require_env on those
+    fields should only fire when the flag is enabled.
+    """
+
+    def test_flag_false_with_missing_resend_env_vars_loads_settings(
+        self, project_root, monkeypatch
+    ):
+        """Unset the flag and BOTH Resend env vars; load_settings() must succeed."""
+        from web_service.config import load_settings
+
+        monkeypatch.delenv("WEB_SEND_TO_KINDLE_ENABLED", raising=False)
+        monkeypatch.delenv("WEB_SEND_TO_KINDLE_FROM", raising=False)
+        monkeypatch.delenv("WEB_RESEND_API_KEY", raising=False)
+
+        # load_settings must not raise.
+        settings = load_settings()
+        assert settings.send_to_kindle_enabled is False
+        # Empty placeholders are fine — the route returns 503 SERVICE_DISABLED
+        # before reading these fields. They're only required when the flag flips.
+        assert settings.send_to_kindle_from == ""
+        assert settings.resend_api_key == ""
+
+    def test_flag_true_with_missing_resend_env_vars_raises(
+        self, project_root, monkeypatch
+    ):
+        """When the flag IS enabled, the env vars are still load-bearing."""
+        from web_service.config import ConfigurationError, load_settings
+
+        monkeypatch.setenv("WEB_SEND_TO_KINDLE_ENABLED", "true")
+        monkeypatch.delenv("WEB_SEND_TO_KINDLE_FROM", raising=False)
+        monkeypatch.delenv("WEB_RESEND_API_KEY", raising=False)
+
+        with pytest.raises(ConfigurationError):
+            load_settings()
+
+
+# ---------------------------------------------------------------------------
+# F7 — Resend attachment content must be Base64 string, not raw bytes
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleAttachmentEncoding:
+    """Resend's official docs require Base64-encoded content for local
+    attachments; the 40 MB limit is measured after encoding. The Python SDK
+    does NOT auto-encode raw bytes. The wrapper MUST encode before calling
+    Emails.send.
+    """
+
+    def test_attachment_content_is_base64_string(self, project_root):
+        """Direct unit test on email_client. Capture the payload that gets
+        passed to resend.Emails.send and assert the attachment's content
+        is a str whose base64 decode equals the original bytes.
+        """
+        import base64
+
+        from web_service import email_client
+
+        captured: dict = {}
+
+        def _capture(payload):
+            captured.update(payload)
+            return {"id": "test_msg_id"}
+
+        original_content = b"PK\x03\x04" + b"\x00" * 200
+
+        with patch("resend.Emails.send", side_effect=_capture):
+            email_client.send_with_attachment(
+                from_addr="kindle@send.example.com",
+                to=["test@kindle.com"],
+                subject="t",
+                html="<p>t</p>",
+                attachments=[
+                    {"filename": "book.epub", "content": original_content},
+                ],
+            )
+
+        attachments = captured.get("attachments", [])
+        assert len(attachments) == 1
+        att = attachments[0]
+        assert att["filename"] == "book.epub", "filename must round-trip unchanged"
+
+        content = att["content"]
+        assert isinstance(content, str), (
+            f"Resend expects a base64 string for local attachments, not "
+            f"{type(content).__name__}. Raw bytes get rejected or corrupted."
+        )
+        # The base64 decode must reproduce the original bytes exactly.
+        assert base64.b64decode(content) == original_content, (
+            "base64.b64decode(attachment.content) must equal the original "
+            "bytes the route passed in"
+        )

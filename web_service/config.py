@@ -132,6 +132,19 @@ class Settings:
     premium_vqa_cost_limit_usd: float = 0.5
 
 
+def _send_to_kindle_enabled_from_env() -> bool:
+    """Parse WEB_SEND_TO_KINDLE_ENABLED into a bool. Default False.
+
+    Used twice during Settings construction (once for the boolean field
+    itself, once to gate _require_env on the two Resend env vars), so
+    factored out to avoid the conditional drift risk of duplicating
+    `os.environ.get(...).lower() in {...}` in three places.
+    """
+    return os.environ.get("WEB_SEND_TO_KINDLE_ENABLED", "false").lower() in {
+        "true", "1", "yes",
+    }
+
+
 def load_settings() -> Settings:
     """Load Settings from config/settings.json and environment variables."""
     settings_path = _PROJECT_ROOT / "config" / "settings.json"
@@ -196,11 +209,22 @@ def load_settings() -> Settings:
         stripe_webhook_secret=_require_env("STRIPE_WEBHOOK_SECRET"),
         stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
-        send_to_kindle_from=_require_env("WEB_SEND_TO_KINDLE_FROM"),
-        resend_api_key=_require_env("WEB_RESEND_API_KEY"),
-        send_to_kindle_enabled=os.environ.get(
-            "WEB_SEND_TO_KINDLE_ENABLED", "false"
-        ).lower() in {"true", "1", "yes"},
+        # The Resend env vars are only load-bearing when the feature flag is
+        # enabled. Disabled deploys (the default) must boot even when these
+        # are unset — otherwise merging this PR can block a production
+        # restart on hosts that haven't been configured for Send-to-Kindle
+        # yet. _require_env fires only when the flag is true.
+        send_to_kindle_enabled=_send_to_kindle_enabled_from_env(),
+        send_to_kindle_from=(
+            _require_env("WEB_SEND_TO_KINDLE_FROM")
+            if _send_to_kindle_enabled_from_env()
+            else os.environ.get("WEB_SEND_TO_KINDLE_FROM", "")
+        ),
+        resend_api_key=(
+            _require_env("WEB_RESEND_API_KEY")
+            if _send_to_kindle_enabled_from_env()
+            else os.environ.get("WEB_RESEND_API_KEY", "")
+        ),
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
             os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")
