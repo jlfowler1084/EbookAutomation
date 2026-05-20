@@ -36,6 +36,7 @@ from web_service.routes import (
     payment,
     recover,
     recovery_events,
+    reconvert,
     status,
     webhook,
 )
@@ -231,6 +232,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(convert.router)
+    application.include_router(reconvert.router)
     application.include_router(status.router)
     application.include_router(download.router)
     application.include_router(checkout.router)

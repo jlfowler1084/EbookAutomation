@@ -19,7 +19,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from web_service import job_store, pipeline_runner, token_store
+from web_service import job_store, pipeline_runner, recovery_events_store, token_store
 from web_service.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -88,6 +88,7 @@ async def dispatch_job(job_id: str) -> None:
         except Exception as exc:
             log.exception("Unhandled error in job %s", job_id)
             job_store.set_failed(job_id, str(exc))
+            await _maybe_refund_failed_child(job, reason="dispatch_exception")
             return
 
         if result.success:
@@ -101,6 +102,67 @@ async def dispatch_job(job_id: str) -> None:
             )
         else:
             job_store.set_failed(job_id, result.error_message)
+            await _maybe_refund_failed_child(job, reason="child_job_failed")
+
+
+async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
+    """Refund a premium re-convert child's token after the child fails (EB-324 R2.7).
+
+    Strict no-op when token_hash is None — every free conversion failure path
+    must remain refund-free, so the guard MUST short-circuit before touching
+    the executor.
+
+    Best-effort: any error inside the refund call is logged but never
+    propagated; the caller has already set_failed on the job row.
+    """
+    token_hash_hex = job.get("token_hash")
+    if not token_hash_hex:
+        return
+    if billing_executor is None:
+        log.warning(
+            "Cannot refund failed child %s: billing_executor not initialised",
+            job["job_id"],
+        )
+        return
+    try:
+        token_hash_bytes = bytes.fromhex(token_hash_hex)
+    except ValueError:
+        log.warning(
+            "Cannot refund failed child %s: token_hash is not valid hex (%r)",
+            job["job_id"],
+            token_hash_hex,
+        )
+        return
+    loop = asyncio.get_event_loop()
+    try:
+        refund = await loop.run_in_executor(
+            billing_executor,
+            token_store.refund_token,
+            token_hash_bytes,
+            job["job_id"],
+            reason,
+        )
+    except Exception:
+        log.exception(
+            "Refund failed inside billing_executor for child %s", job["job_id"]
+        )
+        return
+
+    try:
+        recovery_events_store.log_event(
+            "reconvert_refund_applied",
+            details={
+                "child_job_id": job["job_id"],
+                "parent_job_id": job.get("parent_job_id"),
+                "reason": reason,
+                "refunded": refund.refunded,
+                "ledgered": refund.ledgered,
+                "refund_id": refund.refund_id,
+            },
+        )
+    except Exception:
+        # Telemetry must never block the dispatcher's return path.
+        log.exception("Telemetry log_event failed for refund on child %s", job["job_id"])
 
 
 async def cleanup_expired_jobs() -> None:
