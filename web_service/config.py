@@ -108,6 +108,11 @@ class Settings:
     stripe_api_version: str
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
+    # EB-324 Unit 4: Send-to-Kindle delivery. Both fail-closed via _require_env.
+    # send_to_kindle_from is the verified Resend domain sender address (e.g.,
+    # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
+    send_to_kindle_from: str
+    resend_api_key: str
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
     # Caps `--gemini-cost-limit` passed to extract_tts_text.py. $1.00 is generous —
@@ -187,6 +192,8 @@ def load_settings() -> Settings:
         stripe_webhook_secret=_require_env("STRIPE_WEBHOOK_SECRET"),
         stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
+        send_to_kindle_from=_require_env("WEB_SEND_TO_KINDLE_FROM"),
+        resend_api_key=_require_env("WEB_RESEND_API_KEY"),
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
             os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")
