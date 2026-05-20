@@ -462,6 +462,70 @@ class TestDownloadEndpoint:
         resp = tc.get(f"/download/{jid}")
         assert resp.status_code == 410
 
+    # ------------------------------------------------------------------ EB-324
+
+    def test_eb_324_download_does_not_delete_output_or_expire_job(self, client, tmp_path):
+        """EB-324 Unit 2 regression: download must NOT delete output_path or call
+        set_expired. The TTL sweep in job_queue.py is the sole cleanup mechanism;
+        post-download persistence is what enables the action cluster (Send-to-Kindle
+        + re-convert) to work after the user has clicked Download.
+
+        This test would fail against the prior implementation (where
+        _cleanup_after_download was a background task that unlink'd the file and
+        called job_store.set_expired). Pass criteria after Unit 2 lands:
+            - File still exists on disk after the response is fully consumed
+            - Job's `status` field is still STATUS_DONE (not STATUS_EXPIRED)
+            - A subsequent GET /download/{jid} returns 200 with the same bytes
+            - A subsequent GET /status/{jid} returns the done payload
+        """
+        import web_service.job_store as js
+
+        tc, db_path = client
+        output_file = tmp_path / "output.epub"
+        output_file.write_bytes(b"epub bytes that survive the download")
+        jid = _seed_job(db_path, STATUS_DONE, output_file)
+
+        # First download: consume the response fully so any BackgroundTasks
+        # would have a chance to run.
+        resp1 = tc.get(f"/download/{jid}")
+        assert resp1.status_code == 200
+        assert resp1.content == b"epub bytes that survive the download"
+
+        # EB-324 invariant 1: output file still exists.
+        assert output_file.exists(), (
+            "EB-324 Unit 2 regression: download deleted the output file. The "
+            "_cleanup_after_download background task should have been removed."
+        )
+
+        # EB-324 invariant 2: job is not marked expired.
+        job_row = js.get_job(jid, db_path=db_path)
+        assert job_row is not None
+        assert job_row["status"] == STATUS_DONE, (
+            f"EB-324 Unit 2 regression: download marked job {jid} as "
+            f"{job_row['status']!r}. set_expired should not be called on the "
+            "post-download path; the TTL sweep handles expiry."
+        )
+
+        # EB-324 invariant 3: a second download still works.
+        resp2 = tc.get(f"/download/{jid}")
+        assert resp2.status_code == 200
+        assert resp2.content == b"epub bytes that survive the download"
+
+    def test_eb_324_head_probe_does_not_delete_output(self, client, tmp_path):
+        """HEAD requests were already excluded from the prior cleanup; this test
+        locks in that they remain side-effect-free after Unit 2. Belt and braces."""
+        import web_service.job_store as js
+
+        tc, db_path = client
+        output_file = tmp_path / "output.epub"
+        output_file.write_bytes(b"x" * 32)
+        jid = _seed_job(db_path, STATUS_DONE, output_file)
+
+        resp = tc.head(f"/download/{jid}")
+        assert resp.status_code == 200
+        assert output_file.exists()
+        assert js.get_job(jid, db_path=db_path)["status"] == STATUS_DONE
+
     # ------------------------------------------------------------------ EB-274
 
     def _seed_done_job_with_filename(self, db_path, tmp_path, *,

@@ -1,11 +1,17 @@
-"""GET/HEAD /download/{job_id} — serve the converted file, then trigger cleanup."""
+"""GET/HEAD /download/{job_id} — serve the converted file.
+
+EB-324 Unit 2: this handler is read-only on the job-store side. The TTL sweep
+in web_service/job_queue.py:_cleanup_job is the sole cleanup mechanism — the
+output file survives download so the result-page action cluster can offer
+Send-to-Kindle and re-convert against it within the retention window.
+"""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from web_service import job_store
@@ -54,13 +60,25 @@ def _download_filename(original: str | None, output_path: Path) -> str:
 # EB-274: api_route(..., methods=["GET", "HEAD"]) lets Starlette serve HEAD
 # directly from the same handler — it returns headers only, no body, so
 # Lighthouse / link-checkers / browser prefetch all stop getting 405s.
+#
+# EB-324 Unit 2: download no longer deletes the output file or marks the job
+# expired. The TTL sweep in web_service/job_queue.py:_cleanup_job is the sole
+# cleanup mechanism — letting the file survive download is required for the
+# post-conversion action cluster (Send-to-Kindle and re-convert both run after
+# the user has downloaded the EPUB and need the artifacts to still exist on
+# disk). The earlier `_cleanup_after_download` background task has been
+# removed entirely; `set_expired` is now only invoked by the TTL sweep.
 @router.api_route("/download/{job_id}", methods=["GET", "HEAD"])
-async def download_file(
-    job_id: str,
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> FileResponse:
-    """Serve the converted output file and schedule cleanup after delivery."""
+async def download_file(job_id: str) -> FileResponse:
+    """Serve the converted output file. Cleanup is the TTL sweep's responsibility.
+
+    EB-324 Unit 2: this handler no longer schedules a post-download deletion.
+    Allowing the file to persist until the TTL sweep is what lets the
+    post-conversion action cluster offer Send-to-Kindle / re-convert after the
+    user has clicked Download. The job row remains in `status=done` until the
+    TTL elapses; at that point the sweep wipes `temp_dir` and the next
+    `GET /status/{job_id}` returns `status=expired` with `output_present=false`.
+    """
     job = job_store.get_job(job_id)
 
     if job is None:
@@ -91,22 +109,9 @@ async def download_file(
     filename = _download_filename(job.get("original_filename"), output_path)
     media_type = _media_type_for(job.get("output_fmt", ""), output_path)
 
-    # Only schedule cleanup on GET; a HEAD probe shouldn't trigger file deletion.
-    if request.method == "GET":
-        background_tasks.add_task(_cleanup_after_download, job_id, str(output_path))
-
     return FileResponse(
         path=str(output_path),
         filename=filename,
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-def _cleanup_after_download(job_id: str, output_path: str) -> None:
-    """Delete output file and mark job expired — runs after response is sent."""
-    path = Path(output_path)
-    if path.exists():
-        path.unlink(missing_ok=True)
-        log.info("Deleted output file for job %s after download", job_id)
-    job_store.set_expired(job_id)

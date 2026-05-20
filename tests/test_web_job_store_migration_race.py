@@ -126,3 +126,87 @@ def test_apply_migrations_no_op_on_fully_migrated_db(tmp_path: Path) -> None:
     final.close()
     for col, _type in _LATER_COLUMNS:
         assert cols.count(col) == 1, f"column {col} duplicated to {cols.count(col)} entries"
+
+
+def test_token_hash_column_is_not_duplicated_by_eb_324_migration(tmp_path: Path) -> None:
+    """EB-324 P0-1 regression: jobs.token_hash already exists in the base _SCHEMA_SQL
+    (line 35) as TEXT and is reused for refund correlation per the EB-324 plan.
+
+    The earlier draft of the plan called for adding `token_hash BLOB` via
+    _LATER_COLUMNS, which would have raised `sqlite3.OperationalError: duplicate
+    column name: token_hash` on every prod boot. This regression test asserts that
+    _LATER_COLUMNS does NOT contain a `token_hash` entry, and that after init_db()
+    the column appears exactly once with TEXT affinity (the base-schema type).
+    """
+    from web_service.job_store import init_db
+
+    # Static assertion: _LATER_COLUMNS must not include token_hash. If a future
+    # change ever re-adds it, this test fails immediately with a clear message.
+    assert all(col != "token_hash" for col, _type in _LATER_COLUMNS), (
+        "token_hash is in _LATER_COLUMNS — the column already exists in the base "
+        "_SCHEMA_SQL (line 35) as TEXT. Adding it to _LATER_COLUMNS would raise "
+        "duplicate-column-name on every prod boot. See EB-324 plan P0-1 resolution."
+    )
+
+    # Dynamic assertion: a fresh DB, after init_db(), has token_hash exactly once
+    # and with the TEXT affinity from the base schema.
+    db_path = tmp_path / "token_hash_check.db"
+    init_db(db_path)
+
+    final = sqlite3.connect(str(db_path))
+    rows = final.execute("PRAGMA table_info(jobs)").fetchall()
+    final.close()
+    token_hash_rows = [row for row in rows if row[1] == "token_hash"]
+    assert len(token_hash_rows) == 1, (
+        f"token_hash appears {len(token_hash_rows)} times in jobs schema, expected 1"
+    )
+    # PRAGMA table_info: row[2] is the type clause (case preserved from CREATE TABLE).
+    assert token_hash_rows[0][2].upper() == "TEXT", (
+        f"token_hash type is {token_hash_rows[0][2]!r}, expected TEXT — if this fails, "
+        "the base schema has drifted from the EB-324 plan's reuse-as-hex strategy."
+    )
+
+
+def test_eb_324_new_columns_present_after_migration(tmp_path: Path) -> None:
+    """EB-324 Unit 1: parent_job_id, resend_message_id, kindle_delivery_status
+    must land via _LATER_COLUMNS and appear exactly once after init_db()."""
+    from web_service.job_store import init_db
+
+    db_path = tmp_path / "eb_324_columns.db"
+    init_db(db_path)
+
+    final = sqlite3.connect(str(db_path))
+    cols = [row[1] for row in final.execute("PRAGMA table_info(jobs)").fetchall()]
+    final.close()
+
+    for required in ("parent_job_id", "resend_message_id", "kindle_delivery_status"):
+        assert required in cols, f"EB-324 column {required} missing after init_db()"
+        assert cols.count(required) == 1, (
+            f"EB-324 column {required} appears {cols.count(required)} times, expected 1"
+        )
+
+
+def test_eb_324_indexes_created_after_migration(tmp_path: Path) -> None:
+    """EB-324 Unit 1: idx_jobs_parent_job_id and idx_jobs_resend_message_id must
+    land via _LATER_INDEXES inside _apply_migrations (NOT in _SCHEMA_SQL, which
+    runs before the columns exist)."""
+    from web_service.job_store import init_db
+
+    db_path = tmp_path / "eb_324_indexes.db"
+    init_db(db_path)
+
+    final = sqlite3.connect(str(db_path))
+    indexes = {
+        row[0]
+        for row in final.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='jobs'"
+        ).fetchall()
+    }
+    final.close()
+
+    assert "idx_jobs_parent_job_id" in indexes, (
+        "idx_jobs_parent_job_id missing — list_children() lookup will table-scan"
+    )
+    assert "idx_jobs_resend_message_id" in indexes, (
+        "idx_jobs_resend_message_id missing — find_by_resend_message_id() will table-scan"
+    )
