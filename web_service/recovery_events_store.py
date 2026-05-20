@@ -52,10 +52,39 @@ CREATE INDEX IF NOT EXISTS idx_recovery_events_type_time
 
 # Whitelist of accepted event_type values. Anything else is rejected at
 # log_event() time to keep the dataset clean for the post-measurement query.
+#
+# EB-324 Wave 1 (Unit 9a) adds 14 new event types covering re-convert,
+# Send-to-Kindle send-side, Unit 10 webhook delivery-side, and result-page
+# UX. The send-side `*_send_error` (Resend 4xx/5xx at API-call time) and the
+# delivery-side `*_delivery_failed` (Resend's `email.failed` webhook reporting
+# post-acceptance receiver-MX refusal) are deliberately distinct names so
+# dashboards can tell "we couldn't hand it to Resend" from "Resend tried to
+# deliver and the receiving MX rejected." format_selector_engaged is NOT in
+# this whitelist — R11 is deferred to a standalone follow-up (plan P1-15).
 _VALID_EVENT_TYPES: frozenset[str] = frozenset({
+    # EB-292: recovery-rail measurement (original set)
     "api_recover_post",
     "payment_success_revisit",
     "recover_page_view",
+    # EB-324: re-convert lifecycle (Unit 3 emits)
+    "reconvert_attempted",
+    "reconvert_succeeded",
+    "reconvert_failed",
+    "reconvert_refund_applied",
+    # EB-324: Send-to-Kindle send-side (Unit 4 emits)
+    "send_to_kindle_attempted",
+    "send_to_kindle_rejected_by_validation",
+    "send_to_kindle_accepted_by_resend",
+    "send_to_kindle_send_error",
+    # EB-324: Send-to-Kindle delivery-side (Unit 10 webhook handler emits)
+    "send_to_kindle_delivered_to_mail_server",
+    "send_to_kindle_bounced",
+    "send_to_kindle_delivery_failed",
+    "send_to_kindle_delivery_delayed",
+    # EB-324: result-page UX (Unit 6 emits)
+    "expired_action_attempted",
+    # EB-324: internal invariant violation (Unit 4 emits on output_path boundary failure)
+    "kindle_send_invariant_violation",
 })
 
 

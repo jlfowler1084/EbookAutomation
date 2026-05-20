@@ -83,6 +83,25 @@ CREATE TABLE IF NOT EXISTS failed_mints (
     created_at    INTEGER NOT NULL,
     PRIMARY KEY (session_id, attempt_count)
 );
+
+-- EB-324: refund_ledger records premium-credit refunds triggered when a
+-- re-convert or multi-format child job fails. Two write paths:
+--   1. Atomic reverse-consume succeeded (token re-enabled): row records the
+--      audit trail; the token is once-again usable.
+--   2. Reverse-consume failed (token expired or disputed before refund
+--      fired): row is the audit trail for support to resolve manually.
+-- token_hash is BLOB to match tokens.token_hash for support-query joins.
+-- The table has no TTL — it is a permanent audit trail.
+CREATE TABLE IF NOT EXISTS refund_ledger (
+    refund_id       TEXT PRIMARY KEY,
+    token_hash      BLOB NOT NULL,
+    failed_job_id   TEXT NOT NULL,
+    refund_reason   TEXT NOT NULL,
+    refunded_at     INTEGER NOT NULL,
+    refund_outcome  TEXT NOT NULL  -- 'reverse_consumed' | 'ledgered_only'
+);
+CREATE INDEX IF NOT EXISTS idx_refund_ledger_token_hash ON refund_ledger(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refund_ledger_failed_job_id ON refund_ledger(failed_job_id);
 """
 
 
@@ -656,3 +675,128 @@ def cleanup_failed_mints(db_path: Path | None = None) -> int:
     if deleted:
         log.info("token_store: cleanup_failed_mints deleted %d rows", deleted)
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# EB-324: token refund operation
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RefundResult:
+    """Outcome of refund_token().
+
+    refunded: True if the token row was atomically reverse-consumed (token
+        is now once-again usable). False if the reverse-consume found no
+        eligible row — typically the token has already expired or was
+        disputed between the original consume and the refund attempt.
+    ledgered: True if a refund_ledger row was written (always True for a
+        successful refund AND for the fallback case where reverse-consume
+        failed but the audit trail still records the attempt).
+    refund_id: The UUID of the refund_ledger row, or empty string if no row
+        was written (e.g., DB error path).
+    """
+    refunded: bool
+    ledgered: bool
+    refund_id: str = ""
+
+
+def refund_token(
+    token_hash: bytes,
+    failed_job_id: str,
+    reason: str,
+    db_path: Path | None = None,
+) -> RefundResult:
+    """Reverse-consume a previously-used token, or write a refund-ledger row.
+
+    Called from the job-queue dispatcher's failure path when a premium child
+    job (re-convert or Wave 2 multi-format) fails. Mirrors the atomic-update
+    shape of validate_and_consume() (line 340+): one BEGIN IMMEDIATE
+    transaction, single UPDATE with the consume conditions inverted, and
+    rowcount as the race-gate.
+
+    Successful reverse-consume conditions (same as validate_and_consume but
+    inverted on `used`):
+        - tokens.token_hash matches
+        - tokens.used = 1  (must have been consumed for refund to make sense)
+        - tokens.disputed = 0  (disputed tokens cannot be refunded — fraud signal)
+        - tokens.expires_at > now  (cannot refund a token that has aged out)
+
+    On match: set used=0, used_at=NULL — the token is once-again usable. The
+    user can paste the same token into the re-convert form again. A
+    refund_ledger row is written with outcome='reverse_consumed' for audit.
+
+    On no-match (expired or disputed): a refund_ledger row is written with
+    outcome='ledgered_only' so support has the audit trail; the user is
+    advised via UI copy to contact support for manual recovery.
+
+    Args:
+        token_hash: 32-byte HMAC-SHA256 digest of the consumed token. The
+            caller (job_queue) already has this stored on the child job row
+            (as a hex string in jobs.token_hash); decode hex → bytes before
+            calling. The BLOB form matches tokens.token_hash for the join.
+        failed_job_id: The job_id of the child job that failed and triggered
+            the refund. Persisted in refund_ledger for audit.
+        reason: Short machine-friendly string describing the failure
+            (e.g., 'child_job_failed', 'reconvert_pipeline_error'). Becomes
+            refund_ledger.refund_reason.
+        db_path: Optional DB path override (for tests).
+
+    Returns:
+        RefundResult with refunded={True if token was reverse-consumed,
+        False otherwise} and ledgered={True if a refund_ledger row was
+        written}.
+    """
+    import uuid
+
+    now = int(time.time())
+    refund_id = str(uuid.uuid4())
+
+    with _get_conn(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+
+        # Atomic reverse-consume: only succeeds if the token was consumed,
+        # not disputed, and not yet aged out.
+        cursor = conn.execute(
+            "UPDATE tokens SET used = 0, used_at = NULL "
+            "WHERE token_hash = ? AND used = 1 AND disputed = 0 AND expires_at > ?",
+            (token_hash, now),
+        )
+
+        if cursor.rowcount == 1:
+            conn.execute(
+                "INSERT INTO refund_ledger "
+                "(refund_id, token_hash, failed_job_id, refund_reason, refunded_at, refund_outcome) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (refund_id, token_hash, failed_job_id, reason, now, "reverse_consumed"),
+            )
+            conn.commit()
+            log.info(
+                "token_store: refunded token (hash=...%s, failed_job=%s, reason=%s, refund_id=%s)",
+                token_hash.hex()[-8:],
+                failed_job_id,
+                reason,
+                refund_id,
+            )
+            return RefundResult(refunded=True, ledgered=True, refund_id=refund_id)
+
+        # Reverse-consume found no eligible row. Could be: token expired,
+        # token disputed, token never consumed (shouldn't happen — caller
+        # only refunds tokens it consumed), or token_hash unknown
+        # (data-corruption case). Either way, write the ledger row so
+        # support has the audit trail.
+        conn.execute(
+            "INSERT INTO refund_ledger "
+            "(refund_id, token_hash, failed_job_id, refund_reason, refunded_at, refund_outcome) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (refund_id, token_hash, failed_job_id, reason, now, "ledgered_only"),
+        )
+        conn.commit()
+        log.warning(
+            "token_store: refund could not reverse-consume (hash=...%s, failed_job=%s, "
+            "reason=%s, refund_id=%s) — ledgered for support recovery",
+            token_hash.hex()[-8:],
+            failed_job_id,
+            reason,
+            refund_id,
+        )
+        return RefundResult(refunded=False, ledgered=True, refund_id=refund_id)

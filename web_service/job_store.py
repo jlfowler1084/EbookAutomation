@@ -45,18 +45,40 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires  ON jobs(expires_at);
 """
 
-# EB-245 + EB-274: post-launch columns added via idempotent ALTER TABLE.
+# EB-324: indexes on _LATER_COLUMNS columns must run AFTER the ADD COLUMNs land.
+# CREATE INDEX IF NOT EXISTS is idempotent, but it raises "no such column" if the
+# referenced column hasn't been added yet, so these live in _apply_migrations
+# (which runs after the column-add loop).
+_LATER_INDEXES: list[str] = [
+    # Supports list_children() lookup for the result-page action cluster.
+    "CREATE INDEX IF NOT EXISTS idx_jobs_parent_job_id ON jobs(parent_job_id)",
+    # Supports find_by_resend_message_id() for Unit 10's webhook correlation.
+    "CREATE INDEX IF NOT EXISTS idx_jobs_resend_message_id ON jobs(resend_message_id)",
+]
+
+# EB-245 + EB-274 + EB-324: post-launch columns added via idempotent ALTER TABLE.
 # SQLite lacks IF NOT EXISTS for ADD COLUMN, so we check PRAGMA table_info first.
 # vqa_pass is stored as INTEGER (0/1) — SQLite has no native BOOLEAN.
 # original_filename (EB-274) is captured at upload time so the download response
 # can attach the user's original filename via Content-Disposition.
+# EB-324 additions:
+#   - parent_job_id: re-convert child jobs link to their parent for the action-cluster UI
+#   - resend_message_id: captured from Resend after Send-to-Kindle accept; used for
+#     webhook correlation by Unit 10 (find_by_resend_message_id())
+#   - kindle_delivery_status: graded delivery state populated by the Resend webhook —
+#     'accepted_by_resend' → 'delivered_to_mail_server' / 'bounced' / 'failed' / 'delivery_delayed'
+# NOTE: jobs.token_hash already exists as TEXT in the base _SCHEMA_SQL (line 35) and is
+# reused for refund correlation per the EB-324 plan (P0-1 resolution). Do NOT re-add it.
 _LATER_COLUMNS: list[tuple[str, str]] = [
-    ("gemini_cost_usd",    "REAL    DEFAULT 0.0"),
-    ("vqa_score",          "INTEGER"),
-    ("vqa_pass",           "INTEGER"),
-    ("vqa_cost_usd",       "REAL    DEFAULT 0.0"),
-    ("vqa_skipped_reason", "TEXT"),
-    ("original_filename",  "TEXT"),
+    ("gemini_cost_usd",       "REAL    DEFAULT 0.0"),
+    ("vqa_score",             "INTEGER"),
+    ("vqa_pass",              "INTEGER"),
+    ("vqa_cost_usd",          "REAL    DEFAULT 0.0"),
+    ("vqa_skipped_reason",    "TEXT"),
+    ("original_filename",     "TEXT"),
+    ("parent_job_id",         "TEXT"),
+    ("resend_message_id",     "TEXT"),
+    ("kindle_delivery_status", "TEXT"),
 ]
 
 
@@ -77,6 +99,10 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         for col, type_clause in _LATER_COLUMNS:
             if col not in existing:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {type_clause}")
+        # EB-324: indexes that depend on _LATER_COLUMNS columns. CREATE INDEX
+        # IF NOT EXISTS is idempotent; safe to re-run on every startup.
+        for index_sql in _LATER_INDEXES:
+            conn.execute(index_sql)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -136,12 +162,22 @@ def create_job(
     db_path: Path | None = None,
     *,
     original_filename: str | None = None,
+    parent_job_id: str | None = None,
+    token_hash_hex: str | None = None,
 ) -> None:
     """Insert a new job with status=queued.
 
     original_filename (EB-274) is the user's uploaded filename, used later by
     the download endpoint to set Content-Disposition. Optional for backward
     compat with pre-EB-274 callers and pre-migration DB rows.
+
+    EB-324 additions:
+        parent_job_id: when this job is a re-convert child, the originating
+            parent's job_id. NULL for top-level uploads.
+        token_hash_hex: for premium re-convert children, hex-encoded
+            HMAC-SHA256 digest of the consumed token. Persisted so that
+            token_store.refund_token() can locate the originating token if
+            this child fails. NULL for free jobs and parent uploads.
     """
     settings = get_settings()
     now = int(time.time())
@@ -152,11 +188,13 @@ def create_job(
             """
             INSERT INTO jobs
                 (job_id, status, tier, input_fmt, output_fmt, temp_dir, input_path,
-                 created_at, expires_at, original_filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 created_at, expires_at, original_filename,
+                 parent_job_id, token_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (job_id, STATUS_QUEUED, tier, input_fmt, output_fmt, temp_dir, input_path,
-             now, now + ttl, original_filename),
+             now, now + ttl, original_filename,
+             parent_job_id, token_hash_hex),
         )
 
 
@@ -245,3 +283,80 @@ def purge_job(job_id: str, db_path: Path | None = None) -> None:
     """Delete a job record entirely (called after temp files are cleaned up)."""
     with _get_conn(db_path) as conn:
         conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+
+
+# ---------------------------------------------------------------------------
+# EB-324: parent/child re-convert and Send-to-Kindle delivery helpers
+# ---------------------------------------------------------------------------
+
+
+def list_children(parent_job_id: str, db_path: Path | None = None) -> list[dict]:
+    """Return all re-convert child jobs for a given parent, oldest first.
+
+    Used by the extended GET /status/{job_id} response (Unit 5) so the result
+    page can render each child's progress in the action cluster. Empty list
+    when the parent has no children (the common case).
+    """
+    with _get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE parent_job_id = ? ORDER BY created_at ASC",
+            (parent_job_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_kindle_delivery_status(
+    job_id: str,
+    status: str,
+    db_path: Path | None = None,
+) -> None:
+    """Set the Send-to-Kindle delivery status on a job row.
+
+    Called from /send-to-kindle when Resend accepts the request (status=
+    'accepted_by_resend') and from /webhooks/resend (Unit 10) when delivery
+    events arrive ('delivered_to_mail_server', 'bounced', 'failed',
+    'delivery_delayed'). The webhook handler is responsible for idempotency
+    semantics (e.g., ignoring 'delivery_delayed' arriving after 'delivered').
+    """
+    with _get_conn(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET kindle_delivery_status = ? WHERE job_id = ?",
+            (status, job_id),
+        )
+
+
+def set_resend_message_id(
+    job_id: str,
+    resend_message_id: str,
+    db_path: Path | None = None,
+) -> None:
+    """Persist the Resend-issued message_id on the job after a successful send.
+
+    Stored so Unit 10's webhook handler can correlate inbound delivery events
+    back to the originating job via find_by_resend_message_id().
+    """
+    with _get_conn(db_path) as conn:
+        conn.execute(
+            "UPDATE jobs SET resend_message_id = ? WHERE job_id = ?",
+            (resend_message_id, job_id),
+        )
+
+
+def find_by_resend_message_id(
+    resend_message_id: str,
+    db_path: Path | None = None,
+) -> dict | None:
+    """Reverse-lookup a job by its stored Resend message_id, or None.
+
+    Used by Unit 10's /webhooks/resend handler to find which job a delivery
+    event refers to. Returns at most one row (resend_message_id is unique
+    per send because Resend generates a fresh UUID per outbound message),
+    but the index does NOT enforce uniqueness — multiple NULL rows must
+    coexist for jobs that never invoked Send-to-Kindle.
+    """
+    with _get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE resend_message_id = ?",
+            (resend_message_id,),
+        ).fetchone()
+    return dict(row) if row else None

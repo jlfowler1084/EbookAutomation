@@ -718,3 +718,166 @@ class TestTokenTTL:
         vr = validate_and_consume(token, db_path=db)
         assert vr.ok is False
         assert vr.error.code == TokenValidationErrorCode.INVALID_OR_EXPIRED
+
+
+# ---------------------------------------------------------------------------
+# EB-324: refund_token tests
+# ---------------------------------------------------------------------------
+
+
+class TestRefundToken:
+    """refund_token() — reverse-consume a used token, or write a ledger-only row.
+
+    Mirrors the atomic-update shape of validate_and_consume() but inverts the
+    `used` predicate. Called from job_queue when a premium child job fails.
+    """
+
+    def _mint_one(self, db: Path) -> tuple[str, bytes]:
+        """Mint a single token and return (token_string, token_hash_bytes)."""
+        from web_service.crypto import compute_token_hash
+
+        mr = mint_tokens_if_absent(
+            session_id="cs_refund_test",
+            count=1,
+            payment_intent_id="pi_refund_test",
+            db_path=db,
+        )
+        assert mr.ok is True
+        assert len(mr.tokens) == 1
+        token = mr.tokens[0]
+        return token, compute_token_hash(token)
+
+    def test_refund_after_consume_reverses_used_flag(self, db: Path) -> None:
+        """Happy path: consume, then refund, then validate_and_consume succeeds again."""
+        from web_service.token_store import refund_token
+
+        token, token_hash = self._mint_one(db)
+
+        # Consume the token
+        vr = validate_and_consume(token, db_path=db)
+        assert vr.ok is True
+
+        # Refund the token
+        result = refund_token(token_hash, "j_failed_child", "child_job_failed", db_path=db)
+        assert result.refunded is True
+        assert result.ledgered is True
+        assert result.refund_id  # non-empty UUID
+
+        # Token is now usable again — second validate_and_consume succeeds
+        vr2 = validate_and_consume(token, db_path=db)
+        assert vr2.ok is True, "refunded token should be re-consumable"
+
+    def test_refund_writes_ledger_row_with_reverse_consumed_outcome(self, db: Path) -> None:
+        """Successful refund writes refund_ledger row with outcome=reverse_consumed."""
+        from web_service.token_store import refund_token
+
+        token, token_hash = self._mint_one(db)
+        validate_and_consume(token, db_path=db)
+        result = refund_token(token_hash, "j_failed", "test_reason", db_path=db)
+
+        conn = sqlite3.connect(str(db))
+        row = conn.execute(
+            "SELECT refund_id, failed_job_id, refund_reason, refund_outcome "
+            "FROM refund_ledger WHERE refund_id = ?",
+            (result.refund_id,),
+        ).fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == result.refund_id
+        assert row[1] == "j_failed"
+        assert row[2] == "test_reason"
+        assert row[3] == "reverse_consumed"
+
+    def test_refund_on_expired_token_ledgers_only(self, db: Path) -> None:
+        """If the token has expired between consume and refund, reverse-consume
+        fails and we write a refund_ledger row with outcome=ledgered_only."""
+        from web_service.token_store import refund_token
+
+        token, token_hash = self._mint_one(db)
+        validate_and_consume(token, db_path=db)
+
+        # Backdate the token to expired
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "UPDATE tokens SET expires_at = ? WHERE token_hash = ?",
+            (int(time.time()) - 1, token_hash),
+        )
+        conn.commit()
+        conn.close()
+
+        result = refund_token(token_hash, "j_failed", "child_job_failed", db_path=db)
+        assert result.refunded is False, "expired token cannot be reverse-consumed"
+        assert result.ledgered is True, "support audit trail must still be written"
+
+        # Verify the ledger row's outcome
+        conn = sqlite3.connect(str(db))
+        outcome = conn.execute(
+            "SELECT refund_outcome FROM refund_ledger WHERE refund_id = ?",
+            (result.refund_id,),
+        ).fetchone()
+        conn.close()
+        assert outcome[0] == "ledgered_only"
+
+    def test_refund_on_disputed_token_ledgers_only(self, db: Path) -> None:
+        """Disputed tokens are never reverse-consumed (fraud signal); ledger row
+        still written for audit."""
+        from web_service.token_store import refund_token
+
+        token, token_hash = self._mint_one(db)
+        validate_and_consume(token, db_path=db)
+
+        # Mark the token disputed
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "UPDATE tokens SET disputed = 1, disputed_at = ? WHERE token_hash = ?",
+            (int(time.time()), token_hash),
+        )
+        conn.commit()
+        conn.close()
+
+        result = refund_token(token_hash, "j_failed", "child_job_failed", db_path=db)
+        assert result.refunded is False
+        assert result.ledgered is True
+
+    def test_refund_on_unknown_token_hash_ledgers_only(self, db: Path) -> None:
+        """If the token_hash doesn't exist (data-corruption case), we still
+        ledger the attempt for support visibility — no crash."""
+        from web_service.token_store import refund_token
+
+        fake_hash = b"\x00" * 32  # 32 bytes that won't match any minted token
+        result = refund_token(fake_hash, "j_failed", "child_job_failed", db_path=db)
+        assert result.refunded is False
+        assert result.ledgered is True
+
+    def test_concurrent_refunds_are_serialised(self, db: Path) -> None:
+        """Two threads calling refund_token() for the same consumed token:
+        BEGIN IMMEDIATE serialises them. Exactly one writes a
+        reverse_consumed ledger row; the second writes a ledgered_only row
+        (the token has already been reverse-consumed by the first, so
+        the second can't match the `used=1` predicate)."""
+        from web_service.token_store import refund_token
+
+        token, token_hash = self._mint_one(db)
+        validate_and_consume(token, db_path=db)
+
+        results: list = [None, None]
+
+        def _worker(idx: int) -> None:
+            results[idx] = refund_token(
+                token_hash, f"j_failed_{idx}", "concurrent", db_path=db,
+            )
+
+        threads = [threading.Thread(target=_worker, args=(i,)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Both must succeed without raising; both write ledger rows
+        assert all(r is not None and r.ledgered for r in results)
+        # Exactly one reverse-consumed the token; the other got ledger-only
+        refunded_count = sum(1 for r in results if r.refunded)
+        assert refunded_count == 1, (
+            f"expected exactly 1 successful reverse-consume, got {refunded_count}"
+        )
