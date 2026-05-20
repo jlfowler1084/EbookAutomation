@@ -639,3 +639,351 @@ class TestSendToKindleAttachmentEncoding:
             "base64.b64decode(attachment.content) must equal the original "
             "bytes the route passed in"
         )
+
+
+# ---------------------------------------------------------------------------
+# Unit 4 scenario suite — validation scenarios (R3.1, R3.3, R3.4, P1-4)
+#
+# Each block below targets one of the pre-enable items the plan lists at
+# Unit 4's "What is NOT yet implemented and gates flipping the flag" status
+# banner (plan lines 382-393). Landing these (plus the existing PR #142
+# tests) is what makes WEB_SEND_TO_KINDLE_ENABLED=true safe to flip.
+#
+# All tests run with the flag enabled (conftest default = true).
+# email_client.send_with_attachment is mocked so no real Resend calls fire.
+# ---------------------------------------------------------------------------
+
+
+def _stub_send_success():
+    """Return a patch context that makes the wrapper succeed without calling Resend."""
+    from web_service import email_client
+    return patch.object(
+        email_client,
+        "send_with_attachment",
+        return_value=email_client.SendResult(message_id="test_msg_id"),
+    )
+
+
+class TestSendToKindleRecipientValidation:
+    """R3.1 (strict @kindle.com / @free.kindle.com domain allowlist) +
+    R3.4 (display-name + plus-aliasing rejection)."""
+
+    def test_non_kindle_domain_returns_422(self, client):
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "evil@example.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_DOMAIN"
+
+    def test_wildcard_suffix_attempt_rejected(self, client):
+        """`@evil-kindle.com` ends with 'kindle.com' but is NOT kindle.com.
+        Strict equality must reject — no endswith() shortcuts.
+        """
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "evil@evil-kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_DOMAIN"
+
+    def test_free_kindle_subdomain_accepted(self, client):
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "joe@free.kindle.com"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "sent"
+
+    def test_display_name_form_rejected(self, client):
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": '"User Name" <u@kindle.com>'},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
+
+    def test_plus_aliasing_rejected(self, client):
+        """Amazon does not honor plus-aliased Kindle addresses; reject early."""
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "user+tag@kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
+
+    def test_missing_at_rejected(self, client):
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "just-a-name"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
+
+
+class TestSendToKindleFormatAllowlist:
+    """R3.3 format portion: Wave 1 only accepts EPUB; defense-in-depth
+    against a frontend that forgets to gate MOBI/KFX rows.
+    """
+
+    def test_mobi_output_rejected(self, client, tmp_path):
+        import web_service.job_store as js
+
+        tc, _, settings = client
+        # Build a parent whose output_fmt is mobi.
+        parent_id = js.new_job_id()
+        parent_temp = Path(settings.temp_dir) / f"job_{parent_id}"
+        parent_temp.mkdir(parents=True, exist_ok=True)
+        src = parent_temp / "input.pdf"
+        src.write_bytes(b"%PDF-1.4\n" + b"\x00" * 300)
+        out = parent_temp / "output.mobi"
+        out.write_bytes(b"MOBI" + b"\x00" * 200)
+        js.create_job(
+            job_id=parent_id, tier="free", input_fmt="pdf", output_fmt="mobi",
+            temp_dir=str(parent_temp), input_path=str(src),
+        )
+        js.set_done(parent_id, str(out), out.stat().st_size)
+
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "FORMAT_NOT_KINDLE_ELIGIBLE"
+
+    def test_kfx_output_rejected(self, client, tmp_path):
+        import web_service.job_store as js
+
+        tc, _, settings = client
+        parent_id = js.new_job_id()
+        parent_temp = Path(settings.temp_dir) / f"job_{parent_id}"
+        parent_temp.mkdir(parents=True, exist_ok=True)
+        src = parent_temp / "input.pdf"
+        src.write_bytes(b"%PDF-1.4\n" + b"\x00" * 300)
+        out = parent_temp / "output.kfx"
+        out.write_bytes(b"KFX" + b"\x00" * 200)
+        js.create_job(
+            job_id=parent_id, tier="premium", input_fmt="pdf", output_fmt="kfx",
+            temp_dir=str(parent_temp), input_path=str(src),
+        )
+        js.set_done(parent_id, str(out), out.stat().st_size)
+
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "FORMAT_NOT_KINDLE_ELIGIBLE"
+
+
+class TestSendToKindleSizeCap:
+    """R3.3 size portion: 30 MB raw cap (measured pre-Base64 since the
+    encoding is internal to the wrapper)."""
+
+    def test_30mb_boundary_accepted(self, client):
+        tc, _, settings = client
+        # Exactly 30 MiB
+        thirty_mb = 30 * 1024 * 1024
+        parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * thirty_mb)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "sent"
+
+    def test_over_30mb_rejected(self, client):
+        tc, _, settings = client
+        # 30 MB + 1 byte
+        too_big = (30 * 1024 * 1024) + 1
+        parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * too_big)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "OUTPUT_TOO_LARGE_FOR_KINDLE"
+
+
+class TestSendToKindleJobValidation:
+    def test_unknown_job_returns_404(self, client):
+        tc, _, _ = client
+        with _stub_send_success():
+            resp = tc.post(
+                "/send-to-kindle/00000000-0000-0000-0000-000000000000",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 404
+
+    def test_output_missing_returns_410(self, client):
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        # Remove the output file mid-flight (simulating TTL sweep cleanup).
+        import web_service.job_store as js
+        job = js.get_job(parent_id)
+        Path(job["output_path"]).unlink()
+
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 410
+
+
+class TestSendToKindleOutputPathBoundary:
+    """P1-4: even with a valid done job, the route MUST resolve output_path
+    and confirm it lives inside settings.temp_dir. A corrupted output_path
+    pointing at /etc/web_service.env or similar would otherwise let Resend
+    exfiltrate secrets via the attachment.
+    """
+
+    def test_output_path_outside_temp_dir_rejected_500(self, client, tmp_path):
+        import sqlite3
+
+        from web_service import recovery_events_store
+
+        tc, db_path, settings = client
+        parent_id = _seed_epub_parent(settings)
+
+        # Forge a malicious output_path pointing outside settings.temp_dir.
+        # Use tmp_path (pytest's per-test dir) which is OUTSIDE settings.temp_dir.
+        malicious_target = tmp_path / "OUTSIDE_TEMP_DIR.epub"
+        malicious_target.write_bytes(b"PK\x03\x04" + b"\x00" * 100)
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "UPDATE jobs SET output_path = ? WHERE job_id = ?",
+                (str(malicious_target), parent_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Capture telemetry events so we can assert the invariant fires.
+        captured_events: list[tuple[str, dict | None]] = []
+        original_log_event = recovery_events_store.log_event
+
+        def _capture_log_event(event_type, details=None, db_path=None):
+            captured_events.append((event_type, details))
+            return original_log_event(event_type, details=details, db_path=db_path)
+
+        with patch.object(recovery_events_store, "log_event", side_effect=_capture_log_event), \
+             _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+
+        assert resp.status_code == 500, (
+            f"P1-4 invariant violation must reject with 500. Got {resp.status_code}: {resp.text}"
+        )
+        # The kindle_send_invariant_violation telemetry MUST fire so the
+        # ops team can see the integrity check tripping.
+        event_types = [e[0] for e in captured_events]
+        assert "kindle_send_invariant_violation" in event_types, (
+            f"Expected kindle_send_invariant_violation in telemetry, got: {event_types}"
+        )
+
+
+class TestSendToKindleResendErrorMapping:
+    """Resend SDK failures must map to 502 from our endpoint and leave the
+    idempotency claim row clean so the user can retry immediately.
+    """
+
+    def test_resend_failure_returns_502_and_clears_claim(self, client):
+        import sqlite3
+
+        from web_service import email_client
+
+        tc, db_path, settings = client
+        parent_id = _seed_epub_parent(settings)
+        recipient = "joe-retry-after-fail@kindle.com"
+
+        # Force the wrapper to raise; route catches as 502 and deletes claim.
+        with patch.object(
+            email_client,
+            "send_with_attachment",
+            side_effect=email_client.KindleSendError("RESEND_EXCEPTION"),
+        ):
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": recipient},
+            )
+        assert resp.status_code == 502
+
+        # Claim row must be DELETED so a retry would not see "already_sent".
+        import hashlib
+        recipient_hash = hashlib.sha256(recipient.encode("utf-8")).digest()
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT claim_state FROM kindle_send_idempotency "
+                "WHERE job_id = ? AND recipient_hash = ?",
+                (parent_id, recipient_hash),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is None, (
+            "Claim row must be deleted after Resend failure so the user can "
+            f"retry immediately. Got row: {row!r}"
+        )
+
+
+class TestSendToKindleMultiRecipientIdempotency:
+    """Different recipients for the same job within the 60s window must
+    both reach Resend — the idempotency key is (job_id, recipient_hash),
+    not just job_id. Lets a user send to multiple Kindles without retry-
+    block friction.
+    """
+
+    def test_different_recipients_both_hit_resend(self, client):
+        from web_service import email_client
+
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+
+        send_calls: list[str] = []
+
+        def _record_send(*, from_addr, to, subject, html, attachments):
+            send_calls.append(to[0])
+            return email_client.SendResult(message_id=f"msg_{len(send_calls)}")
+
+        with patch.object(email_client, "send_with_attachment", side_effect=_record_send):
+            r1 = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "first@kindle.com"},
+            )
+            r2 = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "second@kindle.com"},
+            )
+
+        assert r1.status_code == 200 and r1.json()["status"] == "sent"
+        assert r2.status_code == 200 and r2.json()["status"] == "sent"
+        assert sorted(send_calls) == ["first@kindle.com", "second@kindle.com"], (
+            f"Both recipients should hit Resend. Got: {send_calls}"
+        )

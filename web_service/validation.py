@@ -55,6 +55,138 @@ class ValidationErrorCode(str, Enum):
     INVALID_OUTPUT_FORMAT = "INVALID_OUTPUT_FORMAT"
 
 
+# EB-324 Unit 4 scenario suite: Kindle-specific validation codes.
+# Kept in a separate enum so the upload-validation surface (above) stays
+# focused on input validation and the Kindle codes have an explicit
+# namespace.
+class KindleErrorCode(str, Enum):
+    INVALID_RECIPIENT_FORM = "INVALID_RECIPIENT_FORM"     # display name, plus alias, malformed
+    INVALID_RECIPIENT_DOMAIN = "INVALID_RECIPIENT_DOMAIN"  # not kindle.com / free.kindle.com
+    FORMAT_NOT_KINDLE_ELIGIBLE = "FORMAT_NOT_KINDLE_ELIGIBLE"
+    OUTPUT_TOO_LARGE_FOR_KINDLE = "OUTPUT_TOO_LARGE_FOR_KINDLE"
+
+
+@dataclass(frozen=True)
+class KindleValidationResult:
+    """Outcome of a single Kindle-validation helper.
+
+    On success: ``ok=True`` and ``normalized`` carries the post-normalization
+    value (lowercased recipient or output format) the route should use
+    downstream. On failure: ``ok=False`` and ``code`` carries the
+    machine-friendly error tag that the route maps to an HTTPException.
+    """
+    ok: bool
+    normalized: str = ""
+    code: KindleErrorCode | None = None
+    message: str = ""
+
+
+# Strict equality allowlist. Amazon offers exactly two domains for
+# Send-to-Kindle email delivery; anything else (incl. evil-kindle.com)
+# must be rejected. NO wildcard / endswith matching.
+_KINDLE_ALLOWED_DOMAINS: frozenset[str] = frozenset({"kindle.com", "free.kindle.com"})
+
+# Wave 1 only ships EPUB through the Send-to-Kindle pipeline. MOBI and KFX
+# are produced by the conversion pipeline but not Kindle-mail-eligible
+# (MOBI is deprecated by Amazon; KFX is for sideload only).
+_KINDLE_OUTPUT_FORMATS: frozenset[str] = frozenset({"epub"})
+
+# Per plan R3.3 size portion. Measured on the raw file bytes (pre-Base64
+# encoding, which expands by ~33%). Amazon's mail-side limit is 40 MB
+# post-Base64; 30 MB raw gives ~7.5 MB of headroom for headers + boundary.
+_KINDLE_MAX_SIZE_BYTES: int = 30 * 1024 * 1024
+
+
+def validate_kindle_recipient(recipient: str) -> KindleValidationResult:
+    """Parse + normalize + domain-check a Kindle recipient address.
+
+    Rules (per plan R3.1 + R3.4):
+    - parseaddr split. Reject if a display name is present.
+    - Local part must be non-empty and must NOT contain '+'.
+    - Domain must be strict-equality match against
+      ``{"kindle.com", "free.kindle.com"}``. No suffix/endswith matching.
+
+    Stdlib ``email.utils.parseaddr`` is sufficient for our needs (we don't
+    need full RFC-5322 mailbox grammar — just display-name detection plus
+    a token-comparison check on the address). email-validator is in
+    requirements.txt for future use but not on the hot path here.
+    """
+    from email.utils import parseaddr
+
+    stripped = recipient.strip().lower() if recipient else ""
+    display, addr = parseaddr(stripped)
+
+    if display:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_FORM,
+            message="Recipient must not include a display name",
+        )
+
+    if not addr or "@" not in addr:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_FORM,
+            message="Recipient must be a bare email address",
+        )
+
+    local, _, domain = addr.rpartition("@")
+
+    if not local:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_FORM,
+            message="Recipient local-part is empty",
+        )
+
+    if "+" in local:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_FORM,
+            message="Plus-aliased Kindle addresses are not supported",
+        )
+
+    if domain not in _KINDLE_ALLOWED_DOMAINS:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_DOMAIN,
+            message="Recipient domain must be kindle.com or free.kindle.com",
+        )
+
+    return KindleValidationResult(ok=True, normalized=addr)
+
+
+def validate_kindle_format(output_fmt: str) -> KindleValidationResult:
+    """Confirm the job's output format is Kindle-eligible.
+
+    Defense-in-depth — the frontend gates this row at the UI level, but
+    a forged POST or a future format-routing bug must not slip MOBI/KFX
+    to Resend.
+    """
+    normalized = (output_fmt or "").lower()
+    if normalized in _KINDLE_OUTPUT_FORMATS:
+        return KindleValidationResult(ok=True, normalized=normalized)
+    return KindleValidationResult(
+        ok=False,
+        code=KindleErrorCode.FORMAT_NOT_KINDLE_ELIGIBLE,
+        message=f"Output format '{output_fmt}' is not Kindle-eligible",
+    )
+
+
+def validate_kindle_attachment_size(size_bytes: int) -> KindleValidationResult:
+    """Raw-byte size check against the 30 MB cap."""
+    if size_bytes <= _KINDLE_MAX_SIZE_BYTES:
+        return KindleValidationResult(ok=True)
+    return KindleValidationResult(
+        ok=False,
+        code=KindleErrorCode.OUTPUT_TOO_LARGE_FOR_KINDLE,
+        message=(
+            f"Attachment size {size_bytes} bytes exceeds the "
+            f"{_KINDLE_MAX_SIZE_BYTES} byte Kindle limit"
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class ValidationError:
     code: ValidationErrorCode

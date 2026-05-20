@@ -31,7 +31,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException
 
-from web_service import email_client, job_store
+from web_service import email_client, job_store, recovery_events_store, validation
 from web_service.config import get_settings
 from web_service.job_store import STATUS_DONE
 
@@ -95,14 +95,77 @@ def send_to_kindle(
             detail={"error": "Output file no longer on disk", "code": "OUTPUT_EXPIRED"},
         )
 
-    # Normalize: strip + lowercase. Full RFC-5322 + domain allowlist is a
-    # follow-up scenario; for the minimal claim/log-leak tests the recipient
-    # only needs to be a deterministic key.
-    normalized = recipient.strip().lower()
-    if not normalized:
+    # ---- Validation pipeline (R3.1 + R3.3 + R3.4 + P1-4) ----
+    #
+    # Order: cheap parse/equality checks first; filesystem cost (stat,
+    # resolve) last. Each block maps a validator failure to its canonical
+    # HTTPException code so the frontend can render targeted error copy.
+
+    recipient_result = validation.validate_kindle_recipient(recipient)
+    if not recipient_result.ok:
         raise HTTPException(
             status_code=422,
-            detail={"error": "Recipient is required", "code": "MISSING_RECIPIENT"},
+            detail={
+                "error": recipient_result.message,
+                "code": recipient_result.code.value,
+            },
+        )
+    normalized = recipient_result.normalized
+
+    format_result = validation.validate_kindle_format(job["output_fmt"])
+    if not format_result.ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": format_result.message,
+                "code": format_result.code.value,
+            },
+        )
+
+    size_result = validation.validate_kindle_attachment_size(output_path.stat().st_size)
+    if not size_result.ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": size_result.message,
+                "code": size_result.code.value,
+            },
+        )
+
+    # P1-4 hardening: resolve output_path and assert it lives inside
+    # settings.temp_dir. A corrupted output_path row (e.g., from a future
+    # SQL-injection in another route) could otherwise redirect Resend to
+    # read /etc/web_service.env and exfiltrate API keys via the attachment.
+    # Treats both paths as resolved (symlink-aware) before comparison.
+    try:
+        resolved_output = output_path.resolve(strict=True)
+        resolved_temp = settings.temp_dir.resolve(strict=False)
+        if not resolved_output.is_relative_to(resolved_temp):
+            raise ValueError("output_path escapes temp_dir hierarchy")
+    except (OSError, ValueError) as exc:
+        log.error(
+            "Kindle send invariant violation: output_path for job %s does not "
+            "resolve inside temp_dir (%s). Refusing to send.",
+            job_id, exc,
+        )
+        try:
+            recovery_events_store.log_event(
+                "kindle_send_invariant_violation",
+                details={
+                    "job_id": job_id,
+                    "reason": "output_path_outside_temp_dir",
+                },
+            )
+        except Exception:
+            log.exception(
+                "Could not record kindle_send_invariant_violation telemetry"
+            )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Output path failed integrity check",
+                "code": "KINDLE_SEND_INVARIANT_VIOLATION",
+            },
         )
 
     recipient_hash = hashlib.sha256(normalized.encode("utf-8")).digest()
