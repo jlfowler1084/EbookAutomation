@@ -12,13 +12,21 @@ or a logged exception to leak the address.
 Layered defenses against leaking the recipient (test_no_recipient_in_logs
 plus test_kindle_send_error_has_no_context_or_cause):
   1. ``KindleSendError.__init__`` never accepts or stores the recipient.
-  2. Every raise inside an ``except`` block uses ``from None`` to suppress
-     Python's implicit ``__context__`` chaining. Without ``from None``,
-     the original Resend exception (which can carry a response body
-     containing the recipient) survives in the chain even though we never
-     wrote ``from exc`` — a subtle distinction that the F4 review caught.
+  2. Failures from the underlying Resend SDK are captured into a local
+     sentinel inside the ``except`` block, then the ``except`` is allowed
+     to exit normally; the ``raise KindleSendError(...) from None``
+     happens *outside* the ``except`` so Python's implicit ``__context__``
+     never points at the Resend exception. ``from None`` on its own only
+     sets ``__suppress_context__``; it does NOT null ``__context__`` when
+     the raise is lexically inside an ``except`` block — the F4 review
+     caught that subtle distinction.
   3. The wrapper logs only the error code + class name, never the body
      of the underlying Resend response.
+
+Wire format: the wrapper Base64-encodes byte attachment content before
+calling ``resend.Emails.send`` so callers can pass raw ``bytes``. The
+Python SDK does NOT auto-encode; the Resend HTTP contract requires a
+Base64 ASCII string for local attachments.
 """
 
 from __future__ import annotations
@@ -77,9 +85,11 @@ def send_with_attachment(
         subject: Plain-text subject line.
         html: HTML body. Resend requires either html or text; we send html.
         attachments: List of dicts with at least ``filename`` and
-            ``content`` (bytes) keys. Resend expects base64-encoded content
-            on the wire, but the SDK handles encoding when ``content`` is
-            bytes-like.
+            ``content`` (bytes) keys. The wrapper Base64-encodes byte
+            content to an ASCII string before handing the payload to
+            Resend — the Python SDK does NOT auto-encode. Callers should
+            pass raw bytes (e.g., from ``Path.read_bytes()``); already-
+            encoded ``str`` content is passed through unchanged.
 
     Returns:
         SendResult with the Resend-issued message_id.
