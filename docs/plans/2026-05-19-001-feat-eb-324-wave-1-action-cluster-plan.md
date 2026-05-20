@@ -622,7 +622,9 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 ---
 
-- [ ] **Unit 9: Telemetry (R12)** — split into **9a** (whitelist extension; lands in Unit 1's PR so server-side emissions in Units 3, 4, 10 aren't silently dropped) and **9b** (client-side Plausible emissions from Unit 6's interaction sites; lands in Unit 6's PR). The unit body below describes the combined scope; landing order is in the "Recommended landing order" section above.
+- [ ] **Unit 9: Telemetry (R12)** — split into **9a** (whitelist extension; lands in Unit 1's PR so server-side emissions in Units 3, 4, 10 aren't silently dropped) and **9b** (server-side `log_event(...)` calls in the Units 3/4/10 route modules — except `reconvert_refund_applied`, which lives next to the refund hook in `job_queue.py` and shipped with Unit 3 — plus client-side Plausible emissions from Unit 6's interaction sites; lands in Unit 6's PR). The unit body below describes the combined scope; landing order is in the "Recommended landing order" section above.
+
+**Why the server-side emits are in 9b, not in their owning units:** the value of telemetry materializes once frontend interactions actually drive the routes. Wiring server emits in Units 3/4 before Unit 6 ships the action cluster would create a 1–2 week window where the events flicker into the recovery_events table but no dashboards exist to read them, and the cleanup sweep could age them out before anyone looks. Pairing server emits with the Unit 6 interaction sites lets the Plausible dashboard and recovery_events queries land in the same PR window. Exception: `reconvert_refund_applied` ships with Unit 3 because the refund hook itself is in Unit 3, and the event is meaningful even without UX context.
 
 **Goal:** Emit the four event types the brainstorm specifies — format-selector engagement, send-to-Kindle attempt+outcome, convert-to-another-format attempt+outcome, expired-action-attempt.
 
@@ -632,7 +634,7 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 **Files:**
 - Modify: `web_service/recovery_events_store.py:55-60` (extend `_VALID_EVENT_TYPES` with the **14 new event types** enumerated in Approach below — 4 re-convert + 4 Send-to-Kindle send-side + 4 Unit 10 webhook delivery-side + 2 result-page UX. Events not in the whitelist are silently dropped per the existing pattern at lines 112-117. **`format_selector_engaged` is NOT included** — R11 is deferred per plan-review P1-15, so the FormatSelector emission ships with R11. **This change is Unit 9a and lands in Unit 1's PR** so server-side emissions in Units 3/4/10 aren't silently dropped when they fire.)
-- Modify: `web_service/routes/reconvert.py` (emit `reconvert_attempted` on entry, `reconvert_succeeded` / `reconvert_failed` on completion)
+- Modify: `web_service/routes/reconvert.py` (Unit 9b adds: emit `reconvert_attempted` on entry, `reconvert_succeeded` / `reconvert_failed` on completion. Unit 3 already wired `reconvert_refund_applied` in `job_queue.py`'s refund hook — see PR #141.)
 - Modify: `web_service/routes/send_to_kindle.py` (emit `send_to_kindle_attempted` on entry; `send_to_kindle_rejected_by_validation` on 4xx validation reject; `send_to_kindle_accepted_by_resend` on Resend 2xx; `send_to_kindle_send_error` on Resend 4xx/5xx/exception)
 - Modify: `web_service/frontend/lib/api.ts` (add lightweight `emitEvent(type, props)` POSTing to `/api/event` — the existing Plausible proxy at `web_service/frontend/app/api/event/route.ts`)
 - Modify: `web_service/frontend/components/ActionCluster.tsx` (emit `expired_action_attempted` when user clicks a disabled re-convert or Send-to-Kindle button)
