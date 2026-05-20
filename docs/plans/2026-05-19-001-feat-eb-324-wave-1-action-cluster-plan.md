@@ -211,12 +211,12 @@ Combined effect: uploading feels transactional rather than productive, and the f
 
 Units are numbered for stable cross-reference, but they MUST land in this dependency order so the backend contract exists before the UI is built against it:
 
-1. **Unit 1** — Schema migrations + datastore helpers (foundation; nothing depends on yet-to-exist columns)
-2. **Unit 9a** — Telemetry whitelist (mechanically additive: append the new event-type strings to `_VALID_EVENT_TYPES`). Lands in the same PR as Unit 1 — both are foundation changes Units 2–10 depend on. Without 9a landing first, every server-side `log_event()` call in Units 3, 4, 10 would be silently dropped.
-3. **Unit 2** — `_cleanup_after_download` no-op (small, can pair with Unit 1 in the same PR)
-4. **Unit 3** — Re-convert backend (depends on Unit 1's schema/helpers and Unit 9a's whitelist for `reconvert_*` events)
-5. **Unit 4** — Send-to-Kindle backend (depends on Unit 1's schema and Unit 9a's whitelist for `send_to_kindle_attempted` / `send_to_kindle_accepted_by_resend` / `send_to_kindle_rejected_by_validation`)
-6. **Unit 5** — Status response extension + frontend polling (depends on Unit 1 helpers; surfaces the fields the UI will gate on)
+1. **Unit 1** ✅ MERGED (PR #140) — Schema migrations + datastore helpers (foundation; nothing depends on yet-to-exist columns)
+2. **Unit 9a** ✅ MERGED (PR #140) — Telemetry whitelist (mechanically additive: append the new event-type strings to `_VALID_EVENT_TYPES`). Landed in Unit 1's PR — both are foundation changes Units 2–10 depend on. Without 9a landing first, every server-side `log_event()` call in Units 3, 4, 10 would be silently dropped.
+3. **Unit 2** ✅ MERGED (PR #140) — `_cleanup_after_download` no-op (small, paired with Unit 1 in the same PR)
+4. **Unit 3** ✅ MERGED (PR #141) — Re-convert backend (depended on Unit 1's schema/helpers and Unit 9a's whitelist for `reconvert_*` events)
+5. **Unit 4** ⚠️ MERGED MINIMAL (PR #142) — Send-to-Kindle backend skeleton lives on master, **but the live route is gated behind `WEB_SEND_TO_KINDLE_ENABLED=false`** (the default). Disabled deploys boot cleanly without the Resend env vars. The validation suite (30 MB cap, `@kindle.com` / `@free.kindle.com` domain allowlist, display-name + plus-aliasing rejection, EPUB format allowlist, output-path boundary check / P1-4, signed-event e2e, manual smoke script) is a **separate follow-up PR**; the flag stays off until it lands. Do not assume `/send-to-kindle` is production-ready just because the route is registered.
+6. **Unit 5** — Status response extension + frontend polling (depends on Unit 1 helpers; surfaces the fields the UI will gate on) **— next up**
 7. **Unit 10** — Resend webhook handler (depends on Unit 1's `resend_message_id` + `kindle_delivery_status` columns and Unit 9a's whitelist for the four delivery-side events; **MUST land before Unit 6** so `kindle_delivery_status` actually transitions past `accepted_by_resend` — without this the UI promises graded delivery state against a field that never updates)
 8. **Unit 6** — Frontend action cluster UI (depends on Units 4, 5, 10 — every promise the result page makes is backed by an existing backend contract before this unit starts)
 9. **Unit 9b** — Client-side telemetry emissions (Plausible custom events from the result page interactions). Lands together with or right after Unit 6 since the emission sites live in the new components.
@@ -228,7 +228,7 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 ---
 
-- [ ] **Unit 1: Schema migrations + datastore helpers (foundation)**
+- [x] **Unit 1: Schema migrations + datastore helpers (foundation)** — MERGED in PR #140 (commit `fe28ceb`)
 
 **Goal:** Land all SQLite schema changes and helper functions that downstream units depend on, in a single PR with migration-race coverage.
 
@@ -280,7 +280,7 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 ---
 
-- [ ] **Unit 2: Cleanup semantics — `_cleanup_after_download` no-op**
+- [x] **Unit 2: Cleanup semantics — `_cleanup_after_download` no-op** — MERGED in PR #140 (commit `fe28ceb`)
 
 **Goal:** Stop deleting the output file and marking jobs expired on download. TTL sweep in `_cleanup_job` becomes the sole cleanup mechanism.
 
@@ -318,7 +318,7 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 ---
 
-- [ ] **Unit 3: Re-convert backend — `POST /reconvert/{parent_job_id}`**
+- [x] **Unit 3: Re-convert backend — `POST /reconvert/{parent_job_id}`** — MERGED in PR #141 (commit `93d1207`)
 
 **Goal:** New endpoint that creates child jobs from a parent's already-uploaded source. Handles free re-convert, premium re-convert with token consumption, and atomic refund on child failure.
 
@@ -375,7 +375,22 @@ Units are numbered for stable cross-reference, but they MUST land in this depend
 
 ---
 
-- [ ] **Unit 4: Send-to-Kindle backend — `POST /send-to-kindle/{job_id}`**
+- [~] **Unit 4: Send-to-Kindle backend — `POST /send-to-kindle/{job_id}`** — MINIMAL ROUTE MERGED in PR #142 (commit `7567ba2`), **feature-flagged off** behind `WEB_SEND_TO_KINDLE_ENABLED=false`. The validation suite + enable is a separate follow-up PR.
+
+> **Status as of PR #142:** the route module, `email_client` wrapper, `kindle_send_idempotency` table, and the two reviewer-endorsed invariants (atomic claim race-gate + caplog log-leak hardening) are on master. Production deploys boot cleanly without `WEB_SEND_TO_KINDLE_FROM` / `WEB_RESEND_API_KEY` because `_require_env` only fires when the flag is enabled.
+>
+> **What is NOT yet implemented and gates flipping the flag:**
+> 1. 30 MB raw size cap on the EPUB (R3.3)
+> 2. Strict `@kindle.com` / `@free.kindle.com` domain allowlist (R3.1)
+> 3. Display-name + plus-aliasing recipient rejection (R3.4)
+> 4. EPUB-only format allowlist with row-level UI treatment (R3.3)
+> 5. Output-path filesystem-boundary check + `kindle_send_invariant_violation` telemetry (P1-4 hardening)
+> 6. Signed-event e2e test (`tests/test_web_send_to_kindle_signed.py`)
+> 7. Manual smoke script (`tools/verify_send_to_kindle.ps1`)
+> 8. Production Resend domain + sender + API key provisioning
+> 9. Cloudflare WAF rule extension to include `/send-to-kindle/*`
+>
+> Do NOT flip `WEB_SEND_TO_KINDLE_ENABLED=true` in any environment until items 1–9 above land.
 
 **Goal:** New endpoint that sends a converted EPUB output as an email attachment via Resend. Includes recipient + format + size validation, server-side idempotency, and the approved-sender From-address contract.
 
