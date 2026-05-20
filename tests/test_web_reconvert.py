@@ -349,6 +349,69 @@ class TestReconvertPremiumTokenValidation:
         )
         assert resp.status_code == 422
 
+    def test_premium_token_not_consumed_when_source_copy_fails(self, client, monkeypatch):
+        """If shutil.copy2 fails after the token would have been consumed, the
+        token must remain usable (used=0). Regression test for the
+        consume-before-copy bug: source staging must happen BEFORE the token
+        consume so a filesystem failure can never burn a token.
+        """
+        import sqlite3
+
+        import web_service.job_store as js
+        import web_service.token_store as ts
+        from web_service.routes import reconvert as reconvert_module
+
+        tc, db_path, settings = client
+        ts.init_db(db_path)
+        parent_id, _ = _seed_done_parent(settings)
+
+        mint_result = ts.mint_tokens_if_absent(
+            session_id="cs_test_reconvert_copy_fail",
+            count=1,
+            payment_intent_id="pi_test_reconvert_copy_fail",
+            db_path=db_path,
+        )
+        token = mint_result.tokens[0]
+
+        # Force the copy step to fail. The reconvert route imports shutil at
+        # module level, so monkeypatch the attribute on that module.
+        def _boom(*args, **kwargs):
+            raise OSError("simulated disk full")
+
+        monkeypatch.setattr(reconvert_module.shutil, "copy2", _boom)
+
+        resp = tc.post(
+            f"/reconvert/{parent_id}",
+            data={"output_format": "kfx", "token": token},
+        )
+
+        # Endpoint should reject with a server-side error code (NOT 202).
+        assert resp.status_code >= 400, (
+            f"Expected an error response when source copy fails, got "
+            f"{resp.status_code}: {resp.text}"
+        )
+
+        # Critical assertion: token MUST still be usable. used=0 means the
+        # consume never happened — fix Finding 1 by staging source first.
+        conn = sqlite3.connect(str(db_path))
+        used = conn.execute(
+            "SELECT used FROM tokens WHERE pack_id = ?",
+            ("cs_test_reconvert_copy_fail",),
+        ).fetchone()[0]
+        child_rows = conn.execute(
+            "SELECT job_id FROM jobs WHERE parent_job_id = ?",
+            (parent_id,),
+        ).fetchall()
+        conn.close()
+
+        assert used == 0, (
+            "Token was burned by a re-convert attempt whose source-copy failed. "
+            "Source staging must happen BEFORE validate_and_consume."
+        )
+        assert child_rows == [], (
+            "No child job row should be persisted when source-copy fails"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Refund integration — failure path in job_queue.dispatch_job
