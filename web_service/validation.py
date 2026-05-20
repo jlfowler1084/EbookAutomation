@@ -91,10 +91,19 @@ _KINDLE_ALLOWED_DOMAINS: frozenset[str] = frozenset({"kindle.com", "free.kindle.
 # (MOBI is deprecated by Amazon; KFX is for sideload only).
 _KINDLE_OUTPUT_FORMATS: frozenset[str] = frozenset({"epub"})
 
-# Per plan R3.3 size portion. Measured on the raw file bytes (pre-Base64
-# encoding, which expands by ~33%). Amazon's mail-side limit is 40 MB
-# post-Base64; 30 MB raw gives ~7.5 MB of headroom for headers + boundary.
-_KINDLE_MAX_SIZE_BYTES: int = 30 * 1024 * 1024
+# Per plan R3.3 size portion, calibrated against Resend's 40 MB
+# POST-encoding limit. The cap is on RAW bytes; the wrapper Base64-encodes
+# before send.
+#
+# Base64 expansion math: encoded = 4 * ceil(raw/3) ≈ raw * 4/3.
+# Line-wrapping (CRLF every 76 chars) adds ~1.3% more. MIME envelope
+# (headers, boundary markers, Content-Disposition) adds ~3-5 KB.
+#
+# At the previous 30 MiB cap: 30 MiB raw → 40 MiB encoded EXACTLY before
+# envelope or line-wrap → over Resend's limit on every send. Dropping to
+# 25 MiB raw: 25 MiB → ~33.3 MiB encoded → ~33.8 MiB with line-wrap →
+# ~33.9 MiB total → ~6 MiB headroom against Resend's 40 MiB ceiling.
+_KINDLE_MAX_SIZE_BYTES: int = 25 * 1024 * 1024
 
 
 def validate_kindle_recipient(recipient: str) -> KindleValidationResult:
@@ -121,6 +130,18 @@ def validate_kindle_recipient(recipient: str) -> KindleValidationResult:
             ok=False,
             code=KindleErrorCode.INVALID_RECIPIENT_FORM,
             message="Recipient must not include a display name",
+        )
+
+    # parseaddr is permissive: it strips angle brackets, internal whitespace,
+    # comments, source routes, and other RFC-5322 oddities silently, then
+    # returns the normalized address. We require the user to have typed the
+    # canonical address — anything that parseaddr "fixed up" is rejected.
+    # Catches `<x@kindle.com>`, `x @kindle.com`, `(c)x@kindle.com`, etc.
+    if addr != stripped:
+        return KindleValidationResult(
+            ok=False,
+            code=KindleErrorCode.INVALID_RECIPIENT_FORM,
+            message="Recipient must be a bare canonical email address (no angle brackets, whitespace, or RFC-5322 decoration)",
         )
 
     if not addr or "@" not in addr:

@@ -738,6 +738,37 @@ class TestSendToKindleRecipientValidation:
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
 
+    def test_angle_wrapper_rejected(self, client):
+        """parseaddr accepts `<x@kindle.com>` and returns empty display name +
+        the inner address. Without the addr == stripped check, our validator
+        would normalize this through. The contract is 'bare address only.'
+        """
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "<joe@kindle.com>"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
+
+    def test_internal_whitespace_rejected(self, client):
+        """parseaddr silently strips internal whitespace from email-like
+        inputs (e.g., 'joe @kindle.com' becomes 'joe@kindle.com'). Require
+        the post-parse address to exactly match the stripped input so the
+        user can't smuggle whitespace through.
+        """
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "joe @kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "INVALID_RECIPIENT_FORM"
+
 
 class TestSendToKindleFormatAllowlist:
     """R3.3 format portion: Wave 1 only accepts EPUB; defense-in-depth
@@ -797,14 +828,19 @@ class TestSendToKindleFormatAllowlist:
 
 
 class TestSendToKindleSizeCap:
-    """R3.3 size portion: 30 MB raw cap (measured pre-Base64 since the
-    encoding is internal to the wrapper)."""
+    """R3.3 size portion: 25 MiB raw cap.
 
-    def test_30mb_boundary_accepted(self, client):
+    Resend documents a 40 MB POST-Base64-encoding limit. Raw bytes expand
+    by 4/3 under Base64 (30 MiB → 40 MiB exactly), plus ~1.3% for line-
+    wrapping + envelope overhead, so 30 MiB raw is OVER the limit before
+    headers. 25 MiB raw → ~33.3 MiB encoded → comfortable headroom.
+    """
+
+    def test_25mb_boundary_accepted(self, client):
         tc, _, settings = client
-        # Exactly 30 MiB
-        thirty_mb = 30 * 1024 * 1024
-        parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * thirty_mb)
+        # Exactly 25 MiB — at the cap, must pass.
+        twenty_five_mib = 25 * 1024 * 1024
+        parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * twenty_five_mib)
         with _stub_send_success():
             resp = tc.post(
                 f"/send-to-kindle/{parent_id}",
@@ -813,11 +849,27 @@ class TestSendToKindleSizeCap:
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "sent"
 
-    def test_over_30mb_rejected(self, client):
+    def test_over_25mb_rejected(self, client):
         tc, _, settings = client
-        # 30 MB + 1 byte
-        too_big = (30 * 1024 * 1024) + 1
+        # 25 MiB + 1 byte — one byte over the cap.
+        too_big = (25 * 1024 * 1024) + 1
         parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * too_big)
+        with _stub_send_success():
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "u@kindle.com"},
+            )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "OUTPUT_TOO_LARGE_FOR_KINDLE"
+
+    def test_30mb_rejected_post_encoding_safety(self, client):
+        """30 MiB raw is precisely Resend's 40 MiB encoded cap before
+        envelope overhead. Must reject to preserve the headroom that
+        protects against marginal MIME bloat.
+        """
+        tc, _, settings = client
+        thirty_mib = 30 * 1024 * 1024
+        parent_id = _seed_epub_parent(settings, output_bytes=b"\x00" * thirty_mib)
         with _stub_send_success():
             resp = tc.post(
                 f"/send-to-kindle/{parent_id}",

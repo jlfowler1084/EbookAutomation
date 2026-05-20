@@ -1,24 +1,48 @@
-"""POST /send-to-kindle/{job_id} — EB-324 Unit 4 (minimal scope).
+"""POST /send-to-kindle/{job_id} — EB-324 Unit 4.
 
-This route emails the EPUB output of a completed conversion to a user's
-Kindle inbox via Resend. The minimal-scope landing covers the two
-load-bearing invariants from the PR #141 reviewer:
+Emails the EPUB output of a completed conversion to a user's Kindle inbox
+via Resend. Behind ``WEB_SEND_TO_KINDLE_ENABLED`` feature flag (default
+false); production deploys flip the flag per-deploy once the remaining
+Ops pre-enable items (Resend domain + API key + Cloudflare WAF rule) are
+provisioned.
 
-  1. **Atomic idempotency claim.** Two simultaneous POSTs for the same
-     ``(job_id, recipient_hash)`` MUST NOT both reach Resend. The PRIMARY
-     KEY on ``kindle_send_idempotency`` is the race-gate.
+Request pipeline:
 
-  2. **No recipient in logs on failure.** Every Resend failure surfaces as
-     a ``KindleSendError`` (see email_client.py) whose ``repr`` carries no
-     recipient. The handler logs only the sanitized error.
+    feature-flag gate          → 503 SERVICE_DISABLED if off
+    parent existence + done    → 404 / 422
+    output file on disk        → 410 OUTPUT_EXPIRED
+    validate_kindle_recipient  → 422 INVALID_RECIPIENT_FORM / _DOMAIN
+    validate_kindle_format     → 422 FORMAT_NOT_KINDLE_ELIGIBLE
+    validate_kindle_attachment_size → 422 OUTPUT_TOO_LARGE_FOR_KINDLE
+    P1-4 path-boundary check   → 500 + kindle_send_invariant_violation
+    atomic SQLite claim        → 200 already_sent if duplicate in 60s
+    email_client.send_with_attachment
+       success                 → 200 sent + persist resend_message_id +
+                                 kindle_delivery_status=accepted_by_resend
+       KindleSendError         → 502 SEND_FAILED + delete claim row
+       any other Exception     → 502 SEND_FAILED + delete claim row
+                                 (defense-in-depth; wrapper contract failure)
 
-Plan scenarios NOT yet covered (deferred to a follow-up scenario suite):
-  - 30 MB size cap (R3.3)
-  - Strict kindle.com / free.kindle.com domain allowlist (R3.1)
-  - Display-name + plus-aliasing rejection (R3.4)
-  - Format allowlist enforcement beyond a basic EPUB check (R3.3)
-  - Output-path filesystem-boundary check (P1-4 hardening)
-  - Telemetry emission (Unit 9b)
+Privacy invariants enforced through this pipeline:
+
+  1. **Atomic idempotency claim** (PRIMARY KEY on ``kindle_send_idempotency``):
+     two simultaneous POSTs for the same (job_id, recipient_hash) cannot
+     both reach Resend.
+  2. **No recipient in logs on failure**: every send error surfaces as a
+     sanitized ``KindleSendError`` (see ``email_client.py``); route logs
+     only the error class + code, never ``str(exc)``.
+  3. **Output-path filesystem-boundary check (P1-4)**: a corrupted
+     ``output_path`` row can't redirect Resend to read ``/etc/web_service.env``
+     because ``Path.resolve()`` + ``is_relative_to(settings.temp_dir)``
+     refuses anything outside the expected hierarchy.
+  4. **Recipient never stored plaintext**: SHA-256 hash is the
+     ``kindle_send_idempotency`` PRIMARY KEY component.
+
+Out of this PR's scope (deferred):
+  - Signed-event e2e test (``tests/test_web_send_to_kindle_signed.py``)
+  - Manual smoke script (``tools/verify_send_to_kindle.ps1``)
+  - Server-side ``send_to_kindle_*`` telemetry emits (Unit 9b)
+  - Production Resend / Cloudflare provisioning (Ops)
 """
 
 from __future__ import annotations
