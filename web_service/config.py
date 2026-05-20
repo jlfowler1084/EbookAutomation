@@ -108,6 +108,15 @@ class Settings:
     stripe_api_version: str
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
+    # EB-324 Unit 4: Send-to-Kindle delivery. Both fail-closed via _require_env.
+    # send_to_kindle_from is the verified Resend domain sender address (e.g.,
+    # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
+    send_to_kindle_from: str
+    resend_api_key: str
+    # Feature gate: the minimal Unit 4 route has no domain allowlist, no size cap,
+    # no output-path boundary check. Production deploys keep this False until the
+    # validation suite lands. Flip to True via WEB_SEND_TO_KINDLE_ENABLED=true.
+    send_to_kindle_enabled: bool = False
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
     # Caps `--gemini-cost-limit` passed to extract_tts_text.py. $1.00 is generous —
@@ -121,6 +130,19 @@ class Settings:
     # Per-conversion VQA cost cap. visual_qa.py samples 8 pages by default at
     # ~$0.05-$0.10 per OpenRouter call, so $0.50 is generous headroom.
     premium_vqa_cost_limit_usd: float = 0.5
+
+
+def _send_to_kindle_enabled_from_env() -> bool:
+    """Parse WEB_SEND_TO_KINDLE_ENABLED into a bool. Default False.
+
+    Used twice during Settings construction (once for the boolean field
+    itself, once to gate _require_env on the two Resend env vars), so
+    factored out to avoid the conditional drift risk of duplicating
+    `os.environ.get(...).lower() in {...}` in three places.
+    """
+    return os.environ.get("WEB_SEND_TO_KINDLE_ENABLED", "false").lower() in {
+        "true", "1", "yes",
+    }
 
 
 def load_settings() -> Settings:
@@ -187,6 +209,22 @@ def load_settings() -> Settings:
         stripe_webhook_secret=_require_env("STRIPE_WEBHOOK_SECRET"),
         stripe_api_version=os.environ.get("STRIPE_API_VERSION", "2026-04-22.dahlia"),
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
+        # The Resend env vars are only load-bearing when the feature flag is
+        # enabled. Disabled deploys (the default) must boot even when these
+        # are unset — otherwise merging this PR can block a production
+        # restart on hosts that haven't been configured for Send-to-Kindle
+        # yet. _require_env fires only when the flag is true.
+        send_to_kindle_enabled=_send_to_kindle_enabled_from_env(),
+        send_to_kindle_from=(
+            _require_env("WEB_SEND_TO_KINDLE_FROM")
+            if _send_to_kindle_enabled_from_env()
+            else os.environ.get("WEB_SEND_TO_KINDLE_FROM", "")
+        ),
+        resend_api_key=(
+            _require_env("WEB_RESEND_API_KEY")
+            if _send_to_kindle_enabled_from_env()
+            else os.environ.get("WEB_RESEND_API_KEY", "")
+        ),
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
             os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")

@@ -45,6 +45,35 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires  ON jobs(expires_at);
 """
 
+# EB-324 Unit 4: per-(job_id, recipient_hash) idempotency for Send-to-Kindle.
+#
+# The PRIMARY KEY is the atomic-claim race-gate: two simultaneous send
+# attempts both try the INSERT inside their own BEGIN IMMEDIATE; whichever
+# commits first wins, and the loser raises sqlite3.IntegrityError on the PK
+# collision and returns {"status": "already_sent"} without invoking Resend.
+#
+# Recipient is stored as SHA-256 hash, not plaintext, so the privacy claim
+# "the Kindle address never lives in our database" holds. Equality lookup
+# works identically on the hashed key. claim_state lets the route mark the
+# row sent vs. claimed-then-failed; failed claims are deleted to allow
+# immediate retry.
+#
+# Deliberately separate from _SCHEMA_SQL (which lives in the same file but
+# is logically the jobs table only) and from _LATER_COLUMNS (which can only
+# ALTER jobs to add columns). New table → new constant + extra
+# executescript() call in init_db().
+_KINDLE_IDEMPOTENCY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS kindle_send_idempotency (
+    job_id         TEXT    NOT NULL,
+    recipient_hash BLOB    NOT NULL,
+    sent_at        INTEGER NOT NULL,
+    claim_state    TEXT    NOT NULL CHECK (claim_state IN ('claimed', 'sent')),
+    PRIMARY KEY (job_id, recipient_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_kindle_send_idempotency_sent_at
+    ON kindle_send_idempotency(sent_at);
+"""
+
 # EB-324: indexes on _LATER_COLUMNS columns must run AFTER the ADD COLUMNs land.
 # CREATE INDEX IF NOT EXISTS is idempotent, but it raises "no such column" if the
 # referenced column hasn't been added yet, so these live in _apply_migrations
@@ -143,6 +172,7 @@ def init_db(db_path: Path | None = None) -> None:
     """
     with _get_conn(db_path) as conn:
         conn.executescript(_SCHEMA_SQL)
+        conn.executescript(_KINDLE_IDEMPOTENCY_SCHEMA_SQL)
         _apply_migrations(conn)
     log.info("web_service.db initialised at %s", db_path or get_settings().db_path)
 

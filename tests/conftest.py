@@ -26,6 +26,15 @@ _PHASE2_ENV_DEFAULTS = {
     "STRIPE_PRICE_POWER": "price_power_test",
     # EB-227: explicit version pin matching code default. Tests can override.
     "STRIPE_API_VERSION": "2026-04-22.dahlia",
+    # EB-324 Unit 4: Send-to-Kindle. Placeholders so existing tests that don't
+    # exercise the send_to_kindle route still pass load_settings(); tests that
+    # exercise the route may override via their own monkeypatch.
+    "WEB_SEND_TO_KINDLE_FROM": "kindle-test@send.example.com",
+    "WEB_RESEND_API_KEY": "re_test_placeholder_resend_key",
+    # Feature flag defaults to True for tests so the existing route tests
+    # exercise the live path. The disabled-state test overrides this via
+    # its own monkeypatch.setenv.
+    "WEB_SEND_TO_KINDLE_ENABLED": "true",
 }
 
 
