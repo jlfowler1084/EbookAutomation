@@ -291,3 +291,250 @@ class TestSendToKindleNoRecipientInLogs:
             f"caplog.text leaked '{recipient_domain_marker}' somewhere — "
             f"check log format strings AND exception messages"
         )
+
+
+# ---------------------------------------------------------------------------
+# F1 — Feature-flag gating (router live with no validation = job-id-gated relay)
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleFeatureFlag:
+    """The minimal route has no domain allowlist, no size cap, no output-path
+    boundary check. Production must keep it dark until the validation suite
+    lands. The feature flag defaults to False; tests opt in explicitly.
+    """
+
+    def test_route_returns_503_when_flag_disabled(self, project_root, monkeypatch):
+        """With WEB_SEND_TO_KINDLE_ENABLED=false (or unset), POST → 503."""
+        import importlib
+
+        import web_service.job_store as js
+        import web_service.main as main_mod
+        from web_service.config import load_settings
+
+        # Override the conftest default which sets the flag to "true".
+        monkeypatch.setenv("WEB_SEND_TO_KINDLE_ENABLED", "false")
+
+        settings = load_settings()
+        js.init_db(settings.db_path)
+        importlib.reload(main_mod)
+
+        with TestClient(main_mod.app) as tc:
+            resp = tc.post(
+                "/send-to-kindle/some-job-id",
+                data={"recipient": "user@kindle.com"},
+            )
+        assert resp.status_code == 503, (
+            f"Disabled-by-default flag must keep the endpoint dark in production. "
+            f"Got {resp.status_code}: {resp.text}"
+        )
+        assert resp.json()["detail"]["code"] == "SERVICE_DISABLED"
+
+
+# ---------------------------------------------------------------------------
+# F2 — Idempotency window must expire after 60s (plan line 422)
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleIdempotencyExpiry:
+    """The 60s idempotency contract requires that retries after the window
+    elapses are allowed to re-send. _try_claim must opportunistically DELETE
+    expired rows inside BEGIN IMMEDIATE before INSERT.
+    """
+
+    def test_retry_after_60s_calls_resend_again(self, client, monkeypatch):
+        """First POST sends; >60s later, second POST also sends → Resend twice."""
+        send_calls: list[str] = []
+
+        def _record_send(*, from_addr: str, to: list[str], subject: str, html: str, attachments: list):
+            send_calls.append(to[0])
+            return {"id": f"resend_msg_{len(send_calls)}"}
+
+        tc, _, settings = client
+        parent_id = _seed_epub_parent(settings)
+        recipient = "joe-retry-canary@kindle.com"
+
+        from web_service.routes import send_to_kindle as stk_module
+
+        # Patch the module-level _now() helper so we can fast-forward time.
+        clock = [1_000_000]  # epoch seconds
+
+        def _fake_now() -> int:
+            return clock[0]
+
+        monkeypatch.setattr(stk_module, "_now", _fake_now)
+
+        with patch(
+            "web_service.email_client.send_with_attachment",
+            side_effect=_record_send,
+        ):
+            resp1 = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": recipient},
+            )
+            assert resp1.status_code == 200, resp1.text
+            assert resp1.json()["status"] == "sent"
+
+            # Advance the route's clock beyond the 60s window.
+            clock[0] += 61
+
+            resp2 = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": recipient},
+            )
+            assert resp2.status_code == 200, resp2.text
+            # Critical: status must be "sent" again, not "already_sent".
+            assert resp2.json()["status"] == "sent", (
+                "After >60s, a retry must be allowed to re-send. Got "
+                f"{resp2.json()['status']} — opportunistic DELETE is missing."
+            )
+
+        assert len(send_calls) == 2, (
+            "Resend must be invoked once per non-overlapping send window. "
+            f"Got {len(send_calls)} calls."
+        )
+
+
+# ---------------------------------------------------------------------------
+# F3 — Settings.resend_api_key must be applied to the Resend SDK at send time
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleResendApiKeyWiring:
+    """The Resend SDK reads its API key from module-level resend.api_key.
+    The wrapper MUST set that from Settings.resend_api_key before the call,
+    otherwise authentication fails (or worse, uses a stale key from another
+    test run that leaked module state).
+    """
+
+    def test_api_key_set_to_settings_value_before_send(self, project_root, monkeypatch):
+        """Direct unit test on email_client. Asserts resend.api_key matches
+        settings.resend_api_key at the moment resend.Emails.send is invoked.
+        """
+        import resend
+
+        from web_service import email_client
+        from web_service.config import load_settings
+
+        monkeypatch.setenv("WEB_RESEND_API_KEY", "re_test_unit4_unique_value")
+
+        settings = load_settings()
+        assert settings.resend_api_key == "re_test_unit4_unique_value"
+
+        captured_api_key: list[str | None] = []
+
+        def _capture(payload):
+            captured_api_key.append(resend.api_key)
+            return {"id": "test_msg_id"}
+
+        with patch("resend.Emails.send", side_effect=_capture):
+            result = email_client.send_with_attachment(
+                from_addr=settings.send_to_kindle_from,
+                to=["test@kindle.com"],
+                subject="t",
+                html="<p>t</p>",
+                attachments=[{"filename": "x.epub", "content": b"PK\x03\x04"}],
+            )
+
+        assert result.message_id == "test_msg_id"
+        assert captured_api_key == ["re_test_unit4_unique_value"], (
+            f"resend.api_key was not set to settings.resend_api_key before "
+            f"Emails.send. Captured: {captured_api_key!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# F4 — KindleSendError must suppress implicit exception chaining
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleChainSuppression:
+    """Python's implicit exception chaining (__context__) preserves the
+    original exception even if you don't use `from exc`. Only `from None`
+    suppresses it. Without suppression, a log handler that prints the chain
+    will surface the original Resend error — which can contain response
+    body content that includes the recipient.
+    """
+
+    def test_kindle_send_error_has_no_context_or_cause(self, project_root):
+        """Force resend.Emails.send to raise; assert the wrapper's
+        KindleSendError has both __context__ and __cause__ set to None.
+        """
+        from web_service import email_client
+
+        # Patch the SDK call to raise a representative error class.
+        class _SimulatedResendError(Exception):
+            def __init__(self):
+                # The error message intentionally contains a recipient-like
+                # substring to prove the chain leak vector.
+                super().__init__("Resend response: 422 {'to': 'leak@kindle.com'}")
+
+        with patch("resend.Emails.send", side_effect=_SimulatedResendError()):
+            try:
+                email_client.send_with_attachment(
+                    from_addr="kindle@send.example.com",
+                    to=["someone@kindle.com"],
+                    subject="t",
+                    html="<p>t</p>",
+                    attachments=[{"filename": "x.epub", "content": b"PK\x03\x04"}],
+                )
+            except email_client.KindleSendError as err:
+                assert err.__context__ is None, (
+                    "KindleSendError.__context__ leaks the original exception. "
+                    "Use `raise KindleSendError(...) from None` to suppress the "
+                    "implicit chain. Got context: "
+                    f"{err.__context__!r}"
+                )
+                assert err.__cause__ is None, (
+                    "KindleSendError.__cause__ leaks the original exception. "
+                    "Got cause: " + repr(err.__cause__)
+                )
+            else:
+                pytest.fail("Wrapper should have raised KindleSendError")
+
+
+# ---------------------------------------------------------------------------
+# F5 — kindle_delivery_status must become 'accepted_by_resend' on send success
+# ---------------------------------------------------------------------------
+
+
+class TestSendToKindleSetsDeliveryStatus:
+    """Unit 10's webhook contract expects the immediate post-send delivery
+    state to be 'accepted_by_resend', which the webhook then transitions to
+    delivered/bounced/failed/delayed.
+    """
+
+    def test_successful_send_persists_accepted_by_resend(self, client):
+        import sqlite3
+
+        from web_service import email_client
+
+        tc, db_path, settings = client
+        parent_id = _seed_epub_parent(settings)
+        recipient = "joe-status-canary@kindle.com"
+
+        with patch.object(
+            email_client,
+            "send_with_attachment",
+            return_value=email_client.SendResult(message_id="resend_test_msg"),
+        ):
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": recipient},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "sent"
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT resend_message_id, kindle_delivery_status FROM jobs WHERE job_id = ?",
+            (parent_id,),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "resend_test_msg"
+        assert row[1] == "accepted_by_resend", (
+            f"Expected kindle_delivery_status='accepted_by_resend' after the "
+            f"winning send. Got: {row[1]!r}. Unit 10's webhook expects this "
+            f"as the baseline state to transition from."
+        )

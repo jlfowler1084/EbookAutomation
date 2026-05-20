@@ -31,6 +31,10 @@ _PHASE2_ENV_DEFAULTS = {
     # exercise the route may override via their own monkeypatch.
     "WEB_SEND_TO_KINDLE_FROM": "kindle-test@send.example.com",
     "WEB_RESEND_API_KEY": "re_test_placeholder_resend_key",
+    # Feature flag defaults to True for tests so the existing route tests
+    # exercise the live path. The disabled-state test overrides this via
+    # its own monkeypatch.setenv.
+    "WEB_SEND_TO_KINDLE_ENABLED": "true",
 }
 
 

@@ -9,12 +9,14 @@ exception whose ``args`` and ``__str__`` only carry an error code +
 non-sensitive context, we make it impossible for an uncaught Resend error
 or a logged exception to leak the address.
 
-Layered defenses against leaking the recipient (test_no_recipient_in_logs):
+Layered defenses against leaking the recipient (test_no_recipient_in_logs
+plus test_kindle_send_error_has_no_context_or_cause):
   1. ``KindleSendError.__init__`` never accepts or stores the recipient.
-  2. The wrapper catches *every* exception (resend-specific and generic)
-     and re-raises ``KindleSendError`` — the original exception's repr is
-     NOT chained via ``from`` so the address doesn't surface via
-     ``__cause__`` either.
+  2. Every raise inside an ``except`` block uses ``from None`` to suppress
+     Python's implicit ``__context__`` chaining. Without ``from None``,
+     the original Resend exception (which can carry a response body
+     containing the recipient) survives in the chain even though we never
+     wrote ``from exc`` — a subtle distinction that the F4 review caught.
   3. The wrapper logs only the error code + class name, never the body
      of the underlying Resend response.
 """
@@ -85,18 +87,32 @@ def send_with_attachment(
         KindleSendError: any failure to hand the message to Resend. The
             error's repr is sanitized — no recipient or raw response body.
     """
+    # Import the SDK with explicit error capture. The raise happens OUTSIDE
+    # the except block so Python's implicit __context__ chain stays None
+    # (per the F4 finding — `from None` alone only sets __suppress_context__,
+    # it does NOT clear __context__ when the raise is lexically inside an
+    # except block).
+    resend_module = None
+    sdk_missing = False
     try:
-        import resend  # local import: keeps test import-cost minimal
+        import resend as resend_module  # local import: keeps test import-cost minimal
     except ImportError as exc:
         log.error(
             "Resend SDK is not installed — install with `pip install resend`. "
             "Underlying error class: %s",
             exc.__class__.__name__,
         )
-        # Deliberately not chaining (no `from exc`) so the underlying message
-        # doesn't leak through __cause__.repr() in any log handler that
-        # formats chains.
-        raise KindleSendError("RESEND_SDK_NOT_INSTALLED")
+        sdk_missing = True
+    if sdk_missing:
+        raise KindleSendError("RESEND_SDK_NOT_INSTALLED") from None
+
+    # Wire the per-deploy API key to the Resend module-level attribute. The
+    # SDK reads resend.api_key inside Emails.send; without this assignment
+    # the call falls back to None and Resend rejects with an auth error.
+    # Re-setting on every call is cheap and keeps the wrapper stateless
+    # against environment-variable rotations.
+    from web_service.config import get_settings as _get_settings
+    resend_module.api_key = _get_settings().resend_api_key
 
     payload: dict[str, Any] = {
         "from": from_addr,
@@ -106,22 +122,26 @@ def send_with_attachment(
         "attachments": attachments,
     }
 
+    # Same pattern as the import block: capture the failure condition inside
+    # the except, exit the block, then raise outside so __context__ is None.
+    response: Any = None
+    send_error: Exception | None = None
     try:
-        response = resend.Emails.send(payload)
+        response = resend_module.Emails.send(payload)
     except Exception as exc:
-        # Catch-all: every Resend SDK error (network, HTTP 4xx/5xx,
-        # validation, timeouts) becomes a KindleSendError whose repr
-        # contains NO recipient. Log only the error class name.
+        send_error = exc
+    if send_error is not None:
         log.warning(
             "Send-to-Kindle delivery to Resend failed: error_class=%s",
-            exc.__class__.__name__,
+            send_error.__class__.__name__,
         )
-        raise KindleSendError("RESEND_EXCEPTION")
+        raise KindleSendError("RESEND_EXCEPTION") from None
 
     message_id = _extract_message_id(response)
     if not message_id:
         log.warning("Resend returned a 2xx response without a usable message id")
-        raise KindleSendError("INVALID_RESEND_RESPONSE")
+        # No active exception here — plain `from None` suffices to clear __cause__.
+        raise KindleSendError("INVALID_RESEND_RESPONSE") from None
 
     return SendResult(message_id=message_id)
 

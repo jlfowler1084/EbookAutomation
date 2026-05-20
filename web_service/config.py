@@ -113,6 +113,10 @@ class Settings:
     # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
     send_to_kindle_from: str
     resend_api_key: str
+    # Feature gate: the minimal Unit 4 route has no domain allowlist, no size cap,
+    # no output-path boundary check. Production deploys keep this False until the
+    # validation suite lands. Flip to True via WEB_SEND_TO_KINDLE_ENABLED=true.
+    send_to_kindle_enabled: bool = False
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
     # Caps `--gemini-cost-limit` passed to extract_tts_text.py. $1.00 is generous —
@@ -194,6 +198,9 @@ def load_settings() -> Settings:
         token_hmac_secret=_require_env("TOKEN_HMAC_SECRET"),
         send_to_kindle_from=_require_env("WEB_SEND_TO_KINDLE_FROM"),
         resend_api_key=_require_env("WEB_RESEND_API_KEY"),
+        send_to_kindle_enabled=os.environ.get(
+            "WEB_SEND_TO_KINDLE_ENABLED", "false"
+        ).lower() in {"true", "1", "yes"},
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
             os.environ.get("PREMIUM_GEMINI_COST_LIMIT_USD", "1.0")

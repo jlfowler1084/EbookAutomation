@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import sqlite3
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException
@@ -37,6 +38,19 @@ from web_service.job_store import STATUS_DONE
 log = logging.getLogger(__name__)
 router = APIRouter()
 
+# The 60-second idempotency window: a retry within the window for the same
+# (job_id, recipient_hash) returns "already_sent" without invoking Resend.
+# After the window elapses, the opportunistic DELETE in _try_claim prunes
+# the stale row so the next attempt is allowed to re-send.
+_IDEMPOTENCY_WINDOW_SECONDS = 60
+
+
+def _now() -> int:
+    """Module-level time helper so tests can patch the clock without mocking
+    sqlite3 or threading concerns. Always returns an integer epoch second.
+    """
+    return int(time.time())
+
 
 @router.post("/send-to-kindle/{job_id}", status_code=200)
 def send_to_kindle(
@@ -44,6 +58,18 @@ def send_to_kindle(
     recipient: str = Form(...),
 ) -> dict:
     settings = get_settings()
+
+    # Feature gate: the minimal route lacks domain allowlist, size cap, and
+    # output-path boundary checks. Production keeps this dark until the
+    # validation suite lands. Override per-deploy via WEB_SEND_TO_KINDLE_ENABLED.
+    if not settings.send_to_kindle_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "Send-to-Kindle is not enabled for this deployment",
+                "code": "SERVICE_DISABLED",
+            },
+        )
 
     job = job_store.get_job(job_id)
     if job is None:
@@ -151,23 +177,35 @@ def send_to_kindle(
 def _try_claim(*, job_id: str, recipient_hash: bytes) -> str:
     """Attempt an atomic claim row. Returns 'claimed' or 'already_sent'.
 
-    The BEGIN IMMEDIATE / INSERT shape mirrors token_store.validate_and_consume
-    (line 374-385). PRIMARY KEY violation -> sqlite3.IntegrityError ->
-    caller treats as "someone else owns this send."
+    The BEGIN IMMEDIATE / DELETE-expired / INSERT shape mirrors
+    token_store.validate_and_consume (line 374-385). The opportunistic
+    DELETE removes rows older than the idempotency window so a retry
+    after the window elapses is allowed to re-send (plan line 422).
+    PRIMARY KEY violation -> sqlite3.IntegrityError -> caller treats as
+    "someone else owns this send."
     """
-    import time as _time
-
     settings = get_settings()
+    now = _now()
+    expiry_cutoff = now - _IDEMPOTENCY_WINDOW_SECONDS
+
     conn = sqlite3.connect(str(settings.db_path))
     try:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("BEGIN IMMEDIATE")
         try:
+            # Sweep expired claims first — both stale 'claimed' rows from
+            # workers that crashed mid-send AND old 'sent' rows whose 60s
+            # window has elapsed. Idempotent: DELETE on no matching rows is
+            # a no-op.
+            conn.execute(
+                "DELETE FROM kindle_send_idempotency WHERE sent_at < ?",
+                (expiry_cutoff,),
+            )
             conn.execute(
                 "INSERT INTO kindle_send_idempotency "
                 "(job_id, recipient_hash, sent_at, claim_state) "
                 "VALUES (?, ?, ?, 'claimed')",
-                (job_id, recipient_hash, int(_time.time())),
+                (job_id, recipient_hash, now),
             )
             conn.commit()
             return "claimed"
@@ -208,12 +246,17 @@ def _release_claim(*, job_id: str, recipient_hash: bytes) -> None:
 
 
 def _persist_resend_message_id(job_id: str, message_id: str) -> None:
+    """Persist the Resend message id AND set kindle_delivery_status to the
+    immediate-post-accept baseline. Unit 10's webhook handler transitions
+    this field on subsequent delivery events (delivered/bounced/failed/delayed).
+    """
     settings = get_settings()
     conn = sqlite3.connect(str(settings.db_path))
     try:
         conn.execute(
-            "UPDATE jobs SET resend_message_id = ? WHERE job_id = ?",
-            (message_id, job_id),
+            "UPDATE jobs SET resend_message_id = ?, kindle_delivery_status = ? "
+            "WHERE job_id = ?",
+            (message_id, "accepted_by_resend", job_id),
         )
         conn.commit()
     finally:
