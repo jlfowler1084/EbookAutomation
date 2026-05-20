@@ -657,6 +657,70 @@ class TestStatusEndpointEB324Extension:
         assert "output_present" in body
         assert body["children"] == []
 
+    def test_parent_send_to_kindle_state_surfaces_at_top_level(
+        self, client, tmp_path,
+    ):
+        """When a user sends the parent EPUB to Kindle, the parent's
+        kindle_delivery_status and resend_message_id MUST appear at the top
+        level of the response so the EPUB row can render the delivery state.
+        Without this, Unit 10's webhook can update the DB but the UI can never
+        see accepted_by_resend / delivered_to_mail_server / bounced / failed /
+        delivery_delayed for the parent.
+        """
+        import web_service.job_store as js
+
+        tc, db_path = client
+        parent_id, _, _ = _seed_done_parent_with_files(tmp_path, db_path)
+
+        # Simulate Unit 4's post-send state: resend_message_id + the
+        # accepted_by_resend baseline that Unit 10 then transitions from.
+        # In production this is one UPDATE inside the route handler; the
+        # test reproduces that shape directly to avoid coupling to the
+        # send_to_kindle route's other validation.
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "UPDATE jobs SET resend_message_id = ?, "
+                "kindle_delivery_status = ? WHERE job_id = ?",
+                ("msg_abc123", "accepted_by_resend", parent_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        resp = tc.get(f"/status/{parent_id}")
+        body = resp.json()
+        assert body["kindle_delivery_status"] == "accepted_by_resend"
+        assert body["resend_message_id"] == "msg_abc123"
+
+        # Then simulate Unit 10's webhook flipping to one of the terminal
+        # states — use the column-canonical "failed" (NOT the telemetry
+        # event name "delivery_failed").
+        js.update_kindle_delivery_status(parent_id, "failed", db_path=db_path)
+        resp2 = tc.get(f"/status/{parent_id}")
+        body2 = resp2.json()
+        assert body2["kindle_delivery_status"] == "failed", (
+            "Canonical column value is 'failed'. 'delivery_failed' is the "
+            "telemetry event name, not the kindle_delivery_status value."
+        )
+
+    def test_parent_delivery_fields_default_to_null_before_send(
+        self, client, tmp_path,
+    ):
+        """A done job that has not been sent to Kindle returns null for both
+        delivery fields — never absent, never the empty string.
+        """
+        tc, db_path = client
+        parent_id, _, _ = _seed_done_parent_with_files(tmp_path, db_path)
+
+        resp = tc.get(f"/status/{parent_id}")
+        body = resp.json()
+        assert "kindle_delivery_status" in body
+        assert "resend_message_id" in body
+        assert body["kindle_delivery_status"] is None
+        assert body["resend_message_id"] is None
+
     def test_ai_telemetry_block_preserved_alongside_new_fields(
         self, client, tmp_path,
     ):

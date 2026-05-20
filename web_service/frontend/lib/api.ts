@@ -5,12 +5,15 @@ export type JobStatus = "queued" | "running" | "done" | "failed" | "expired";
 // EB-324 Unit 4: Resend webhook lifecycle for Send-to-Kindle delivery.
 // `accepted_by_resend` is set on the parent (and any child) the moment our
 // route's POST succeeds at Resend's API. Unit 10's webhook handler later
-// transitions the field through delivered/bounced/failed/delayed.
+// transitions the field through delivered_to_mail_server / bounced /
+// failed / delivery_delayed. NOTE: the column-canonical failure value is
+// "failed", not "delivery_failed" — the latter is the telemetry event name
+// (`send_to_kindle_delivery_failed`), which is a different namespace.
 export type KindleDeliveryStatus =
   | "accepted_by_resend"
   | "delivered_to_mail_server"
   | "bounced"
-  | "delivery_failed"
+  | "failed"
   | "delivery_delayed"
   | null;
 
@@ -33,11 +36,16 @@ export interface ChildJob {
 export interface StatusResponse {
   job_id: string;
   status: JobStatus;
-  // EB-324 Unit 5: four new contract fields the action cluster gates on.
+  // EB-324 Unit 5: contract fields the action cluster gates on.
   // Present on every status value; download_url stays done-only.
   expires_at: number;
   source_present: boolean;
   output_present: boolean;
+  // Parent Send-to-Kindle delivery state mirrors the per-child fields so
+  // the parent EPUB row renders graded delivery state. Both null until
+  // Send-to-Kindle has been invoked.
+  kindle_delivery_status: KindleDeliveryStatus;
+  resend_message_id: string | null;
   children: ChildJob[];
   download_url?: string;
   output_size?: number;

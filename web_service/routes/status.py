@@ -1,20 +1,28 @@
 """GET /status/{job_id} — return current job state.
 
-EB-324 Unit 5 extends the response with four fields the result-page action
-cluster gates on:
+EB-324 Unit 5 extends the response so the result-page action cluster can
+render gated buttons and graded Send-to-Kindle delivery state:
 
-    expires_at       — epoch seconds; frontend renders the coarse TTL
-                       countdown ("about an hour", "less than 10 minutes")
-    source_present   — bool; the parent's input file is still on disk, so
-                       re-convert can re-use it without a re-upload
-    output_present   — bool; the parent's output file is still on disk, so
-                       Send-to-Kindle and Download remain available
-    children[]       — list of re-convert child jobs (newest last) with
-                       their own per-child presence + delivery state
+    expires_at             — epoch seconds; coarse TTL countdown copy
+    source_present         — bool; input file still on disk → Re-convert OK
+    output_present         — bool; output file still on disk → Download +
+                             Send-to-Kindle OK
+    kindle_delivery_status — null until Send-to-Kindle is invoked, then
+                             accepted_by_resend (Unit 4) → delivered_to_mail_server
+                             / bounced / failed / delivery_delayed (Unit 10).
+                             Mirrors the per-child field so the parent's
+                             EPUB row can render delivery state too.
+    resend_message_id      — Resend message id captured at accept time;
+                             null otherwise. Used by Unit 10's webhook
+                             handler for correlation.
+    children[]             — list of re-convert child jobs (oldest first)
+                             with their own per-child presence + delivery
+                             state
 
-All four fields appear on EVERY status value (done/queued/running/failed/
-expired). download_url stays done-only for backward compat. The EB-245 AI
-telemetry block continues to appear only when its fields are populated.
+All six new fields appear on EVERY status value (done/queued/running/
+failed/expired). download_url stays done-only for backward compat. The
+EB-245 AI telemetry block continues to appear only when its fields are
+populated.
 """
 
 from __future__ import annotations
@@ -82,6 +90,13 @@ async def get_status(job_id: str) -> dict:
         "expires_at": job["expires_at"],
         "source_present": _file_exists(job.get("input_path")),
         "output_present": _file_exists(job.get("output_path")),
+        # Parent Send-to-Kindle state mirrors the per-child fields. Unit 4
+        # writes accepted_by_resend on send; Unit 10's webhook transitions
+        # to delivered_to_mail_server / bounced / failed / delivery_delayed.
+        # Without these at the top level, the parent EPUB row can't render
+        # the delivery state the user just initiated.
+        "kindle_delivery_status": job.get("kindle_delivery_status"),
+        "resend_message_id": job.get("resend_message_id"),
         "children": [
             _child_entry(child)
             for child in job_store.list_children(job_id)
