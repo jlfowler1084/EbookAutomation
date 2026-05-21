@@ -53,11 +53,12 @@ import sqlite3
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 
 from web_service import email_client, job_store, recovery_events_store, validation
 from web_service.config import get_settings
 from web_service.job_store import STATUS_DONE
+from web_service.rate_limit import kindle_job_id_key, limiter
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,7 +78,10 @@ def _now() -> int:
 
 
 @router.post("/send-to-kindle/{job_id}", status_code=200)
+@limiter.limit("10/minute")
+@limiter.limit("3/minute", key_func=kindle_job_id_key)
 def send_to_kindle(
+    request: Request,
     job_id: str,
     recipient: str = Form(...),
 ) -> dict:

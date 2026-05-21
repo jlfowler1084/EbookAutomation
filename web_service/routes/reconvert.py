@@ -29,7 +29,7 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 
 from web_service import (
     circuit_breaker,
@@ -41,6 +41,7 @@ from web_service import (
 from web_service.config import get_settings
 from web_service.crypto import compute_token_hash
 from web_service.job_store import STATUS_DONE, new_job_id
+from web_service.rate_limit import limiter, parent_job_id_key
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +54,10 @@ _RECONVERT_PREMIUM_FORMATS = {"kfx"}
 
 
 @router.post("/reconvert/{parent_job_id}", status_code=202)
+@limiter.limit("10/minute")
+@limiter.limit("5/minute", key_func=parent_job_id_key)
 async def reconvert_job(
+    request: Request,
     parent_job_id: str,
     output_format: str = Form(...),
     token: str | None = Form(default=None),

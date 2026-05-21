@@ -52,3 +52,23 @@ def _phase2_env_defaults(monkeypatch):
     for key, value in _PHASE2_ENV_DEFAULTS.items():
         monkeypatch.setenv(key, value)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter():
+    """EB-324 Unit 8: disable slowapi rate limiting by default in tests.
+
+    slowapi's in-memory storage persists across tests within a process, so a
+    multi-request test case would otherwise trip limits set by an earlier
+    test (and the per-resource keys collide across files that reuse the same
+    job_id / parent_job_id). Disabling globally keeps existing route tests
+    unaffected. The dedicated rate-limit tests opt back in via their own
+    fixture (see tests/test_web_rate_limit.py::_enable_limiter).
+    """
+    from web_service.rate_limit import limiter
+    previous = limiter.enabled
+    limiter.enabled = False
+    limiter.reset()
+    yield
+    limiter.enabled = previous
+    limiter.reset()
