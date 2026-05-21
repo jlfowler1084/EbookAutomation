@@ -201,3 +201,88 @@ and discarded: the hosted MCP grant in use does not expose `cache_purge` or
 `waf:write` as toggleable scopes on the consent screen, so re-consent
 produces the same read-only grant. Use the static-token + REST path
 documented above instead.
+
+---
+
+# EB-324 Unit 8 — Rate limiting (WAF rule + origin lockdown)
+
+Unit 8 adds two paired defenses. The **app-level** half (slowapi limiter +
+trusted-proxy-gated key extractor) lands in the code PR. The **deploy-level**
+half (Cloudflare WAF rule + nginx origin lockdown) is documented here and
+applied by Ops alongside the code merge.
+
+## Combined Cloudflare WAF rate-limit rule (deploy task)
+
+Free plan allows **one** rate-limit rule per zone, so the existing
+`/stripe/webhook` rule must be merged with the new EB-324 paths into a single
+combined rule. After Unit 10 (`/webhooks/resend`) also landed, the rule covers
+four path families.
+
+- **Rule expression:**
+  ```
+  (http.request.uri.path eq "/stripe/webhook")
+    or (http.request.uri.path eq "/webhooks/resend")
+    or (starts_with(http.request.uri.path, "/reconvert/"))
+    or (starts_with(http.request.uri.path, "/send-to-kindle/"))
+  ```
+- **Period:** 10s (Free plan max)
+- **Requests threshold:** 20 (coarse burst protector — the per-IP/per-resource
+  fine limits live in the app-level slowapi layer)
+- **Action:** block
+- **Mitigation timeout:** 10s (Free plan max)
+- **Characteristics:** `ip.src` (+ `cf.colo.id`, auto-added by Free plan)
+
+This WAF rule is **defense-in-depth, not the primary limiter.** The
+load-bearing per-IP (10/min) and per-resource (5/min reconvert parent, 3/min
+kindle job) limits are enforced in-app by slowapi. The WAF rule is a coarse
+edge-side burst absorber that fires before traffic even reaches the origin.
+
+Apply via the static API token's `Zone WAF: Write` scope (REST), or the
+dashboard. Do NOT block the code merge on this — the app-level slowapi limiter
+is fully functional without it.
+
+## Origin lockdown — nginx Cloudflare IP allowlist
+
+`deploy/nginx.conf`'s 443 server block carries an `allow`/`deny all`
+Cloudflare IP allowlist (between the `# BEGIN CLOUDFLARE IPS` / `# END
+CLOUDFLARE IPS` sentinels). This is the **critical pairing** for the app's
+trusted-proxy rate-limit gate: the app trusts `CF-Connecting-IP` only from the
+local nginx proxy (`web_service/rate_limit.py::trusted_client_key`), and this
+allowlist ensures only Cloudflare can reach that proxy. Without origin
+lockdown, an attacker who discovers the Hetzner VM's raw IP could hit the
+origin directly, forge `CF-Connecting-IP` per request, and bypass all per-IP
+rate limiting.
+
+### Monthly refresh runbook
+
+Cloudflare changes its published IP ranges rarely, but a stale allowlist that
+omits a newly-added Cloudflare range would 403 legitimate traffic from that
+edge. Refresh monthly:
+
+```bash
+sudo deploy/refresh-cloudflare-ips.sh
+```
+
+The script fetches `cloudflare.com/ips-v4` + `/ips-v6`, rewrites the allowlist
+between the sentinels in `/etc/nginx/sites-available/leafbind`, validates with
+`nginx -t`, and reloads. Exit codes: `0` success, `1` fetch failure, `2`
+sentinels not found, `3` `nginx -t` failed (config left rewritten for
+inspection, reload NOT issued).
+
+### Pre-deploy verification (manual, before flipping the allowlist live)
+
+From an external IP **outside Cloudflare's range**, attempt to reach the origin
+directly on ports 80 and 443:
+
+```bash
+curl -sko /dev/null -w "%{http_code}\n" --resolve api.leafbind.io:443:<HETZNER_VM_IP> https://api.leafbind.io/health
+```
+
+Expect a connection rejection (nginx `deny all` → 403) or a no-route condition
+(host firewall denied). If the origin responds 200, the allowlist is NOT in
+effect and the Unit 8 deploy is gated on fixing it before announcing the
+rate-limit protection as active.
+
+> NOTE: run the pre-deploy verification from a non-Cloudflare network. Running
+> it from behind Cloudflare (or from the VM itself, which is allowlisted via
+> `127.0.0.1`) will not exercise the `deny all` path.

@@ -25,10 +25,14 @@ from pathlib import Path
 import stripe
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.staticfiles import StaticFiles
 
 from web_service import job_queue, job_store, recovery_events_store, token_store
 from web_service.config import get_settings
+from web_service.rate_limit import limiter
 from web_service.routes import (
     checkout,
     convert,
@@ -52,8 +56,12 @@ _failed_mints_sweep_task: asyncio.Task | None = None
 # Module-level NTP state — set during lifespan startup, read by /health
 _ntp_synced: bool = True
 
-# Middleware classes that are allowlisted for raw-body safety (Unit 4 guard)
-_MIDDLEWARE_ALLOWLIST = {"CORSMiddleware"}
+# Middleware classes that are allowlisted for raw-body safety (Unit 4 guard).
+# SlowAPIMiddleware (Unit 8) is raw-body-safe: it reads headers + the
+# decorator-set limit state on request.state and never calls request.body()
+# or consumes request.stream(), so it does not interfere with the
+# /stripe/webhook or /webhooks/resend signature-verification raw-body reads.
+_MIDDLEWARE_ALLOWLIST = {"CORSMiddleware", "SlowAPIMiddleware"}
 
 
 def _check_ntp_sync() -> bool:
@@ -233,6 +241,14 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # EB-324 Unit 8: slowapi rate limiting. The limiter is stored on
+    # app.state (slowapi convention); SlowAPIMiddleware enforces the
+    # per-route @limiter.limit decorators; the exception handler maps
+    # RateLimitExceeded → 429. Trusted-proxy-gated key extraction lives in
+    # web_service/rate_limit.py.
+    application.state.limiter = limiter
+    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    application.add_middleware(SlowAPIMiddleware)
     application.include_router(convert.router)
     application.include_router(reconvert.router)
     application.include_router(send_to_kindle.router)
