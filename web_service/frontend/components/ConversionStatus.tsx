@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type StatusResponse, getStatus } from "../lib/api";
 import ActionCluster from "./ActionCluster";
 
@@ -11,53 +11,70 @@ interface Props {
 
 type ErrorKind = "not-found" | "server";
 
+const TERMINAL_JOB = new Set(["done", "failed", "expired"]);
+// Delivery states still awaiting a Resend webhook transition. While the parent
+// or any child sits in one of these, keep polling so delivered/bounced/failed
+// surfaces without a manual reload.
+const DELIVERY_PENDING = new Set(["accepted_by_resend", "delivery_delayed"]);
+
+/**
+ * Nothing left to watch: the parent is terminal, no child is in flight, and
+ * no output is awaiting a delivery-webhook transition. This is the condition
+ * to stop polling. Critically, it stays FALSE after a re-convert dispatch
+ * (child in flight) or a Send-to-Kindle (delivery pending), so the loop keeps
+ * running to surface that new backend state.
+ */
+function isSettled(status: StatusResponse): boolean {
+  if (!TERMINAL_JOB.has(status.status)) return false;
+  const children = status.children ?? [];
+  if (children.some((c) => !TERMINAL_JOB.has(c.status))) return false;
+  const deliveryPending =
+    DELIVERY_PENDING.has(status.kindle_delivery_status ?? "") ||
+    children.some((c) => DELIVERY_PENDING.has(c.kindle_delivery_status ?? ""));
+  return !deliveryPending;
+}
+
 export default function ConversionStatus({ jobId }: Props) {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [error, setError] = useState<ErrorKind | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stop = useCallback(() => {
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const poll = useCallback(async () => {
+    try {
+      const result = await getStatus(jobId);
+      setStatus(result);
+      if (isSettled(result)) stop();
+    } catch (err: unknown) {
+      // EB-271: distinguish 404 (unknown/expired job) from other failures.
+      const kind: ErrorKind =
+        err instanceof ApiError && err.status === 404 ? "not-found" : "server";
+      setError(kind);
+      stop();
+    }
+  }, [jobId, stop]);
+
+  // Idempotent restart. ActionCluster calls this after a re-convert dispatch
+  // or a Send-to-Kindle so newly-created children + webhook-driven delivery
+  // transitions surface without a reload. The immediate poll() picks up the
+  // new state right away rather than waiting for the next 5s tick.
+  const startPolling = useCallback(() => {
+    if (intervalRef.current === null) {
+      void poll();
+      intervalRef.current = setInterval(() => void poll(), 5000);
+    }
+  }, [poll]);
 
   useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const poll = async () => {
-      try {
-        const result = await getStatus(jobId);
-        setStatus(result);
-        // EB-324 Unit 5/6: keep polling while ANY in-flight job exists —
-        // the parent OR any re-convert child. A parent can reach "done"
-        // while a child re-convert is still queued/running, and the action
-        // cluster needs the child's progress to keep updating. Stop only
-        // when the parent is terminal AND no child is in flight.
-        const TERMINAL = new Set(["done", "failed", "expired"]);
-        const parentTerminal = TERMINAL.has(result.status);
-        const anyChildInFlight = (result.children ?? []).some(
-          (child) => !TERMINAL.has(child.status)
-        );
-        if (parentTerminal && !anyChildInFlight) {
-          if (intervalId !== null) {
-            clearInterval(intervalId);
-            intervalId = null;
-          }
-        }
-      } catch (err: unknown) {
-        // EB-271: distinguish 404 (unknown/expired job) from other failures.
-        // Both used to surface as "Service unavailable", which masked the
-        // 24-hour file-deletion policy as a backend bug.
-        const kind: ErrorKind = err instanceof ApiError && err.status === 404 ? "not-found" : "server";
-        setError(kind);
-        if (intervalId !== null) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
-      }
-    };
-
-    poll();
-    intervalId = setInterval(poll, 5000);
-
-    return () => {
-      if (intervalId !== null) clearInterval(intervalId);
-    };
-  }, [jobId]);
+    startPolling();
+    return stop;
+  }, [startPolling, stop]);
 
   if (error === "not-found") {
     return (
@@ -90,11 +107,11 @@ export default function ConversionStatus({ jobId }: Props) {
     return <p>Checking status…</p>;
   }
 
-  // EB-324 Unit 6: the done state delegates to the result-page action
-  // cluster (Download + Send-to-Kindle + Re-convert per format row). The
-  // in-progress / failed / expired states keep their simple status copy.
+  // EB-324 Unit 6: the done state delegates to the result-page action cluster.
+  // onActivity restarts polling after a re-convert dispatch / Send-to-Kindle so
+  // the new child + delivery transitions show up live.
   if (status.status === "done") {
-    return <ActionCluster jobId={jobId} status={status} />;
+    return <ActionCluster jobId={jobId} status={status} onActivity={startPolling} />;
   }
 
   const labels: Record<string, string> = {

@@ -14,6 +14,13 @@ import TtlCountdown from "./TtlCountdown";
 interface Props {
   jobId: string;
   status: StatusResponse;
+  /**
+   * Restart the status poll loop. Called after a re-convert dispatch or a
+   * Send-to-Kindle so the new child + webhook-driven delivery transitions
+   * surface without a reload (the poll loop otherwise stops once the parent
+   * is done with no in-flight children).
+   */
+  onActivity: () => void;
 }
 
 // Re-convert offers, in display order. mobi is free; kfx is premium. EPUB is
@@ -31,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
   expired: "Expired",
 };
 
-export default function ActionCluster({ jobId, status }: Props) {
+export default function ActionCluster({ jobId, status, onActivity }: Props) {
   // Hide the TTL countdown once the user consumes an action (a successful
   // Send-to-Kindle) — the remaining-time copy becomes noise at that point.
   const [countdownHidden, setCountdownHidden] = useState(false);
@@ -39,17 +46,32 @@ export default function ActionCluster({ jobId, status }: Props) {
   const parentFormat = status.download_url ? inferFormat(status) : "epub";
   const childrenByFormat = new Map(status.children.map((c) => [c.format, c]));
 
-  function handleSent() {
-    setCountdownHidden(true);
-    emitEvent("send_to_kindle_attempted", { output_format: "epub" });
+  // Client-side Plausible events (Unit 9b-client) are ENGAGEMENT signals fired
+  // at user-activation time. Outcomes (succeeded/failed/accepted/bounced) are
+  // captured server-side (Unit 9b-server, recovery_events). Props use the
+  // canonical `output_format` key; never job_id/recipient (privacy).
+
+  // ---- Attempt-time telemetry (fired when the user commits to an action) ----
+  function handleReconvertAttempt(format: "mobi" | "kfx") {
+    emitEvent("reconvert_attempted", { output_format: format });
   }
 
-  function handleReconvertDispatched(format: "mobi" | "kfx", tier: string) {
-    emitEvent("reconvert_attempted", { format, tier });
+  function handleSendAttempt() {
+    emitEvent("send_to_kindle_attempted", { output_format: "epub" });
   }
 
   function handleExpiredClick(action: string) {
     emitEvent("expired_action_attempted", { action });
+  }
+
+  // ---- Success-time hooks (restart polling so new state surfaces live) ----
+  function handleReconvertDispatched() {
+    onActivity();
+  }
+
+  function handleSent() {
+    setCountdownHidden(true);
+    onActivity();
   }
 
   return (
@@ -79,7 +101,9 @@ export default function ActionCluster({ jobId, status }: Props) {
             jobId={jobId}
             outputPresent={status.output_present}
             kindleDeliveryStatus={status.kindle_delivery_status}
+            onAttempt={handleSendAttempt}
             onSent={handleSent}
+            onDisabledClick={() => handleExpiredClick("send_to_kindle")}
           />
         )}
       </div>
@@ -110,7 +134,8 @@ export default function ActionCluster({ jobId, status }: Props) {
                     parentJobId={jobId}
                     format={format}
                     disabled={!status.source_present}
-                    onDispatched={() => handleReconvertDispatched(format, tier)}
+                    onAttempt={() => handleReconvertAttempt(format)}
+                    onDispatched={handleReconvertDispatched}
                     onDisabledClick={() => handleExpiredClick(`reconvert_${format}`)}
                   />
                 )}

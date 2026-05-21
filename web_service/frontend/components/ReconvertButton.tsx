@@ -15,6 +15,9 @@ interface Props {
    * telemetry wired in Unit 9b-client.
    */
   disabled?: boolean;
+  /** Fired at user-activation time (the actual convert dispatch), before the
+   *  API call — the engagement signal for Unit 9b-client telemetry. */
+  onAttempt?: () => void;
   /** Called with the new child job_id once a re-convert is dispatched. */
   onDispatched: (childJobId: string) => void;
   /** Fired when a disabled button is activated (Unit 9b-client telemetry). */
@@ -30,6 +33,7 @@ export default function ReconvertButton({
   parentJobId,
   format,
   disabled = false,
+  onAttempt,
   onDispatched,
   onDisabledClick,
 }: Props) {
@@ -40,6 +44,9 @@ export default function ReconvertButton({
   const label = FORMAT_LABEL[format];
 
   async function dispatch(token?: string) {
+    // Engagement signal at the moment the user commits to converting (free:
+    // Convert click; premium: valid-token submit), before the API call.
+    onAttempt?.();
     setPhase("submitting");
     setErrorMsg(null);
     try {

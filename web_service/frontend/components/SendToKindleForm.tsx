@@ -19,8 +19,13 @@ interface Props {
    * Drives the graded delivery copy + the failure-known approved-sender path.
    */
   kindleDeliveryStatus: KindleDeliveryStatus;
-  /** Fired on a successful send (Unit 9b-client telemetry hook). */
+  /** Fired when the user clicks Send (engagement signal, before the API call). */
+  onAttempt?: () => void;
+  /** Fired on a successful send — restarts polling for delivery transitions. */
   onSent?: (recipient: string) => void;
+  /** Fired when the disabled (expired-output) Send button is activated, for
+   *  the expired_action_attempted telemetry (Unit 9b-client). */
+  onDisabledClick?: () => void;
 }
 
 type FormPhase = "idle" | "sending" | "sent" | "failure_generic";
@@ -29,7 +34,9 @@ export default function SendToKindleForm({
   jobId,
   outputPresent,
   kindleDeliveryStatus,
+  onAttempt,
   onSent,
+  onDisabledClick,
 }: Props) {
   const [email, setEmail] = useState("");
   const [phase, setPhase] = useState<FormPhase>("idle");
@@ -58,6 +65,11 @@ export default function SendToKindleForm({
   }
 
   async function handleSend() {
+    // Engagement signal at click time, regardless of outcome (the server-side
+    // funnel captures accepted/rejected/error). Fires even for an empty-input
+    // attempt below since the user did try to send.
+    onAttempt?.();
+
     const recipient = email.trim();
     if (!recipient) {
       setErrorMsg("Enter your Kindle email address.");
@@ -91,11 +103,24 @@ export default function SendToKindleForm({
   }
 
   if (!outputPresent) {
+    // Mirror ReconvertButton's expired pattern: a disabled (aria-disabled,
+    // not HTML disabled) button so the click still fires for the
+    // expired_action_attempted telemetry, plus explanatory copy.
     return (
-      <p className="text-sm text-text-muted">
-        This file has expired, so it can no longer be sent to Kindle. Upload it
-        again to convert and send.
-      </p>
+      <div className="space-y-2">
+        <button
+          type="button"
+          aria-disabled="true"
+          onClick={() => onDisabledClick?.()}
+          className="cursor-not-allowed rounded-md border border-border bg-surface-muted px-4 py-2 text-sm text-text-muted opacity-60"
+        >
+          Send to Kindle — file expired
+        </button>
+        <p className="text-xs text-text-muted">
+          This file has expired, so it can no longer be sent to Kindle. Upload
+          it again to convert and send.
+        </p>
+      </div>
     );
   }
 
