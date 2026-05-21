@@ -77,6 +77,17 @@ def _now() -> int:
     return int(time.time())
 
 
+def _emit(event_type: str, details: dict) -> None:
+    """Fire-and-forget telemetry (Unit 9b). NEVER include the recipient
+    address in details — use job_id + error codes only. Telemetry failures
+    must not affect the send outcome.
+    """
+    try:
+        recovery_events_store.log_event(event_type, details=details)
+    except Exception:
+        log.exception("Telemetry log_event failed for %s", event_type)
+
+
 @router.post("/send-to-kindle/{job_id}", status_code=200)
 @limiter.limit("10/minute")
 @limiter.limit("3/minute", key_func=kindle_job_id_key)
@@ -123,42 +134,35 @@ def send_to_kindle(
             detail={"error": "Output file no longer on disk", "code": "OUTPUT_EXPIRED"},
         )
 
+    # Unit 9b: a genuine send is being attempted (past the feature gate +
+    # job/output checks). The outcome events partition this funnel:
+    # attempted → rejected_by_validation | accepted_by_resend | send_error.
+    _emit("send_to_kindle_attempted", {"job_id": job_id, "output_fmt": job["output_fmt"]})
+
     # ---- Validation pipeline (R3.1 + R3.3 + R3.4 + P1-4) ----
     #
     # Order: cheap parse/equality checks first; filesystem cost (stat,
     # resolve) last. Each block maps a validator failure to its canonical
     # HTTPException code so the frontend can render targeted error copy.
 
+    def _reject(code: str, message: str) -> "HTTPException":
+        # Emit the validation-reject telemetry (code only, never recipient)
+        # and return the HTTPException for the caller to raise.
+        _emit("send_to_kindle_rejected_by_validation", {"job_id": job_id, "code": code})
+        return HTTPException(status_code=422, detail={"error": message, "code": code})
+
     recipient_result = validation.validate_kindle_recipient(recipient)
     if not recipient_result.ok:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": recipient_result.message,
-                "code": recipient_result.code.value,
-            },
-        )
+        raise _reject(recipient_result.code.value, recipient_result.message)
     normalized = recipient_result.normalized
 
     format_result = validation.validate_kindle_format(job["output_fmt"])
     if not format_result.ok:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": format_result.message,
-                "code": format_result.code.value,
-            },
-        )
+        raise _reject(format_result.code.value, format_result.message)
 
     size_result = validation.validate_kindle_attachment_size(output_path.stat().st_size)
     if not size_result.ok:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error": size_result.message,
-                "code": size_result.code.value,
-            },
-        )
+        raise _reject(size_result.code.value, size_result.message)
 
     # P1-4 hardening: resolve output_path and assert it lives inside
     # settings.temp_dir. A corrupted output_path row (e.g., from a future
@@ -227,6 +231,7 @@ def send_to_kindle(
             "Send-to-Kindle send failed for job %s: code=%s http_status=%s",
             job_id, exc.code, exc.http_status,
         )
+        _emit("send_to_kindle_send_error", {"job_id": job_id, "error_code": exc.code})
         raise HTTPException(
             status_code=502,
             detail={"error": "Send failed; please retry", "code": "SEND_FAILED"},
@@ -245,12 +250,14 @@ def send_to_kindle(
             "class=%s — email_client.send_with_attachment should have caught this",
             job_id, exc.__class__.__name__,
         )
+        _emit("send_to_kindle_send_error", {"job_id": job_id, "error_class": exc.__class__.__name__})
         raise HTTPException(
             status_code=502,
             detail={"error": "Send failed; please retry", "code": "SEND_FAILED"},
         )
 
     _mark_claim_sent(job_id=job_id, recipient_hash=recipient_hash)
+    _emit("send_to_kindle_accepted_by_resend", {"job_id": job_id, "message_id": result.message_id})
     # Persist the Resend message_id on the job for Unit 10's webhook
     # correlation. Failure to persist isn't fatal — log and continue.
     try:

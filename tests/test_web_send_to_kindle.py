@@ -165,9 +165,11 @@ class TestSendToKindleAtomicClaim:
         send_lock = threading.Lock()
 
         def _record_send(*, from_addr: str, to: list[str], subject: str, html: str, attachments: list):
+            from web_service import email_client
             with send_lock:
                 send_calls.append((from_addr, to[0]))
-            return {"id": f"resend_msg_{len(send_calls)}"}
+            # Faithful mock: the real wrapper returns SendResult, not a dict.
+            return email_client.SendResult(message_id=f"resend_msg_{len(send_calls)}")
 
         tc, _, settings = client
         parent_id = _seed_epub_parent(settings)
@@ -353,8 +355,10 @@ class TestSendToKindleIdempotencyExpiry:
         send_calls: list[str] = []
 
         def _record_send(*, from_addr: str, to: list[str], subject: str, html: str, attachments: list):
+            from web_service import email_client
             send_calls.append(to[0])
-            return {"id": f"resend_msg_{len(send_calls)}"}
+            # Faithful mock: the real wrapper returns SendResult, not a dict.
+            return email_client.SendResult(message_id=f"resend_msg_{len(send_calls)}")
 
         tc, _, settings = client
         parent_id = _seed_epub_parent(settings)
