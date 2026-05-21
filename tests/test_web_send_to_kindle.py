@@ -1,23 +1,29 @@
 """Tests for POST /send-to-kindle/{job_id} — EB-324 Unit 4.
 
-This file covers the two highest-signal scenarios named in the PR #141 review:
+Covers the full Wave 1 validation surface. Originally added the two
+reviewer-endorsed invariants in PR #142 (atomic idempotency claim
+under concurrency + caplog log-leak hardening), then expanded across
+PRs #142/#144 to cover the validation pipeline:
 
-1.  Atomic idempotency claim under concurrency. Two simultaneous requests for
-    the same (job_id, recipient) hit the route. The plan's atomic-claim design
-    (PRIMARY KEY on `kindle_send_idempotency`) MUST guarantee that exactly one
-    succeeds with `sent` while the other observes the prior claim and returns
-    `already_sent` — and Resend's SDK is called exactly once. If two threads
-    can both reach Resend, the user gets duplicate Kindle emails.
+  - Atomic idempotency claim race-gate (PRIMARY KEY on
+    kindle_send_idempotency)
+  - Recipient parser strictness (R3.1 domain allowlist + R3.4
+    display-name / plus-aliasing / angle-wrapper / whitespace rejection)
+  - Format allowlist enforcement ({"epub"})
+  - Attachment size cap (25 MiB raw, calibrated against Resend's
+    40 MB post-encoding ceiling)
+  - Output-path filesystem-boundary check (P1-4 hardening) +
+    kindle_send_invariant_violation telemetry
+  - Resend SDK error mapping (5xx → 502 + claim row deleted)
+  - Multi-recipient idempotency (different recipients per job both
+    reach Resend)
+  - Sanitized exception chain (no recipient in __context__ /
+    __cause__ / __str__)
+  - Base64 attachment encoding before SDK send
 
-2.  Log-leak hardening (P1-3 in the plan). When `email_client.send_with_attachment`
-    fails, the recipient address MUST NOT appear in any captured log record.
-    This is the load-bearing privacy guard for the "we never log the address"
-    claim. Without the sanitizing wrapper, an unhandled `resend.exceptions`
-    error or the raw response body could leak the address into logs.
-
-Additional plan scenarios (happy path, recipient validation, format check,
-size check, etc.) are out of scope for this file in its initial form and will
-be added as Unit 4 implementation matures.
+The flag default stays False; tests force it on via conftest. Out of
+this file's scope: signed-event e2e (`test_web_send_to_kindle_signed.py`)
+and the manual `tools/verify_send_to_kindle.ps1` smoke script.
 """
 
 from __future__ import annotations

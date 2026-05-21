@@ -195,7 +195,12 @@ def validate_kindle_format(output_fmt: str) -> KindleValidationResult:
 
 
 def validate_kindle_attachment_size(size_bytes: int) -> KindleValidationResult:
-    """Raw-byte size check against the 30 MB cap."""
+    """Raw-byte size check against the 25 MiB cap.
+
+    Cap is calibrated against Resend's 40 MB POST-Base64-encoding ceiling.
+    25 MiB raw → ~33.3 MiB encoded → ~6 MiB headroom for envelope +
+    line-wrapping overhead. See the comment on _KINDLE_MAX_SIZE_BYTES.
+    """
     if size_bytes <= _KINDLE_MAX_SIZE_BYTES:
         return KindleValidationResult(ok=True)
     return KindleValidationResult(

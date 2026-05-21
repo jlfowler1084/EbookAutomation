@@ -113,9 +113,10 @@ class Settings:
     # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
     send_to_kindle_from: str
     resend_api_key: str
-    # Feature gate: the minimal Unit 4 route has no domain allowlist, no size cap,
-    # no output-path boundary check. Production deploys keep this False until the
-    # validation suite lands. Flip to True via WEB_SEND_TO_KINDLE_ENABLED=true.
+    # Feature gate. The Unit 4 validation suite (R3.1 + R3.3 + R3.4 + P1-4)
+    # has landed; production deploys still stay False until Ops provisions
+    # the Resend domain + API key + Cloudflare WAF rule and explicitly flips
+    # WEB_SEND_TO_KINDLE_ENABLED=true on a per-deploy basis.
     send_to_kindle_enabled: bool = False
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.

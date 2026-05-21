@@ -83,9 +83,9 @@ def send_to_kindle(
 ) -> dict:
     settings = get_settings()
 
-    # Feature gate: the minimal route lacks domain allowlist, size cap, and
-    # output-path boundary checks. Production keeps this dark until the
-    # validation suite lands. Override per-deploy via WEB_SEND_TO_KINDLE_ENABLED.
+    # Feature gate: the validation suite has landed, but production deploys
+    # stay dark until Ops provisions the Resend domain + API key + Cloudflare
+    # WAF rule and explicitly flips the per-deploy flag.
     if not settings.send_to_kindle_enabled:
         raise HTTPException(
             status_code=503,
