@@ -89,6 +89,7 @@ async def dispatch_job(job_id: str) -> None:
             log.exception("Unhandled error in job %s", job_id)
             job_store.set_failed(job_id, str(exc))
             await _maybe_refund_failed_child(job, reason="dispatch_exception")
+            _maybe_emit_reconvert_outcome(job, succeeded=False)
             return
 
         if result.success:
@@ -100,9 +101,37 @@ async def dispatch_job(job_id: str) -> None:
                 vqa_cost_usd=result.vqa_cost_usd,
                 vqa_skipped_reason=result.vqa_skipped_reason,
             )
+            _maybe_emit_reconvert_outcome(job, succeeded=True)
         else:
             job_store.set_failed(job_id, result.error_message)
             await _maybe_refund_failed_child(job, reason="child_job_failed")
+            _maybe_emit_reconvert_outcome(job, succeeded=False)
+
+
+def _maybe_emit_reconvert_outcome(job: dict, *, succeeded: bool) -> None:
+    """Emit reconvert_succeeded / reconvert_failed for re-convert children
+    only (parent_job_id IS NOT NULL). Top-level uploads never emit these —
+    the events are re-convert-specific (Unit 9b).
+
+    Fire-and-forget: telemetry must never block the dispatcher's return path.
+    """
+    if not job.get("parent_job_id"):
+        return
+    event_type = "reconvert_succeeded" if succeeded else "reconvert_failed"
+    try:
+        recovery_events_store.log_event(
+            event_type,
+            details={
+                "child_job_id": job["job_id"],
+                "parent_job_id": job.get("parent_job_id"),
+                "output_format": job.get("output_fmt"),
+                "tier": job.get("tier"),
+            },
+        )
+    except Exception:
+        log.exception(
+            "Telemetry log_event failed for %s (child %s)", event_type, job["job_id"]
+        )
 
 
 async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
