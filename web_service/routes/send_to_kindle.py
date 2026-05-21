@@ -1,24 +1,48 @@
-"""POST /send-to-kindle/{job_id} — EB-324 Unit 4 (minimal scope).
+"""POST /send-to-kindle/{job_id} — EB-324 Unit 4.
 
-This route emails the EPUB output of a completed conversion to a user's
-Kindle inbox via Resend. The minimal-scope landing covers the two
-load-bearing invariants from the PR #141 reviewer:
+Emails the EPUB output of a completed conversion to a user's Kindle inbox
+via Resend. Behind ``WEB_SEND_TO_KINDLE_ENABLED`` feature flag (default
+false); production deploys flip the flag per-deploy once the remaining
+Ops pre-enable items (Resend domain + API key + Cloudflare WAF rule) are
+provisioned.
 
-  1. **Atomic idempotency claim.** Two simultaneous POSTs for the same
-     ``(job_id, recipient_hash)`` MUST NOT both reach Resend. The PRIMARY
-     KEY on ``kindle_send_idempotency`` is the race-gate.
+Request pipeline:
 
-  2. **No recipient in logs on failure.** Every Resend failure surfaces as
-     a ``KindleSendError`` (see email_client.py) whose ``repr`` carries no
-     recipient. The handler logs only the sanitized error.
+    feature-flag gate          → 503 SERVICE_DISABLED if off
+    parent existence + done    → 404 / 422
+    output file on disk        → 410 OUTPUT_EXPIRED
+    validate_kindle_recipient  → 422 INVALID_RECIPIENT_FORM / _DOMAIN
+    validate_kindle_format     → 422 FORMAT_NOT_KINDLE_ELIGIBLE
+    validate_kindle_attachment_size → 422 OUTPUT_TOO_LARGE_FOR_KINDLE
+    P1-4 path-boundary check   → 500 + kindle_send_invariant_violation
+    atomic SQLite claim        → 200 already_sent if duplicate in 60s
+    email_client.send_with_attachment
+       success                 → 200 sent + persist resend_message_id +
+                                 kindle_delivery_status=accepted_by_resend
+       KindleSendError         → 502 SEND_FAILED + delete claim row
+       any other Exception     → 502 SEND_FAILED + delete claim row
+                                 (defense-in-depth; wrapper contract failure)
 
-Plan scenarios NOT yet covered (deferred to a follow-up scenario suite):
-  - 30 MB size cap (R3.3)
-  - Strict kindle.com / free.kindle.com domain allowlist (R3.1)
-  - Display-name + plus-aliasing rejection (R3.4)
-  - Format allowlist enforcement beyond a basic EPUB check (R3.3)
-  - Output-path filesystem-boundary check (P1-4 hardening)
-  - Telemetry emission (Unit 9b)
+Privacy invariants enforced through this pipeline:
+
+  1. **Atomic idempotency claim** (PRIMARY KEY on ``kindle_send_idempotency``):
+     two simultaneous POSTs for the same (job_id, recipient_hash) cannot
+     both reach Resend.
+  2. **No recipient in logs on failure**: every send error surfaces as a
+     sanitized ``KindleSendError`` (see ``email_client.py``); route logs
+     only the error class + code, never ``str(exc)``.
+  3. **Output-path filesystem-boundary check (P1-4)**: a corrupted
+     ``output_path`` row can't redirect Resend to read ``/etc/web_service.env``
+     because ``Path.resolve()`` + ``is_relative_to(settings.temp_dir)``
+     refuses anything outside the expected hierarchy.
+  4. **Recipient never stored plaintext**: SHA-256 hash is the
+     ``kindle_send_idempotency`` PRIMARY KEY component.
+
+Out of this PR's scope (deferred):
+  - Signed-event e2e test (``tests/test_web_send_to_kindle_signed.py``)
+  - Manual smoke script (``tools/verify_send_to_kindle.ps1``)
+  - Server-side ``send_to_kindle_*`` telemetry emits (Unit 9b)
+  - Production Resend / Cloudflare provisioning (Ops)
 """
 
 from __future__ import annotations
@@ -31,7 +55,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException
 
-from web_service import email_client, job_store
+from web_service import email_client, job_store, recovery_events_store, validation
 from web_service.config import get_settings
 from web_service.job_store import STATUS_DONE
 
@@ -59,9 +83,9 @@ def send_to_kindle(
 ) -> dict:
     settings = get_settings()
 
-    # Feature gate: the minimal route lacks domain allowlist, size cap, and
-    # output-path boundary checks. Production keeps this dark until the
-    # validation suite lands. Override per-deploy via WEB_SEND_TO_KINDLE_ENABLED.
+    # Feature gate: the validation suite has landed, but production deploys
+    # stay dark until Ops provisions the Resend domain + API key + Cloudflare
+    # WAF rule and explicitly flips the per-deploy flag.
     if not settings.send_to_kindle_enabled:
         raise HTTPException(
             status_code=503,
@@ -95,14 +119,77 @@ def send_to_kindle(
             detail={"error": "Output file no longer on disk", "code": "OUTPUT_EXPIRED"},
         )
 
-    # Normalize: strip + lowercase. Full RFC-5322 + domain allowlist is a
-    # follow-up scenario; for the minimal claim/log-leak tests the recipient
-    # only needs to be a deterministic key.
-    normalized = recipient.strip().lower()
-    if not normalized:
+    # ---- Validation pipeline (R3.1 + R3.3 + R3.4 + P1-4) ----
+    #
+    # Order: cheap parse/equality checks first; filesystem cost (stat,
+    # resolve) last. Each block maps a validator failure to its canonical
+    # HTTPException code so the frontend can render targeted error copy.
+
+    recipient_result = validation.validate_kindle_recipient(recipient)
+    if not recipient_result.ok:
         raise HTTPException(
             status_code=422,
-            detail={"error": "Recipient is required", "code": "MISSING_RECIPIENT"},
+            detail={
+                "error": recipient_result.message,
+                "code": recipient_result.code.value,
+            },
+        )
+    normalized = recipient_result.normalized
+
+    format_result = validation.validate_kindle_format(job["output_fmt"])
+    if not format_result.ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": format_result.message,
+                "code": format_result.code.value,
+            },
+        )
+
+    size_result = validation.validate_kindle_attachment_size(output_path.stat().st_size)
+    if not size_result.ok:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": size_result.message,
+                "code": size_result.code.value,
+            },
+        )
+
+    # P1-4 hardening: resolve output_path and assert it lives inside
+    # settings.temp_dir. A corrupted output_path row (e.g., from a future
+    # SQL-injection in another route) could otherwise redirect Resend to
+    # read /etc/web_service.env and exfiltrate API keys via the attachment.
+    # Treats both paths as resolved (symlink-aware) before comparison.
+    try:
+        resolved_output = output_path.resolve(strict=True)
+        resolved_temp = settings.temp_dir.resolve(strict=False)
+        if not resolved_output.is_relative_to(resolved_temp):
+            raise ValueError("output_path escapes temp_dir hierarchy")
+    except (OSError, ValueError) as exc:
+        log.error(
+            "Kindle send invariant violation: output_path for job %s does not "
+            "resolve inside temp_dir (%s). Refusing to send.",
+            job_id, exc,
+        )
+        try:
+            recovery_events_store.log_event(
+                "kindle_send_invariant_violation",
+                details={
+                    "job_id": job_id,
+                    "reason": "output_path_outside_temp_dir",
+                },
+            )
+        except Exception:
+            log.exception(
+                "Could not record kindle_send_invariant_violation telemetry"
+            )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Output path failed integrity check",
+                "code": "KINDLE_SEND_INVARIANT_VIOLATION",
+            },
         )
 
     recipient_hash = hashlib.sha256(normalized.encode("utf-8")).digest()
