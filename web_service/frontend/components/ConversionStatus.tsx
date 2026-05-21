@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ApiError, type StatusResponse, getDownloadUrl, getStatus } from "../lib/api";
+import { ApiError, type StatusResponse, getStatus } from "../lib/api";
+import ActionCluster from "./ActionCluster";
 
 interface Props {
   jobId: string;
@@ -21,7 +22,17 @@ export default function ConversionStatus({ jobId }: Props) {
       try {
         const result = await getStatus(jobId);
         setStatus(result);
-        if (result.status === "done" || result.status === "failed") {
+        // EB-324 Unit 5/6: keep polling while ANY in-flight job exists —
+        // the parent OR any re-convert child. A parent can reach "done"
+        // while a child re-convert is still queued/running, and the action
+        // cluster needs the child's progress to keep updating. Stop only
+        // when the parent is terminal AND no child is in flight.
+        const TERMINAL = new Set(["done", "failed", "expired"]);
+        const parentTerminal = TERMINAL.has(result.status);
+        const anyChildInFlight = (result.children ?? []).some(
+          (child) => !TERMINAL.has(child.status)
+        );
+        if (parentTerminal && !anyChildInFlight) {
           if (intervalId !== null) {
             clearInterval(intervalId);
             intervalId = null;
@@ -79,10 +90,16 @@ export default function ConversionStatus({ jobId }: Props) {
     return <p>Checking status…</p>;
   }
 
+  // EB-324 Unit 6: the done state delegates to the result-page action
+  // cluster (Download + Send-to-Kindle + Re-convert per format row). The
+  // in-progress / failed / expired states keep their simple status copy.
+  if (status.status === "done") {
+    return <ActionCluster jobId={jobId} status={status} />;
+  }
+
   const labels: Record<string, string> = {
     queued: "Queued — waiting for a conversion slot…",
     running: "Converting — this may take a minute…",
-    done: "Done!",
     failed: "Conversion failed.",
     expired: "File has expired.",
   };
@@ -92,23 +109,6 @@ export default function ConversionStatus({ jobId }: Props) {
       <p>
         <strong>Status:</strong> {labels[status.status] ?? status.status}
       </p>
-
-      {status.status === "done" && status.download_url && (
-        <a
-          href={getDownloadUrl(jobId)}
-          style={{
-            display: "inline-block",
-            marginTop: 8,
-            padding: "8px 16px",
-            background: "var(--color-accent)",
-            color: "#fff",
-            borderRadius: 4,
-            textDecoration: "none",
-          }}
-        >
-          Download converted file
-        </a>
-      )}
 
       {status.status === "failed" && status.error && (
         <p style={{ color: "red", marginTop: 8 }}>Error: {status.error}</p>
