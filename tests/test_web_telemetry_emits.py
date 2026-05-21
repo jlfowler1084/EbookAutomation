@@ -294,6 +294,57 @@ class TestSendToKindleTelemetry:
                 f"got recipient_hash={details.get('recipient_hash')!r}"
             )
 
+    def test_correlation_key_persisted_before_accepted_emit(self, client, monkeypatch):
+        """The resend_message_id correlation key MUST be persisted before the
+        accepted_by_resend telemetry emit, so a delivery webhook arriving
+        milliseconds after Resend accepts can correlate. The emit also carries
+        correlation_persisted=True.
+        """
+        from web_service import email_client, recovery_events_store
+        from web_service.routes import send_to_kindle as stk
+
+        tc, db_path, settings = client
+        parent_id = _seed_done_parent(settings)
+
+        # Record the relative order of the persist call vs the accepted emit,
+        # both captured at RUNTIME (not post-hoc) so the assertion reflects
+        # actual execution order.
+        order: list[str] = []
+        accepted_details: dict = {}
+
+        real_persist = stk._persist_resend_message_id
+
+        def _tracked_persist(job_id, message_id):
+            order.append("persist")
+            return real_persist(job_id, message_id)
+
+        real_log_event = recovery_events_store.log_event
+
+        def _tracked_log_event(event_type, details=None, db_path=None):
+            if event_type == "send_to_kindle_accepted_by_resend":
+                order.append("emit")
+                accepted_details.update(details or {})
+            return real_log_event(event_type, details=details, db_path=db_path)
+
+        monkeypatch.setattr(stk, "_persist_resend_message_id", _tracked_persist)
+        monkeypatch.setattr(recovery_events_store, "log_event", _tracked_log_event)
+
+        with patch.object(
+            email_client, "send_with_attachment",
+            return_value=email_client.SendResult(message_id="msg-corr"),
+        ):
+            resp = tc.post(
+                f"/send-to-kindle/{parent_id}",
+                data={"recipient": "joe@kindle.com"},
+            )
+        assert resp.status_code == 200
+
+        assert order == ["persist", "emit"], (
+            f"resend_message_id must be persisted BEFORE the accepted emit "
+            f"to avoid the webhook-correlation race. Runtime order: {order}"
+        )
+        assert accepted_details.get("correlation_persisted") is True
+
     def test_emits_rejected_by_validation_on_bad_domain(self, client, monkeypatch):
         tc, _, settings = client
         parent_id = _seed_done_parent(settings)

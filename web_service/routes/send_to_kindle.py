@@ -85,9 +85,16 @@ def _now() -> int:
 
 
 def _emit(event_type: str, details: dict) -> None:
-    """Fire-and-forget telemetry (Unit 9b). NEVER include the recipient
-    address in details — use job_id + error codes only. Telemetry failures
-    must not affect the send outcome.
+    """Fire-and-forget telemetry (Unit 9b). Telemetry failures must not affect
+    the send outcome.
+
+    Canonical send-to-kindle details (per plan): ``output_format``, ``tier``,
+    and ``recipient_hash`` (sha256 hexdigest of the normalized recipient — the
+    privacy-safe per-recipient correlation key) plus the event-specific field
+    (``code`` for rejected_by_validation, ``message_id`` +
+    ``correlation_persisted`` for accepted_by_resend, ``error_code`` /
+    ``error_class`` for send_error). NEVER include the recipient address
+    itself — only its hash.
     """
     try:
         recovery_events_store.log_event(event_type, details=details)
@@ -279,17 +286,34 @@ def send_to_kindle(
         )
 
     _mark_claim_sent(job_id=job_id, recipient_hash=recipient_hash)
-    _emit("send_to_kindle_accepted_by_resend", {**_telemetry_base, "message_id": result.message_id})
-    # Persist the Resend message_id on the job for Unit 10's webhook
-    # correlation. Failure to persist isn't fatal — log and continue.
+
+    # Persist the Resend message_id BEFORE emitting telemetry. Resend has
+    # already accepted the send, so it can fire a delivery webhook within
+    # milliseconds — Unit 10's find_by_resend_message_id() needs the
+    # correlation key already on the job row or the delivery event is dropped
+    # as "unknown message_id". The telemetry _emit() is a synchronous SQLite
+    # write that can block on locks, so doing it first would widen that race
+    # window. Persistence failure is non-fatal (the send succeeded) but
+    # degrades webhook correlation, so we surface it on the event.
+    correlation_persisted = True
     try:
         _persist_resend_message_id(job_id, result.message_id)
     except Exception:
+        correlation_persisted = False
         log.exception(
             "Could not persist resend_message_id for job %s — webhook "
             "correlation will be degraded for this send",
             job_id,
         )
+
+    _emit(
+        "send_to_kindle_accepted_by_resend",
+        {
+            **_telemetry_base,
+            "message_id": result.message_id,
+            "correlation_persisted": correlation_persisted,
+        },
+    )
 
     return {"status": "sent"}
 
