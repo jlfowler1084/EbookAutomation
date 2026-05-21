@@ -43,6 +43,8 @@ cryptography>=48.0.0,<49.0.0
 # Send-to-Kindle (EB-324 Wave 1 Unit 4) — Resend SDK + RFC-5322 recipient parsing
 resend>=2.30.0,<3.0.0
 email-validator>=2.3.0,<3.0.0
+# Resend webhook signature verification (EB-324 Wave 1 Unit 10) — Svix client
+svix>=1.90.0,<2.0.0
 
 # Config
 python-dotenv==1.2.2

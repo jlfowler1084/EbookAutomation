@@ -37,6 +37,7 @@ from web_service.routes import (
     recover,
     recovery_events,
     reconvert,
+    resend_webhook,
     send_to_kindle,
     status,
     webhook,
@@ -235,6 +236,7 @@ def create_app() -> FastAPI:
     application.include_router(convert.router)
     application.include_router(reconvert.router)
     application.include_router(send_to_kindle.router)
+    application.include_router(resend_webhook.router)
     application.include_router(status.router)
     application.include_router(download.router)
     application.include_router(checkout.router)

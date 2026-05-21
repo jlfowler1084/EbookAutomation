@@ -31,6 +31,10 @@ _PHASE2_ENV_DEFAULTS = {
     # exercise the route may override via their own monkeypatch.
     "WEB_SEND_TO_KINDLE_FROM": "kindle-test@send.example.com",
     "WEB_RESEND_API_KEY": "re_test_placeholder_resend_key",
+    # EB-324 Unit 10: Svix-format signing secret. The webhook tests sign
+    # payloads with this same secret so verify() succeeds. Base64-decoded
+    # length must match Svix's expected key size (32 bytes).
+    "WEB_RESEND_WEBHOOK_SECRET": "whsec_dGVzdHNlY3JldHRlc3RzZWNyZXR0ZXN0c2VjcmV0dGVzdA==",
     # Feature flag defaults to True for tests so the existing route tests
     # exercise the live path. The disabled-state test overrides this via
     # its own monkeypatch.setenv.

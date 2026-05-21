@@ -355,6 +355,30 @@ def update_kindle_delivery_status(
         )
 
 
+def find_by_resend_message_id(
+    resend_message_id: str,
+    db_path: Path | None = None,
+) -> dict | None:
+    """Return the job whose resend_message_id matches, or None.
+
+    Used by /webhooks/resend (Unit 10) to correlate inbound Svix-signed
+    delivery events back to the originating Send-to-Kindle send. Returns
+    None when the message_id has no matching job — typically because the
+    job's row was already TTL-swept, or because Resend is retrying a
+    webhook after the column was overwritten by a later send attempt
+    (Wave 1 stores latest-send-only per the `resend_message_id` semantics
+    decision in the plan).
+    """
+    if not resend_message_id:
+        return None
+    with _get_conn(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE resend_message_id = ?",
+            (resend_message_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def set_resend_message_id(
     job_id: str,
     resend_message_id: str,
