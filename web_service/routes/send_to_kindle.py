@@ -38,10 +38,17 @@ Privacy invariants enforced through this pipeline:
   4. **Recipient never stored plaintext**: SHA-256 hash is the
      ``kindle_send_idempotency`` PRIMARY KEY component.
 
+Server-side ``send_to_kindle_*`` telemetry emits (Unit 9b) are wired in this
+module: ``attempted`` on entry, ``rejected_by_validation`` on each 422,
+``accepted_by_resend`` on Resend 2xx, ``send_error`` on failure. Each event's
+details carry ``output_format`` + ``tier`` + a privacy-safe ``recipient_hash``
+(sha256 hexdigest, never the address). The client-side Plausible emits land
+with Unit 6.
+
 Out of this PR's scope (deferred):
   - Signed-event e2e test (``tests/test_web_send_to_kindle_signed.py``)
   - Manual smoke script (``tools/verify_send_to_kindle.ps1``)
-  - Server-side ``send_to_kindle_*`` telemetry emits (Unit 9b)
+  - Client-side Plausible custom events (Unit 6)
   - Production Resend / Cloudflare provisioning (Ops)
 """
 
@@ -134,10 +141,25 @@ def send_to_kindle(
             detail={"error": "Output file no longer on disk", "code": "OUTPUT_EXPIRED"},
         )
 
+    # Canonical telemetry fields (plan): output_format + tier on every event,
+    # plus a privacy-safe recipient hash for per-recipient correlation. The
+    # hash is sha256 of the strip+lower'd recipient — the same normalization
+    # validate_kindle_recipient applies, so it matches the validated form for
+    # valid addresses and stays a stable correlation key even for rejected
+    # input. NEVER the address itself.
+    _telemetry_base = {
+        "job_id": job_id,
+        "output_format": job["output_fmt"],
+        "tier": job["tier"],
+        "recipient_hash": hashlib.sha256(
+            recipient.strip().lower().encode("utf-8")
+        ).hexdigest(),
+    }
+
     # Unit 9b: a genuine send is being attempted (past the feature gate +
     # job/output checks). The outcome events partition this funnel:
     # attempted → rejected_by_validation | accepted_by_resend | send_error.
-    _emit("send_to_kindle_attempted", {"job_id": job_id, "output_fmt": job["output_fmt"]})
+    _emit("send_to_kindle_attempted", dict(_telemetry_base))
 
     # ---- Validation pipeline (R3.1 + R3.3 + R3.4 + P1-4) ----
     #
@@ -148,7 +170,7 @@ def send_to_kindle(
     def _reject(code: str, message: str) -> "HTTPException":
         # Emit the validation-reject telemetry (code only, never recipient)
         # and return the HTTPException for the caller to raise.
-        _emit("send_to_kindle_rejected_by_validation", {"job_id": job_id, "code": code})
+        _emit("send_to_kindle_rejected_by_validation", {**_telemetry_base, "code": code})
         return HTTPException(status_code=422, detail={"error": message, "code": code})
 
     recipient_result = validation.validate_kindle_recipient(recipient)
@@ -231,7 +253,7 @@ def send_to_kindle(
             "Send-to-Kindle send failed for job %s: code=%s http_status=%s",
             job_id, exc.code, exc.http_status,
         )
-        _emit("send_to_kindle_send_error", {"job_id": job_id, "error_code": exc.code})
+        _emit("send_to_kindle_send_error", {**_telemetry_base, "error_code": exc.code})
         raise HTTPException(
             status_code=502,
             detail={"error": "Send failed; please retry", "code": "SEND_FAILED"},
@@ -250,14 +272,14 @@ def send_to_kindle(
             "class=%s — email_client.send_with_attachment should have caught this",
             job_id, exc.__class__.__name__,
         )
-        _emit("send_to_kindle_send_error", {"job_id": job_id, "error_class": exc.__class__.__name__})
+        _emit("send_to_kindle_send_error", {**_telemetry_base, "error_class": exc.__class__.__name__})
         raise HTTPException(
             status_code=502,
             detail={"error": "Send failed; please retry", "code": "SEND_FAILED"},
         )
 
     _mark_claim_sent(job_id=job_id, recipient_hash=recipient_hash)
-    _emit("send_to_kindle_accepted_by_resend", {"job_id": job_id, "message_id": result.message_id})
+    _emit("send_to_kindle_accepted_by_resend", {**_telemetry_base, "message_id": result.message_id})
     # Persist the Resend message_id on the job for Unit 10's webhook
     # correlation. Failure to persist isn't fatal — log and continue.
     try:

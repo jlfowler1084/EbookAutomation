@@ -277,6 +277,23 @@ class TestSendToKindleTelemetry:
         assert "send_to_kindle_attempted" in types
         assert "send_to_kindle_accepted_by_resend" in types
 
+        # Canonical schema (plan): output_format (NOT output_fmt), tier, and
+        # the privacy-safe recipient hash on every send-to-kindle event.
+        import hashlib
+        expected_hash = hashlib.sha256("joe@kindle.com".encode("utf-8")).hexdigest()
+        for event_type in ("send_to_kindle_attempted", "send_to_kindle_accepted_by_resend"):
+            details = next(e[1] for e in captured if e[0] == event_type)
+            assert details.get("output_format") == "epub", (
+                f"{event_type} must use canonical key 'output_format', got: {details}"
+            )
+            assert details.get("tier") == "free", (
+                f"{event_type} must include tier, got: {details}"
+            )
+            assert details.get("recipient_hash") == expected_hash, (
+                f"{event_type} must include sha256(normalized_recipient).hexdigest(); "
+                f"got recipient_hash={details.get('recipient_hash')!r}"
+            )
+
     def test_emits_rejected_by_validation_on_bad_domain(self, client, monkeypatch):
         tc, _, settings = client
         parent_id = _seed_done_parent(settings)
