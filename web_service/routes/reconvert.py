@@ -35,6 +35,7 @@ from web_service import (
     circuit_breaker,
     job_queue,
     job_store,
+    recovery_events_store,
     token_store,
     token_validation,
 )
@@ -192,6 +193,22 @@ async def reconvert_job(
         parent_job_id=parent_job_id,
         token_hash_hex=token_hash_hex,
     )
+
+    # Unit 9b: a re-convert child is genuinely being dispatched here. The
+    # completion events (reconvert_succeeded / reconvert_failed) fire later
+    # from job_queue.dispatch_job when the child resolves.
+    try:
+        recovery_events_store.log_event(
+            "reconvert_attempted",
+            details={
+                "parent_job_id": parent_job_id,
+                "child_job_id": child_id,
+                "output_format": out_lower,
+                "tier": tier,
+            },
+        )
+    except Exception:
+        log.exception("Telemetry log_event failed for reconvert_attempted (job %s)", child_id)
 
     asyncio.create_task(job_queue.dispatch_job(child_id))
     log.info(
