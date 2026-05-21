@@ -108,15 +108,21 @@ class Settings:
     stripe_api_version: str
     # Token HMAC secret — required for token generation and validation
     token_hmac_secret: str
-    # EB-324 Unit 4: Send-to-Kindle delivery. Both fail-closed via _require_env.
+    # EB-324 Unit 4 + Unit 10: Send-to-Kindle delivery + Resend webhook.
+    # All three are fail-closed via _require_env but ONLY when the feature
+    # flag is enabled (see load_settings()).
     # send_to_kindle_from is the verified Resend domain sender address (e.g.,
     # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
+    # resend_webhook_secret is the Svix-format signing secret for the
+    # /webhooks/resend route.
     send_to_kindle_from: str
     resend_api_key: str
+    resend_webhook_secret: str
     # Feature gate. The Unit 4 validation suite (R3.1 + R3.3 + R3.4 + P1-4)
-    # has landed; production deploys still stay False until Ops provisions
-    # the Resend domain + API key + Cloudflare WAF rule and explicitly flips
-    # WEB_SEND_TO_KINDLE_ENABLED=true on a per-deploy basis.
+    # and Unit 10 webhook handler have landed; production deploys still stay
+    # False until Ops provisions the Resend domain + API key + Cloudflare WAF
+    # rule and explicitly flips WEB_SEND_TO_KINDLE_ENABLED=true on a
+    # per-deploy basis.
     send_to_kindle_enabled: bool = False
     allowed_origins: list[str] = field(default_factory=list)
     # EB-245: cost cap for input-side Gemini OCR remediation on premium tier.
@@ -225,6 +231,11 @@ def load_settings() -> Settings:
             _require_env("WEB_RESEND_API_KEY")
             if _send_to_kindle_enabled_from_env()
             else os.environ.get("WEB_RESEND_API_KEY", "")
+        ),
+        resend_webhook_secret=(
+            _require_env("WEB_RESEND_WEBHOOK_SECRET")
+            if _send_to_kindle_enabled_from_env()
+            else os.environ.get("WEB_RESEND_WEBHOOK_SECRET", "")
         ),
         allowed_origins=allowed_origins,
         premium_gemini_cost_limit_usd=float(
