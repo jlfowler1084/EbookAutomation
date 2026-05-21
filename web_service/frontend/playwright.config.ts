@@ -13,6 +13,13 @@
 
 import { defineConfig, devices } from "@playwright/test";
 
+// EB-324 Unit 6: the dev port is configurable via LEAFBIND_TEST_PORT so the
+// suite can dodge a port-3000 collision with a sibling project's dev server
+// (e.g., CareerPilot also runs Next.js on :3000 locally). Defaults to 3000
+// to match CI + existing local convention.
+const PORT = process.env.LEAFBIND_TEST_PORT ?? "3000";
+const BASE_URL = `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
@@ -20,7 +27,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
   projects: [
@@ -31,8 +38,8 @@ export default defineConfig({
   ],
   // Start the dev server automatically if not already running
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: `npm run dev -- --port ${PORT}`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
