@@ -13,6 +13,14 @@
 #
 # This workflow does NOT exercise real Stripe — for that, run
 # tools/verify_stripe_e2e.ps1 locally before a production deploy.
+#
+# EB-330: the suite also includes tests/test_web_send_to_kindle_signed.py, the
+# Send-to-Kindle analogue of the Stripe e2e — it drives the real send route then
+# fires a real Svix-signed delivery webhook to verify the Unit 4 → Unit 10
+# correlation contract (no live Resend call). Its gated TestSendToKindleLiveResend
+# class performs a *real* Resend send and runs only when WEB_RESEND_TEST_API_KEY
+# (+ a verified sender + a real @kindle.com recipient) are configured as repo
+# secrets; otherwise it skips. The manual equivalent is tools/verify_send_to_kindle.ps1.
 name: web-tests
 
 on:
@@ -63,7 +71,16 @@ jobs:
           python -m pip install -r dev-requirements.txt
 
       - name: Run web-service pytest suite
-        # Discovery glob matches tests/test_web_*.py. -q keeps output compact;
-        # any failure surfaces the full traceback on its own.
+        # Discovery glob matches tests/test_web_*.py (incl. the EB-330 signed
+        # e2e). -q keeps output compact; any failure surfaces the full
+        # traceback on its own.
+        #
+        # The live Resend secrets are passed through so the gated
+        # TestSendToKindleLiveResend class can run when they're configured;
+        # absent them, that class skips and the rest of the suite is unaffected.
+        env:
+          WEB_RESEND_TEST_API_KEY: ${{ secrets.WEB_RESEND_TEST_API_KEY }}
+          WEB_RESEND_TEST_FROM: ${{ secrets.WEB_RESEND_TEST_FROM }}
+          WEB_RESEND_TEST_RECIPIENT: ${{ secrets.WEB_RESEND_TEST_RECIPIENT }}
         run: |
           python -m pytest tests/test_web_*.py -q --tb=short
