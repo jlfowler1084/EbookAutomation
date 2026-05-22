@@ -3,6 +3,24 @@
 This guide covers initial deployment of the EbookAutomation web service on the Hetzner VM.
 Run these steps once; subsequent updates use `deploy.sh`.
 
+> ⚠️ **ACTUAL PRODUCTION LAYOUT (authoritative — verified 2026-05-22, EB-331).**
+> The live VM does **not** match the original `/opt/ebookautomation` + `ebookweb`-user
+> design described in the walkthrough below. Treat this box as ground truth:
+>
+> | Item | Live value |
+> |------|-----------|
+> | Service user | `joe` |
+> | App dir / `WorkingDirectory` | `/home/joe/EbookAutomation` |
+> | venv | `/home/joe/EbookAutomation/.venv` |
+> | systemd `EnvironmentFile` | `/etc/web_service.env` |
+> | systemd unit | `ebookweb.service` (`uvicorn web_service.main:app` on `127.0.0.1:8001`) |
+> | Access | `ssh root@<vm>` over Tailscale; restart with `sudo systemctl restart ebookweb` |
+>
+> `deploy/deploy.sh` and `deploy/web_service.service` in this repo are aligned to the
+> live layout above. The numbered walkthrough still narrates the original `/opt` design
+> for historical context; substitute the live paths when following it. DB migrations are
+> idempotent and auto-apply on service startup (`web_service/job_store.py::_apply_migrations`).
+
 ## Prerequisites
 
 - Ubuntu 22.04 LTS
@@ -100,8 +118,9 @@ STRIPE_API_VERSION=2026-04-22.dahlia
 
 ## Send-to-Kindle (Resend) Configuration
 
-EB-330 Lane D requires three Resend values in `/opt/ebookautomation/.env`, but
-the feature flag stays false until the Lane E live e2e + smoke pass.
+EB-330 Lane D requires three Resend values in `/etc/web_service.env` (see the
+production-layout callout at the top — **not** `/opt/ebookautomation/.env`). The
+feature flag stays false until the Lane E live e2e + smoke pass.
 
 ```
 WEB_SEND_TO_KINDLE_ENABLED=false

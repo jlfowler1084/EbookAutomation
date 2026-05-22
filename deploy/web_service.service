@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=ebookweb
-WorkingDirectory=/opt/ebookautomation
-EnvironmentFile=/opt/ebookautomation/.env
-ExecStart=/opt/ebookautomation/venv/bin/uvicorn web_service.main:app --host 127.0.0.1 --port 8001 --workers 2
+User=joe
+WorkingDirectory=/home/joe/EbookAutomation
+EnvironmentFile=/etc/web_service.env
+ExecStart=/home/joe/EbookAutomation/.venv/bin/uvicorn web_service.main:app --host 127.0.0.1 --port 8001 --workers 2
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -18,7 +18,7 @@ SyslogIdentifier=ebookweb
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/ebookautomation/data /tmp
+ReadWritePaths=/home/joe/EbookAutomation/data /tmp
 
 [Install]
 WantedBy=multi-user.target
