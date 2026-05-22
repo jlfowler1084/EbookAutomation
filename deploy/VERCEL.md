@@ -91,7 +91,7 @@ cheap insurance:
 
 ```bash
 ssh <hetzner-host>
-sudo grep WEB_SERVICE_ALLOWED_ORIGINS /etc/web_service.env
+sudo grep WEB_SERVICE_ALLOWED_ORIGINS /opt/ebookautomation/.env
 # Expected: WEB_SERVICE_ALLOWED_ORIGINS=https://leafbind.io,https://www.leafbind.io
 sudo systemctl status ebookweb | grep Active
 # Expected: Active: active (running)
@@ -99,7 +99,7 @@ curl -I https://api.leafbind.io/health
 # Expected: HTTP/2 200
 ```
 
-If `WEB_SERVICE_ALLOWED_ORIGINS` is absent or wrong, update `/etc/web_service.env`
+If `WEB_SERVICE_ALLOWED_ORIGINS` is absent or wrong, update `/opt/ebookautomation/.env`
 and `sudo systemctl restart ebookweb` before the Vercel domain cutover.
 
 ---

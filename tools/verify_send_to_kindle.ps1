@@ -147,7 +147,7 @@ switch ($sendStatus) {
     }
     503 {
         Write-Fail "503 SERVICE_DISABLED - WEB_SEND_TO_KINDLE_ENABLED is still false on this deploy."
-        Write-Note "Flip the flag in /etc/web_service.env and restart the web_service unit (EB-330 Lane E)."
+        Write-Note "Flip the flag in /opt/ebookautomation/.env and restart the web_service unit (EB-330 Lane E)."
         exit 2
     }
     404 { Write-Fail "404 JOB_NOT_FOUND - no job with id '$JobId' on this deploy."; exit 2 }

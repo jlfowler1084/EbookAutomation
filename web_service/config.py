@@ -77,7 +77,7 @@ def _require_env(name: str) -> str:
     if not value:
         raise ConfigurationError(
             f"Required environment variable '{name}' is not set. "
-            f"Add it to /etc/web_service.env or export it before starting the server."
+            f"Add it to /opt/ebookautomation/.env or export it before starting the server."
         )
     return value
 
@@ -112,7 +112,7 @@ class Settings:
     # All three are fail-closed via _require_env but ONLY when the feature
     # flag is enabled (see load_settings()).
     # send_to_kindle_from is the verified Resend domain sender address (e.g.,
-    # "kindle@send.leafbind.io"). resend_api_key is the Resend send-only scoped key.
+    # "kindle@leafbind.io"). resend_api_key is the Resend send-only scoped key.
     # resend_webhook_secret is the Svix-format signing secret for the
     # /webhooks/resend route.
     send_to_kindle_from: str

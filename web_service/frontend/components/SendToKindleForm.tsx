@@ -6,7 +6,7 @@ import { ApiError, type KindleDeliveryStatus, sendToKindle } from "../lib/api";
 
 // v1: the verified Resend sender. Hardcoded per the plan (planning-time call);
 // promote to a server-served config value if it ever needs to vary per deploy.
-const FROM_ADDRESS = "kindle@send.leafbind.io";
+const FROM_ADDRESS = "kindle@leafbind.io";
 const LOCAL_STORAGE_KEY = "leafbind_kindle_email";
 const APPROVED_SENDER_URL = "https://www.amazon.com/sendtokindle";
 

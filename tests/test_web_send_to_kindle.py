@@ -72,7 +72,7 @@ def project_root(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     # The Resend From-address is a future Unit 4 config setting. Provide a
     # placeholder so settings load even before the field is wired into config.
-    monkeypatch.setenv("WEB_SEND_TO_KINDLE_FROM", "kindle@send.leafbind.io")
+    monkeypatch.setenv("WEB_SEND_TO_KINDLE_FROM", "kindle@leafbind.io")
     monkeypatch.setenv("WEB_RESEND_API_KEY", "re_test_placeholder")
     return tmp_path
 
@@ -918,7 +918,7 @@ class TestSendToKindleJobValidation:
 class TestSendToKindleOutputPathBoundary:
     """P1-4: even with a valid done job, the route MUST resolve output_path
     and confirm it lives inside settings.temp_dir. A corrupted output_path
-    pointing at /etc/web_service.env or similar would otherwise let Resend
+    pointing at /opt/ebookautomation/.env or similar would otherwise let Resend
     exfiltrate secrets via the attachment.
     """
 
