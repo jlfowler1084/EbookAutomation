@@ -57,15 +57,24 @@ path reconciliation itself (PR #153), containerization (EB-319).
 - DB migrations auto-apply idempotently on startup (`job_store.py::_apply_migrations`).
 - Live nginx serving file: `/etc/nginx/sites-enabled/leafbind` (a **regular file**, not a symlink). `refresh-cloudflare-ips.sh` is **not yet on the box**.
 
+## Prerequisites
+
+- **Branch-protect `master` BEFORE enabling the timer (blocking prerequisite).** Verified
+  2026-05-22 via the GitHub API: `master` is **not** protected (`protected:false`; the
+  protection endpoint 404s). This design makes `master` effectively *auto-execute on the
+  production VM*, so the PR gate + green required CI checks are the only thing standing
+  between a merge and prod. Enabling protection (require PR before merge + require the
+  existing `web-tests` / `frontend-e2e` checks to pass) is the **first task** in the plan,
+  and the autodeploy timer must not be enabled until it is in place.
+
 ## Assumptions
 
-- **`master` is branch-protected with required CI checks.** This design makes `master`
-  effectively *auto-execute on the production VM*, so the PR gate + green CI is the only
-  thing standing between a merge and prod. If branch protection is not currently enforced,
-  enabling it is a prerequisite (tracked alongside this work).
-- `deploy.sh` from PR #153 is the deploy primitive. PR #153 should merge first; if it is
-  still open at implementation time, the EB-331 branch is cut from `fix/EB-331-deploy-path-reconciliation`
-  to avoid a conflicting `deploy.sh`.
+- `deploy.sh` from PR #153 is the deploy primitive. **PR #153 stays frozen** (it is
+  merge-clean with green checks). The EB-331 implementation branch is **cut from
+  `fix/EB-331-deploy-path-reconciliation`**, so #153's corrected `deploy.sh` is inherited and
+  the two parked fix-ups (45s health-poll + README typo) sit cleanly on top of it. Merge
+  order: merge #153 → rebase EB-331 onto `master` → merge EB-331. This avoids any `deploy.sh`
+  conflict and keeps #153 unchanged.
 
 ## `deploy.sh` contract (from PR #153, with one EB-331 edit)
 
@@ -74,9 +83,10 @@ rollback-SHA capture → `git pull --ff-only origin master` → `pip install -r 
 → `systemctl restart ebookweb` → health check → on failure `git reset --hard <rollback>` +
 pip + restart + recheck, `exit 1`.
 
-**EB-331 edit (coordinated onto the #153 branch):** replace the single `sleep 3` + one
-health check with a **poll loop** — check `/health` every 3s for up to ~45s before
-declaring failure — to avoid false rollback on slow startup of an unattended deploy.
+**EB-331 edit (lands in the EB-331 branch — see Dependency below; PR #153 stays frozen):**
+replace the single `sleep 3` + one health check with a **poll loop** — check `/health`
+every 3s for up to ~45s before declaring failure — to avoid false rollback on slow startup
+of an unattended deploy.
 
 ## Components — all in `deploy/`, installed onto the VM
 
@@ -95,7 +105,10 @@ declaring failure — to avoid false rollback on slow startup of an unattended d
 1. `flock -n /run/ebookweb-deploy.lock` — single locked entrypoint; if held, exit 0 (a deploy is already running).
 2. `cd /home/joe/EbookAutomation`.
 3. **Fetch:** `git fetch --prune origin +refs/heads/master:refs/remotes/origin/master`. On failure → 🔴 (deduped) + exit.
-4. **Change detection:** compare `HEAD` to `refs/remotes/origin/master`. Equal → **exit 0 silently** (no Discord, no state change).
+4. **Change detection:** compare `HEAD` to `refs/remotes/origin/master`. Equal → this is a
+   *successful no-change tick*: it **clears any prior failing state** (the fetch itself just
+   succeeded), posting a single 🟩 recovery line only if the previous state was failing,
+   otherwise silent. Then exit 0.
 5. **Preflight guards** (all required; any failure → 🔴 with the tripped guard, no deploy):
    - current branch == `master`
    - working tree clean of *tracked* changes (`git diff --quiet && git diff --cached --quiet`)
@@ -118,15 +131,18 @@ declaring failure — to avoid false rollback on slow startup of an unattended d
 
 State file under `/var/lib/ebookweb-autodeploy/` records the last alert class + timestamp.
 A 🔴 alert posts **on state transition** (healthy → failing) and then re-nags at most once
-per ~3h while the same failure persists — never every 5 min. A successful deploy or
-heartbeat clears the failing state (and posts a 🟩 recovery line on the first success after
-a failure run).
+per ~3h while the same failure persists — never every 5 min. Any successful tick clears the
+failing state — a successful deploy, a **successful no-change fetch**, or a heartbeat — and
+the first success after a failing run posts a single 🟩 recovery line. This guarantees a
+recovered fetch/preflight failure clears within one 5-min tick, not at the next daily
+heartbeat.
 
 ## Discord behavior matrix
 
 | Event | Post? | Color | Content |
 |---|---|---|---|
-| No change | silent | — | — |
+| No change (not previously failing) | silent | — | — |
+| No change (clearing a prior failure) | yes | 🟩 | `recovered — fetch OK at <sha>` |
 | Deploy success | yes | 🟩 | `deployed <old>..<post> (N commits) — health OK` |
 | Fetch failure | deduped | 🔴 | reason + short tail |
 | Preflight fail (dirty / diverged / ahead / wrong branch) | deduped | 🔴 | which guard tripped |
@@ -187,9 +203,13 @@ absent; the real URL is pasted by hand.
 Frontend/Vercel deploy · push/CI deploy model · the deploy-path reconciliation (PR #153) ·
 containerization (EB-319) · Amazon-account or Resend webhook concerns (other tickets).
 
-## Fix-up captured during brainstorm
+## Fix-ups carried in the EB-331 branch
 
-PR #153's `deploy/README.md` has a typo: it says `"not /etc/web_service.env"` immediately
-after stating the correct path *is* `/etc/web_service.env`. It should read
-`"not /opt/ebookautomation/.env"`. Push this one-line fix onto the `fix/EB-331-deploy-path-reconciliation`
-branch (that PR owns the file).
+Both land in the EB-331 implementation branch (cut from #153's branch), **not** pushed onto
+PR #153, which stays frozen:
+
+1. **`deploy.sh` health poll** — replace `sleep 3` + one check (currently at
+   `origin/pr-153:deploy/deploy.sh:30`) with a ~45s/3s poll loop (see the contract section).
+2. **`deploy/README.md` typo** — at `origin/pr-153:deploy/README.md:125` it reads
+   `"not /etc/web_service.env"` immediately after stating the correct path *is*
+   `/etc/web_service.env`; should read `"not /opt/ebookautomation/.env"`.
