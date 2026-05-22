@@ -98,6 +98,23 @@ TOKEN_HMAC_SECRET=<64-hex-char random string>
 STRIPE_API_VERSION=2026-04-22.dahlia
 ```
 
+## Send-to-Kindle (Resend) Configuration
+
+EB-330 Lane D requires three Resend values in `/opt/ebookautomation/.env`, but
+the feature flag stays false until the Lane E live e2e + smoke pass.
+
+```
+WEB_SEND_TO_KINDLE_ENABLED=false
+WEB_SEND_TO_KINDLE_FROM=kindle@leafbind.io
+WEB_RESEND_API_KEY=re_...
+WEB_RESEND_WEBHOOK_SECRET=whsec_...
+```
+
+Use a Resend sending-access key restricted to `leafbind.io`. Register
+`https://api.leafbind.io/webhooks/resend` with `email.delivered`,
+`email.bounced`, `email.failed`, and `email.delivery_delayed`, then copy that
+webhook's Svix signing secret into `WEB_RESEND_WEBHOOK_SECRET`.
+
 **Environment mismatch check:** At startup the service compares the prefixes of
 `STRIPE_PUBLISHABLE_KEY` and `STRIPE_SECRET_KEY`. If one is `pk_test_` and the
 other is `sk_live_` (or vice versa), a WARN is logged. The service continues
@@ -126,7 +143,7 @@ Stripe replaced the legacy Developers Dashboard with **Workbench** (GA Aug 2024)
 The instructions below use current Workbench navigation; if your account is still
 on the legacy Developers UI, the equivalent path is in parentheses.
 
-After the env vars are in /etc/web_service.env and the service has restarted:
+After the env vars are in `/opt/ebookautomation/.env` and the service has restarted:
 
 1. Open **Workbench → Webhooks tab → Add destination** (legacy: Developers → Webhooks → Add endpoint)
 2. Endpoint URL: `https://leafbind.io/stripe/webhook`
@@ -138,7 +155,7 @@ After the env vars are in /etc/web_service.env and the service has restarted:
    - `charge.dispute.created` (revokes tokens on chargeback)
 5. Click "Add destination"
 6. On the resulting endpoint page, click "Reveal" next to "Signing secret"
-7. Copy the `whsec_...` value and paste it into `/etc/web_service.env` as `STRIPE_WEBHOOK_SECRET`
+7. Copy the `whsec_...` value and paste it into `/opt/ebookautomation/.env` as `STRIPE_WEBHOOK_SECRET`
 8. `sudo systemctl restart ebookweb.service`
 9. From Workbench → Webhooks → endpoint detail → **Send test event** → `checkout.session.completed`. Verify the response is 200 OK in the **Event deliveries** tab.
 
@@ -189,7 +206,7 @@ Before flipping to live mode, verify all of the following:
 - [ ] Stripe account created; test mode API keys obtained (`sk_test_*`, `pk_test_*`)
 - [ ] `deploy/stripe_bootstrap.py` run against test mode; 3 `STRIPE_PRICE_*` IDs captured
 - [ ] `TOKEN_HMAC_SECRET` generated via `openssl rand -hex 32`
-- [ ] All 7 new env vars in `/etc/web_service.env`:
+- [ ] All 7 new env vars in `/opt/ebookautomation/.env`:
       `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `TOKEN_HMAC_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STANDARD`, `STRIPE_PRICE_POWER`
 - [ ] Test-mode webhook endpoint registered in Stripe Workbench (API version `2026-04-22.dahlia`) with four event subscriptions: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.dispute.created`
 - [ ] Cloudflare rate-limit rule deployed on `/stripe/webhook`
@@ -204,7 +221,7 @@ Before flipping to live mode, verify all of the following:
 
 When test-mode is fully validated:
 
-1. Swap `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` from `sk_test_*`/`pk_test_*` to `sk_live_*`/`pk_live_*` in `/etc/web_service.env`
+1. Swap `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` from `sk_test_*`/`pk_test_*` to `sk_live_*`/`pk_live_*` in `/opt/ebookautomation/.env`
 2. Register a NEW webhook endpoint in Stripe Dashboard LIVE mode (test-mode and live-mode webhook secrets are different)
 3. Copy the new live-mode `whsec_*` into `STRIPE_WEBHOOK_SECRET`
 4. `sudo systemctl restart ebookweb.service`
