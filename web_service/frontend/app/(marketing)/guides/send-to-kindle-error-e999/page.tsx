@@ -442,7 +442,7 @@ export default function SendToKindleErrorE999() {
             {/* H3: Accepted but never appears */}
             <div>
               <h3 className="font-serif text-xl text-text-base mb-3 leading-snug">
-                File accepted but not appearing on Kindle (~24&nbsp;h check first)
+                File accepted but not appearing on Kindle (check library first)
               </h3>
               <div className="text-text-base leading-relaxed space-y-3 text-base">
                 <p>
