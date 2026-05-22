@@ -38,6 +38,7 @@ export function Footer() {
             <ul className="mt-3 space-y-1 text-sm text-text-muted">
               <li><Link href="/guides"                                         className="block py-2 hover:text-text-base transition">All guides</Link></li>
               <li><Link href="/guides/send-to-kindle-not-working"              className="block py-2 hover:text-text-base transition">Send to Kindle not working</Link></li>
+              <li><Link href="/guides/send-to-kindle-error-e999"               className="block py-2 hover:text-text-base transition">Send to Kindle E999 error</Link></li>
               <li><Link href="/guides/how-to-send-pdf-to-kindle"               className="block py-2 hover:text-text-base transition">How to send PDFs to Kindle</Link></li>
               <li><Link href="/guides/kindle-scribe-vs-remarkable"             className="block py-2 hover:text-text-base transition">Kindle Scribe vs. reMarkable</Link></li>
               <li><Link href="/guides/pdf-to-kfx-for-kindle-scribe"            className="block py-2 hover:text-text-base transition">PDF to KFX for Kindle Scribe</Link></li>

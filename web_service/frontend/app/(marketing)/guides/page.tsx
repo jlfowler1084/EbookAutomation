@@ -33,6 +33,15 @@ const guides = [
     lastUpdated: "2026-05-17",
   },
   {
+    slug: "send-to-kindle-error-e999",
+    title: "Send to Kindle E999 internal error: what it means and how to fix it",
+    summary:
+      "Error-code-organized troubleshooting for the E999 internal error — diagnostic fixes " +
+      "by root cause (oversize, malformed EPUB, DRM, transient failure), authentication failures, " +
+      "and silent non-delivery.",
+    lastUpdated: "2026-05-22",
+  },
+  {
     slug: "how-to-send-pdf-to-kindle",
     title: "How to send PDFs (and EPUBs, Docs, MOBI) to Kindle: every method",
     summary:
