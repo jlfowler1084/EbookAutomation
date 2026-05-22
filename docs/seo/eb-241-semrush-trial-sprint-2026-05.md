@@ -865,7 +865,26 @@ The comment below is the digest version of the synthesis above, sized for Jira r
 
 ## Day 5 (2026-05-21) action checklist
 
-- [ ] Post the draft EB-241 comment above to https://jlfowler1084.atlassian.net/browse/EB-241
-- [ ] Transition EB-308 to Done with comment: "Sprint complete. Final synthesis posted to parent EB-241. Full doc: `docs/seo/eb-241-semrush-trial-sprint-2026-05.md`. ~17,500 of ~40K trial budget consumed; all 5 methodology improvements logged. 5 Tier-1/2 action items routed to EB-303 (content); 4 action items routed to EB-309 (links). Position Tracking campaign continues free post-trial; indexation not yet begun (site is 8 days old)."
+- [x] Post the draft EB-241 comment above to https://jlfowler1084.atlassian.net/browse/EB-241 — DONE 2026-05-22 (comment 19299)
+- [x] Transition EB-308 to Done — DONE 2026-05-22. Comment: "Sprint complete. Final synthesis posted to parent EB-241. Full doc: `docs/seo/eb-241-semrush-trial-sprint-2026-05.md`. ~17,500 of ~40K trial budget consumed; all 5 methodology improvements logged. 5 Tier-1/2 action items routed to EB-303 (content); 4 action items routed to EB-309 (links). Position Tracking campaign continues free post-trial; indexation not yet begun (site is 8 days old)."
 - [ ] (Optional, ~800 units) Final Position Tracking snapshot for the "did indexation finally begin" check — low EV but cheap; only run if curious about the 9-day data point
 - [ ] (Optional) Snapshot the `scratch/semrush-trial-2026-05/` directory state — consider whether to keep all CSVs, archive them, or move the most-referenced ones into `docs/seo/`
+
+---
+
+## Post-trial Position Tracking retention — VERIFIED (2026-05-22)
+
+Closes the open question raised in Session 4 Day 4 ("if EB-303 wants ongoing tracking after the trial, the campaign must be checked against Semrush's free-tier campaign retention policy").
+
+**Verdict: the campaign survives the trial → free-tier downgrade, provided the trial is *cancelled* (lapses to free) rather than the account deleted.**
+
+- Semrush free plan retains **1 project** and **up to 10 tracked keywords**; keywords beyond 10 go inactive on downgrade.
+- Our campaign (Project `29685400` / Campaign `4805618`) tracks **8 keywords** in a **single project** — both within free-tier limits, so the campaign and its accumulated rank history persist.
+
+**Caveats:**
+1. Update cadence likely drops from daily (Pro/trial) to a slower free-tier refresh. History is preserved; refresh rate slows. Acceptable for EB-303 Phase 3c (~2026-06-27 re-baseline) and EB-309 Phase 4d, which are periodic.
+2. Confirm only the one leafbind project exists. The trial allowed up to 5 projects; the free plan keeps 1. If a second project was created, verify the leafbind project is the retained one.
+
+**Action for Joe:** cancel the paid trial (stop the auto-charge) before 2026-05-23 — do NOT delete the account. The 5-day baseline + ongoing free-tier snapshots remain available to the downstream re-baseline tickets.
+
+Sources: [Semrush Help — Position Tracking limits](https://help.semrush.com/FAQ/en/articles/4576328-what-are-the-limits-of-position-tracking), [Semrush — free account capabilities](https://www.semrush.com/blog/what-can-i-do-with-a-free-account-from-semrush/).
