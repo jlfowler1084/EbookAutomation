@@ -195,7 +195,7 @@ absent; the real URL is pasted by hand.
 - **Local:** `shellcheck` all new scripts; `autodeploy.sh --dry-run` prints decision/actions with no fetch-mutation, restart, post, or deploy.
 - **On VM (staged):**
   - (a) no-op tick → silent, no Discord.
-  - (b) push a trivial commit → deploy + 🟩 line + correct *post-deploy* SHA.
+  - (b) merge a trivial PR (direct pushes blocked post-protection) → next tick deploys it + 🟩 line + correct *post-deploy* SHA.
   - (c) dirty the tree → preflight 🔴, **no** deploy.
   - (d) force a health failure (e.g. break the app transiently) → `deploy.sh` rollback + 🔴 with tail.
   - (e) repeated failure → confirm dedupe (one alert, then ~3h re-nag, not every 5 min).
