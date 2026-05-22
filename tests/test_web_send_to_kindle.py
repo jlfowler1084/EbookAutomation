@@ -918,7 +918,7 @@ class TestSendToKindleJobValidation:
 class TestSendToKindleOutputPathBoundary:
     """P1-4: even with a valid done job, the route MUST resolve output_path
     and confirm it lives inside settings.temp_dir. A corrupted output_path
-    pointing at /opt/ebookautomation/.env or similar would otherwise let Resend
+    pointing at /etc/web_service.env or similar would otherwise let Resend
     exfiltrate secrets via the attachment.
     """
 

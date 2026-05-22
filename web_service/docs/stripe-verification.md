@@ -46,7 +46,7 @@ raises `ConfigurationError` if any is missing at startup):
 
 | Variable | Purpose | Where it lives |
 |---|---|---|
-| `STRIPE_SECRET_KEY` | Server-side Stripe SDK auth (`sk_test_...` or `sk_live_...`) | `/opt/ebookautomation/.env` on the Hetzner VM |
+| `STRIPE_SECRET_KEY` | Server-side Stripe SDK auth (`sk_test_...` or `sk_live_...`) | `/etc/web_service.env` on the Hetzner VM |
 | `STRIPE_PUBLISHABLE_KEY` | Client-side Stripe.js (`pk_test_...` or `pk_live_...`) | same as above |
 | `STRIPE_WEBHOOK_SECRET` | HMAC-SHA256 secret for validating webhook signatures (`whsec_...`) | same as above |
 | `STRIPE_PRICE_STARTER` | Stripe Price ID for the 3-token pack | same as above |
