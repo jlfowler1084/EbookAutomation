@@ -62,10 +62,14 @@ path reconciliation itself (PR #153), containerization (EB-319).
 - **Branch-protect `master` BEFORE enabling the timer (blocking prerequisite).** Verified
   2026-05-22 via the GitHub API: `master` is **not** protected (`protected:false`; the
   protection endpoint 404s). This design makes `master` effectively *auto-execute on the
-  production VM*, so the PR gate + green required CI checks are the only thing standing
-  between a merge and prod. Enabling protection (require PR before merge + require the
-  existing `web-tests` / `frontend-e2e` checks to pass) is the **first task** in the plan,
-  and the autodeploy timer must not be enabled until it is in place.
+  production VM*, so a PR gate is the thing standing between a direct push and prod.
+  Enabling protection means **require a PR before merging + block direct pushes**, with
+  **no required status checks**: the `web-tests` (`pytest tests/test_web_*.py`) and
+  `frontend-e2e` (`playwright (chromium)`) workflows are `paths:`-filtered, so a deploy-only
+  PR never triggers them and a required-but-never-run check would deadlock the merge on a
+  forever-pending status. The checks still run and are visible on app-touching PRs; they are
+  just not merge-blocking. This is the **first task** in the plan, and the autodeploy timer
+  must not be enabled until it is in place.
 
 ## Assumptions
 

@@ -379,7 +379,7 @@ refresh-cloudflare-ips.timer (monthly) → cf-refresh wrapper → refresh-cloudf
 
 ## Documentation / Operational Notes
 
-- **Rollout ordering:** (1) merge PR #153; (2) merge EB-331 PR; (3) enable `master` branch protection (Unit 1); (4) on the VM: run `install-autodeploy.sh`, paste the real `DISCORD_DEPLOY_WEBHOOK_URL` into `/etc/ebookweb-autodeploy.env`, confirm `systemctl list-timers`; (5) staged smoke: push a trivial commit, watch it deploy + the 🟩 Discord line.
+- **Rollout ordering:** (1) merge PR #153; (2) merge EB-331 PR; (3) enable `master` branch protection (Unit 1); (4) on the VM: run `install-autodeploy.sh`, paste the real `DISCORD_DEPLOY_WEBHOOK_URL` into `/etc/ebookweb-autodeploy.env`, confirm `systemctl list-timers`; (5) staged smoke: merge a trivial PR (direct pushes are blocked after step 3), then watch the next tick deploy it + post the 🟩 Discord line.
 - **VM access:** Tailscale node `claude-dev-01` (`100.68.98.58`), `ssh root@` — per `leafbind-vm-ops-facts` memory.
 - **`ce:compound`:** on completion, write a net-new `docs/solutions/best-practices/` entry (e.g. `vm-pull-deploy-timer-and-cloudflare-ip-refresh-2026-05-22.md`) — no existing solution covers systemd timers / pull-deploy / VM Discord posting / monthly CF-IP refresh.
 - **Worktree policy:** `deploy/**` is NOT exempt — all new files land via the EB-331 worktree branch and a PR (never direct to `master`).
