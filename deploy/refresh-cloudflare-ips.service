@@ -1,0 +1,17 @@
+[Unit]
+Description=Monthly Cloudflare IP allowlist refresh for nginx (EbookAutomation / leafbind.io)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/ebookweb-autodeploy.env
+ExecStart=/home/joe/EbookAutomation/deploy/cf-refresh-wrapped.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cf-refresh
+
+# Hardening (oneshot; no persistent process to confine)
+NoNewPrivileges=true
+PrivateTmp=true

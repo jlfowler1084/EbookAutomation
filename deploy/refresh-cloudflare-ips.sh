@@ -17,8 +17,11 @@
 # Usage:
 #   sudo deploy/refresh-cloudflare-ips.sh [path-to-nginx.conf]
 #
-# Defaults to /etc/nginx/sites-available/leafbind (the deployed copy). Pass
-# an explicit path to dry-run against the repo copy.
+# Defaults to /etc/nginx/sites-available/leafbind (the deployed copy).
+# The optional path argument changes WHICH file is rewritten in place — there
+# is NO dry-run mode. The script ALWAYS rewrites the target file and (on
+# nginx -t success) reloads nginx. Do not pass the repo copy expecting a
+# safe preview: it will be overwritten and nginx will be reloaded.
 #
 # Exit codes:
 #   0  success (file rewritten, nginx -t passed, reload issued)
