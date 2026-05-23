@@ -28,8 +28,8 @@ import time
 import stripe
 from fastapi import APIRouter, Form, HTTPException, Request
 
+from web_service import job_queue
 from web_service.config import get_settings
-from web_service.job_queue import billing_executor
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def create_checkout_session(
     loop = asyncio.get_event_loop()
     try:
         session = await loop.run_in_executor(
-            billing_executor,
+            job_queue.billing_executor,
             lambda: stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{"price": price_id, "quantity": 1}],

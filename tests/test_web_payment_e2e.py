@@ -253,11 +253,11 @@ class TestWebhookToSuccessPageChain:
 
         with (
             patch("web_service.routes.webhook.token_store.mint_tokens_if_absent", mock_mint),
-            patch("web_service.routes.webhook.billing_executor", None),
+            # webhook + payment now resolve the same job_queue.billing_executor; one patch covers both.
+            patch("web_service.job_queue.billing_executor", None),
             # Skip the PaymentIntent.modify call -- not the focus of this test.
             patch("web_service.routes.webhook.stripe.PaymentIntent.modify"),
             patch("web_service.routes.payment.token_store.get_tokens_for_session", mock_get),
-            patch("web_service.routes.payment.billing_executor", None),
         ):
             # Step 1: POST the signed webhook
             event = _make_checkout_completed_event(session_id=session_id, pack="starter")
@@ -345,7 +345,7 @@ class TestWebhookToSuccessPageChain:
 
         with (
             patch("web_service.routes.webhook.token_store.mint_tokens_if_absent", mock_mint),
-            patch("web_service.routes.webhook.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
             patch("web_service.routes.webhook.stripe.PaymentIntent.modify"),
         ):
             event = _make_checkout_completed_event(session_id=session_id, pack=pack)

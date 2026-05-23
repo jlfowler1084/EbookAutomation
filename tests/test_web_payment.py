@@ -178,7 +178,7 @@ class TestPaymentSuccessHappyPaths:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_abc")
 
@@ -197,7 +197,7 @@ class TestPaymentSuccessHappyPaths:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
             patch(
                 "web_service.routes.payment.stripe.checkout.Session.retrieve"
             ) as mock_retrieve,
@@ -230,7 +230,7 @@ class TestPaymentSuccessHappyPaths:
                 "web_service.routes.payment.token_store.mint_tokens_if_absent",
                 return_value=mint_result,
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
             patch("web_service.routes.payment.circuit_breaker.db_call_succeeded"),
         ):
             resp = client.get("/payment/success?session_id=cs_test_abc")
@@ -258,7 +258,7 @@ class TestPaymentSuccessHappyPaths:
                 "web_service.routes.payment.token_store.mint_tokens_if_absent",
                 return_value=mint_result,
             ) as mock_mint,
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
             patch("web_service.routes.payment.circuit_breaker.db_call_succeeded"),
         ):
             resp = client.get("/payment/success?session_id=cs_test_abc")
@@ -283,7 +283,7 @@ class TestPaymentSuccessHappyPaths:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 side_effect=_get_tokens,
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             for _ in range(3):
                 resp = client.get("/payment/success?session_id=cs_test_revisit")
@@ -332,7 +332,7 @@ class TestPaymentSuccessEdgeCases:
                 "web_service.routes.payment.stripe.checkout.Session.retrieve",
                 return_value=session,
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_abc")
 
@@ -349,7 +349,7 @@ class TestPaymentSuccessEdgeCases:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_expired")
 
@@ -377,7 +377,7 @@ class TestPaymentSuccessErrorPaths:
                 "web_service.routes.payment.stripe.checkout.Session.retrieve",
                 side_effect=stripe_lib.error.StripeError("network error"),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_stripe_down")
 
@@ -399,7 +399,7 @@ class TestPaymentSuccessErrorPaths:
                     "No such checkout.session", "session_id"
                 ),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_DNE")
 
@@ -427,7 +427,7 @@ class TestPaymentSuccessErrorPaths:
                 "web_service.routes.payment.token_store.record_failed_mint"
             ) as mock_record,
             patch("web_service.routes.payment.circuit_breaker.db_call_failed"),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_dbfail")
 
@@ -460,7 +460,7 @@ class TestPaymentSuccessErrorPaths:
             patch(
                 "web_service.routes.payment.circuit_breaker.db_call_failed"
             ) as mock_cb_fail,
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             client.get("/payment/success?session_id=cs_test_cbfail")
 
@@ -477,7 +477,7 @@ class TestPaymentSuccessErrorPaths:
             patch(
                 "web_service.routes.payment.stripe.checkout.Session.retrieve"
             ) as mock_retrieve,
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_readfail")
 
@@ -545,7 +545,7 @@ class TestAutoReloadBrandMarkup:
                 "web_service.routes.payment.stripe.checkout.Session.retrieve",
                 return_value=_make_stripe_session(payment_status="unpaid"),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             return client.get("/payment/success?session_id=cs_test_pending")
 
@@ -609,7 +609,7 @@ class TestResponseHeaders:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_hdrs")
 
@@ -624,7 +624,7 @@ class TestResponseHeaders:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_hdrs")
 
@@ -650,7 +650,7 @@ class TestResponseHeaders:
                 "web_service.routes.payment.stripe.checkout.Session.retrieve",
                 side_effect=stripe_lib.error.StripeError("network error"),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_hdr503")
 
@@ -673,7 +673,7 @@ class TestBrandMarkup:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             return client.get("/payment/success?session_id=cs_test_brand")
 
@@ -716,7 +716,7 @@ class TestErrorPageBrandMarkup:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(["lb_pk_" + "A" * 43], expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_expired")
         assert "TOKENS EXPIRED" in resp.text
@@ -735,7 +735,7 @@ class TestErrorPageBrandMarkup:
                     "No such session", param="id"
                 ),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_notfound")
         assert resp.status_code == 404
@@ -771,7 +771,7 @@ class TestXSSInjectionGuards:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_xss")
 
@@ -795,7 +795,7 @@ class TestXSSInjectionGuards:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_jsonenc")
 
@@ -836,7 +836,7 @@ class TestXSSInjectionGuards:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get(
                 f"/payment/success?session_id={malicious_session_id}"
@@ -881,7 +881,7 @@ class TestXSSInjectionGuards:
                 "web_service.routes.payment.token_store.get_tokens_for_session",
                 return_value=(tokens, expires_at),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success?session_id=cs_test_nointerp")
 
@@ -925,7 +925,7 @@ class TestXSSInjectionGuards:
                     "No such checkout.session", "session_id"
                 ),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success", params={"session_id": payload})
 
@@ -970,7 +970,7 @@ class TestXSSInjectionGuards:
                 "web_service.routes.payment.stripe.checkout.Session.retrieve",
                 return_value=_make_stripe_session(payment_status="unpaid"),
             ),
-            patch("web_service.routes.payment.billing_executor", None),
+            patch("web_service.job_queue.billing_executor", None),
         ):
             resp = client.get("/payment/success", params={"session_id": payload})
 
