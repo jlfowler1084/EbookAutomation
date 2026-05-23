@@ -129,6 +129,40 @@ sudo systemctl list-timers ebookweb-autodeploy.timer ebookweb-heartbeat.timer re
 
 **VM access:** Tailscale node `claude-dev-01`, `ssh root@`.
 
+## KFX Toolchain (EB-332)
+
+Premium `PDF → KFX` conversion needs Amazon **Kindle Previewer 3** running under
+**wine-staging** — the Calibre KFX Output plugin drives KP3 to build the KFX
+container. This is **not** installed by the routine deploy; it is a
+bootstrap/rebuild step.
+
+**On a fresh VM or after a rebuild, run once as root:**
+
+```bash
+sudo /home/joe/EbookAutomation/deploy/install-kfx-toolchain.sh
+```
+
+Idempotent. Installs wine-staging (pinned), creates the `joe` Wine prefix,
+downloads + checksum-verifies Kindle Previewer 3, installs it headlessly via
+`xvfb`, and verifies the Calibre KFX Output plugin. **wine-STAGING is mandatory** —
+wine-stable crashes KP3's renderer with an access violation (`0xC0000005`) and
+produces no KFX.
+
+The systemd unit (`web_service.service`) grants the conversion the writable paths
+it needs under `ProtectSystem=strict` (`~/.wine`, Calibre config/cache).
+`pipeline_runner.run_premium` wraps the KFX conversion in `xvfb-run` and sets the
+Wine env (`WINEPREFIX`, `QTWEBENGINE_*`) — no manual env in the unit.
+
+**On every deploy tick**, `deploy.sh` runs the cheap, install-free probe
+`deploy/verify-kfx-toolchain.sh`. If the toolchain has regressed (wine missing or
+not staging, no prefix, KP3 gone, plugin unregistered) it logs a WARNING and posts
+a yellow Discord alert — but never fails the deploy or rolls back (free-tier
+EPUB/MOBI is unaffected). Re-run the installer to restore KFX.
+
+> Spike-validated 2026-05-23 on `claude-dev-01` (Ubuntu 24.04 noble): wine-staging
+> 11.9, KP3 3.104.0. A real 41 MB PDF converted end-to-end through the live service
+> to a valid KFX container. Recipe: `docs/superpowers/plans/2026-05-23-eb-332-premium-kfx-refund-and-vm-toolchain.md`.
+
 ## Prerequisites
 
 - Ubuntu 22.04 LTS
