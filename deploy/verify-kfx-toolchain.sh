@@ -20,8 +20,13 @@ if ! sudo -u joe calibre-customize --list-plugins 2>/dev/null | grep -qi 'KFX Ou
   note "MISSING: Calibre 'KFX Output' plugin not registered"; fail=1
 fi
 
-# Kindle Previewer present (path frozen by the installer; placeholder until A3).
-KP_EXE="${KINDLE_PREVIEWER:-$JOE_HOME/.wine/drive_c/Kindle Previewer 3/Kindle Previewer 3.exe}"
+# Wine must be the STAGING build — stable crashes KP3's renderer (EB-332 spike).
+if command -v wine >/dev/null 2>&1 && ! wine --version 2>/dev/null | grep -qi 'staging'; then
+  note "WARNING: wine is not the staging build — KP3 renderer crashes on wine-stable"; fail=1
+fi
+
+# Kindle Previewer present (real per-user AppData path resolved during A3 spike).
+KP_EXE="${KINDLE_PREVIEWER:-$JOE_HOME/.wine/drive_c/users/joe/AppData/Local/Amazon/Kindle Previewer 3/Kindle Previewer 3.exe}"
 [ -f "$KP_EXE" ] || { note "MISSING: Kindle Previewer at $KP_EXE"; fail=1; }
 
 if [ "$fail" -ne 0 ]; then note "KFX toolchain NOT ready"; exit 1; fi
