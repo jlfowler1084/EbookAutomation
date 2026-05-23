@@ -15,14 +15,17 @@ note() { echo "[kfx-verify] $*"; }
 command -v wine >/dev/null 2>&1 || { note "MISSING: wine not on PATH"; fail=1; }
 [ -f "$JOE_HOME/.wine/system.reg" ] || { note "MISSING: wine prefix $JOE_HOME/.wine"; fail=1; }
 
-# KFX Output plugin registered in calibre (run as joe).
-if ! sudo -u joe calibre-customize --list-plugins 2>/dev/null | grep -qi 'KFX Output'; then
-  note "MISSING: Calibre 'KFX Output' plugin not registered"; fail=1
-fi
+# KFX Output plugin registered in calibre (run as joe). Capture first, then
+# match with a here-string: piping calibre-customize into `grep -q` trips
+# `set -o pipefail` — grep closes the pipe on first match, calibre-customize
+# takes SIGPIPE (exit 141), and the pipeline false-fails.
+plugins="$(sudo -u joe calibre-customize --list-plugins 2>/dev/null || true)"
+grep -qi 'KFX Output' <<<"$plugins" || { note "MISSING: Calibre 'KFX Output' plugin not registered"; fail=1; }
 
 # Wine must be the STAGING build — stable crashes KP3's renderer (EB-332 spike).
-if command -v wine >/dev/null 2>&1 && ! wine --version 2>/dev/null | grep -qi 'staging'; then
-  note "WARNING: wine is not the staging build — KP3 renderer crashes on wine-stable"; fail=1
+wine_ver="$(command -v wine >/dev/null 2>&1 && wine --version 2>/dev/null || true)"
+if [ -n "$wine_ver" ] && [[ "$wine_ver" != *taging* ]]; then
+  note "WARNING: wine '$wine_ver' is not the staging build — KP3 renderer crashes on wine-stable"; fail=1
 fi
 
 # Kindle Previewer present (real per-user AppData path resolved during A3 spike).
