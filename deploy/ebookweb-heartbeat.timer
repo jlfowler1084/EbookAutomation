@@ -1,0 +1,11 @@
+[Unit]
+Description=EbookAutomation heartbeat timer (daily liveness report to Discord)
+
+[Timer]
+# Run once per day. Persistent=true means the job fires on next boot if the
+# last scheduled run was missed (e.g. VM was down at the scheduled time).
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

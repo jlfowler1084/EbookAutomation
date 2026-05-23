@@ -1,0 +1,15 @@
+[Unit]
+Description=EbookAutomation heartbeat — fetch + behind-count + liveness to Discord
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ebookweb-autodeploy.env
+ExecStart=/home/joe/EbookAutomation/deploy/autodeploy.sh --heartbeat
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ebookweb-heartbeat
+
+[Install]
+WantedBy=multi-user.target

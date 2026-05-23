@@ -1,0 +1,10 @@
+[Unit]
+Description=EbookAutomation auto-deploy timer (poll every 5 minutes)
+
+[Timer]
+# Fire 2 minutes after boot to let the network settle, then every 5 minutes.
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=EbookAutomation auto-deploy tick (change-detecting pull-deploy)
+# Requires network connectivity for git fetch and Discord notifications.
+# Deviation from web_service.service: network-online.target (not network.target)
+# because we need a routable network before fetching from GitHub. Type=oneshot
+# and running as root (no User= line) are also intentional — the deploy
+# wrapper must call systemctl restart and write to /run and /var/lib.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ebookweb-autodeploy.env
+ExecStart=/home/joe/EbookAutomation/deploy/autodeploy.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ebookweb-autodeploy
+
+[Install]
+WantedBy=multi-user.target

@@ -7,3 +7,9 @@ web_service/static/*.css text eol=lf
 # Shell scripts must stay LF — they run on the Linux VM, and CRLF breaks bash
 # execution (`\r` interpreted as part of the shebang/commands). EB-331.
 *.sh text eol=lf
+
+# systemd unit files must stay LF — a stray CRLF puts a `\r` in directive
+# values (e.g. ExecStart=...autodeploy.sh\r), which systemd reads as part of
+# the path and rejects as "not executable". EB-331.
+*.service text eol=lf
+*.timer text eol=lf
