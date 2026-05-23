@@ -20,7 +20,7 @@ HEALTH_POLL_MAX=15        # max probes (~45s total)
 wait_for_health() {
     local i
     for ((i = 1; i <= HEALTH_POLL_MAX; i++)); do
-        if curl -sf "$HEALTH_URL" >/dev/null; then
+        if curl -sf --connect-timeout 2 --max-time 5 "$HEALTH_URL" >/dev/null; then
             return 0
         fi
         echo "[deploy] Health probe $i/$HEALTH_POLL_MAX failed — retrying in ${HEALTH_POLL_INTERVAL}s..."
