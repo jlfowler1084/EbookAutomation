@@ -256,6 +256,7 @@ run_autodeploy() {
         STATE_DIR="$state_dir" \
         HEALTH_PROBE_URL="https://api.leafbind.io/health" \
         DISCORD_DEPLOY_WEBHOOK_URL="https://discord.example.com/webhook/test" \
+        AUTODEPLOY_GIT_AS_OWNER=0 \
         bash "$shim_deploy/autodeploy.sh" "${flags[@]}" 2>&1
     )" || LAST_RC=$?
 }
@@ -790,6 +791,7 @@ LAST_OUTPUT="$(
     STATE_DIR="$T12_STATE" \
     HEALTH_PROBE_URL="https://api.leafbind.io/health" \
     DISCORD_DEPLOY_WEBHOOK_URL="https://discord.example.com/webhook/test" \
+    AUTODEPLOY_GIT_AS_OWNER=0 \
     bash "$T12_CDEPLOY/autodeploy.sh" 2>&1
 )" || LAST_RC=$?
 

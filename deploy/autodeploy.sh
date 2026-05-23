@@ -61,6 +61,25 @@ DEPLOY_SH="${DEPLOY_SH:-$APP_DIR/deploy/deploy.sh}"
 LOCK_FILE="${LOCK_FILE:-/run/ebookweb-deploy.lock}"
 STATE_DIR="${STATE_DIR:-/var/lib/ebookweb-autodeploy}"
 HEALTH_PROBE_URL="${HEALTH_PROBE_URL:-https://api.leafbind.io/health}"
+APP_USER="${APP_USER:-joe}"
+
+# ---------------------------------------------------------------------------
+# Git runner — always operate on the checkout as its owner ($APP_USER)
+# ---------------------------------------------------------------------------
+# This script runs as root under systemd, but $APP_DIR is owned by $APP_USER.
+# Running git as root would write root-owned files into $APP_DIR/.git (fetch
+# writes FETCH_HEAD/objects/refs; `status` rewrites .git/index), which then
+# breaks deploy.sh's `git pull` — deploy.sh deliberately runs git as $APP_USER.
+# So we route every repo git call through `sudo -u $APP_USER` to keep .git
+# single-owner, matching deploy.sh. (safe.directory is harmless once euid == owner
+# but is kept for parity with deploy.sh.)
+# Tests have no 'joe' user or sudo: they set AUTODEPLOY_GIT_AS_OWNER=0 to run
+# git directly as the current user against a throwaway repo.
+if [[ "${AUTODEPLOY_GIT_AS_OWNER:-1}" == "1" ]]; then
+    GIT=(sudo -u "$APP_USER" git -c "safe.directory=$APP_DIR")
+else
+    GIT=(git -c "safe.directory=$APP_DIR")
+fi
 
 # ---------------------------------------------------------------------------
 # Dedupe / state helpers
@@ -163,12 +182,13 @@ esac
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "dry-run" ]]; then
     echo "[autodeploy][dry-run] Fetching remote HEAD via ls-remote (no ref mutation)..."
-    REMOTE_SHA="$(git -C "$APP_DIR" ls-remote origin refs/heads/master | awk '{print $1}')"
+    cd "$APP_DIR"
+    REMOTE_SHA="$("${GIT[@]}" ls-remote origin refs/heads/master | awk '{print $1}')"
     if [[ -z "$REMOTE_SHA" ]]; then
         echo "[autodeploy][dry-run] WARNING: ls-remote returned empty — cannot determine remote state."
         exit 0
     fi
-    LOCAL_SHA="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || echo 'unknown')"
+    LOCAL_SHA="$("${GIT[@]}" rev-parse HEAD 2>/dev/null || echo 'unknown')"
     echo "[autodeploy][dry-run] Local HEAD : $LOCAL_SHA"
     echo "[autodeploy][dry-run] Remote HEAD: $REMOTE_SHA"
     if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
@@ -189,16 +209,16 @@ fi
 # ---------------------------------------------------------------------------
 if [[ "$MODE" == "heartbeat" ]]; then
     cd "$APP_DIR"
-    git -c "safe.directory=$APP_DIR" fetch --prune origin "+refs/heads/master:refs/remotes/origin/master" 2>&1 \
+    "${GIT[@]}" fetch --prune origin "+refs/heads/master:refs/remotes/origin/master" 2>&1 \
         || { echo "[autodeploy][heartbeat] ERROR: git fetch failed" >&2; exit 0; }
-    LOCAL_SHA="$(git -c "safe.directory=$APP_DIR" rev-parse HEAD)"
-    REMOTE_SHA="$(git -c "safe.directory=$APP_DIR" rev-parse refs/remotes/origin/master)"
+    LOCAL_SHA="$("${GIT[@]}" rev-parse HEAD)"
+    REMOTE_SHA="$("${GIT[@]}" rev-parse refs/remotes/origin/master)"
     if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
         N=0
     else
-        N="$(git -c "safe.directory=$APP_DIR" rev-list --count HEAD..refs/remotes/origin/master 2>/dev/null || echo '?')"
+        N="$("${GIT[@]}" rev-list --count HEAD..refs/remotes/origin/master 2>/dev/null || echo '?')"
     fi
-    SHORT_HEAD="$(git -c "safe.directory=$APP_DIR" rev-parse --short HEAD)"
+    SHORT_HEAD="$("${GIT[@]}" rev-parse --short HEAD)"
     if [[ "$N" == "0" ]]; then
         discord_notify info "[heartbeat] EbookAutomation" \
             "HEAD=${SHORT_HEAD}, 0 commits behind origin/master — alive."
@@ -223,7 +243,7 @@ _deploy_body() {
     # -----------------------------------------------------------------------
     # git fetch
     # -----------------------------------------------------------------------
-    FETCH_OUT="$(git -c "safe.directory=$APP_DIR" fetch --prune origin "+refs/heads/master:refs/remotes/origin/master" 2>&1)" || {
+    FETCH_OUT="$("${GIT[@]}" fetch --prune origin "+refs/heads/master:refs/remotes/origin/master" 2>&1)" || {
         _notify_red "[fetch-failed] EbookAutomation" \
             "git fetch failed — cannot check for updates. Last fetch output:\n${FETCH_OUT}"
         echo "[autodeploy] ERROR: git fetch failed" >&2
@@ -233,8 +253,8 @@ _deploy_body() {
     # -----------------------------------------------------------------------
     # Change detection (skipped in force/emergency-bypass modes)
     # -----------------------------------------------------------------------
-    LOCAL_SHA="$(git -c "safe.directory=$APP_DIR" rev-parse HEAD)"
-    REMOTE_SHA="$(git -c "safe.directory=$APP_DIR" rev-parse refs/remotes/origin/master)"
+    LOCAL_SHA="$("${GIT[@]}" rev-parse HEAD)"
+    REMOTE_SHA="$("${GIT[@]}" rev-parse refs/remotes/origin/master)"
 
     if [[ "$MODE" == "normal" ]]; then
         if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
@@ -250,7 +270,7 @@ _deploy_body() {
     # -----------------------------------------------------------------------
     if [[ "$MODE" != "emergency-bypass" ]]; then
         # PF1: branch must be master
-        CURRENT_BRANCH="$(git -c "safe.directory=$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'HEAD')"
+        CURRENT_BRANCH="$("${GIT[@]}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'HEAD')"
         if [[ "$CURRENT_BRANCH" != "master" ]]; then
             _notify_red "[preflight-failed] EbookAutomation" \
                 "Preflight FAILED: branch is '${CURRENT_BRANCH}', expected 'master'. Deploy aborted."
@@ -259,7 +279,7 @@ _deploy_body() {
         fi
 
         # PF2: working tree must be clean (tracked changes only)
-        DIRTY="$(git -c "safe.directory=$APP_DIR" status --porcelain 2>/dev/null | grep -v '^??' || true)"
+        DIRTY="$("${GIT[@]}" status --porcelain 2>/dev/null | grep -v '^??' || true)"
         if [[ -n "$DIRTY" ]]; then
             _notify_red "[preflight-failed] EbookAutomation" \
                 "Preflight FAILED: dirty tree (tracked changes present). Deploy aborted.\n\`\`\`\n${DIRTY}\n\`\`\`"
@@ -268,7 +288,7 @@ _deploy_body() {
         fi
 
         # PF3: HEAD must be an ancestor of origin/master (no diverge / no local-ahead)
-        if ! git -c "safe.directory=$APP_DIR" merge-base --is-ancestor HEAD refs/remotes/origin/master 2>/dev/null; then
+        if ! "${GIT[@]}" merge-base --is-ancestor HEAD refs/remotes/origin/master 2>/dev/null; then
             _notify_red "[preflight-failed] EbookAutomation" \
                 "Preflight FAILED: HEAD is not an ancestor of origin/master (diverged or ahead). Deploy aborted."
             echo "[autodeploy] PREFLIGHT FAIL: HEAD not ancestor of origin/master" >&2
@@ -279,8 +299,8 @@ _deploy_body() {
     # -----------------------------------------------------------------------
     # Deploy
     # -----------------------------------------------------------------------
-    OLD="$(git -c "safe.directory=$APP_DIR" rev-parse HEAD)"
-    OLD_SHORT="$(git -c "safe.directory=$APP_DIR" rev-parse --short HEAD)"
+    OLD="$("${GIT[@]}" rev-parse HEAD)"
+    OLD_SHORT="$("${GIT[@]}" rev-parse --short HEAD)"
     echo "[autodeploy] Running deploy.sh (OLD=${OLD_SHORT})..."
 
     # Capture deploy.sh output (both stdout and stderr) while still streaming it
@@ -291,9 +311,9 @@ _deploy_body() {
 
     if [[ "$DEPLOY_RC" -eq 0 ]]; then
         # --- Success path ---
-        POST="$(git -c "safe.directory=$APP_DIR" rev-parse HEAD)"
-        POST_SHORT="$(git -c "safe.directory=$APP_DIR" rev-parse --short HEAD)"
-        N="$(git -c "safe.directory=$APP_DIR" rev-list --count "${OLD}..${POST}" 2>/dev/null || echo '?')"
+        POST="$("${GIT[@]}" rev-parse HEAD)"
+        POST_SHORT="$("${GIT[@]}" rev-parse --short HEAD)"
+        N="$("${GIT[@]}" rev-list --count "${OLD}..${POST}" 2>/dev/null || echo '?')"
 
         # Through-CF probe (annotation only — never triggers rollback)
         PROBE_URL="${HEALTH_PROBE_URL}?cb=$(date +%s)"
