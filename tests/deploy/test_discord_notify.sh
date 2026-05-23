@@ -109,7 +109,7 @@ for arg in "$@"; do
 done
 
 if [[ -n "${T_CAPTURE_FILE:-}" ]]; then
-    printf '%s\n---URL---\n%s\n' "$PAYLOAD" "$URL" >: > "$T_CAPTURE_FILE"
+    printf '%s\n---URL---\n%s\n' "$PAYLOAD" "$URL" >> "$T_CAPTURE_FILE"
 fi
 
 echo "${T_SHIM_STATUS:-204}"
