@@ -77,8 +77,6 @@ assert_valid_json() {
 # (a temp file the caller creates) for out-of-band result extraction.
 # ---------------------------------------------------------------------------
 T_CAPTURE_FILE="$(mktemp)"
-cleanup() { rm -f "$T_CAPTURE_FILE"; }
-trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
 # Shared curl-shim body: writes captured payload+url to T_CAPTURE_FILE,
@@ -89,6 +87,7 @@ trap cleanup EXIT
 # by discord_notify's `curl ...` call regardless of subshell depth.
 
 T_SHIM_DIR="$(mktemp -d)"
+# shellcheck disable=SC2317  # cleanup is invoked indirectly via the EXIT trap
 cleanup() { rm -f "$T_CAPTURE_FILE"; rm -rf "$T_SHIM_DIR"; }
 trap cleanup EXIT
 
@@ -110,13 +109,24 @@ for arg in "$@"; do
 done
 
 if [[ -n "${T_CAPTURE_FILE:-}" ]]; then
-    printf '%s\n---URL---\n%s\n' "$PAYLOAD" "$URL" >> "$T_CAPTURE_FILE"
+    printf '%s\n---URL---\n%s\n' "$PAYLOAD" "$URL" >: > "$T_CAPTURE_FILE"
 fi
 
 echo "${T_SHIM_STATUS:-204}"
 exit "${T_SHIM_EXIT:-0}"
 CURLSHIM
 chmod +x "$T_SHIM_DIR/curl"
+
+# logger shim: production _discord_log_warn prefers `logger` (journald) over
+# stderr when it is present. Route the logged message to stderr so the warning
+# assertions are deterministic whether or not the host has a real syslog logger
+# (WSL has one; git-bash does not). We echo the LAST positional arg (the
+# message), not the -t/-p flags, so the assertions test real content.
+cat > "$T_SHIM_DIR/logger" <<'LOGGERSHIM'
+#!/usr/bin/env bash
+echo "logger: ${*: -1}" >&2
+LOGGERSHIM
+chmod +x "$T_SHIM_DIR/logger"
 export T_SHIM_DIR
 
 # ---------------------------------------------------------------------------
@@ -125,7 +135,7 @@ export T_SHIM_DIR
 echo ""
 echo "TEST 1: Happy path (green, payload captured via shim)"
 
-> "$T_CAPTURE_FILE"
+: > "$T_CAPTURE_FILE"
 export T_CAPTURE_FILE
 T1_RC=0
 bash -c '
@@ -165,7 +175,7 @@ fi
 echo ""
 echo "TEST 2: Unset DISCORD_DEPLOY_WEBHOOK_URL — must return 0, warning, no curl call"
 
-> "$T_CAPTURE_FILE"
+: > "$T_CAPTURE_FILE"
 T2_RC=0
 T2_STDERR="$(bash -c '
     export PATH="$T_SHIM_DIR:$PATH"
@@ -190,7 +200,7 @@ fi
 echo ""
 echo "TEST 3: POST failure (HTTP 500) — must return 0, log warning"
 
-> "$T_CAPTURE_FILE"
+: > "$T_CAPTURE_FILE"
 T3_RC=0
 T3_STDERR="$(bash -c '
     export PATH="$T_SHIM_DIR:$PATH"
@@ -219,7 +229,7 @@ fi
 echo ""
 echo "TEST 3b: POST failure (curl network error / exit 7) — must return 0"
 
-> "$T_CAPTURE_FILE"
+: > "$T_CAPTURE_FILE"
 T3B_RC=0
 T3B_STDERR="$(bash -c '
     export PATH="$T_SHIM_DIR:$PATH"
@@ -243,7 +253,7 @@ fi
 echo ""
 echo "TEST 4: JSON escaping — message with double-quotes and literal newline"
 
-> "$T_CAPTURE_FILE"
+: > "$T_CAPTURE_FILE"
 T4_RC=0
 bash -c '
     export PATH="$T_SHIM_DIR:$PATH"

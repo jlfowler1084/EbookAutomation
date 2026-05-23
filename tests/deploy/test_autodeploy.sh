@@ -88,6 +88,7 @@ make_tmp() {
     echo "$d"
 }
 
+# shellcheck disable=SC2317  # cleanup_all is invoked indirectly via the EXIT trap
 cleanup_all() {
     for d in "${ALL_TMPS[@]:-}"; do
         rm -rf "$d"
@@ -183,8 +184,8 @@ make_shim_env() {
     local deploy_shim_dir="$base/deploy"
 
     mkdir -p "$deploy_shim_dir" "$curl_shim_dir"
-    > "$notify_capture"
-    > "$curl_capture"
+    : > "$notify_capture"
+    : > "$curl_capture"
 
     # --- discord-notify.sh stub ---
     cat > "$deploy_shim_dir/discord-notify.sh" <<STUB
@@ -266,14 +267,6 @@ count_notifies() {
     local capture="$1" color="$2"
     { grep -c "^NOTIFY|${color}|" "$capture" 2>/dev/null || true; }
 }
-get_notify_title() {
-    local capture="$1" idx="${2:-1}"
-    awk -F'|' "NR==$idx {print \$3}" "$capture" 2>/dev/null || echo ""
-}
-get_notify_msg() {
-    local capture="$1" idx="${2:-1}"
-    awk -F'|' "NR==$idx {print \$4}" "$capture" 2>/dev/null || echo ""
-}
 
 # ===========================================================================
 # TEST 1: No-change (HEAD == origin/master) — silent exit 0, no Discord post
@@ -314,7 +307,6 @@ T2_SHIM="$deploy_shim_dir"
 T2_CSHIM="$curl_shim_dir"
 
 # Get OLD sha before deploy
-T2_OLD="$(git -C "$T2_REPO" rev-parse HEAD)"
 T2_OLD_SHORT="$(git -C "$T2_REPO" rev-parse --short HEAD)"
 
 # Stub deploy.sh: fast-forward pull origin master, exit 0
@@ -726,7 +718,7 @@ assert_zero "T11a --force: exit code 0"               "$LAST_RC"
 assert_contains "T11a --force: deploy.sh was called"  "Running deploy.sh" "$T11A_OUTPUT"
 
 # Part B: --force with dirty tree → preflight aborts (dirty tree still blocks)
-> "$T11_NOTIFY"
+: > "$T11_NOTIFY"
 echo "local change" >> "$T11_REPO/file.txt"
 
 run_autodeploy "$T11_SHIM" "$T11_CSHIM" "$T11_NOTIFY" "$T11_CURL" "$T11_REPO" "$T11_STATE" "--force"
@@ -748,17 +740,14 @@ T12_BASE="$(make_tmp)"
 T12_REPO="$(build_git_repo "$T12_BASE" 1 1)"  # origin 1 ahead
 T12_STATE="$(make_tmp)"
 
-# This test needs a FAILING curl shim
-T12_CURL_SHIM_EXIT=1  # curl exits non-zero to simulate probe failure
-
 T12_SHIM_DIR="$(make_tmp)"
 T12_NOTIFY="$T12_SHIM_DIR/notify_calls.txt"
 T12_CURL="$T12_SHIM_DIR/curl_calls.txt"
 T12_CDEPLOY="$T12_SHIM_DIR/deploy"
 T12_CCURLSHIM="$T12_SHIM_DIR/curlshim"
 mkdir -p "$T12_CDEPLOY" "$T12_CCURLSHIM"
-> "$T12_NOTIFY"
-> "$T12_CURL"
+: > "$T12_NOTIFY"
+: > "$T12_CURL"
 
 cat > "$T12_CDEPLOY/discord-notify.sh" <<STUB
 #!/usr/bin/env bash
