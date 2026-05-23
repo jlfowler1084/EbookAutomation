@@ -12,11 +12,10 @@ const SLUG = "does-kindle-support-epub";
 const CANONICAL = `https://leafbind.io/guides/${SLUG}`;
 
 export const metadata: Metadata = {
-  title: "Does Kindle Support EPUB? Yes — Here's How (and Where to Convert) — leafbind",
+  title: "Does Kindle Support EPUB? Yes — Here's How | leafbind",
   description:
-    "Yes, Kindle accepts EPUB via Send-to-Kindle (since 2022). Amazon converts it to KFX " +
-    "server-side. Honest guide: when STK works, when to use Calibre, and when a hosted " +
-    "converter helps.",
+    "Yes — Kindle accepts EPUB via Send-to-Kindle (since 2022); Amazon converts it to KFX. " +
+    "When STK works, when to use Calibre, and where a converter helps.",
   alternates: {
     canonical: CANONICAL,
   },
