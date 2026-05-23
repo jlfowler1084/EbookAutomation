@@ -24,6 +24,111 @@ Run these steps once; subsequent updates use `deploy.sh`.
 > `/etc/web_service.env` then `sudo systemctl restart ebookweb`. DB migrations are
 > idempotent and auto-apply on service startup (`web_service/job_store.py::_apply_migrations`).
 
+## Automated Deploy (EB-331)
+
+Once the auto-deploy stack is installed (below), a merge to `master` reaches the
+production `ebookweb` backend within ~5 minutes with no manual step, and any
+failure is reported to Discord. This is a **pull model**: a systemd timer on the
+VM fetches and deploys; no CI/CD credentials ever leave GitHub.
+
+> **Backend only.** The Vercel frontend already auto-deploys and is out of scope.
+
+### How it works
+
+```
+ebookweb-autodeploy.timer  (OnBootSec=2min, OnUnitActiveSec=5min)
+  └─> autodeploy.sh   (flock'd, runs as root)
+        fetch origin/master → compare with HEAD
+        ├─ no change → exit silently (clears any prior failing state)
+        └─ behind   → preflights (on master, clean tree, HEAD ancestor of origin)
+                       └─ deploy.sh  (ff-pull → pip → restart → health poll up to ~120s → auto-rollback on fail)
+                            ├─ ok   → 🟩 "deployed OLD..NEW (N) — health OK" + through-CF /health probe
+                            └─ fail → 🔴 (deduped) with the last ~15 lines; deploy.sh already rolled back
+
+ebookweb-heartbeat.timer       (daily)   → 🟢 alive / 🟨 alive but N behind
+refresh-cloudflare-ips.timer   (monthly) → refresh nginx CF allowlist, verify THROUGH Cloudflare, 🔴 on fail
+```
+
+- **Local health is the rollback gate.** `deploy.sh` polls `127.0.0.1:8001/health`
+  for up to ~120s; if it never comes healthy it resets to the previous commit, reinstalls,
+  restarts, and exits non-zero. The through-Cloudflare probe of
+  `https://api.leafbind.io/health` is **annotation only** — a failed CF probe
+  downgrades the success line to ⚠️ but does **not** trigger rollback (avoids false
+  rollbacks on transient CF/network blips).
+- **Discord alerting is best-effort.** A missing webhook or a Discord outage logs to
+  journald and never blocks a deploy. Failures alert once on the healthy→failing
+  transition, then re-nag at most once per ~3 hours; any success clears the state.
+- **The daily heartbeat is the dead-timer canary** (the EB-324 failure mode): with
+  it, "no news" stops looking identical to "all healthy."
+
+### ⚠️ While the timer is enabled, never run bare `deploy.sh`
+
+Manual deploys must go through the locked entrypoint:
+
+```bash
+sudo /home/joe/EbookAutomation/deploy/autodeploy.sh --force
+```
+
+`--force` skips only change-detection (it redeploys current `master`) but keeps the
+preflights **and** the `flock` that prevents racing the 5-minute timer. Running bare
+`deploy.sh` bypasses that lock and can collide with a timer tick mid-deploy.
+
+| Flag | Behavior |
+|------|----------|
+| _(none)_ | Normal tick: deploy only if `master` moved. |
+| `--force` | Redeploy current `master` now; preflights still run. |
+| `--emergency-bypass` | Skip preflights (the only mode that does). Use only when a guard is wrongly blocking a known-safe deploy. |
+| `--heartbeat` | No deploy; post the liveness / behind-count line. |
+| `--dry-run` | Print what would happen (uses `git ls-remote`, mutates nothing, posts nothing). |
+
+### Installing the stack on the VM
+
+Run once as root, after the service itself is already deployed:
+
+```bash
+sudo /home/joe/EbookAutomation/deploy/install-autodeploy.sh
+```
+
+The installer is idempotent. It copies the six unit files, ensures the deploy
+scripts are executable, creates the state dir, creates `/etc/ebookweb-autodeploy.env`
+(`0600`) **only if absent**, validates the Cloudflare nginx target, then enables and
+starts the three timers.
+
+> **The CF-target gate is atomic and intentional.** `install-autodeploy.sh` requires
+> the live nginx Cloudflare allowlist target to validate before enabling any EB-331
+> timers. If validation fails, no timers are enabled; fix nginx and re-run the
+> installer. The target (`/etc/nginx/sites-enabled/leafbind`) must exist, contain the
+> `# BEGIN/END CLOUDFLARE IPS` sentinels, and appear in `nginx -T`. All three timers
+> go live together, or none do — a partial "install failed but some automation is
+> live" state is worse to reason about than a hard stop followed by an idempotent
+> re-run.
+
+Then paste the real webhook URL (the file is never overwritten by a re-run, and its
+contents are never echoed by the installer):
+
+```bash
+sudo nano /etc/ebookweb-autodeploy.env
+# DISCORD_DEPLOY_WEBHOOK_URL=https://discord.com/api/webhooks/...
+sudo systemctl list-timers ebookweb-autodeploy.timer ebookweb-heartbeat.timer refresh-cloudflare-ips.timer
+```
+
+### Rollout ordering
+
+1. Merge PR #153 (`fix/EB-331-deploy-path-reconciliation`).
+2. Merge the EB-331 PR.
+3. **Enable `master` branch protection (Unit 1 — human gate):** require a pull
+   request before merging and block direct pushes. Do **not** add required status
+   checks — the app test workflows are `paths:`-filtered and would deadlock
+   deploy-only PRs on a forever-pending check. This must be in place **before** the
+   timer is enabled, so `master` can no longer take unreviewed direct commits once it
+   becomes auto-executing on prod.
+4. On the VM: run `install-autodeploy.sh`, paste the real
+   `DISCORD_DEPLOY_WEBHOOK_URL`, confirm `systemctl list-timers`.
+5. Staged smoke test: merge a trivial PR (direct pushes are blocked after step 3),
+   then watch the next tick deploy it and post the 🟩 line within ~5 minutes.
+
+**VM access:** Tailscale node `claude-dev-01`, `ssh root@`.
+
 ## Prerequisites
 
 - Ubuntu 22.04 LTS
@@ -122,7 +227,7 @@ STRIPE_API_VERSION=2026-04-22.dahlia
 ## Send-to-Kindle (Resend) Configuration
 
 EB-330 Lane D requires three Resend values in `/etc/web_service.env` (see the
-production-layout callout at the top — **not** `/etc/web_service.env`). The
+production-layout callout at the top — **not** `/opt/ebookautomation/.env`). The
 feature flag stays false until the Lane E live e2e + smoke pass.
 
 ```
@@ -321,6 +426,11 @@ and auto-rolls-back on a failed health check):
 ```bash
 sudo bash /home/joe/EbookAutomation/deploy/deploy.sh
 ```
+
+> **Once the EB-331 auto-deploy timer is enabled** (see [Automated Deploy](#automated-deploy-eb-331)),
+> do **not** run bare `deploy.sh` — use `sudo /home/joe/EbookAutomation/deploy/autodeploy.sh --force`
+> so the `flock` prevents a race with the 5-minute timer. The bare `deploy.sh` command above is for
+> the pre-timer / manual-only state.
 
 ---
 

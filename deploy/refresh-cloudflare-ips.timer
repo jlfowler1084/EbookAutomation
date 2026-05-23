@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly timer — refresh Cloudflare IP allowlist in nginx (EbookAutomation / leafbind.io)
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
