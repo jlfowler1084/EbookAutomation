@@ -41,7 +41,7 @@ ebookweb-autodeploy.timer  (OnBootSec=2min, OnUnitActiveSec=5min)
         fetch origin/master → compare with HEAD
         ├─ no change → exit silently (clears any prior failing state)
         └─ behind   → preflights (on master, clean tree, HEAD ancestor of origin)
-                       └─ deploy.sh  (ff-pull → pip → restart → ~45s health poll → auto-rollback on fail)
+                       └─ deploy.sh  (ff-pull → pip → restart → health poll up to ~120s → auto-rollback on fail)
                             ├─ ok   → 🟩 "deployed OLD..NEW (N) — health OK" + through-CF /health probe
                             └─ fail → 🔴 (deduped) with the last ~15 lines; deploy.sh already rolled back
 
@@ -50,7 +50,7 @@ refresh-cloudflare-ips.timer   (monthly) → refresh nginx CF allowlist, verify 
 ```
 
 - **Local health is the rollback gate.** `deploy.sh` polls `127.0.0.1:8001/health`
-  for ~45s; if it never comes healthy it resets to the previous commit, reinstalls,
+  for up to ~120s; if it never comes healthy it resets to the previous commit, reinstalls,
   restarts, and exits non-zero. The through-Cloudflare probe of
   `https://api.leafbind.io/health` is **annotation only** — a failed CF probe
   downgrades the success line to ⚠️ but does **not** trigger rollback (avoids false

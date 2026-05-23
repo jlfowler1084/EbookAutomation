@@ -13,7 +13,7 @@ SERVICE="ebookweb"
 HEALTH_URL="http://127.0.0.1:8001/health"
 GIT=(git -c "safe.directory=$APP_DIR")
 HEALTH_POLL_INTERVAL=3   # seconds between probes
-HEALTH_POLL_MAX=15        # max probes (~45s total)
+HEALTH_POLL_MAX=15        # max probes; ~120s worst case (15 x (5s curl max-time + 3s sleep))
 
 # Poll $HEALTH_URL every $HEALTH_POLL_INTERVAL seconds up to $HEALTH_POLL_MAX times.
 # Returns 0 on first successful probe, 1 if all probes time out.
