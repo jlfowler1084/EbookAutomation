@@ -145,3 +145,78 @@ def test_premium_convert_refunds_when_create_job_fails(client, monkeypatch):
     conn.close()
     assert used == 0, "token must be refunded when job setup fails after consume"
     assert [r[0] for r in ledger] == ["convert_setup_failed"]
+
+
+def test_setup_failure_unconfirmed_refund_returns_distinct_code(client, monkeypatch):
+    """EB-334: if the refund itself fails, do NOT claim the credit was untouched.
+
+    When create_job AND refund_token both fail (the realistic SQLite-locked
+    case), the token stays consumed and the client must get a distinct,
+    honest code so support can reconcile — not "your credit was not used."
+    """
+    import web_service.token_store as ts
+    from web_service.routes import convert as convert_module
+
+    tc, db_path, settings = client
+    ts.init_db(db_path)
+    mint = ts.mint_tokens_if_absent(
+        session_id="cs_eb334_unconfirmed", count=1,
+        payment_intent_id="pi_eb334_unconfirmed", db_path=db_path,
+    )
+    token = mint.tokens[0]
+
+    def _boom(*args, **kwargs):
+        raise sqlite3.OperationalError("simulated create_job failure")
+
+    def _boom_refund(*args, **kwargs):
+        raise sqlite3.OperationalError("simulated refund failure")
+
+    monkeypatch.setattr(convert_module.job_store, "create_job", _boom)
+    monkeypatch.setattr(convert_module.token_store, "refund_token", _boom_refund)
+
+    files = {"file": ("book.pdf", b"%PDF-1.4\n" + b"\x00" * 4000, "application/pdf")}
+    resp = tc.post("/convert", files=files, data={"output_format": "kfx", "tier": "premium", "token": token})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"]["code"] == "JOB_SETUP_FAILED_REFUND_UNCONFIRMED"
+
+    conn = sqlite3.connect(str(db_path))
+    used = conn.execute("SELECT used FROM tokens WHERE pack_id=?", ("cs_eb334_unconfirmed",)).fetchone()[0]
+    ledger = conn.execute("SELECT refund_reason FROM refund_ledger").fetchall()
+    conn.close()
+    assert used == 1, "token stays consumed when the refund could not be confirmed"
+    assert ledger == [], "no refund-ledger row when refund_token raised"
+
+
+def test_setup_failure_cleans_up_temp_dir(client, monkeypatch):
+    """EB-334: a failed setup must not leave the job temp dir behind.
+
+    settings.temp_dir is a shared global location, so we pin the job id and
+    assert this specific request's dir is gone (not "no job_* dirs at all").
+    """
+    import web_service.token_store as ts
+    from web_service.routes import convert as convert_module
+
+    tc, db_path, settings = client
+    ts.init_db(db_path)
+    mint = ts.mint_tokens_if_absent(
+        session_id="cs_eb334_tmpleak", count=1,
+        payment_intent_id="pi_eb334_tmpleak", db_path=db_path,
+    )
+    token = mint.tokens[0]
+
+    fixed_id = "eb334-tmpleak-fixed"
+    monkeypatch.setattr(convert_module, "new_job_id", lambda: fixed_id)
+
+    # create_job raises AFTER mkdir + write_bytes, so the job dir exists at failure.
+    def _boom(*args, **kwargs):
+        raise sqlite3.OperationalError("simulated create_job failure")
+
+    monkeypatch.setattr(convert_module.job_store, "create_job", _boom)
+
+    files = {"file": ("book.pdf", b"%PDF-1.4\n" + b"\x00" * 4000, "application/pdf")}
+    resp = tc.post("/convert", files=files, data={"output_format": "kfx", "tier": "premium", "token": token})
+
+    assert resp.status_code == 500
+    job_dir = settings.temp_dir / f"job_{fixed_id}"
+    assert not job_dir.exists(), f"setup failure must remove the job temp dir: {job_dir}"

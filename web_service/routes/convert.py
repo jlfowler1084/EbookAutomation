@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import sqlite3
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
@@ -17,21 +18,30 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _refund_after_setup_failure(token_hash_hex: str, job_id: str) -> None:
+async def _refund_after_setup_failure(token_hash_hex: str, job_id: str) -> bool:
     """Refund a just-consumed premium token when job setup fails before dispatch.
 
-    Best-effort: errors are logged, never propagated — the caller already raises
-    a 500 to the client. Mirrors job_queue._maybe_refund_failed_job's shape.
+    Returns True only when the refund is *confirmed* — the token was
+    reverse-consumed OR a refund-ledger row was written. Returns False on every
+    unconfirmed path (token_hash not hex, billing_executor uninitialised,
+    refund_token raised, or a RefundResult that neither refunded nor ledgered)
+    so the caller can tell the client their credit needs reconciliation rather
+    than falsely claiming it was untouched. Errors are logged, never propagated;
+    the caller already raises a 500.
+
+    A common setup-failure trigger is SQLite being locked/unavailable — and the
+    refund is itself a SQLite write, so it can fail for the same reason. That is
+    exactly the case the False return exists to surface (EB-334).
     """
     loop = asyncio.get_running_loop()
     try:
         token_hash_bytes = bytes.fromhex(token_hash_hex)
     except ValueError:
         log.warning("Cannot refund setup failure for %s: token_hash not hex", job_id)
-        return
+        return False
     if job_queue.billing_executor is None:
         log.warning("Cannot refund setup failure for %s: billing_executor not initialised", job_id)
-        return
+        return False
     try:
         refund = await loop.run_in_executor(
             job_queue.billing_executor,
@@ -42,7 +52,9 @@ async def _refund_after_setup_failure(token_hash_hex: str, job_id: str) -> None:
         )
     except Exception:
         log.exception("Refund after setup failure raised for %s", job_id)
-        return
+        return False
+
+    confirmed = bool(refund.refunded or refund.ledgered)
     try:
         recovery_events_store.log_event(
             "premium_refund_applied",
@@ -56,6 +68,12 @@ async def _refund_after_setup_failure(token_hash_hex: str, job_id: str) -> None:
         )
     except Exception:
         log.exception("Telemetry log_event failed for setup-failure refund %s", job_id)
+    if not confirmed:
+        log.error(
+            "Setup-failure refund for %s NOT confirmed (refunded=%s ledgered=%s) — needs reconciliation",
+            job_id, refund.refunded, refund.ledgered,
+        )
+    return confirmed
 
 
 @router.post("/convert", status_code=202)
@@ -163,8 +181,26 @@ async def convert_file(
         )
     except Exception:
         log.exception("Job setup failed after token consume for job %s", job_id)
+        # Always clean up the partial job dir (mkdir/write may have half-completed)
+        # before returning, regardless of the refund outcome (EB-334).
+        shutil.rmtree(temp_dir, ignore_errors=True)
         if token_hash_hex:
-            await _refund_after_setup_failure(token_hash_hex, job_id)
+            refund_confirmed = await _refund_after_setup_failure(token_hash_hex, job_id)
+            if not refund_confirmed:
+                # The token was consumed and we could NOT confirm a refund — do
+                # not tell the customer their credit is safe. Surface a distinct
+                # code so support can reconcile (EB-334).
+                raise HTTPException(
+                    status_code=500,
+                    detail={
+                        "error": (
+                            "Could not start conversion, and your credit could not be "
+                            "automatically refunded. It will be reconciled manually — "
+                            "please contact support if it is not restored."
+                        ),
+                        "code": "JOB_SETUP_FAILED_REFUND_UNCONFIRMED",
+                    },
+                )
         raise HTTPException(
             status_code=500,
             detail={
