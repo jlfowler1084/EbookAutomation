@@ -43,9 +43,8 @@ import stripe
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from web_service import circuit_breaker, token_store
+from web_service import circuit_breaker, job_queue, token_store
 from web_service.config import get_settings
-from web_service.job_queue import billing_executor
 
 log = logging.getLogger(__name__)
 
@@ -177,7 +176,7 @@ async def stripe_webhook(request: Request) -> dict:
         try:
             # Mint tokens (idempotent -- safe to call multiple times for same session).
             await loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 token_store.mint_tokens_if_absent,
                 session_id,
                 count,
@@ -191,7 +190,7 @@ async def stripe_webhook(request: Request) -> dict:
             if payment_intent_id:
                 try:
                     await loop.run_in_executor(
-                        billing_executor,
+                        job_queue.billing_executor,
                         lambda: stripe.PaymentIntent.modify(
                             payment_intent_id,
                             metadata={
@@ -226,7 +225,7 @@ async def stripe_webhook(request: Request) -> dict:
             # Best-effort: record the failure for admin sweep / manual recovery.
             try:
                 await loop.run_in_executor(
-                    billing_executor,
+                    job_queue.billing_executor,
                     token_store.record_failed_mint,
                     session_id,
                     pack,
@@ -275,7 +274,7 @@ async def stripe_webhook(request: Request) -> dict:
         session_id = None
         try:
             pi = await loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 lambda: stripe.PaymentIntent.retrieve(payment_intent_id),
             )
             session_id = pi.metadata.get("checkout_session_id")
@@ -291,7 +290,7 @@ async def stripe_webhook(request: Request) -> dict:
         # Fallback path: look up via token_store by payment_intent_id.
         if not session_id:
             session_id = await loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 token_store.find_session_by_payment_intent,
                 payment_intent_id,
             )
@@ -299,7 +298,7 @@ async def stripe_webhook(request: Request) -> dict:
         if session_id:
             try:
                 await loop.run_in_executor(
-                    billing_executor,
+                    job_queue.billing_executor,
                     token_store.mark_disputed,
                     session_id,
                 )

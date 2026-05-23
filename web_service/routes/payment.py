@@ -28,11 +28,10 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from html import escape
 
-from web_service import circuit_breaker, recovery_events_store, token_store
+from web_service import circuit_breaker, job_queue, recovery_events_store, token_store
 from web_service.token_store import TOKEN_TTL_SECONDS
 from web_service.templates.shell import footer_html, header_html
 from web_service.config import get_settings
-from web_service.job_queue import billing_executor
 
 log = logging.getLogger(__name__)
 
@@ -299,7 +298,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
 
     try:
         result = await loop.run_in_executor(
-            billing_executor,
+            job_queue.billing_executor,
             token_store.get_tokens_for_session,
             session_id,
         )
@@ -327,7 +326,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
         # are absorbed inside recovery_events_store.log_event().
         try:
             loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 recovery_events_store.log_event,
                 "payment_success_revisit",
                 {"expired": int(time.time()) > expires_at, "n_tokens": len(tokens)},
@@ -364,7 +363,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
 
     try:
         session = await loop.run_in_executor(
-            billing_executor,
+            job_queue.billing_executor,
             lambda: stripe.checkout.Session.retrieve(
                 session_id,
                 expand=["line_items"],
@@ -422,7 +421,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
 
     try:
         mint_result = await loop.run_in_executor(
-            billing_executor,
+            job_queue.billing_executor,
             token_store.mint_tokens_if_absent,
             session_id,
             count,
@@ -439,7 +438,7 @@ async def payment_success(session_id: str) -> HTMLResponse:
         # Best-effort: log to failed_mints so admin sweep can act
         try:
             await loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 token_store.record_failed_mint,
                 session_id,
                 pack,
