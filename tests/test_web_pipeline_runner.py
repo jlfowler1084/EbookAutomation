@@ -486,6 +486,58 @@ class TestRunPremium:
         assert not result.success
         assert "calibre" in result.error_message.lower() or "bad format" in result.error_message.lower()
 
+    def test_premium_kfx_wraps_calibre_in_xvfb_with_wine_env(self, small_pdf, temp_dir, settings):
+        """EB-332: KFX conversions run ebook-convert under xvfb-run with a
+        Wine-configured env. Calibre's KFX Output drives Kindle Previewer 3 — a
+        Qt GUI app — under Wine, which needs a virtual X display + Wine prefix.
+        wine-STAGING is required on the VM (stable crashes KP3's renderer)."""
+        captured: dict = {"cmd": None, "env": None}
+
+        def fake_run(cmd, **kwargs):
+            if "extract_tts_text" in " ".join(str(c) for c in cmd):
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
+                return self._make_proc(0)
+            captured["cmd"] = list(cmd)
+            captured["env"] = kwargs.get("env")
+            Path(cmd[-1]).write_bytes(b"CONTkfxdata")  # output path is the last arg
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_kfx_xvfb", small_pdf, "kfx", temp_dir, settings=settings)
+
+        assert result.success, f"kfx run should succeed; got {result.error_message}"
+        cmd = captured["cmd"]
+        assert cmd[0] == "xvfb-run", f"kfx calibre cmd must be xvfb-wrapped; got {cmd[0]!r}"
+        assert str(settings.calibre_path) in cmd
+        assert cmd[-1].endswith("output.kfx")
+        env = captured["env"]
+        assert env is not None, "kfx calibre call must pass an explicit env"
+        assert env.get("QTWEBENGINE_DISABLE_SANDBOX") == "1"
+        assert "--no-sandbox" in env.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+        assert env.get("WINEPREFIX"), "WINEPREFIX must be set for the kfx conversion"
+
+    def test_premium_epub_calibre_not_xvfb_wrapped(self, small_pdf, temp_dir, settings):
+        """EB-332: non-KFX premium formats must NOT be xvfb-wrapped (no Wine
+        needed) and must keep inheriting the process env (no explicit env=)."""
+        captured: dict = {"cmd": None, "env": "sentinel"}
+
+        def fake_run(cmd, **kwargs):
+            if "extract_tts_text" in " ".join(str(c) for c in cmd):
+                (temp_dir / f"{small_pdf.stem}_kindle.txt").write_bytes(b"extracted text")
+                return self._make_proc(0)
+            captured["cmd"] = list(cmd)
+            captured["env"] = kwargs.get("env")
+            Path(cmd[-1]).write_bytes(b"epub content")
+            return self._make_proc(0)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_epub_noxvfb", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success
+        assert captured["cmd"][0] == str(settings.calibre_path)
+        assert "xvfb-run" not in captured["cmd"]
+        assert captured["env"] is None, "non-kfx must inherit process env (env kwarg None)"
+
 
 # ---------------------------------------------------------------------------
 # EB-245 helper unit tests

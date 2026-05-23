@@ -419,6 +419,26 @@ def run_premium(
         str(extracted_text),
         str(final_output_path),
     ]
+    calibre_env = None
+    if output_format == "kfx":
+        # EB-332: Calibre's KFX Output plugin drives Amazon Kindle Previewer 3 —
+        # a Qt GUI app — under Wine. It needs a virtual X display and a Wine
+        # prefix at conversion time. Wrap the conversion in xvfb-run (ephemeral
+        # display created inside this process's namespace, so it works under the
+        # service's PrivateTmp) and pass the Wine env. The VM must run
+        # wine-STAGING — wine-stable crashes KP3's renderer with an access
+        # violation. See deploy/install-kfx-toolchain.sh for the full recipe.
+        calibre_cmd = [
+            "xvfb-run",
+            "-a",
+            "--server-args=-screen 0 1280x1024x24 +extension GLX",
+            *calibre_cmd,
+        ]
+        calibre_env = os.environ.copy()
+        home = calibre_env.get("HOME") or os.path.expanduser("~")
+        calibre_env.setdefault("WINEPREFIX", f"{home}/.wine")
+        calibre_env["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+        calibre_env["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox --disable-gpu"
     log.info("[%s] calibre cmd: %s", job_id, calibre_cmd)
 
     try:
@@ -430,6 +450,7 @@ def run_premium(
             errors="replace",
             timeout=timeout,
             shell=False,
+            env=calibre_env,
         )
     except TimeoutExpired:
         log.warning("[%s] Calibre conversion timed out after %ds", job_id, timeout)

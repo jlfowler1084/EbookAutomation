@@ -18,7 +18,14 @@ SyslogIdentifier=ebookweb
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/joe/EbookAutomation/data /tmp
+# EB-332: KFX conversion runs Wine + Kindle Previewer 3 + Calibre at request
+# time. ProtectSystem=strict makes the FS read-only except these paths, so the
+# conversion subprocess needs its Wine prefix and Calibre config/cache writable
+# — otherwise it hits EROFS. KP3 runs under Wine, so its runtime dirs (incl.
+# .kindle/KPR) live inside the prefix at /home/joe/.wine and need no separate
+# entry. (WINEPREFIX/QtWebEngine env + the xvfb wrapper are set in
+# pipeline_runner.run_premium, not here.)
+ReadWritePaths=/home/joe/EbookAutomation/data /tmp /home/joe/.wine /home/joe/.config/calibre /home/joe/.cache/calibre
 
 [Install]
 WantedBy=multi-user.target

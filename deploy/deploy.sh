@@ -15,6 +15,12 @@ GIT=(git -c "safe.directory=$APP_DIR")
 HEALTH_POLL_INTERVAL=3   # seconds between probes
 HEALTH_POLL_MAX=15        # max probes; ~120s worst case (15 x (5s curl max-time + 3s sleep))
 
+# EB-332: source the Discord helper (same one autodeploy uses) so the post-deploy
+# KFX-readiness probe can alert. Best-effort: absent helper/webhook just no-ops.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/discord-notify.sh
+[ -f "$SCRIPT_DIR/discord-notify.sh" ] && source "$SCRIPT_DIR/discord-notify.sh" || true
+
 # Poll $HEALTH_URL every $HEALTH_POLL_INTERVAL seconds up to $HEALTH_POLL_MAX times.
 # Returns 0 on first successful probe, 1 if all probes time out.
 wait_for_health() {
@@ -46,6 +52,18 @@ systemctl restart "$SERVICE"
 
 if wait_for_health; then
     echo "[deploy] Done. Health OK at $(sudo -u "$APP_USER" "${GIT[@]}" rev-parse --short HEAD)"
+    # EB-332: cheap KFX-readiness probe. Alert-only — it must NOT fail the deploy
+    # or trigger rollback (free-tier EPUB/MOBI does not need the Wine/KP3 chain).
+    # The heavy installer (install-kfx-toolchain.sh) runs ONLY at bootstrap/rebuild,
+    # never on this tick.
+    if ! bash "$APP_DIR/deploy/verify-kfx-toolchain.sh"; then
+        echo "[deploy] WARNING: KFX toolchain probe FAILED — premium KFX will fail" >&2
+        echo "[deploy]          until install-kfx-toolchain.sh is re-run on the VM." >&2
+        if command -v discord_notify >/dev/null 2>&1; then
+            discord_notify yellow "[kfx-degraded] EbookAutomation" \
+                "Deploy OK, but the KFX toolchain probe failed — premium KFX conversions will fail until deploy/install-kfx-toolchain.sh is re-run on the VM (wine-STAGING required)."
+        fi
+    fi
 else
     echo "[deploy] Health check FAILED — rolling back to $ROLLBACK" >&2
     sudo -u "$APP_USER" "${GIT[@]}" reset --hard "$ROLLBACK"
