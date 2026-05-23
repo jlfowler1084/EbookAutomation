@@ -32,7 +32,7 @@ Privacy invariants enforced through this pipeline:
      sanitized ``KindleSendError`` (see ``email_client.py``); route logs
      only the error class + code, never ``str(exc)``.
   3. **Output-path filesystem-boundary check (P1-4)**: a corrupted
-     ``output_path`` row can't redirect Resend to read ``/opt/ebookautomation/.env``
+     ``output_path`` row can't redirect Resend to read ``/etc/web_service.env``
      because ``Path.resolve()`` + ``is_relative_to(settings.temp_dir)``
      refuses anything outside the expected hierarchy.
   4. **Recipient never stored plaintext**: SHA-256 hash is the
@@ -196,7 +196,7 @@ def send_to_kindle(
     # P1-4 hardening: resolve output_path and assert it lives inside
     # settings.temp_dir. A corrupted output_path row (e.g., from a future
     # SQL-injection in another route) could otherwise redirect Resend to
-    # read /opt/ebookautomation/.env and exfiltrate API keys via the attachment.
+    # read /etc/web_service.env and exfiltrate API keys via the attachment.
     # Treats both paths as resolved (symlink-aware) before comparison.
     try:
         resolved_output = output_path.resolve(strict=True)

@@ -3,3 +3,7 @@
 # with CRLF every time, producing a phantom `M` in `git status` against the LF copy in the index.
 # Per EB-302 — surfaced repeatedly during EB-296/297/298/299/300 subagent runs.
 web_service/static/*.css text eol=lf
+
+# Shell scripts must stay LF — they run on the Linux VM, and CRLF breaks bash
+# execution (`\r` interpreted as part of the shebang/commands). EB-331.
+*.sh text eol=lf

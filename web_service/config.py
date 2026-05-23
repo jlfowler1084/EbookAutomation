@@ -77,7 +77,7 @@ def _require_env(name: str) -> str:
     if not value:
         raise ConfigurationError(
             f"Required environment variable '{name}' is not set. "
-            f"Add it to /opt/ebookautomation/.env or export it before starting the server."
+            f"Add it to /etc/web_service.env or export it before starting the server."
         )
     return value
 

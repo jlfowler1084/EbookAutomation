@@ -3,6 +3,27 @@
 This guide covers initial deployment of the EbookAutomation web service on the Hetzner VM.
 Run these steps once; subsequent updates use `deploy.sh`.
 
+> ⚠️ **ACTUAL PRODUCTION LAYOUT (authoritative — verified 2026-05-22, EB-331).**
+> The live VM does **not** match the original `/opt/ebookautomation` + `ebookweb`-user
+> design described in the walkthrough below. Treat this box as ground truth:
+>
+> | Item | Live value |
+> |------|-----------|
+> | Service user | `joe` |
+> | App dir / `WorkingDirectory` | `/home/joe/EbookAutomation` |
+> | venv | `/home/joe/EbookAutomation/.venv` |
+> | systemd `EnvironmentFile` | `/etc/web_service.env` |
+> | systemd unit | `ebookweb.service` (`uvicorn web_service.main:app` on `127.0.0.1:8001`) |
+> | Access | `ssh root@<vm>` over Tailscale; restart with `sudo systemctl restart ebookweb` |
+>
+> `deploy/deploy.sh` and `deploy/web_service.service` in this repo are aligned to the
+> live layout above. **The numbered "First-Deployment Walkthrough" below is ARCHIVED —
+> it documents the original `/opt` + `ebookweb`-service-user design and does NOT match
+> the live box. Do not run its `sudo -u ebookweb` / `/opt/ebookautomation` commands
+> verbatim.** For routine updates run `deploy/deploy.sh`; to change env vars edit
+> `/etc/web_service.env` then `sudo systemctl restart ebookweb`. DB migrations are
+> idempotent and auto-apply on service startup (`web_service/job_store.py::_apply_migrations`).
+
 ## Prerequisites
 
 - Ubuntu 22.04 LTS
@@ -38,7 +59,7 @@ sudo -u ebookweb venv/bin/pip install -r requirements.txt
 ## 4. Write the .env file
 
 ```bash
-sudo -u ebookweb nano /opt/ebookautomation/.env
+sudo -u ebookweb nano /etc/web_service.env
 ```
 
 Minimum required variables:
@@ -59,7 +80,7 @@ WEB_SERVICE_ALLOWED_ORIGINS=https://leafbind.io,https://www.leafbind.io
 ## Stripe Configuration
 
 Phase 2 billing requires seven additional environment variables. Add these to
-`/opt/ebookautomation/.env` manually (the credential-write hook blocks Claude
+`/etc/web_service.env` manually (the credential-write hook blocks Claude
 from writing them).
 
 **Required variables (all fail-closed — service will not start if any are absent):**
@@ -100,8 +121,9 @@ STRIPE_API_VERSION=2026-04-22.dahlia
 
 ## Send-to-Kindle (Resend) Configuration
 
-EB-330 Lane D requires three Resend values in `/opt/ebookautomation/.env`, but
-the feature flag stays false until the Lane E live e2e + smoke pass.
+EB-330 Lane D requires three Resend values in `/etc/web_service.env` (see the
+production-layout callout at the top — **not** `/etc/web_service.env`). The
+feature flag stays false until the Lane E live e2e + smoke pass.
 
 ```
 WEB_SEND_TO_KINDLE_ENABLED=false
@@ -143,7 +165,7 @@ Stripe replaced the legacy Developers Dashboard with **Workbench** (GA Aug 2024)
 The instructions below use current Workbench navigation; if your account is still
 on the legacy Developers UI, the equivalent path is in parentheses.
 
-After the env vars are in `/opt/ebookautomation/.env` and the service has restarted:
+After the env vars are in `/etc/web_service.env` and the service has restarted:
 
 1. Open **Workbench → Webhooks tab → Add destination** (legacy: Developers → Webhooks → Add endpoint)
 2. Endpoint URL: `https://leafbind.io/stripe/webhook`
@@ -155,7 +177,7 @@ After the env vars are in `/opt/ebookautomation/.env` and the service has restar
    - `charge.dispute.created` (revokes tokens on chargeback)
 5. Click "Add destination"
 6. On the resulting endpoint page, click "Reveal" next to "Signing secret"
-7. Copy the `whsec_...` value and paste it into `/opt/ebookautomation/.env` as `STRIPE_WEBHOOK_SECRET`
+7. Copy the `whsec_...` value and paste it into `/etc/web_service.env` as `STRIPE_WEBHOOK_SECRET`
 8. `sudo systemctl restart ebookweb.service`
 9. From Workbench → Webhooks → endpoint detail → **Send test event** → `checkout.session.completed`. Verify the response is 200 OK in the **Event deliveries** tab.
 
@@ -206,7 +228,7 @@ Before flipping to live mode, verify all of the following:
 - [ ] Stripe account created; test mode API keys obtained (`sk_test_*`, `pk_test_*`)
 - [ ] `deploy/stripe_bootstrap.py` run against test mode; 3 `STRIPE_PRICE_*` IDs captured
 - [ ] `TOKEN_HMAC_SECRET` generated via `openssl rand -hex 32`
-- [ ] All 7 new env vars in `/opt/ebookautomation/.env`:
+- [ ] All 7 new env vars in `/etc/web_service.env`:
       `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `TOKEN_HMAC_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STANDARD`, `STRIPE_PRICE_POWER`
 - [ ] Test-mode webhook endpoint registered in Stripe Workbench (API version `2026-04-22.dahlia`) with four event subscriptions: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.dispute.created`
 - [ ] Cloudflare rate-limit rule deployed on `/stripe/webhook`
@@ -221,7 +243,7 @@ Before flipping to live mode, verify all of the following:
 
 When test-mode is fully validated:
 
-1. Swap `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` from `sk_test_*`/`pk_test_*` to `sk_live_*`/`pk_live_*` in `/opt/ebookautomation/.env`
+1. Swap `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` from `sk_test_*`/`pk_test_*` to `sk_live_*`/`pk_live_*` in `/etc/web_service.env`
 2. Register a NEW webhook endpoint in Stripe Dashboard LIVE mode (test-mode and live-mode webhook secrets are different)
 3. Copy the new live-mode `whsec_*` into `STRIPE_WEBHOOK_SECRET`
 4. `sudo systemctl restart ebookweb.service`
@@ -293,8 +315,11 @@ ebookweb ALL=(ALL) NOPASSWD: /bin/systemctl restart ebookweb, /bin/systemctl sta
 
 ## 10. Subsequent deploys
 
+Run as root on the VM (the script runs git/pip as `joe` and `systemctl` as root,
+and auto-rolls-back on a failed health check):
+
 ```bash
-sudo -u ebookweb bash /opt/ebookautomation/deploy/deploy.sh
+sudo bash /home/joe/EbookAutomation/deploy/deploy.sh
 ```
 
 ---
