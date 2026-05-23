@@ -113,3 +113,35 @@ async def test_failed_premium_convert_refunds_token(client, monkeypatch):
     assert used_after == 0, "token must be refunded after a top-level premium failure"
     assert [r[0] for r in ledger] == ["pipeline_failed"], f"expected one pipeline_failed ledger row, got {ledger}"
     assert events == 1, "a premium_refund_applied telemetry event must be emitted (not reconvert_refund_applied)"
+
+
+def test_premium_convert_refunds_when_create_job_fails(client, monkeypatch):
+    """If create_job raises after the token is consumed, the token is refunded."""
+    import web_service.token_store as ts
+    from web_service.routes import convert as convert_module
+
+    tc, db_path, settings = client
+    ts.init_db(db_path)
+    mint = ts.mint_tokens_if_absent(
+        session_id="cs_eb332_setupfail", count=1,
+        payment_intent_id="pi_eb332_setupfail", db_path=db_path,
+    )
+    token = mint.tokens[0]
+
+    def _boom(*args, **kwargs):
+        raise sqlite3.OperationalError("simulated create_job failure")
+
+    monkeypatch.setattr(convert_module.job_store, "create_job", _boom)
+
+    files = {"file": ("book.pdf", b"%PDF-1.4\n" + b"\x00" * 4000, "application/pdf")}
+    resp = tc.post("/convert", files=files, data={"output_format": "kfx", "tier": "premium", "token": token})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"]["code"] == "JOB_SETUP_FAILED"
+
+    conn = sqlite3.connect(str(db_path))
+    used = conn.execute("SELECT used FROM tokens WHERE pack_id=?", ("cs_eb332_setupfail",)).fetchone()[0]
+    ledger = conn.execute("SELECT refund_reason FROM refund_ledger").fetchall()
+    conn.close()
+    assert used == 0, "token must be refunded when job setup fails after consume"
+    assert [r[0] for r in ledger] == ["convert_setup_failed"]

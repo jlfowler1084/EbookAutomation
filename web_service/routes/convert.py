@@ -11,7 +11,6 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 from web_service import circuit_breaker, job_queue, job_store, recovery_events_store, token_store, token_validation, validation
 from web_service.config import get_settings
 from web_service.crypto import compute_token_hash
-from web_service.job_queue import billing_executor
 from web_service.job_store import new_job_id
 
 log = logging.getLogger(__name__)
@@ -30,12 +29,12 @@ async def _refund_after_setup_failure(token_hash_hex: str, job_id: str) -> None:
     except ValueError:
         log.warning("Cannot refund setup failure for %s: token_hash not hex", job_id)
         return
-    if billing_executor is None:
+    if job_queue.billing_executor is None:
         log.warning("Cannot refund setup failure for %s: billing_executor not initialised", job_id)
         return
     try:
         refund = await loop.run_in_executor(
-            billing_executor,
+            job_queue.billing_executor,
             token_store.refund_token,
             token_hash_bytes,
             job_id,
@@ -124,7 +123,7 @@ async def convert_file(
         loop = asyncio.get_event_loop()
         try:
             consume_result = await loop.run_in_executor(
-                billing_executor,
+                job_queue.billing_executor,
                 token_store.validate_and_consume,
                 token,
             )
