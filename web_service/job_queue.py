@@ -88,7 +88,7 @@ async def dispatch_job(job_id: str) -> None:
         except Exception as exc:
             log.exception("Unhandled error in job %s", job_id)
             job_store.set_failed(job_id, str(exc))
-            await _maybe_refund_failed_child(job, reason="dispatch_exception")
+            await _maybe_refund_failed_job(job, reason="dispatch_exception")
             _maybe_emit_reconvert_outcome(job, succeeded=False)
             return
 
@@ -104,7 +104,7 @@ async def dispatch_job(job_id: str) -> None:
             _maybe_emit_reconvert_outcome(job, succeeded=True)
         else:
             job_store.set_failed(job_id, result.error_message)
-            await _maybe_refund_failed_child(job, reason="child_job_failed")
+            await _maybe_refund_failed_job(job, reason="pipeline_failed")
             _maybe_emit_reconvert_outcome(job, succeeded=False)
 
 
@@ -134,8 +134,11 @@ def _maybe_emit_reconvert_outcome(job: dict, *, succeeded: bool) -> None:
         )
 
 
-async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
-    """Refund a premium re-convert child's token after the child fails (EB-324 R2.7).
+async def _maybe_refund_failed_job(job: dict, *, reason: str) -> None:
+    """Refund a premium job's token after the job fails (EB-324 R2.7 / EB-332).
+
+    Handles both top-level /convert uploads and re-convert children: any job
+    that carries a token_hash is eligible for a refund on failure.
 
     Strict no-op when token_hash is None — every free conversion failure path
     must remain refund-free, so the guard MUST short-circuit before touching
@@ -149,7 +152,7 @@ async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
         return
     if billing_executor is None:
         log.warning(
-            "Cannot refund failed child %s: billing_executor not initialised",
+            "Cannot refund failed job %s: billing_executor not initialised",
             job["job_id"],
         )
         return
@@ -157,7 +160,7 @@ async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
         token_hash_bytes = bytes.fromhex(token_hash_hex)
     except ValueError:
         log.warning(
-            "Cannot refund failed child %s: token_hash is not valid hex (%r)",
+            "Cannot refund failed job %s: token_hash is not valid hex (%r)",
             job["job_id"],
             token_hash_hex,
         )
@@ -173,25 +176,26 @@ async def _maybe_refund_failed_child(job: dict, *, reason: str) -> None:
         )
     except Exception:
         log.exception(
-            "Refund failed inside billing_executor for child %s", job["job_id"]
+            "Refund failed inside billing_executor for job %s", job["job_id"]
         )
         return
 
+    parent_job_id = job.get("parent_job_id")
+    event_type = "reconvert_refund_applied" if parent_job_id else "premium_refund_applied"
+    details = {
+        "job_id": job["job_id"],
+        "reason": reason,
+        "refunded": refund.refunded,
+        "ledgered": refund.ledgered,
+        "refund_id": refund.refund_id,
+    }
+    if parent_job_id:
+        details["parent_job_id"] = parent_job_id
     try:
-        recovery_events_store.log_event(
-            "reconvert_refund_applied",
-            details={
-                "child_job_id": job["job_id"],
-                "parent_job_id": job.get("parent_job_id"),
-                "reason": reason,
-                "refunded": refund.refunded,
-                "ledgered": refund.ledgered,
-                "refund_id": refund.refund_id,
-            },
-        )
+        recovery_events_store.log_event(event_type, details=details)
     except Exception:
         # Telemetry must never block the dispatcher's return path.
-        log.exception("Telemetry log_event failed for refund on child %s", job["job_id"])
+        log.exception("Telemetry log_event failed for refund on job %s", job["job_id"])
 
 
 async def cleanup_expired_jobs() -> None:

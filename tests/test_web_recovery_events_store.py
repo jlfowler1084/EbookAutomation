@@ -198,3 +198,22 @@ class TestEB324EventTypes:
             "format_selector_engaged is in _VALID_EVENT_TYPES — R11 is deferred per "
             "EB-324 plan P1-15, so this event should not ship in Wave 1."
         )
+
+
+# ---------------------------------------------------------------------------
+# EB-332: premium_refund_applied whitelist entry
+# ---------------------------------------------------------------------------
+
+
+def test_premium_refund_applied_is_accepted(tmp_path):
+    """premium_refund_applied is a valid event type (EB-332) and writes a row."""
+    import web_service.recovery_events_store as res
+
+    db = tmp_path / "events.db"
+    res.init_db(db)
+    res.log_event(
+        "premium_refund_applied",
+        details={"job_id": "j1", "reason": "pipeline_failed", "refunded": True},
+        db_path=db,
+    )
+    assert res.count_events_since("premium_refund_applied", 0, db_path=db) == 1
