@@ -71,6 +71,10 @@ _VALID_EVENT_TYPES: frozenset[str] = frozenset({
     "reconvert_succeeded",
     "reconvert_failed",
     "reconvert_refund_applied",
+    # EB-332: refund applied to a failed top-level premium /convert job
+    # (distinct from reconvert_refund_applied so dashboards can separate
+    # first-conversion refunds from re-convert refunds).
+    "premium_refund_applied",
     # EB-324: Send-to-Kindle send-side (Unit 4 emits)
     "send_to_kindle_attempted",
     "send_to_kindle_rejected_by_validation",
