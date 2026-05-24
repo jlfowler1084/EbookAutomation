@@ -21,5 +21,6 @@
     "config/settings.json",
     ".mcp.json",
     ".gitignore"
-  ]
+  ],
+  "session_start_hook": "enabled"
 }
