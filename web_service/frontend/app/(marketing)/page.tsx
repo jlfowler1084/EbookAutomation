@@ -1,6 +1,7 @@
 import { type Metadata } from "next";
 import { Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import UploadForm from "../UploadForm";
 import { Logo } from "../../components/Logo";
 import JsonLd from "../../components/JsonLd";
@@ -144,7 +145,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Right column — converter card with window chrome */}
+        {/* Right column — converter card with Kindle Scribe preview */}
         <div
           className="rounded-2xl border border-border bg-[var(--lb-paper)] p-6 md:p-7"
           style={{
@@ -152,14 +153,17 @@ export default function HomePage() {
               "0 30px 60px -30px rgba(47,93,58,0.25), 0 8px 24px -12px rgba(26,31,28,0.1)",
           }}
         >
-          {/* Window chrome */}
-          <div className="flex items-center gap-1.5 mb-5">
-            <span className="block h-2.5 w-2.5 rounded-full bg-[#e9c8aa]" />
-            <span className="block h-2.5 w-2.5 rounded-full bg-[#dcd2b8]" />
-            <span className="block h-2.5 w-2.5 rounded-full bg-brand opacity-50" />
-            <span className="ml-auto font-mono text-[11px] text-text-muted">
-              leafbind.io / convert
-            </span>
+          {/* Kindle Scribe screenshot — footnote popup open on Mexico's Illicit Drug Networks Ch. 1 */}
+          <div className="mb-5 rounded-md overflow-hidden border border-border">
+            <Image
+              src="/hero/scribe-footnote-popup.webp"
+              alt="Kindle Scribe screen showing a tappable footnote popup over body text in Mexico's Illicit Drug Networks — footnote 1 opens as an overlay after leafbind conversion"
+              width={480}
+              height={360}
+              priority
+              className="w-full h-auto block"
+              sizes="(min-width: 1024px) 420px, (min-width: 640px) 520px, 100vw"
+            />
           </div>
 
           {/* Upload form (existing functional component) */}
