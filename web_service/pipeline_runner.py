@@ -2,7 +2,7 @@
 
 Wraps both conversion tiers as controlled subprocess calls:
   - Free tier:    ebook-convert <input> <output.fmt>  (direct Calibre pass-through)
-  - Premium tier: python tools/extract_tts_text.py --cli ...  (full smart pipeline)
+  - Premium tier: python tools/extract_tts_text.py --mode kindle → Calibre ebook-convert
 
 Key design constraints (from institutional learnings):
   - shell=False on all calls: prevents shell injection from user-supplied filenames

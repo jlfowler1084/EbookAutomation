@@ -285,6 +285,30 @@ class TestRunPremium:
             return self._make_proc(0)
         return fake_run
 
+    def test_eb255_no_cli_flag_no_output_format_flag(self, small_pdf, temp_dir, settings):
+        """EB-255: extract_tts_text.py does not accept --cli or --output-format.
+
+        The original run_premium passed both of these non-existent flags, causing
+        'error: unrecognized arguments: --cli --output-format epub' on the VM.
+        Verified here: the extract subprocess command must contain neither flag.
+        The output_format is consumed by Calibre (step 2), not by the Python script.
+        """
+        captured: list[list] = []
+        fake_run = self._make_two_step_fake_run(small_pdf, temp_dir, captured_cmds=captured)
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = run_premium("job_eb255", small_pdf, "epub", temp_dir, settings=settings)
+
+        assert result.success, f"run should succeed; got {result.error_message}"
+        extract_cmd = captured[0]
+        assert "--cli" not in extract_cmd, "--cli must not be in extract command"
+        assert "--output-format" not in extract_cmd, "--output-format must not be in extract command"
+        # Calibre step (second call) must receive the intermediate .txt as input
+        calibre_cmd = captured[1]
+        assert calibre_cmd[1].endswith("_kindle.txt"), (
+            f"Calibre input must be the _kindle.txt file; got {calibre_cmd[1]!r}"
+        )
+
     def test_extract_step_uses_pipeline_script_with_mode_kindle(self, small_pdf, temp_dir, settings):
         """EB-256: extract step must invoke extract_tts_text.py with --mode kindle.
 
