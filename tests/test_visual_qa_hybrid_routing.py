@@ -1023,3 +1023,10 @@ class TestFallbackCostTotal:
         assert tu["estimated_cost_usd"] == 0.018          # primary preserved
         assert tu["fallback_estimated_cost_usd"] == 0.05  # breakdown preserved
         assert tu["total_estimated_cost_usd"] == 0.068     # 0.018 + 0.05
+
+    def test_cli_summary_reads_canonical_total(self):
+        import inspect
+        src = inspect.getsource(visual_qa.main)
+        assert "total_estimated_cost_usd" in src
+        # The old primary-only direct read must be gone.
+        assert '"estimated_cost_usd": report["token_usage"]["estimated_cost_usd"]' not in src

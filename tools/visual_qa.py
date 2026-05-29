@@ -1417,6 +1417,7 @@ def main():
         )
 
         # Print summary to stdout
+        _tu = report["token_usage"]
         print(json.dumps({
             "book": report["book"],
             "overall_score": report["overall_score"],
@@ -1424,7 +1425,7 @@ def main():
             "pages_sampled": report["pages_sampled"],
             "pages_total": report["pages_total"],
             "summary": report["summary"],
-            "estimated_cost_usd": report["token_usage"]["estimated_cost_usd"],
+            "estimated_cost_usd": _tu.get("total_estimated_cost_usd", _tu.get("estimated_cost_usd", 0)),
         }, indent=2))
 
         sys.exit(0 if report["overall_pass"] else 1)
