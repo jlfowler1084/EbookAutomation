@@ -21,6 +21,8 @@
   - CLI summary `print(...)` block (~L1416–1424): emit the canonical total.
 - **Modify** `module/EbookAutomation.psm1`
   - DB persistence heredoc (~L2316–2321): read `total_estimated_cost_usd`, falling back to `estimated_cost_usd` for legacy reports.
+- **Modify** `tools/import_vqa_reports.py` (~L100) and `tools/pattern_db.py` (~L1970)
+  - Report-import / pattern-DB cost reads: same legacy-safe total read so re-imported reports do not re-introduce the under-report.
 - **Modify** `tests/test_visual_qa_hybrid_routing.py`
   - Add `TestFallbackCostTotal` — locks the summation contract and legacy/no-fallback behavior.
 
@@ -163,12 +165,13 @@ Append to `TestFallbackCostTotal` in `tests/test_visual_qa_hybrid_routing.py`:
 Run: `python -m pytest "tests/test_visual_qa_hybrid_routing.py::TestFallbackCostTotal::test_cli_summary_key_is_total" -v`
 Expected: FAIL — the summary still reads the primary-only `estimated_cost_usd`.
 
-- [ ] **Step 3: Update the CLI summary print block**
+- [ ] **Step 3: Update the CLI summary print block (legacy-safe read)**
 
-In `tools/visual_qa.py`, change the summary `print(json.dumps({...}))` block (currently the `"estimated_cost_usd"` line at L1423):
+In `tools/visual_qa.py`, change the summary `print(json.dumps({...}))` block (currently the `"estimated_cost_usd"` line at L1423). Use a legacy-safe `.get` chain so any test that mocks `run_visual_qa` with a report carrying only `estimated_cost_usd` (no canonical total) does not `KeyError`:
 
 ```python
         # Print summary to stdout
+        _tu = report["token_usage"]
         print(json.dumps({
             "book": report["book"],
             "overall_score": report["overall_score"],
@@ -176,11 +179,11 @@ In `tools/visual_qa.py`, change the summary `print(json.dumps({...}))` block (cu
             "pages_sampled": report["pages_sampled"],
             "pages_total": report["pages_total"],
             "summary": report["summary"],
-            "estimated_cost_usd": report["token_usage"]["total_estimated_cost_usd"],
+            "estimated_cost_usd": _tu.get("total_estimated_cost_usd", _tu.get("estimated_cost_usd", 0)),
         }, indent=2))
 ```
 
-(Key name kept as `estimated_cost_usd` for output-shape stability; the *value* is now the authoritative total.)
+(Key name kept as `estimated_cost_usd` for output-shape stability; the *value* is now the authoritative total, with a legacy fallback for reports/mocks that predate the canonical field.)
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -238,7 +241,58 @@ git commit -m "fix(EB-341): DB persistence reads total VQA cost, legacy-safe"
 
 ---
 
-## Task 4: Full regression + manifest verification
+## Task 4: Report-import consumers read the canonical total
+
+**Files:**
+- Modify: `tools/import_vqa_reports.py:100`
+- Modify: `tools/pattern_db.py:1970`
+
+Both the report-import path and the pattern DB read `token_usage.estimated_cost_usd`
+directly. If new reports are imported/replayed into the DB later, they would re-introduce
+the under-report. Apply the same legacy-safe total read.
+
+- [ ] **Step 1: Update `import_vqa_reports.py`**
+
+In `tools/import_vqa_reports.py`, change the cost read (currently L100):
+
+```python
+    cost = token_usage.get("total_estimated_cost_usd", token_usage.get("estimated_cost_usd", 0))
+```
+
+- [ ] **Step 2: Update `pattern_db.py`**
+
+In `tools/pattern_db.py`, change the `cost_usd` argument (currently L1970):
+
+```python
+        cost_usd=token_usage.get("total_estimated_cost_usd", token_usage.get("estimated_cost_usd", 0)),
+```
+
+- [ ] **Step 3: Verify both modules import cleanly**
+
+Run:
+```powershell
+py -3.12 -c "import sys; sys.path.insert(0,'tools'); import import_vqa_reports, pattern_db; print('IMPORTS OK')"
+```
+Expected: prints `IMPORTS OK` with no error.
+
+- [ ] **Step 4: Verify the legacy-fallback read on both report shapes**
+
+Run:
+```powershell
+py -3.12 -c "tu_new={'total_estimated_cost_usd':0.068,'estimated_cost_usd':0.018}; tu_old={'estimated_cost_usd':0.018}; r=lambda tu: tu.get('total_estimated_cost_usd', tu.get('estimated_cost_usd',0)); assert r(tu_new)==0.068 and r(tu_old)==0.018; print('IMPORT READ OK')"
+```
+Expected: prints `IMPORT READ OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tools/import_vqa_reports.py tools/pattern_db.py
+git commit -m "fix(EB-341): report-import + pattern DB read total VQA cost, legacy-safe"
+```
+
+---
+
+## Task 5: Full regression + manifest verification
 
 **Files:** none (verification only)
 
@@ -271,9 +325,10 @@ git commit -m "test(EB-341): full regression + manifest verification green"
 **Spec coverage (EB-341 scope from the design doc):**
 - Canonical `token_usage.total_estimated_cost_usd` → Task 1. ✓
 - Provider-separated breakdown preserved (`estimated_cost_usd`, `fallback_estimated_cost_usd`) → Task 1 keeps both. ✓
-- CLI under-reporting (visual_qa.py:1423) → Task 2. ✓
+- CLI under-reporting (visual_qa.py:1423), legacy-safe `.get` read → Task 2. ✓
 - DB under-reporting (EbookAutomation.psm1:2321), legacy-safe → Task 3. ✓
-- Regression safety / manifest → Task 4. ✓
+- Report-import consumers (import_vqa_reports.py:100, pattern_db.py:1970), legacy-safe → Task 4. ✓
+- Regression safety / manifest → Task 5. ✓
 
 **Placeholder scan:** No TBD/TODO; every code step shows exact code; every command has expected output. ✓
 
