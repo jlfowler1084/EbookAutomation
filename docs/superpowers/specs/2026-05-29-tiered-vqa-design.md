@@ -48,8 +48,11 @@ signals only exist after conversion:
 
 1. **Pre-conversion tier decision** — from `classify_pdf` + preflight signals.
 2. **Post-conversion escalation** — bump the tier upward (never downward) when the
-   conversion itself reveals risk: KFX/AZW3 fallback, OCR fallback fired, rendering
-   warnings, output truncation, or poor intermediate quality.
+   *conversion* itself reveals risk: KFX/AZW3 format fallback, OCR fallback fired,
+   conversion/rendering warnings, or poor intermediate quality. (VQA-response
+   truncation is **not** a conversion signal — it is an `OutputTruncatedError` from the
+   vision provider during evaluation, handled by Full-coverage retry/chunking, not by
+   `escalate_tier`.)
 
 No new detection is needed — `classify_pdf` (`tools/classify_source.py`) already emits
 the required signals. **`vqa_policy` consumes the raw `classify_pdf` result directly**,
@@ -86,19 +89,32 @@ Light; GPU time and the Claude adjudicator concentrate on scans and problematic 
   adjudicator policy), `tier_reason`, and `tier_signals`.
 - **`visual_qa.py` (extend):** accept a `TierDecision` (or `--tier`). `select_sample_pages`
   gains a full-coverage mode (return all pages) for the Full tier.
-- **Tier-aware chunking (replaces `_apply_large_file_dpi_reduction`):** on the Full tier,
-  do **not** drop to 72 DPI / 4 pages. Keep the requested DPI and split batches by
-  *rendered image bytes* so each request fits the provider's image-bytes limit. If a
-  batch still fails to render or evaluate, record partial coverage rather than silently
-  shrinking the request.
+- **Streaming tier-aware chunking (replaces `_apply_large_file_dpi_reduction`):** on the
+  Full tier, do **not** drop to 72 DPI / 4 pages, and do **not** render the whole book
+  into memory first. Today `render_pages_to_png` accumulates every page's PNG bytes in
+  one list before batching ([visual_qa.py:360](../../../tools/visual_qa.py)); at 200 DPI
+  across all pages that blows memory/disk/time. Instead **render → evaluate → release per
+  chunk**, where chunks are sized by *rendered image bytes* to fit the provider's
+  image-bytes limit. Images are freed after each chunk's evaluation. If a chunk fails to
+  render or evaluate, record partial coverage rather than silently shrinking the request.
 - **Blind audit slice (Full tier):** even when the local pass looks clean, send a small
   capped Claude sample — first / body / back + ~5% random pages, capped at 10 — to
-  counter mode-(b) detection failure where there is no disagreement to trigger on.
+  counter mode-(b) detection failure where there is no disagreement to trigger on. The
+  random selection MUST be **deterministic**: seed from a stable source (source-file
+  hash + tier-config version), and record the seed and the resolved audit page list in
+  the report so calibration runs are repeatable.
 - **Batch integration (EB-340):** `run_overnight_batch.ps1` / module call site reads the
   per-book classify+preflight output, passes the pre-conversion tier, then applies
   post-conversion escalation. VQA enabled by default for the batch.
 - **Cost reporting (EB-341):** fix the fallback cost-reporting bug first so tier-aware,
-  provider-separated cost accounting is correct before changing what runs.
+  provider-separated cost accounting is correct before changing what runs. Introduce a
+  **canonical authoritative total** `token_usage.total_estimated_cost_usd` (local +
+  Claude), while preserving the per-provider breakdown. Both consumers currently read
+  only the single primary `estimated_cost_usd` field — the CLI summary
+  ([visual_qa.py:1423](../../../tools/visual_qa.py)) and DB persistence
+  ([EbookAutomation.psm1:2321](../../../module/EbookAutomation.psm1)) — and must be
+  updated to read/write the canonical total. This matches EB-341's AC on CLI + DB
+  under-reporting.
 
 ### Data flow
 
@@ -106,12 +122,13 @@ Light; GPU time and the Claude adjudicator concentrate on scans and problematic 
 inbox PDF
   → preflight_analysis + classify_pdf        (existing — risk signals)
   → vqa_policy.decide_tier()                 (new — pre-conversion tier + knobs)
-  → conversion → KFX  (emits conversion_signals: fallback/OCR/warnings/truncation)
+  → conversion → KFX  (emits conversion_signals: format fallback / OCR / warnings)
   → vqa_policy.escalate_tier()               (new — bump tier on post-conversion risk)
-  → visual_qa.run_visual_qa(tier knobs)      (extended — coverage/DPI/passes per tier)
+  → caller passes --tier-decision-json       (source signals cross into visual_qa.py)
+  → visual_qa.run_visual_qa(tier knobs)      (extended — stream render→eval→release per chunk)
   → [Standard/Full] fingerprint/disagreement → Claude
-  → [Full] blind audit slice → Claude
-  → _visual_qa_report.json (tier + 3-way coverage + adjudicator + cost)
+  → [Full] deterministic blind audit slice → Claude
+  → _visual_qa_report.json (tier + 3-way coverage + adjudicator + canonical total cost)
 ```
 
 ## Coverage accounting (fixes a latent bug)
@@ -132,15 +149,33 @@ recorded in the report for all tiers:
 
 Add to `_visual_qa_report.json`: `vqa_tier`, `tier_reason`, `tier_signals`,
 `coverage_mode`, `requested_dpi`, `effective_dpi`, `adjudicator_status`,
-`pages_adjudicated`, `adjudicator_trigger_counts` (disagreement vs blind-audit), and
-**provider-separated cost totals** (local vs Claude).
+`pages_adjudicated`, `adjudicator_trigger_counts` (disagreement vs blind-audit),
+`audit_seed` + `audit_pages` (for repeatable calibration), and under `token_usage`:
+**provider-separated cost totals** (local vs Claude) plus the canonical
+`total_estimated_cost_usd` (EB-341).
 
-## CLI
+## CLI & source-signal handoff contract
 
 Make `--tier light|standard|full|auto` canonical (`auto` = let `vqa_policy` decide).
 De-emphasize / alias the existing `--full` (today it means 20 pages @ 150 DPI), which
 conflicts with the new Full tier (all pages @ 200 DPI). Document the rename to avoid
 silent behavior change for anyone scripting `--full`.
+
+**Handoff problem:** `visual_qa.py` today receives only the converted artifact
+(`--input <kfx>` + DPI/provider), and the overnight batch passes nothing more
+([run_overnight_batch.ps1:162](../../../tools/run_overnight_batch.ps1)). So `--tier auto`
+cannot see `classify_pdf` / preflight signals from those entry points. Resolution:
+
+- Add an explicit handoff arg. Preferred: `--tier-decision-json <path>` — the caller
+  (batch / module) runs `vqa_policy.decide_tier` against the source PDF it already has,
+  and passes the resolved decision. Alternatives `--classify-json` / `--preflight-json`
+  let `visual_qa.py` compute the tier itself; `--source-input <pdf>` lets it run the
+  classifiers directly.
+- **Standalone fallback:** when `--tier auto` is given with **no** source signals,
+  `visual_qa.py` resolves to **Standard** explicitly (logged), never Light. It never
+  guesses Full/Light without evidence.
+- EB-340 wiring: the batch computes the decision pre-conversion, applies post-conversion
+  escalation, and passes `--tier-decision-json` so the source signals reach VQA.
 
 ## Error handling
 
@@ -155,9 +190,17 @@ silent behavior change for anyone scripting `--full`.
 
 - Unit tests for `decide_tier` across each signal combination (clean digital,
   `scan_no_text`, two-column, OCR-artifact-heavy, missing signals → Standard) and for
-  `escalate_tier` (each post-conversion warning bumps to Full, never downgrades).
-- `select_sample_pages` full-coverage mode returns all pages; chunking respects the
-  image-bytes ceiling; render failure produces `partial`, not false `complete`.
+  `escalate_tier` (each post-conversion warning bumps to Full, never downgrades;
+  VQA-response truncation is **not** an escalation input).
+- `select_sample_pages` full-coverage mode returns all pages; streaming chunking respects
+  the image-bytes ceiling and releases images per chunk; render failure produces
+  `partial`, not false `complete`.
+- Handoff: `--tier auto` with no source signals resolves to Standard (logged);
+  `--tier-decision-json` is honored end-to-end from the batch.
+- Determinism: same source hash + tier-config version → identical `audit_pages`; the
+  seed and page list are recorded in the report.
+- Cost: `total_estimated_cost_usd` equals local + Claude; CLI summary and DB persistence
+  read the canonical total, not the primary-only field.
 - **Calibration re-baseline (mandatory, per CLAUDE.md):** changing what VQA evaluates
   invalidates `data/vqa_baseline_*`. Per the Calibration Sessions rule — run twice on the
   same input (determinism), run against a known-good book (zero false positives), and
@@ -166,17 +209,24 @@ silent behavior change for anyone scripting `--full`.
 
 ## Proposed ticket split
 
-1. **EB-341** (blocker) — fix fallback cost-reporting bug + provider-separated cost totals.
+1. **EB-341** (blocker) — fix fallback cost-reporting bug; add canonical
+   `total_estimated_cost_usd` + provider-separated breakdown; update CLI summary
+   (visual_qa.py:1423) and DB persistence (EbookAutomation.psm1:2321) to read the total.
    Must land first.
 2. **New — VQA policy/tiering layer** — `vqa_policy.decide_tier` + `escalate_tier`,
-   `visual_qa.tiers` config block, `visual_qa.py` knob override, `--tier` CLI,
-   3-way coverage accounting + report fields. Keystone.
-3. **New — Full-coverage execution** — full-page sampling mode + 200 DPI + tier-aware
-   chunking replacing `_apply_large_file_dpi_reduction`. *Failure mode: rendering /
-   image-bytes limits.*
-4. **New — Claude adjudication & blind audit** — disagreement trigger + capped blind
-   audit slice for the Full tier. *Failure mode: trust / false-confidence.*
-5. **EB-340** — auto-enable tier-aware VQA on overnight batch (consumes 2–4).
+   `visual_qa.tiers` config block, `visual_qa.py` knob override, `--tier` CLI +
+   `--tier-decision-json` (and `auto`→Standard standalone fallback), 3-way coverage
+   accounting + report fields. Keystone.
+3. **New — Full-coverage execution** — full-page sampling mode + 200 DPI + **streaming**
+   render→eval→release chunking (by rendered image bytes) replacing
+   `_apply_large_file_dpi_reduction`. *Failure mode: memory / rendering / image-bytes
+   limits.*
+4. **New — Claude adjudication & blind audit** — disagreement trigger + deterministic
+   capped blind-audit slice (seeded, recorded) for the Full tier. *Failure mode: trust /
+   false-confidence.*
+5. **EB-340** — auto-enable tier-aware VQA on overnight batch; compute the decision
+   pre-conversion, apply post-conversion escalation, pass `--tier-decision-json`
+   (consumes 2–4).
 6. **New — Calibration re-baseline** — re-capture and validate `data/vqa_baseline_*` under
    the new tier behavior; verify over-scoring does not mask regressions.
 
