@@ -1967,7 +1967,7 @@ def _cmd_import_vqa(args):
         vqa_report_path=str(report_path),
         api_input_tokens=token_usage.get("input_tokens", 0),
         api_output_tokens=token_usage.get("output_tokens", 0),
-        cost_usd=token_usage.get("estimated_cost_usd", 0),
+        cost_usd=token_usage.get("total_estimated_cost_usd", token_usage.get("estimated_cost_usd", 0)),
         db_path=args.db_path,
     )
 

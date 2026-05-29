@@ -97,7 +97,7 @@ def import_report(report_path, db_path=None, dry_run=False):
     token_usage = report.get("token_usage", {})
     input_tokens = token_usage.get("input_tokens", 0)
     output_tokens = token_usage.get("output_tokens", 0)
-    cost = token_usage.get("estimated_cost_usd", 0)
+    cost = token_usage.get("total_estimated_cost_usd", token_usage.get("estimated_cost_usd", 0))
 
     # Count issues
     issue_count = sum(
