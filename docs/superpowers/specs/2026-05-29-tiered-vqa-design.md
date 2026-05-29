@@ -13,8 +13,9 @@ ration that cost:
 1. **Page sampling** — `select_sample_pages` evaluates 8 pages (max 20) of an entire
    book, deliberately blind to the rest. Issues on un-sampled pages are invisible,
    and a clean report says nothing about coverage.
-2. **Low DPI** — default 100 DPI, auto-reduced further for large files
-   (`_apply_large_file_dpi_reduction`). Fine rendering issues (footnote superscripts,
+2. **Low DPI** — default 100 DPI, auto-reduced to **72 DPI / 4 pages** for large files
+   (`_apply_large_file_dpi_reduction`, `_LARGE_FILE_REDUCED_DPI = 72`,
+   `_LARGE_FILE_REDUCED_MAX_PAGES = 4`). Fine rendering issues (footnote superscripts,
    ligatures, diacritics, small-caps) are hard to detect at this resolution.
 3. **Cost-capped convergence** — `converge_loop.cost_limit_per_book_usd: 2.0` halts
    iteration on money, not quality, before reaching `target_score: 85`.
@@ -31,106 +32,161 @@ Qwen vision model, measured during SCRUM-280:
 
 - **Mode (a) — grading bias:** the model detects issues but inflates scores
   (consistently 80–100).
-- **Mode (b) — detection failure:** the model misses issues that Claude catches.
+- **Mode (b) — detection failure:** the model misses issues that Claude catches —
+  **there is no "disagreement" to trigger on, because the local model never flagged it.**
 
 This is why the Claude fallback is fingerprint-gated. The design implication is
 load-bearing: **coverage and accuracy are independent axes.** Running full-page
 coverage on a model that over-scores produces more confident-looking reports that are
-still wrong. More thorough VQA on the high-risk tier therefore *retains a Claude
-adjudicator*, rather than trusting the local model's pass/fail alone.
+still wrong. Mode (b) specifically means a disagreement-only adjudication trigger will
+miss issues entirely — so the Full tier adds a **blind audit slice** (below).
 
-## Approach: a risk-tiered VQA policy layer
+## Approach: a two-stage, risk-tiered VQA policy
 
-Introduce a single policy layer that reads the **existing** pre-conversion signals and
-routes each job to a VQA tier. No new detection is needed — `classify_pdf`
-(`tools/classify_source.py`) and the preflight stage already emit the required signals:
+A policy layer routes each job to a VQA tier in **two stages**, because some risk
+signals only exist after conversion:
 
-- `classification` (e.g. `scan_no_text`)
+1. **Pre-conversion tier decision** — from `classify_pdf` + preflight signals.
+2. **Post-conversion escalation** — bump the tier upward (never downward) when the
+   conversion itself reveals risk: KFX/AZW3 fallback, OCR fallback fired, rendering
+   warnings, output truncation, or poor intermediate quality.
+
+No new detection is needed — `classify_pdf` (`tools/classify_source.py`) already emits
+the required signals. **`vqa_policy` consumes the raw `classify_pdf` result directly**,
+not the trimmed preflight `source_classification` subset, because that subset does not
+reliably expose `needs_paid_tier` (it appears only in preflight's failure-default
+block). Signals consumed:
+
+- `classification` (e.g. `scan_no_text`), `confidence`
 - `flags.needs_ocr`, `flags.likely_two_column`, `flags.needs_paid_tier`
-- per-signal text density, confidence
-- preflight OCR-artifact ratios and text-quality scores
+- `signals.text_density_per_page`
+- preflight OCR-artifact ratio and text-quality score
 
 ### Tier matrix
 
-| Tier | Trigger (from existing signals) | Coverage | DPI | Depth | Adjudicator |
-|------|--------------------------------|----------|-----|-------|-------------|
-| **Light** | clean digital, high text density, no flags | current ≤8-page sample | 100 | single-pass | none |
-| **Standard** | normal book, minor preflight warnings | ~20–30 pages | 150 | single-pass | fingerprint → Claude |
-| **Full** | `scan_no_text`, `needs_ocr`, `likely_two_column`, OCR-artifact-heavy, or conversion warnings | **all pages** | 200 | two-pass + converge loop | Claude on disagreement / low confidence |
+| Tier | Trigger | Coverage | DPI | Depth | Adjudicator |
+|------|---------|----------|-----|-------|-------------|
+| **Light** | `digital_native`, confidence ≥ 0.85, text density ≥ 750–1000 chars/pg, text quality ≥ 85, OCR-artifact rate < 0.05, no flags | current ≤8-page sample | 100 | single-pass | none |
+| **Standard** | default — incl. missing / low-confidence signals | ~20–30 pages | 150 | single-pass | fingerprint → Claude |
+| **Full** | any `scan_no_text`, `needs_ocr`, `needs_paid_tier`, `likely_two_column`, text quality < 50, OCR-artifact rate ≥ 0.30, **or any post-conversion warning** | **all pages** | 200 | two-pass + converge loop | Claude on disagreement **+ blind audit slice** |
 
-This honors the conversion-time concern: the cheap, fast majority (clean digital books)
-stays Light; GPU time and the Claude adjudicator are spent only on scans and
-problematic PDFs where false negatives are expensive.
+Thresholds start conservative (above) and live in `config/settings.json` under a new
+`visual_qa.tiers` block. Standard is the safe default: missing or low-confidence
+signals route to Standard, never silently down to Light.
+
+This honors the conversion-time concern: clean digital books (the fast majority) stay
+Light; GPU time and the Claude adjudicator concentrate on scans and problematic PDFs.
 
 ### Components
 
-- **`vqa_policy` (new):** pure function `decide_tier(classify_result, preflight_result, config) -> TierDecision`.
-  Returns the tier name and the resolved knobs (coverage mode, DPI, pass count,
-  adjudicator policy). Isolated and unit-testable with no I/O. Thresholds live in
-  `config/settings.json` under a new `visual_qa.tiers` block.
-- **`visual_qa.py` (extend):** accept a `TierDecision` (or `--tier`) that overrides the
-  sampling/DPI/pass knobs currently read from flat config. `select_sample_pages` gains
-  a full-coverage mode (return all pages) for the Full tier.
+- **`vqa_policy` (new):** pure function
+  `decide_tier(classify_result, preflight_result, config) -> TierDecision` and a
+  separate `escalate_tier(tier_decision, conversion_signals) -> TierDecision`. No I/O,
+  unit-testable. Returns tier name, the resolved knobs (coverage mode, DPI, pass count,
+  adjudicator policy), `tier_reason`, and `tier_signals`.
+- **`visual_qa.py` (extend):** accept a `TierDecision` (or `--tier`). `select_sample_pages`
+  gains a full-coverage mode (return all pages) for the Full tier.
+- **Tier-aware chunking (replaces `_apply_large_file_dpi_reduction`):** on the Full tier,
+  do **not** drop to 72 DPI / 4 pages. Keep the requested DPI and split batches by
+  *rendered image bytes* so each request fits the provider's image-bytes limit. If a
+  batch still fails to render or evaluate, record partial coverage rather than silently
+  shrinking the request.
+- **Blind audit slice (Full tier):** even when the local pass looks clean, send a small
+  capped Claude sample — first / body / back + ~5% random pages, capped at 10 — to
+  counter mode-(b) detection failure where there is no disagreement to trigger on.
 - **Batch integration (EB-340):** `run_overnight_batch.ps1` / module call site reads the
-  per-book classify+preflight output and passes the tier through, with VQA enabled by
-  default for the batch.
-- **Cost reporting (EB-341):** fix the fallback cost-reporting bug first so tier-aware
-  cost accounting is correct before changing what runs.
+  per-book classify+preflight output, passes the pre-conversion tier, then applies
+  post-conversion escalation. VQA enabled by default for the batch.
+- **Cost reporting (EB-341):** fix the fallback cost-reporting bug first so tier-aware,
+  provider-separated cost accounting is correct before changing what runs.
 
 ### Data flow
 
 ```
 inbox PDF
-  → preflight_analysis + classify_pdf  (existing — produces risk signals)
-  → vqa_policy.decide_tier()           (new — maps signals → tier + knobs)
-  → conversion → KFX
-  → visual_qa.run_visual_qa(tier knobs) (extended — coverage/DPI/passes per tier)
-  → [Full/Standard] Claude adjudicator on disagreement
-  → _visual_qa_report.json (records tier + coverage_status)
+  → preflight_analysis + classify_pdf        (existing — risk signals)
+  → vqa_policy.decide_tier()                 (new — pre-conversion tier + knobs)
+  → conversion → KFX  (emits conversion_signals: fallback/OCR/warnings/truncation)
+  → vqa_policy.escalate_tier()               (new — bump tier on post-conversion risk)
+  → visual_qa.run_visual_qa(tier knobs)      (extended — coverage/DPI/passes per tier)
+  → [Standard/Full] fingerprint/disagreement → Claude
+  → [Full] blind audit slice → Claude
+  → _visual_qa_report.json (tier + 3-way coverage + adjudicator + cost)
 ```
 
-## Trust model (decided)
+## Coverage accounting (fixes a latent bug)
 
-Full tier: local full-coverage pass, then send only disagreement / low-confidence pages
-to Claude as adjudicator. Catches the over-scoring blind spot while keeping paid cost
-confined to the few high-risk books.
+Today `build_report` is called with `len(page_images)` as `pages_sampled`
+([visual_qa.py:1144](../../../tools/visual_qa.py)), i.e. the *rendered* count, not the
+*requested* count. A render-failure drop (requested → rendered) is therefore invisible
+and `coverage_status` can still read "complete." Replace with an explicit 3-way split,
+recorded in the report for all tiers:
+
+- `pages_requested` — `len(select_sample_pages(...))` (or all pages for Full)
+- `pages_rendered` — `len(page_images)`
+- `pages_evaluated` — pages that returned valid results
+- `coverage_mode` — `sample` | `full`
+- `coverage_status` — `complete` only when `evaluated == requested`; else `partial`
+
+## Report additions
+
+Add to `_visual_qa_report.json`: `vqa_tier`, `tier_reason`, `tier_signals`,
+`coverage_mode`, `requested_dpi`, `effective_dpi`, `adjudicator_status`,
+`pages_adjudicated`, `adjudicator_trigger_counts` (disagreement vs blind-audit), and
+**provider-separated cost totals** (local vs Claude).
+
+## CLI
+
+Make `--tier light|standard|full|auto` canonical (`auto` = let `vqa_policy` decide).
+De-emphasize / alias the existing `--full` (today it means 20 pages @ 150 DPI), which
+conflicts with the new Full tier (all pages @ 200 DPI). Document the rename to avoid
+silent behavior change for anyone scripting `--full`.
 
 ## Error handling
 
-- Tier decision degrades safely: if classify/preflight output is missing or low
-  confidence, default to **Standard** (never silently skip to Light on unknown input).
-- Full-coverage rendering of large books must respect the existing image-bytes ceiling —
-  batch pages per request rather than reducing DPI; never silently truncate coverage.
-  `coverage_status` in the report must reflect any partial coverage.
-- Claude adjudicator failure (no API key, rate limit) is non-fatal: report records
-  `adjudicator: unavailable` and the local result stands, flagged as un-adjudicated.
+- Tier decision degrades safely: missing / low-confidence classify output → **Standard**,
+  never Light.
+- Tier-aware chunking respects the image-bytes ceiling by *batching*, never by reducing
+  DPI or dropping pages on the Full tier; any unavoidable drop is recorded as `partial`.
+- Claude adjudicator / blind-audit failure (no API key, rate limit) is non-fatal:
+  `adjudicator_status: unavailable`, local result stands, flagged un-adjudicated.
 
 ## Testing
 
-- Unit tests for `vqa_policy.decide_tier` across each signal combination (clean digital,
-  scan_no_text, two-column, OCR-artifact-heavy, missing signals → Standard default).
-- `select_sample_pages` full-coverage mode returns all pages and respects the
-  image-bytes batching ceiling.
+- Unit tests for `decide_tier` across each signal combination (clean digital,
+  `scan_no_text`, two-column, OCR-artifact-heavy, missing signals → Standard) and for
+  `escalate_tier` (each post-conversion warning bumps to Full, never downgrades).
+- `select_sample_pages` full-coverage mode returns all pages; chunking respects the
+  image-bytes ceiling; render failure produces `partial`, not false `complete`.
 - **Calibration re-baseline (mandatory, per CLAUDE.md):** changing what VQA evaluates
   invalidates `data/vqa_baseline_*`. Per the Calibration Sessions rule — run twice on the
   same input (determinism), run against a known-good book (zero false positives), and
-  spot-check findings against source before re-capturing baselines. VQA baseline files
-  are worktree-gated test fixtures (EB-181) and must land via PR.
+  spot-check findings against source before re-capturing. VQA baseline files are
+  worktree-gated test fixtures (EB-181) and must land via PR.
 
 ## Proposed ticket split
 
-1. **EB-341** (blocker) — fix fallback cost-reporting bug. Must land first.
-2. **New — VQA policy/tiering layer** — `vqa_policy`, config `tiers` block, `visual_qa.py`
-   knob override. Keystone; everything plugs into it.
-3. **EB-340** — auto-enable tier-aware VQA on overnight batch.
-4. **New — Full-coverage + DPI** — full-page sampling mode + higher DPI, gated to Full tier,
-   with image-bytes batching.
-5. **New — Calibration re-baseline** — re-capture and validate `data/vqa_baseline_*` under
+1. **EB-341** (blocker) — fix fallback cost-reporting bug + provider-separated cost totals.
+   Must land first.
+2. **New — VQA policy/tiering layer** — `vqa_policy.decide_tier` + `escalate_tier`,
+   `visual_qa.tiers` config block, `visual_qa.py` knob override, `--tier` CLI,
+   3-way coverage accounting + report fields. Keystone.
+3. **New — Full-coverage execution** — full-page sampling mode + 200 DPI + tier-aware
+   chunking replacing `_apply_large_file_dpi_reduction`. *Failure mode: rendering /
+   image-bytes limits.*
+4. **New — Claude adjudication & blind audit** — disagreement trigger + capped blind
+   audit slice for the Full tier. *Failure mode: trust / false-confidence.*
+5. **EB-340** — auto-enable tier-aware VQA on overnight batch (consumes 2–4).
+6. **New — Calibration re-baseline** — re-capture and validate `data/vqa_baseline_*` under
    the new tier behavior; verify over-scoring does not mask regressions.
+
+(Items 3 and 4 are split because they have distinct failure modes — rendering/limits
+vs trust/accuracy — and can be reviewed and validated independently.)
 
 ## Out of scope (YAGNI)
 
 - No changes to the rubric content or the converge-loop algorithm beyond relaxing the
   cost ceiling for the Full tier.
 - No new vision provider; reuse the EB-339 local provider and existing Claude fallback.
-- No re-architecture of preflight/classify; they are consumed as-is.
+- No re-architecture of preflight/classify; they are consumed as-is (`vqa_policy` reads
+  raw `classify_pdf` output).
