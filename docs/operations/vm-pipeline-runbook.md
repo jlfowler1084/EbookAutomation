@@ -59,18 +59,24 @@ No Windows path needed — the pipeline detects it via `shutil.which("ebook-conv
 
 ## VQA run (OpenRouter provider)
 
+The VM is off-LAN from the local R9700 endpoint (the default primary since
+EB-339), so on the VM use the paid OpenRouter cloud provider. Note the CLI
+shape: `--provider cloud --cloud-host openrouter` (there is no
+`--provider openrouter`).
+
 ```bash
 source ~/EbookAutomation/.venv/bin/activate
 
 python ~/EbookAutomation/tools/visual_qa.py \
-    --provider openrouter \
+    --provider cloud \
+    --cloud-host openrouter \
     --model qwen/qwen3-vl-30b-a3b-instruct \
     --input ~/ebook-data/output/Author\ -\ Title.epub \
     --output-dir ~/ebook-data/output/vqa/
 ```
 
 **Provider selection:**
-- Use `--provider openrouter` (required on VM — `local` hard-fails on Linux)
+- Use `--provider cloud --cloud-host openrouter` (required on VM — `local` hard-fails on Linux)
 - Default model for VM: `qwen/qwen3-vl-30b-a3b-instruct`
 - Requires `OPENROUTER_API_KEY` in `.env`
 
@@ -95,13 +101,13 @@ grep -i 'C:\\' ~/EbookAutomation/logs/ebook-automation-$(date +%Y-%m-%d).log | h
 ### `local` provider selected → RuntimeError on startup
 
 ```
-RuntimeError: LocalVisionProvider is not available on Linux.
-Update your config to use provider='openrouter' ...
+RuntimeError: LocalVisionProvider is not reachable from Linux ...
+Use the cloud provider instead: set visual_qa.provider='cloud' ...
 ```
 
 **Fix:** Change `provider` in `config/settings.json` (or `--provider` CLI flag) from
-`local` to `openrouter`. The `local` provider is intentionally hard-failed on Linux
-(EB-210 decision) — it requires sb-chat which only runs on the primary desktop.
+`local` to `cloud`, with `cloud_host` set to `openrouter`. The `local` provider is
+intentionally hard-failed on Linux because the VM is off-LAN from the R9700 endpoint.
 
 ### Missing API key
 

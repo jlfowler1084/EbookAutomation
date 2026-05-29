@@ -166,7 +166,7 @@ Invoke-BatchQA -FolderPath "test-corpus" -IncludeVQA
 py -3.12 tools\visual_qa.py --input "output\kindle\book.kfx"
 ```
 
-Produces a JSON report scoring heading hierarchy, TOC accuracy, footnote rendering, page breaks, and image placement. Uses Qwen3-VL (via OpenRouter) by default; falls back to Claude Sonnet for pages with known-ambiguous fingerprints.
+Produces a JSON report scoring heading hierarchy, TOC accuracy, footnote rendering, page breaks, and image placement. Uses the local Qwen3-VL endpoint (R9700, free) by default; for pages with known-ambiguous fingerprints it falls back to Claude Sonnet. To use the paid OpenRouter endpoint instead (e.g. on the off-LAN VM), pass `--provider cloud --cloud-host openrouter`.
 
 ---
 
@@ -205,7 +205,7 @@ Copy `.env.example` to `.env` and fill in the keys you plan to use:
 
 ```
 ANTHROPIC_API_KEY    # Claude (chapter detection, VQA fallback)
-OPENROUTER_API_KEY   # Qwen3-VL cloud VQA primary
+OPENROUTER_API_KEY   # Qwen3-VL cloud VQA fallback (local R9700 endpoint is primary)
 GEMINI_API_KEY       # Gemini 2.5 Flash — Tier 2.5 OCR
 EBOOK_SMTP_PASSWORD  # Email-to-Kindle delivery
 ```

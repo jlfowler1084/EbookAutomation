@@ -361,15 +361,18 @@ class LocalVisionProvider:
     name = "local"
 
     def __init__(self, base_url: str = "http://localhost:8000/v1"):
-        # EB-210: sb-chat runs on the primary desktop only.  If this provider
-        # is instantiated on Linux (the Hetzner VM), it will never reach the
-        # endpoint — fail loudly so the operator fixes config before any
-        # silent fallback can mask the mismatch.
+        # EB-210 / EB-339: the local VQA endpoint lives on a LAN node (the
+        # R9700 Qwen3-VL box, DESKTOP-488UQB2) reachable from the primary
+        # desktop. The Hetzner VM (Linux) is off-LAN and cannot reach it, so
+        # fail loudly here rather than let a node-unreachable error masquerade
+        # as a transient fault. Per EB-339 the fallback is explicit, not silent:
+        # on the VM the operator switches to the paid OpenRouter path.
         if sys.platform.startswith("linux"):
             raise RuntimeError(
-                "LocalVisionProvider is not available on Linux. "
-                "Update your config to use provider='openrouter' with "
-                "model='qwen/qwen3-vl-30b-a3b-instruct' and set OPENROUTER_API_KEY."
+                "LocalVisionProvider is not reachable from Linux (the Hetzner VM "
+                "is off-LAN from the R9700 endpoint). Use the cloud provider "
+                "instead: set visual_qa.provider='cloud' (cloud_host='openrouter', "
+                "cloud_model='qwen/qwen3-vl-30b-a3b-instruct') and set OPENROUTER_API_KEY."
             )
         self._base_url = base_url
 
