@@ -59,11 +59,17 @@ No Windows path needed — the pipeline detects it via `shutil.which("ebook-conv
 
 ## VQA run (OpenRouter provider)
 
+The VM is off-LAN from the local R9700 endpoint (the default primary since
+EB-339), so on the VM use the paid OpenRouter cloud provider. Note the CLI
+shape: `--provider cloud --cloud-host openrouter` (there is no
+`--provider openrouter`).
+
 ```bash
 source ~/EbookAutomation/.venv/bin/activate
 
 python ~/EbookAutomation/tools/visual_qa.py \
-    --provider openrouter \
+    --provider cloud \
+    --cloud-host openrouter \
     --model qwen/qwen3-vl-30b-a3b-instruct \
     --input ~/ebook-data/output/Author\ -\ Title.epub \
     --output-dir ~/ebook-data/output/vqa/
