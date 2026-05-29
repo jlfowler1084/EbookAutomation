@@ -165,7 +165,10 @@ foreach ($kfx in $newKfx) {
       '--input', $kfx.FullName,
       '--max-pages', $MaxPages,
       '--dpi', '100',
-      '--provider', 'cloud',
+      # EB-339: provider intentionally NOT pinned here — inherit the
+      # config/settings.json visual_qa.provider default (now "local", the
+      # free R9700 Qwen3-VL endpoint). settings.json is the single toggle
+      # point; pass --provider cloud to fall back to paid OpenRouter.
       '--output-dir', $VqaDir
     )
     & py @vqaArgs *>&1 | ForEach-Object {
