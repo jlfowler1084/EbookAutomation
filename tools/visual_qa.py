@@ -719,6 +719,7 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "estimated_cost_usd": round(estimated_cost, 4),
+            "total_estimated_cost_usd": round(estimated_cost, 4),
         }
     }
 
@@ -734,6 +735,9 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         report["token_usage"]["fallback_output_tokens"] = fb_out
         report["token_usage"]["fallback_estimated_cost_usd"] = round(
             fallback_cost_usd or 0.0, 4
+        )
+        report["token_usage"]["total_estimated_cost_usd"] = round(
+            estimated_cost + (fallback_cost_usd or 0.0), 4
         )
         if fallback_provider_name:
             report["token_usage"]["fallback_provider"] = fallback_provider_name
@@ -1413,6 +1417,7 @@ def main():
         )
 
         # Print summary to stdout
+        _tu = report["token_usage"]
         print(json.dumps({
             "book": report["book"],
             "overall_score": report["overall_score"],
@@ -1420,7 +1425,7 @@ def main():
             "pages_sampled": report["pages_sampled"],
             "pages_total": report["pages_total"],
             "summary": report["summary"],
-            "estimated_cost_usd": report["token_usage"]["estimated_cost_usd"],
+            "estimated_cost_usd": _tu.get("total_estimated_cost_usd", _tu.get("estimated_cost_usd", 0)),
         }, indent=2))
 
         sys.exit(0 if report["overall_pass"] else 1)

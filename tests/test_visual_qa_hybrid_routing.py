@@ -979,3 +979,54 @@ class TestVQACoverageLoss:
         assert report["truncation_events"] == [], (
             "Truncation events should be empty when all pages are recovered by retry"
         )
+
+
+# ---------------------------------------------------------------------------
+# EB-341: TestFallbackCostTotal
+# ---------------------------------------------------------------------------
+
+class TestFallbackCostTotal:
+    """EB-341: token_usage.total_estimated_cost_usd is the authoritative
+    local + fallback total. Breakdown fields are preserved."""
+
+    _QA_DATA = {
+        "evaluation_status": "evaluated",
+        "overall_score": 90,
+        "category_scores": {},
+        "pages": [],
+        "summary": "ok",
+        "top_issues": [],
+    }
+
+    def test_total_equals_primary_when_no_fallback(self):
+        # provider=None -> legacy sonnet pricing: in*3/M + out*15/M
+        report = visual_qa.build_report(
+            "Book.kfx", self._QA_DATA, total_pages=10, pages_sampled=8,
+            dpi=100, model="claude-sonnet-4-6",
+            input_tokens=1000, output_tokens=1000,
+        )
+        tu = report["token_usage"]
+        # (1000/1e6)*3 + (1000/1e6)*15 = 0.018
+        assert tu["estimated_cost_usd"] == 0.018
+        assert tu["total_estimated_cost_usd"] == 0.018
+        assert "fallback_estimated_cost_usd" not in tu
+
+    def test_total_sums_primary_and_fallback(self):
+        report = visual_qa.build_report(
+            "Book.kfx", self._QA_DATA, total_pages=10, pages_sampled=8,
+            dpi=100, model="claude-sonnet-4-6",
+            input_tokens=1000, output_tokens=1000,
+            fallback_tokens=(500, 200), fallback_cost_usd=0.05,
+            fallback_provider_name="claude", fallback_model="claude-sonnet-4-6",
+        )
+        tu = report["token_usage"]
+        assert tu["estimated_cost_usd"] == 0.018          # primary preserved
+        assert tu["fallback_estimated_cost_usd"] == 0.05  # breakdown preserved
+        assert tu["total_estimated_cost_usd"] == 0.068     # 0.018 + 0.05
+
+    def test_cli_summary_reads_canonical_total(self):
+        import inspect
+        src = inspect.getsource(visual_qa.main)
+        assert "total_estimated_cost_usd" in src
+        # The old primary-only direct read must be gone.
+        assert '"estimated_cost_usd": report["token_usage"]["estimated_cost_usd"]' not in src

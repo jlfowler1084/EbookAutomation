@@ -2318,7 +2318,7 @@ if vqa_report_path and os.path.isfile(vqa_report_path):
     conv_kwargs['vqa_report_path'] = vqa_report_path
     conv_kwargs['api_input_tokens'] = tu.get('input_tokens', 0)
     conv_kwargs['api_output_tokens'] = tu.get('output_tokens', 0)
-    conv_kwargs['cost_usd'] = tu.get('estimated_cost_usd', 0)
+    conv_kwargs['cost_usd'] = tu.get('total_estimated_cost_usd', tu.get('estimated_cost_usd', 0))
     cs = report.get('category_scores')
     if cs:
         conv_kwargs['category_scores'] = cs
