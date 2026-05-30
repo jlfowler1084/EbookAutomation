@@ -468,7 +468,10 @@ def _score_single_sample(sample):
     latin1_debris = len(re.findall(r'[ÃÂ][\x80-\xBF]|â€[^\w]', sample))
     win1252_count = sum(1 for ch in sample if 0x0080 <= ord(ch) <= 0x009F)
     non_ascii_seqs = re.findall(r'[^\x00-\x7F\u00C0-\u024F]{3,}', sample)
-    artifact_count = fffd_count + latin1_debris + win1252_count + len(non_ascii_seqs)
+    # cid glyphs: pdfminer emits literal "(cid:N)" when a CIDFont lacks ToUnicode.
+    # These are 100% ASCII so they evade every other check; count each token x2.
+    cid_tokens = re.findall(r'\(cid:\d+\)', sample)
+    artifact_count = fffd_count + latin1_debris + win1252_count + len(non_ascii_seqs) + len(cid_tokens) * 2
     per_1000 = (artifact_count / max(total_chars, 1)) * 1000
     if per_1000 == 0:
         c4 = 100
@@ -636,6 +639,11 @@ def score_text_layer_quality(text, log=None, multi_sample=False):
     artifact_count += win1252_count
     non_ascii_seqs = re.findall(r'[^\x00-\x7F\u00C0-\u024F]{3,}', sample)
     artifact_count += len(non_ascii_seqs)
+    # cid glyphs: pdfminer emits literal "(cid:N)" when a CIDFont lacks ToUnicode.
+    # These are 100% ASCII so they evade every other check; count each token x2.
+    cid_tokens = re.findall(r'\(cid:\d+\)', sample)
+    cid_count = len(cid_tokens)
+    artifact_count += cid_count * 2
 
     per_1000 = (artifact_count / max(total_chars, 1)) * 1000
     if per_1000 == 0:
@@ -654,6 +662,7 @@ def score_text_layer_quality(text, log=None, multi_sample=False):
         'latin1_debris': latin1_debris,
         'win1252_control': win1252_count,
         'non_ascii_sequences': len(non_ascii_seqs),
+        'cid_glyph_tokens': cid_count,
     }
 
     # ── Check 5: Repeated line ratio (15% weight) ──────────────────
@@ -6092,6 +6101,7 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=No
                 page_lines.append({
                     'text': text,
                     'font': dominant_font,
+                    'font_name': dominant_font,  # EB-348: preserved for monospace detection
                     'size': dominant_size,
                     'bold': is_bold,
                     'italic': is_italic,
@@ -6375,12 +6385,21 @@ def _flush_line_group(lines, all_paras):
                   ' '.join(parts))
     text = re.sub(r' +', ' ', text).strip()
     first = lines[0]
+    # EB-348: detect monospace fonts for code-block preservation
+    _fnt = first.get('font_name', first.get('font', ''))
+    _fnt_lower = _fnt.lower() if _fnt else ''
+    _MONO_FONTS = ('courier', 'mono', 'console', 'anon', 'consolas',
+                   'inconsolata', 'sourcecodemono', 'menlo', 'monaco',
+                   'dejavumono', 'ubuntumono', 'cascadiacode', 'firacode')
+    is_monospace = any(kw in _fnt_lower for kw in _MONO_FONTS)
     all_paras.append({
         'text': text,
         'font_size': first['size'],
+        'font_name': _fnt,  # EB-348: preserved for code-block grouping
         'is_bold': first['bold'],
         'is_italic': first['italic'],
         'is_centered': first['centered'],
+        'is_monospace': is_monospace,  # EB-348: True for courier/mono/consolas/etc.
         'is_all_caps': text == text.upper() and len(text) > 3 and any(c.isalpha() for c in text),
         'page_number': first['page'],
         'line_count': len(lines),
@@ -7120,6 +7139,24 @@ def format_paragraphs_as_html(para_dicts, body_size, bookmarks, log, title='Unti
     # that slip Phase 0's ALL-CAPS envelope and the column-path's candidate gate.
     _mark_a2_running_headers(para_dicts, log)
 
+    # EB-348: Pre-pass — group consecutive monospace paragraphs for <pre> emission.
+    # Assigns a 'pre_group_id' to each para in a monospace run (same id per group).
+    # Monospace paragraphs that are isolated (no adjacent mono) still get wrapped in <pre>.
+    _pre_group_id = 0
+    _in_mono_run = False
+    for _pi, _pp in enumerate(para_dicts):
+        if _pp.get('is_page_marker'):
+            _in_mono_run = False
+            continue
+        if _pp.get('is_monospace'):
+            if not _in_mono_run:
+                _pre_group_id += 1
+                _in_mono_run = True
+            _pp['_pre_group_id'] = _pre_group_id
+        else:
+            _in_mono_run = False
+            _pp.pop('_pre_group_id', None)
+
     html_parts = []
     html_parts.append(f'''<!DOCTYPE html>
 <html><head>
@@ -7144,6 +7181,8 @@ figcaption {{ font-size: 0.85em; font-style: italic; color: #555; margin-top: 0.
 table {{ border-collapse: collapse; margin: 1em 0; width: auto; }}
 th, td {{ border: 1px solid #999; padding: 4px 8px; vertical-align: top; }}
 th {{ background-color: #f0f0f0; font-weight: bold; }}
+pre {{ font-family: monospace; white-space: pre-wrap; background: #f8f8f8; padding: 0.8em 1em; margin: 1em 0; border-left: 3px solid #ccc; font-size: 0.9em; }}
+code {{ font-family: monospace; font-size: 0.9em; }}
 </style>
 </head><body>
 ''')
@@ -7176,6 +7215,9 @@ th {{ background-color: #f0f0f0; font-weight: bold; }}
     in_blockquote = False
     in_footnotes = False  # tracks whether we're inside a <div class="footnotes"> block
     footnote_rendered = 0  # count of footnote paragraphs rendered
+    in_pre_block = False         # EB-348: currently inside an open <pre> block
+    _cur_pre_group = None        # EB-348: pre_group_id of the open <pre> block
+    pre_count = 0                # EB-348: number of <pre> blocks emitted
     prev_was_heading = False
     after_heading = False
     current_page = 0
@@ -7363,6 +7405,40 @@ th {{ background-color: #f0f0f0; font-weight: bold; }}
             if not is_section_heading:
                 # It's a repeated chapter heading inside Notes/etc — demote to h3
                 bm_level = None
+
+        # EB-348: Handle monospace / code-block paragraphs.
+        # If this para belongs to a pre_group, open/close <pre> blocks and
+        # emit the text verbatim (preserving indentation). Skip normal tag logic.
+        _this_pre_group = p.get('_pre_group_id')
+        if _this_pre_group is not None:
+            # Close any open blockquote first
+            if in_blockquote:
+                html_parts.append('</blockquote>\n')
+                in_blockquote = False
+            if _this_pre_group != _cur_pre_group:
+                # Close previous pre block if open
+                if in_pre_block:
+                    html_parts.append('</pre>\n')
+                    in_pre_block = False
+                # Open new pre block
+                html_parts.append('<pre>')
+                in_pre_block = True
+                _cur_pre_group = _this_pre_group
+                pre_count += 1
+            else:
+                # Continuation of same pre block — add a newline separator
+                html_parts.append('\n')
+            # Emit the raw text (HTML-escaped, indentation preserved)
+            html_parts.append(_html_escape(text))
+            after_heading = False
+            prev_was_heading = False
+            continue
+        else:
+            # Not a monospace para — close any open pre block
+            if in_pre_block:
+                html_parts.append('</pre>\n')
+                in_pre_block = False
+                _cur_pre_group = None
 
         # Determine tag using bookmark level > font cluster > fallback
         tag = 'p'
@@ -7587,6 +7663,9 @@ th {{ background-color: #f0f0f0; font-weight: bold; }}
     # Close any open blockquote
     if in_blockquote:
         html_parts.append('</blockquote>\n')
+    # EB-348: Close any open pre block
+    if in_pre_block:
+        html_parts.append('</pre>\n')
     # Close any open footnotes block
     if in_footnotes:
         html_parts.append('</div>\n')
@@ -7595,6 +7674,7 @@ th {{ background-color: #f0f0f0; font-weight: bold; }}
 
     log(f"  HTML formatting: {h1_count} h1, {h2_count} h2, {h3_count} h3, "
         f"{bq_count} blockquote, {attr_count} attribution, {p_count} p"
+        + (f", {pre_count} pre" if pre_count else "")
         + (f", {footnote_rendered} footnotes" if footnote_rendered else ""))
     if toc_skipped:
         log(f"  TOC entries skipped: {toc_skipped}")
