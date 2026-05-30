@@ -713,7 +713,8 @@ def _generate_recipe(classification, text_quality, chapter_structure,
     if cls_type == 'scan_no_text':
         # Case 1: Image-only scan
         profile = "text-only"
-        strategy = ["ocr"]
+        # EB-349: include gemini as fallback so classifier_driven escalation can fire
+        strategy = ["ocr", "gemini"]
         flags = _no_structural_flags()
         flags["UseOCR"] = True
         claude_chap_flag = False

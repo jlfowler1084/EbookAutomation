@@ -6281,22 +6281,50 @@ function Invoke-ConvergeLoop {
         if ($NoBlockQuotes) { $convertParams['NoBlockQuotes'] = $true }
 
         # Guard: skip Gemini strategy unless explicitly requested or batch-approved
+        # EB-349: Auto-enable if classifier recommends Gemini, config key is set,
+        # and GEMINI_API_KEY is present. This replaces the hard skip with a
+        # conditional auto-enable + cost-estimate log.
         if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini -and -not $AllowPaidExtraction) {
             if ($classification -and $classification.flags.needs_paid_tier -and
                 $classification.flags.recommended_paid_tier -eq 'gemini') {
-                $pgCount = if ($classification.signals.total_pages) { $classification.signals.total_pages } else { 0 }
-                $estCost = '{0:F2}' -f ($pgCount * 0.0016)
-                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
-                Write-EbookLog "  RECOMMENDATION: This book's producer ($($classification.signals.pdf_producer))" -Level WARN
-                Write-EbookLog "  indicates it needs Gemini extraction (Tier 2.5)." -Level WARN
-                Write-EbookLog "  Free tiers (pdfminer, Tesseract) cannot read this PDF format." -Level WARN
-                Write-EbookLog "  To enable: re-run with -UseGemini flag" -Level WARN
-                Write-EbookLog "  Estimated cost: ~`$$estCost" -Level WARN
-                Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
+                # EB-349: Check opt-in config key + key availability
+                $autoGeminiEnabled = $false
+                try {
+                    $autoGeminiEnabled = [bool]($cfg.classifier_escalation.auto_gemini_on_scan)
+                } catch { $autoGeminiEnabled = $false }
+                $geminiKeyPresent = [bool]$env:GEMINI_API_KEY
+
+                if ($autoGeminiEnabled -and $geminiKeyPresent) {
+                    # Auto-enable: classifier verdict + opt-in config + key present
+                    $pgCount = if ($classification.signals.total_pages) { $classification.signals.total_pages } else { 0 }
+                    $estCost = '{0:F2}' -f ($pgCount * 0.0016)
+                    Write-EbookLog "  [EB-349] Classifier-driven Gemini escalation: auto_gemini_on_scan=true" -Level WARN
+                    Write-EbookLog "  [EB-349] Classification: $($classification.classification) needs_paid_tier=gemini" -Level WARN
+                    Write-EbookLog "  [EB-349] Estimated cost: ~`$$estCost (capped by cost_limit_per_book_usd=$CostLimit)" -Level WARN
+                    Write-EbookLog "  [EB-349] Proceeding with Gemini extraction..." -Level WARN
+                    $UseGemini = $true
+                    # Allow the strategy to proceed — do NOT continue/skip
+                } elseif ($autoGeminiEnabled -and -not $geminiKeyPresent) {
+                    Write-EbookLog "  [EB-349] Classifier recommends Gemini but GEMINI_API_KEY not set — skipping" -Level WARN
+                    Write-EbookLog "  Set GEMINI_API_KEY env var to enable classifier-driven escalation" -Level WARN
+                    continue
+                } else {
+                    # Opt-in disabled: show recommendation
+                    $pgCount = if ($classification.signals.total_pages) { $classification.signals.total_pages } else { 0 }
+                    $estCost = '{0:F2}' -f ($pgCount * 0.0016)
+                    Write-EbookLog "  ============================================" -Level WARN
+                    Write-EbookLog "  RECOMMENDATION: This book needs Gemini extraction (Tier 2.5)." -Level WARN
+                    Write-EbookLog "  Classification: $($classification.classification) (producer: $($classification.signals.pdf_producer))" -Level WARN
+                    Write-EbookLog "  To enable once: re-run with -UseGemini flag" -Level WARN
+                    Write-EbookLog "  To enable automatically: set classifier_escalation.auto_gemini_on_scan=true in config/settings.json" -Level WARN
+                    Write-EbookLog "  Estimated cost: ~`$$estCost" -Level WARN
+                    Write-EbookLog "  ============================================" -Level WARN
+                    continue
+                }
             } else {
                 Write-EbookLog "  Skipping Gemini strategy (not explicitly requested via -UseGemini)" -Level INFO
+                continue
             }
-            continue
         }
 
         # Guard: skip Vision strategy unless explicitly requested or batch-approved

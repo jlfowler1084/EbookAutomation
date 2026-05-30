@@ -1559,6 +1559,32 @@ def run_debris_tests():
         (P if density < 0.15 else F).append(
             f"moderate artifacts density {density:.1%} < 15% (no escalation)")
 
+    # EB-348: cid-glyph quality-scoring tests
+    # Uses score_text_layer_quality which calls _score_single_sample internally.
+    def test_cid_heavy_scores_low(P, F):
+        """A page that is mostly (cid:N) tokens must score below 70 (escalation threshold)."""
+        from extract_tts_text import score_text_layer_quality as _squal
+        # 80% of text is (cid:N) spam — typical pdfminer CIDFont output
+        cid_spam = "(cid:34) (cid:56) (cid:12) (cid:99) (cid:100) " * 200
+        normal_words = "the quick brown fox jumped over the lazy dog " * 20
+        sample = (cid_spam + normal_words) * 3
+        result = _squal(sample)
+        score = result["score"] if isinstance(result, dict) else result
+        (P if score < 70 else F).append(
+            f"cid-heavy text scored {score}/100 (expected < 70)")
+
+    def test_clean_text_cid_unaffected(P, F):
+        """Clean English prose with no (cid:N) tokens scores the same as before (>= 75)."""
+        from extract_tts_text import score_text_layer_quality as _squal
+        text = ("The Industrial Revolution transformed society in the nineteenth century. "
+                "Steam power enabled factories to produce goods at unprecedented scale. "
+                "Workers migrated from rural areas to rapidly growing cities. "
+                "Social reformers sought to address the hardships that accompanied this change. ") * 50
+        result = _squal(text)
+        score = result["score"] if isinstance(result, dict) else result
+        (P if score >= 75 else F).append(
+            f"clean text scored {score}/100 (expected >= 75)")
+
     _run("clean prose near-zero density", test_clean_prose)
     _run("Origen-style garbage >= 15%", test_catastrophic_origen)
     _run("structural chars detected", test_structural_chars)
@@ -1567,6 +1593,10 @@ def run_debris_tests():
     _run("hyphenated splits below threshold", test_hyphenated_splits_not_debris)
     _run("replacement char detected", test_replacement_char)
     _run("moderate artifacts below threshold", test_below_threshold_moderate_artifacts)
+
+    # EB-348: cid-glyph scoring tests
+    _run("cid[eb-348]: cid-heavy text scores below 70", test_cid_heavy_scores_low)
+    _run("cid[eb-348]: clean text unaffected by cid fix", test_clean_text_cid_unaffected)
 
     return results
 
