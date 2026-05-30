@@ -141,12 +141,15 @@ Score each category from 0–100. Weight them as shown to compute the page score
 
 When flagging issues, classify each one:
 
-| Severity | Meaning | Score Impact |
-|----------|---------|-------------|
-| critical | Makes content unreadable or unusable | -25 points in category |
-| major | Significantly degrades reading experience | -15 points in category |
-| moderate | Noticeable but doesn't prevent reading | -10 points in category |
-| minor | Cosmetic, barely affects reading experience | -5 points in category |
+| Severity | Meaning | Per-page score deduction | Category deduction |
+|----------|---------|--------------------------|-------------------|
+| critical | Makes content unreadable or unusable | -52 points | -25 points |
+| major | Significantly degrades reading experience | -25 points | -15 points |
+| moderate | Noticeable but doesn't prevent reading | -15 points | -10 points |
+| minor | Cosmetic, barely affects reading experience | -5 points | -5 points |
+
+Use these EXACT deductions — do not interpolate within ranges. Multiple issues compound
+additively (floor 0). A page with two moderate and one minor issue scores 100 - 15 - 15 - 5 = 65.
 
 ## Output Format
 

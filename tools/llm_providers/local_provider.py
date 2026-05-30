@@ -454,7 +454,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 16384,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
             # repeated JSON schema tokens (keys, enum values) across multi-page
             # batches, causing the model to emit empty {} entries and stop early.
@@ -524,7 +525,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 16384,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -557,10 +559,11 @@ class LocalVisionProvider:
                     f"{issues_text}\n\n"
                     "Using the rubric, assign a score (0-100) and pass/fail for each page "
                     "based on the issues listed above. A score of 100 requires zero issues. "
-                    "Apply these deductions from 100: each critical issue 45-60 points; "
-                    "each major 20-30 points; each moderate 12-18 points; each minor 4-6 points. "
-                    "Multiple issues compound — a page with two moderate issues and one minor "
-                    "issue should score in the 60-72 range, not 80+. "
+                    "Apply these FIXED deductions from 100: each critical issue exactly 52 points; "
+                    "each major exactly 25 points; each moderate exactly 15 points; "
+                    "each minor exactly 5 points. "
+                    "Multiple issues compound additively — a page with two moderate issues and "
+                    "one minor issue scores 100 - 15 - 15 - 5 = 65. Floor at 0. "
                     "Return ONLY valid JSON with a 'pages' array where each entry has: "
                     "page_number (use the page_number from the input), score, and pass."
                 ),
@@ -576,7 +579,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 1024,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

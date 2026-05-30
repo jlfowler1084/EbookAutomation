@@ -44,10 +44,12 @@ def test_payload_top_level_keys(provider: ClaudeVisionProvider) -> None:
         rubric_text=RUBRIC_FIXTURE,
         model=MODEL_FIXTURE,
     )
-    assert set(payload.keys()) == {"model", "max_tokens", "system", "messages"}
+    # EB-150: temperature=0 added for determinism; expected keys set updated accordingly
+    assert set(payload.keys()) == {"model", "max_tokens", "system", "messages", "temperature"}
     assert payload["model"] == MODEL_FIXTURE
     assert payload["max_tokens"] == 8192
     assert payload["system"] == RUBRIC_FIXTURE
+    assert payload["temperature"] == 0, "EB-150: ClaudeVisionProvider must set temperature=0"
 
 
 def test_payload_messages_structure(provider: ClaudeVisionProvider) -> None:

@@ -1131,10 +1131,28 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
 
     # --- Merge batch results ---
     # Build a merged qa_data from all batch results
-    # Re-score based on all collected page results
+    # EB-150: overall_score is derived deterministically from the issue list using
+    # fixed severity-deduction midpoints, rather than averaging stochastic VLM
+    # page scores.  This eliminates the ±10/page non-determinism that came from
+    # models interpolating within ranges like "45-60" for critical issues.
+    #
+    # Per-page score: start at 100, subtract fixed midpoints per issue (floor 0):
+    #   critical=52, major=25, moderate=15, minor=5
+    # Overall score: average of per-page derived scores.
+    # This matches the same severity-weight table used for category_scores below.
+    _SEVERITY_PAGE_DEDUCTIONS = {"critical": 52, "major": 25, "moderate": 15, "minor": 5}
     if all_pages_results:
-        page_scores = [p.get("score", 0) for p in all_pages_results if isinstance(p, dict)]
-        overall_score = round(sum(page_scores) / len(page_scores)) if page_scores else 0
+        # Re-derive per-page scores from issues (deterministic)
+        derived_page_scores = []
+        for page in all_pages_results:
+            if not isinstance(page, dict):
+                continue
+            deduction = sum(
+                _SEVERITY_PAGE_DEDUCTIONS.get(issue.get("severity", "minor"), 5)
+                for issue in page.get("issues", [])
+            )
+            derived_page_scores.append(max(0, 100 - deduction))
+        overall_score = round(sum(derived_page_scores) / len(derived_page_scores)) if derived_page_scores else 0
 
         # Aggregate category scores from per-page issues
         # Count issues per category weighted by severity
