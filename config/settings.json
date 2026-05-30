@@ -79,6 +79,7 @@
     "enabled": false,
     "dpi": 100,
     "max_pages": 8,
+    "batch_size": 8,
     "pass_threshold": 70,
     "rubric_path": "tools\\visual_qa_rubric.md",
     "provider": "local",

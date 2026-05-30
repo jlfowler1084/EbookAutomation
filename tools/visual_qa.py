@@ -37,7 +37,7 @@ from pathlib import Path
 # calls through a pluggable backend so the orchestration code in this module
 # no longer contains provider-specific payload or pricing logic.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, OutputTruncatedError, VisionProvider, VisionResponse  # noqa: E402
+from llm_providers import ClaudeVisionProvider, CloudVLProvider, ContextWindowOverflowError, LocalVisionProvider, OutputTruncatedError, VisionProvider, VisionResponse  # noqa: E402
 from llm_providers.fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
@@ -598,6 +598,8 @@ def _apply_large_file_dpi_reduction(
     total_pages: int,
     dpi: int,
     max_pages: int,
+    user_supplied_dpi: bool = False,
+    user_supplied_max_pages: bool = False,
 ) -> tuple:
     """Return (dpi, max_pages) adjusted for large KFX files.
 
@@ -611,6 +613,12 @@ def _apply_large_file_dpi_reduction(
     The caller-supplied DPI is never *raised* — if it is already at or below
     _LARGE_FILE_REDUCED_DPI, it is kept as-is.
 
+    EB-347: When the caller explicitly supplied --dpi or --max-pages on the CLI
+    (user_supplied_dpi / user_supplied_max_pages = True), those values are
+    honored and NOT clamped.  A logger.warning is emitted to make the override
+    visible.  When values come from defaults (user_supplied_* = False), the
+    existing clamp behaviour and logger.info message are preserved.
+
     Returns:
         (dpi, max_pages) — possibly unchanged if neither threshold is exceeded.
     """
@@ -621,18 +629,43 @@ def _apply_large_file_dpi_reduction(
     if not is_large:
         return dpi, max_pages
 
-    reduced_dpi = min(dpi, _LARGE_FILE_REDUCED_DPI)
-    reduced_max_pages = min(max_pages, _LARGE_FILE_REDUCED_MAX_PAGES)
-    logger.info(
-        "Large-file threshold exceeded (%.1f MB, %d pages) — "
-        "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
-        kfx_size_bytes / (1024 * 1024),
-        total_pages,
-        dpi,
-        reduced_dpi,
-        max_pages,
-        reduced_max_pages,
-    )
+    reduced_dpi = min(dpi, _LARGE_FILE_REDUCED_DPI) if not user_supplied_dpi else dpi
+    reduced_max_pages = min(max_pages, _LARGE_FILE_REDUCED_MAX_PAGES) if not user_supplied_max_pages else max_pages
+
+    # Build per-dimension log messages
+    if user_supplied_dpi and dpi > _LARGE_FILE_REDUCED_DPI:
+        logger.warning(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "DPI %d was supplied explicitly (--dpi) and will NOT be clamped to %d "
+            "(EB-347). Reduce dpi manually if you encounter context overflow.",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            dpi,
+            _LARGE_FILE_REDUCED_DPI,
+        )
+    if user_supplied_max_pages and max_pages > _LARGE_FILE_REDUCED_MAX_PAGES:
+        logger.warning(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "max_pages %d was supplied explicitly (--max-pages) and will NOT be clamped to %d "
+            "(EB-347). Reduce max_pages manually if you encounter context overflow.",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            max_pages,
+            _LARGE_FILE_REDUCED_MAX_PAGES,
+        )
+
+    if not user_supplied_dpi or not user_supplied_max_pages:
+        logger.info(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            dpi,
+            reduced_dpi,
+            max_pages,
+            reduced_max_pages,
+        )
+
     return reduced_dpi, reduced_max_pages
 
 
@@ -754,6 +787,9 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
 def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   output_dir, dpi, max_pages, model, rubric_path,
                   pass_threshold=70,
+                  batch_size=8,
+                  user_supplied_dpi=False,
+                  user_supplied_max_pages=False,
                   fallback_enabled=True,
                   fallback_claude_model="claude-sonnet-4-6",
                   fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
@@ -849,6 +885,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         total_pages=total_pages,
         dpi=dpi,
         max_pages=max_pages,
+        user_supplied_dpi=user_supplied_dpi,
+        user_supplied_max_pages=user_supplied_max_pages,
     )
 
     # --- Select and render pages ---
@@ -864,18 +902,19 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     logger.info("Rendered %d pages at %d DPI", len(page_images), dpi)
 
     # --- Send to Claude (batched) ---
-    BATCH_SIZE = 8
+    # EB-350: batch_size is configurable via run_visual_qa param, CLI --batch-size,
+    # or settings.json visual_qa.batch_size.  Default 8 preserves prior behaviour.
     all_pages_results = []
     total_input_tokens = 0
     total_output_tokens = 0
     _truncation_attempts = []  # EB-149: raw truncation events, pages_lost resolved after retries
 
     batches = []
-    for i in range(0, len(page_images), BATCH_SIZE):
-        batches.append(page_images[i:i + BATCH_SIZE])
+    for i in range(0, len(page_images), batch_size):
+        batches.append(page_images[i:i + batch_size])
 
     logger.info("Sending %d images in %d batch(es) of up to %d via %s provider...",
-                len(page_images), len(batches), BATCH_SIZE, provider.name)
+                len(page_images), len(batches), batch_size, provider.name)
 
     for batch_idx, batch in enumerate(batches, 1):
         logger.info("  Batch %d/%d: %d pages [%s]",
@@ -924,10 +963,19 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         except Exception as e:
             # SCRUM-319: Capture and log the full provider error string so
             # "All API batches failed" is no longer opaque.
-            logger.error(
-                "  Batch %d/%d failed: %s: %s",
-                batch_idx, len(batches), type(e).__name__, e,
-            )
+            # EB-350: ContextWindowOverflowError from the local provider is an
+            # expected payload-size failure — log at WARNING with actionable guidance.
+            if isinstance(e, ContextWindowOverflowError):
+                logger.warning(
+                    "  Batch %d/%d: context window overflow — reduce batch_size or "
+                    "dpi in settings.json and retry.  Falling back to single-page mode.",
+                    batch_idx, len(batches),
+                )
+            else:
+                logger.error(
+                    "  Batch %d/%d failed: %s: %s",
+                    batch_idx, len(batches), type(e).__name__, e,
+                )
             # EB-149: Record truncation attempt so pages_lost can be computed
             # after all retries complete (single-page retry may recover some pages).
             if isinstance(e, OutputTruncatedError):
@@ -937,11 +985,13 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                     "finish_reason": e.finish_reason,
                     "output_tokens": e.output_tokens,
                 })
-            # SCRUM-319: Single-page retry — if the batch had more than one
-            # page, try each page individually.  Payload-size errors (e.g. a
-            # 72 MB KFX generating 643 high-DPI pages) typically fail at the
-            # multi-image level but succeed when images are sent one at a time.
-            if len(batch) > 1 and not hasattr(provider, "two_pass_call"):
+            # SCRUM-319 / EB-350: Single-page retry — if the batch had more than one
+            # page, try each page individually.  This path is now enabled for ALL
+            # providers including LocalVisionProvider (which has two_pass_call).
+            # LocalVisionProvider batches that fail (e.g. context overflow) also
+            # benefit from single-page retry — route through two_pass_call when
+            # available, else the standard build_request+call path.
+            if len(batch) > 1:
                 logger.warning(
                     "  Batch %d: retrying %d pages one-at-a-time (single-page fallback)...",
                     batch_idx, len(batch),
@@ -949,10 +999,16 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 for single_page in batch:
                     page_num = single_page[0]
                     try:
-                        single_payload = provider.build_request(
-                            [single_page], rubric_text, model
-                        )
-                        single_response = provider.call(single_payload)
+                        if hasattr(provider, "two_pass_call"):
+                            single_response = provider.two_pass_call(
+                                [single_page], rubric_text, model
+                            )
+                            single_payload = None
+                        else:
+                            single_payload = provider.build_request(
+                                [single_page], rubric_text, model
+                            )
+                            single_response = provider.call(single_payload)
                         total_input_tokens += single_response.input_tokens
                         total_output_tokens += single_response.output_tokens
                         logger.info(
@@ -1079,10 +1135,28 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
 
     # --- Merge batch results ---
     # Build a merged qa_data from all batch results
-    # Re-score based on all collected page results
+    # EB-150: overall_score is derived deterministically from the issue list using
+    # fixed severity-deduction midpoints, rather than averaging stochastic VLM
+    # page scores.  This eliminates the ±10/page non-determinism that came from
+    # models interpolating within ranges like "45-60" for critical issues.
+    #
+    # Per-page score: start at 100, subtract fixed midpoints per issue (floor 0):
+    #   critical=52, major=25, moderate=15, minor=5
+    # Overall score: average of per-page derived scores.
+    # This matches the same severity-weight table used for category_scores below.
+    _SEVERITY_PAGE_DEDUCTIONS = {"critical": 52, "major": 25, "moderate": 15, "minor": 5}
     if all_pages_results:
-        page_scores = [p.get("score", 0) for p in all_pages_results if isinstance(p, dict)]
-        overall_score = round(sum(page_scores) / len(page_scores)) if page_scores else 0
+        # Re-derive per-page scores from issues (deterministic)
+        derived_page_scores = []
+        for page in all_pages_results:
+            if not isinstance(page, dict):
+                continue
+            deduction = sum(
+                _SEVERITY_PAGE_DEDUCTIONS.get(issue.get("severity", "minor"), 5)
+                for issue in page.get("issues", [])
+            )
+            derived_page_scores.append(max(0, 100 - deduction))
+        overall_score = round(sum(derived_page_scores) / len(derived_page_scores)) if derived_page_scores else 0
 
         # Aggregate category scores from per-page issues
         # Count issues per category weighted by severity
@@ -1219,6 +1293,7 @@ def main():
     vqa_settings = settings.get("visual_qa", {})
     default_dpi = vqa_settings.get("dpi", 100)
     default_max_pages = vqa_settings.get("max_pages", 8)
+    default_batch_size = vqa_settings.get("batch_size", 8)
     default_threshold = vqa_settings.get("pass_threshold", 70)
     # Provider: from settings.json visual_qa.provider, falling back to "claude"
     default_provider = vqa_settings.get("provider", "claude")
@@ -1289,6 +1364,11 @@ def main():
         help=f"Maximum pages to sample (default: {default_max_pages})"
     )
     parser.add_argument(
+        "--batch-size", type=int, default=default_batch_size,
+        help=f"Number of pages per API batch (default: {default_batch_size}). "
+             f"Reduce if the local provider returns context overflow errors."
+    )
+    parser.add_argument(
         "--full", action="store_true",
         help="Full evaluation mode: 20 pages at 150 DPI (overrides --dpi and --max-pages defaults)"
     )
@@ -1342,11 +1422,15 @@ def main():
         else:
             args.model = settings_reload.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
 
+    # EB-347: detect explicitly supplied --dpi and --max-pages before --full override
+    user_supplied_dpi = any(a.startswith('--dpi') for a in sys.argv)
+    user_supplied_max_pages = any(a.startswith('--max-pages') for a in sys.argv)
+
     # --full overrides to comprehensive evaluation
     if args.full:
-        if not any(a.startswith('--dpi') for a in sys.argv):
+        if not user_supplied_dpi:
             args.dpi = 150
-        if not any(a.startswith('--max-pages') for a in sys.argv):
+        if not user_supplied_max_pages:
             args.max_pages = 20
 
     # Configure logging
@@ -1406,6 +1490,9 @@ def main():
             model=args.model,
             rubric_path=args.rubric,
             pass_threshold=args.pass_threshold,
+            batch_size=args.batch_size,
+            user_supplied_dpi=user_supplied_dpi,
+            user_supplied_max_pages=user_supplied_max_pages,
             fallback_enabled=args.fallback_enabled,
             fallback_claude_model=args.fallback_claude_model,
             fallback_corpus_path=args.fallback_corpus_path,

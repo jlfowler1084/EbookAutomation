@@ -404,14 +404,21 @@ def test_enable_thinking_is_false(provider: LocalVisionProvider) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_temperature_is_0_1(provider: LocalVisionProvider) -> None:
+def test_temperature_is_0(provider: LocalVisionProvider) -> None:
+    # EB-150: temperature changed from 0.1 to 0 for grader determinism.
+    # The repetition-loop concern cited in the original assertion was not
+    # observed in practice (guided-json schema enforcement prevents repetition
+    # at the token-masking level). seed=42 provides additional reproducibility.
     payload = provider.build_request(
         page_images=[(1, PNG_FIXTURE)],
         rubric_text=RUBRIC_FIXTURE,
         model=MODEL_FIXTURE,
     )
-    assert payload["temperature"] == pytest.approx(0.1), (
-        "temperature must be 0.1 — temperature=0 triggers repetition loops on visual inputs"
+    assert payload["temperature"] == 0, (
+        "temperature must be 0 (EB-150: deterministic grader)"
+    )
+    assert payload.get("seed") == 42, (
+        "seed must be 42 (EB-150: deterministic grader)"
     )
 
 

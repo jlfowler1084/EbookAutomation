@@ -165,7 +165,8 @@ class CloudVLProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 16384,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

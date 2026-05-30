@@ -104,6 +104,7 @@ class ClaudeVisionProvider:
         return {
             "model": model,
             "max_tokens": 8192,
+            "temperature": 0,
             "system": rubric_text,
             "messages": [
                 {"role": "user", "content": content},

@@ -351,6 +351,29 @@ class PageNumberGroundingError(RuntimeError):
         )
 
 
+class ContextWindowOverflowError(RuntimeError):
+    """Raised when a local provider 400 BadRequestError indicates context overflow.
+
+    llama.cpp / vLLM return HTTP 400 with error code ``context_length_exceeded``
+    (or the string "context" in the message body) when the combined image payload
+    exceeds the server's KV-cache window.  This is structurally different from a
+    connection error (transient, retry with same payload) or a truncation error
+    (output ran long) — the correct recovery is to reduce batch size and retry with
+    a smaller payload.
+
+    EB-350: Raised by LocalVisionProvider.call() so visual_qa.py's batch exception
+    handler can route to single-page retry with a targeted WARNING instead of a
+    generic ERROR that says nothing actionable.
+    """
+
+    def __init__(self, message: str):
+        self.original_message = message
+        super().__init__(
+            f"Context window overflow (local provider): {message} — "
+            f"reduce batch_size or dpi in settings.json"
+        )
+
+
 class LocalVisionProvider:
     """Vision provider backed by a local OpenAI-compatible endpoint.
 
@@ -434,7 +457,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 16384,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
             # repeated JSON schema tokens (keys, enum values) across multi-page
             # batches, causing the model to emit empty {} entries and stop early.
@@ -504,7 +528,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 16384,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -537,10 +562,11 @@ class LocalVisionProvider:
                     f"{issues_text}\n\n"
                     "Using the rubric, assign a score (0-100) and pass/fail for each page "
                     "based on the issues listed above. A score of 100 requires zero issues. "
-                    "Apply these deductions from 100: each critical issue 45-60 points; "
-                    "each major 20-30 points; each moderate 12-18 points; each minor 4-6 points. "
-                    "Multiple issues compound — a page with two moderate issues and one minor "
-                    "issue should score in the 60-72 range, not 80+. "
+                    "Apply these FIXED deductions from 100: each critical issue exactly 52 points; "
+                    "each major exactly 25 points; each moderate exactly 15 points; "
+                    "each minor exactly 5 points. "
+                    "Multiple issues compound additively — a page with two moderate issues and "
+                    "one minor issue scores 100 - 15 - 15 - 5 = 65. Floor at 0. "
                     "Return ONLY valid JSON with a 'pages' array where each entry has: "
                     "page_number (use the page_number from the input), score, and pass."
                 ),
@@ -556,7 +582,8 @@ class LocalVisionProvider:
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 1024,
-            "temperature": 0.1,
+            "temperature": 0,
+            "seed": 42,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -670,6 +697,19 @@ class LocalVisionProvider:
                 if extra_body is not None:
                     payload["extra_body"] = extra_body
                 break
+            except openai.BadRequestError as exc:
+                # Restore extra_body so callers can inspect the payload.
+                if "extra_body" not in payload and extra_body is not None:
+                    payload["extra_body"] = extra_body
+                # EB-350: llama.cpp / vLLM return 400 with code
+                # "context_length_exceeded" when the image payload overflows the
+                # KV-cache window.  Detect and surface as a named error so the
+                # caller can route to single-page retry with a targeted message.
+                error_body = str(exc)
+                if "context_length_exceeded" in error_body or "context" in error_body.lower():
+                    raise ContextWindowOverflowError(error_body) from exc
+                # Unrelated 400s (schema violations, invalid model IDs, etc.) — re-raise
+                raise
             except (openai.APIConnectionError, openai.APITimeoutError) as exc:
                 # Restore extra_body in case of retry
                 if "extra_body" not in payload and extra_body is not None:
