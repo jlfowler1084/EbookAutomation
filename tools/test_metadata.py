@@ -410,12 +410,20 @@ class TestMetadataCLI(unittest.TestCase):
         return result.returncode, result.stdout, result.stderr
 
     def test_extract_metadata_pdf(self):
-        """extract-metadata should extract and store PDF metadata."""
+        """extract-metadata should extract and store PDF metadata.
+
+        EB-351: filename must follow 'Author - Title' convention so the
+        suspicious-metadata gate (which compares filename_author against
+        pdf_title) does not accidentally reject clean internal metadata.
+        Previously the file was named 'Test Book - Author Name.pdf'; after
+        the fix the no-parens parser reads left=author, right=title, so the
+        name is updated to 'Author Name - Test Book.pdf' to remain consistent.
+        """
         try:
             import fitz
         except ImportError:
             self.skipTest('PyMuPDF not installed')
-        pdf_path = os.path.join(self.tmp_dir, 'Test Book - Author Name.pdf')
+        pdf_path = os.path.join(self.tmp_dir, 'Author Name - Test Book.pdf')
         doc = fitz.open()
         doc.new_page()
         doc.set_metadata({'title': 'Test Book', 'author': 'Author Name'})
@@ -601,13 +609,44 @@ class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
         self.assertEqual(author, 'Helen Boak')
         self.assertIn('Women in the Weimar Republic', title)
 
-    def test_legacy_title_dash_author_format(self):
-        """Pipeline-output naming (Title - Author) — must still work for the no-parenthetical case."""
+    def test_no_parens_single_dash_author_title(self):
+        """EB-351: no-parenthetical single-dash filenames are treated as 'Author - Title'
+        (PowerShell Pattern 2 behaviour), unconditionally.
+
+        Previously the code used rsplit(' - ', 1) and assigned parts[0] to title,
+        parts[1] to author ('Title - Author' order, mirroring the legacy pipeline-output
+        naming convention).  Since the no-parenthetical form is structurally identical
+        for libgen files ('Author - Title') and pipeline-output files ('Title - Author'),
+        and the overwhelming majority of real-world downloads are libgen, we adopt the
+        'Author - Title' reading unconditionally — matching the PowerShell
+        Get-EbookMetadataFromFilename Pattern 2 logic.
+
+        Consequence: a pipeline-output file named "The Oil Kings - Andrew Scott Cooper.pdf"
+        now parses as author="The Oil Kings", title="Andrew Scott Cooper".  This is a
+        deliberate trade-off documented in EB-351.  The canonical regression test for the
+        WITH-parenthetical libgen format is test_libgen_format_oil_kings above.
+        """
         title, author = pattern_db._parse_metadata_from_filename(
             'The Oil Kings - Andrew Scott Cooper.pdf'
         )
-        self.assertEqual(title, 'The Oil Kings')
-        self.assertEqual(author, 'Andrew Scott Cooper')
+        # EB-351: left side is now treated as author, right side as title
+        self.assertEqual(author, 'The Oil Kings')
+        self.assertEqual(title, 'Andrew Scott Cooper')
+
+    def test_eb351_crowley_author_title_no_parens(self):
+        """EB-351 regression: libgen file without trailing parenthetical.
+
+        'Aleister Crowley - Book Of The Law.pdf' was misread as
+        title='Aleister Crowley', author='Book Of The Law' because the old
+        fallback used rsplit(' - ', 1) in Title-Author order.  After the fix
+        the no-parenthetical case is treated as Author - Title, matching the
+        PowerShell Get-EbookMetadataFromFilename Pattern 2.
+        """
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Aleister Crowley - Book Of The Law.pdf'
+        )
+        self.assertEqual(title, 'Book Of The Law')
+        self.assertEqual(author, 'Aleister Crowley')
 
     def test_no_separator(self):
         title, author = pattern_db._parse_metadata_from_filename('SimpleName.pdf')
@@ -615,20 +654,30 @@ class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
         self.assertIsNone(author)
 
     def test_strips_visual_qa_suffix(self):
+        # EB-351: after suffix strip the no-parens form is 'Author - Title',
+        # so 'Some Author - My Book' parses as author="Some Author", title="My Book".
         title, author = pattern_db._parse_metadata_from_filename(
-            'My Book - Some Author_visual_qa_report.pdf'
+            'Some Author - My Book_visual_qa_report.pdf'
         )
-        self.assertEqual(title, 'My Book')
         self.assertEqual(author, 'Some Author')
+        self.assertEqual(title, 'My Book')
 
     def test_year_in_leading_parenthetical_is_not_series(self):
-        """A leading (YYYY) prefix is a year, not a series tag — don't strip it as series."""
+        """A leading (YYYY) prefix is a year, not a series tag — don't strip it as series.
+
+        EB-351: with the Author-Title convention, the left side ('(2011) Some Author')
+        becomes the author token.  The guard is that the year-paren prefix stays
+        attached to the author string and does NOT get treated as a series that strips
+        'Some Author', leaving a blank.  Title must still be 'Some Book'.
+        """
         title, author = pattern_db._parse_metadata_from_filename(
             '(2011) Some Author - Some Book.pdf'
         )
-        # Authors should not contain the year-paren prefix; title should not be empty
+        # Author is the left side: the year-paren stays attached (not stripped as series).
+        # Title is the right side: must not be empty or contain the year.
         self.assertIsNotNone(author)
-        self.assertNotIn('2011', author)
+        self.assertEqual(title, 'Some Book')
+        self.assertNotIn('2011', title)
 
 
 class TestPdfInternalSuspiciousSCRUM323(unittest.TestCase):
@@ -651,6 +700,14 @@ class TestPdfInternalSuspiciousSCRUM323(unittest.TestCase):
     def test_pdfcreator_producer_is_suspicious(self):
         meta = {'extra_json': json.dumps({'producer': 'PDFCreator 2.5'})}
         self.assertTrue(pattern_db._is_pdf_internal_suspicious(meta, 'Some Author'))
+
+    def test_acrobat_pdfwriter_producer_is_suspicious(self):
+        """EB-351: Acrobat PDFWriter injects the filename as the PDF title field.
+        Adding it to _KNOWN_BAD_PDF_TOOLS ensures the gate rejects its metadata
+        and falls back to filename_parser instead of accepting garbage like 'joel'.
+        Note: 'Acrobat Distiller' is a different, legitimate tool and must NOT trip."""
+        meta = {'extra_json': json.dumps({'producer': 'Acrobat PDFWriter 5.0'})}
+        self.assertTrue(pattern_db._is_pdf_internal_suspicious(meta, 'Aleister Crowley'))
 
     def test_calibre_is_not_suspicious(self):
         """Calibre re-saves PDFs but preserves real metadata — must NOT trip the gate.

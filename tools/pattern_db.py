@@ -2871,7 +2871,7 @@ def _parse_metadata_from_filename(filename):
         "Author - Title (Year, Publisher) - libgen.li.ext"   (libgen with suffix)
         "(Series Name) Author - Title (Year, Publisher).ext" (libgen with series prefix)
         "Author - Title-Publisher (Year).ext"                (libgen, publisher dash variant)
-        "Title - Author.ext"                                 (legacy pipeline-output naming)
+        "Author - Title.ext"                                 (libgen, no parenthetical)
         "Title.ext"                                          (no separator)
 
     SCRUM-323: previously this function did `rsplit(' - ', 1)` and assigned
@@ -2880,6 +2880,16 @@ def _parse_metadata_from_filename(filename):
     The PowerShell `Get-EbookMetadataFromFilename` Pattern 2 anchors on the
     trailing parenthetical year/publisher block and treats the LHS of the
     dash as the author. This implementation mirrors that.
+
+    EB-351: the no-parenthetical case (e.g. "Aleister Crowley - Book Of The Law.pdf")
+    was incorrectly falling through to a legacy 'Title - Author' rsplit, inverting
+    title and author for libgen files that lack a trailing year/publisher block.
+    Pattern 2 in PowerShell treats the single-dash split unconditionally as
+    'Author - Title' regardless of whether a parenthetical is present.  The
+    legacy pipeline-output naming convention ('Title - Author', no parenthetical)
+    is indistinguishable from a libgen file at this level; since the overwhelming
+    majority of no-parenthetical single-dash filenames are libgen downloads, we
+    adopt the 'Author - Title' reading unconditionally, mirroring PowerShell.
     """
     stem = Path(filename).stem
 
@@ -2892,7 +2902,7 @@ def _parse_metadata_from_filename(filename):
     # Strip trailing libgen / Anna's Archive noise so it doesn't end up captured
     # as the author or as part of the title.
     stem = re.sub(r'\s*-\s*libgen[\.\s]?li\s*$', '', stem, flags=re.IGNORECASE)
-    stem = re.sub(r"\s*--\s*Anna'?’?s?\s*Archive\s*$", '', stem,
+    stem = re.sub(r"\s*--\s*Anna'?'?s?\s*Archive\s*$", '', stem,
                   flags=re.IGNORECASE)
     stem = stem.strip()
 
@@ -2916,11 +2926,16 @@ def _parse_metadata_from_filename(filename):
             title = libgen_match.group(2).strip().rstrip('-').strip()
             return title, author
 
-    # Legacy fallback: 'Title - Author' format (pipeline output naming).
-    parts = stem.rsplit(' - ', 1)
+    # EB-351: no-parenthetical single-dash case — treat as 'Author - Title'
+    # (PowerShell Pattern 2 behaviour: unconditional left=author, right=title).
+    # Previously this was 'Title - Author' for legacy pipeline-output files, but
+    # that convention is rare and indistinguishable from libgen format at this
+    # level.  Using split (not rsplit) so the FIRST dash separates author from
+    # the remainder of the title (handles multi-dash titles correctly).
+    parts = stem.split(' - ', 1)
     if len(parts) == 2:
-        title = parts[0].strip()
-        author = parts[1].strip()
+        author = parts[0].strip()
+        title = parts[1].strip()
     else:
         title = stem.strip()
         author = None
@@ -3045,6 +3060,7 @@ _KNOWN_BAD_PDF_TOOLS = (
     'pdf995',
     'pdfcreator',
     'pdfsam',
+    'acrobat pdfwriter',  # EB-351: PDFWriter injects filenames as titles
 )
 
 
