@@ -12765,7 +12765,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         extract_images=True,
                         _pending_corrections=None, export_corrections=False,
                         chunk_size=200, chunk_threshold=500,
-                        use_pymupdf_tables=False):
+                        use_pymupdf_tables=False,
+                        classifier_verdict=None):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -12842,6 +12843,46 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             log("  Vision extraction failed or returned no text — "
                 "falling back to standard extraction")
             use_vision = False
+
+    # ── EB-349: Classifier-driven auto-escalation to Gemini ────────
+    # If the classifier flagged this as needs_paid_tier='gemini' AND
+    # the opt-in config key is enabled AND GEMINI_API_KEY is set,
+    # auto-enable Gemini without requiring --use-gemini CLI flag.
+    # Gate: default=False (opt-in) so digital_native books are unaffected.
+    if (not use_gemini and not use_vision and classifier_verdict is not None):
+        _cv_flags = classifier_verdict.get('flags', {})
+        _cv_needs_paid = _cv_flags.get('needs_paid_tier', False)
+        _cv_rec_tier = _cv_flags.get('recommended_paid_tier', '')
+        if _cv_needs_paid and _cv_rec_tier == 'gemini':
+            _gemini_key = os.environ.get('GEMINI_API_KEY', '')
+            # Load opt-in config key
+            _auto_gemini_enabled = False
+            try:
+                import json as _json_cfg
+                _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+                _auto_gemini_enabled = bool(
+                    _json_cfg.loads(_cfg_path.read_text(encoding='utf-8'))
+                    .get('classifier_escalation', {})
+                    .get('auto_gemini_on_scan', False)
+                ) if _cfg_path.exists() else False
+            except Exception:
+                _auto_gemini_enabled = False
+            if _auto_gemini_enabled and _gemini_key:
+                _book_label = getattr(pdf_path, 'name', str(pdf_path))
+                _cls_type = classifier_verdict.get('classification', 'unknown')
+                log(f'  [EB-349] Classifier verdict: {_cls_type} needs_paid_tier=gemini')
+                log(f'  [EB-349] auto_gemini_on_scan=true + GEMINI_API_KEY present')
+                log(f'  [EB-349] Auto-enabling Gemini extraction for: {_book_label}')
+                log(f'  [EB-349] Cost note: ~$0.50/book (Gemini Flash). Gated by cost_limit.')
+                use_gemini = True
+            elif _auto_gemini_enabled and not _gemini_key:
+                _cls_type = classifier_verdict.get('classification', 'unknown')
+                log(f'  [EB-349] Classifier recommends Gemini ({_cls_type}) but GEMINI_API_KEY not set')
+                log(f'  [EB-349] Set GEMINI_API_KEY to enable classifier-driven escalation')
+            elif not _auto_gemini_enabled:
+                _cls_type = classifier_verdict.get('classification', 'unknown')
+                log(f'  [EB-349] Classifier recommends Gemini ({_cls_type}) but auto_gemini_on_scan=false (opt-in disabled)')
+                log(f'  [EB-349] Set classifier_escalation.auto_gemini_on_scan=true in config/settings.json to enable')
 
     # ── Gemini extraction (Tier 2.5) — explicit opt-in only ──────
     gemini_cost = 0
@@ -13137,6 +13178,48 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             except Exception as e:
                 log(f"  OCR escalation error (non-blocking): {e}")
 
+        # ── EB-349: Zero-text + scan classifier → try Gemini ──────────
+        # If word count is still too low AND the classifier flagged this as
+        # a scan, attempt Gemini OCR as a last resort (non-blocking).
+        _post_ocr_text = '\n'.join(d.get('text', '') for d in para_dicts)
+        _post_ocr_wc = len(_post_ocr_text.split())
+        if (_post_ocr_wc < 200 and not use_gemini and not use_vision
+                and classifier_verdict is not None):
+            _cv_flags = classifier_verdict.get('flags', {})
+            _cls_type = classifier_verdict.get('classification', '')
+            if (_cv_flags.get('needs_paid_tier') and
+                    _cv_flags.get('recommended_paid_tier') == 'gemini' and
+                    os.environ.get('GEMINI_API_KEY', '')):
+                log(f"  [EB-349] Zero-text scan detected ({_cls_type}) — attempting Gemini fallback")
+                try:
+                    from gemini_ocr import extract_text_gemini as _etg
+                    _g_result = _etg(
+                        pdf_path, log,
+                        poppler_path=poppler_path,
+                        dpi=200,
+                        batch_size=5,
+                        cost_limit=gemini_cost_limit,
+                        model=gemini_model,
+                    )
+                    if _g_result and _g_result.get('text'):
+                        _g_text, _ = normalize_encoding(_g_result['text'], log=log)
+                        _g_wc = len(_g_text.split())
+                        if _g_wc > _post_ocr_wc:
+                            log(f"  [EB-349] Gemini fallback: {_g_wc} words (was {_post_ocr_wc}) — switching")
+                            para_dicts, body_size = vision_text_to_para_dicts(_g_text, log)
+                            tier_used = 2
+                            extraction_method = 'gemini_flash'
+                            gemini_cost += _g_result.get('cost_usd', 0)
+                            quality = score_text_layer_quality(_g_text, log=log)
+                        else:
+                            log(f"  [EB-349] Gemini fallback: {_g_wc} words — not enough improvement")
+                    else:
+                        log("  [EB-349] Gemini fallback returned no text")
+                except RuntimeError as _ge:
+                    log(f"  [EB-349] Gemini fallback not available: {_ge}")
+                except Exception as _ge:
+                    log(f"  [EB-349] Gemini fallback error (non-blocking): {_ge}")
+
         # ── STEP 1d2: Multi-extractor comparison for borderline quality ──
         _extractor_comparison = None
         if (tier_used == 1 and compare_extractors_enabled
@@ -13238,7 +13321,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             log(f"  This PDF likely has custom font encoding that "
                 f"prevents text extraction.")
             log(f"  Resolution: install Tesseract OCR, or re-run "
-                f"with --gemini-ocr for paid OCR.")
+                f"with --use-gemini for paid OCR.")
             sys.exit(78)  # EX_CONFIG — system not configured for this input
 
     _timing['extraction_s'] = round(_time_mod.time() - _t_extract, 1) if '_t_extract' in dir() else 0

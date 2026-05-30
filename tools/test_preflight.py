@@ -495,5 +495,54 @@ class TestContentViability(unittest.TestCase):
         self.assertFalse(recipe_p2['flags']['NoIndex'])
 
 
+class TestEB349ClassifierEscalation(unittest.TestCase):
+    """EB-349: classifier-driven Gemini escalation in preflight recipe."""
+
+    def test_scan_no_text_includes_gemini_in_strategy(self):
+        """scan_no_text should include gemini in strategy (EB-349 fix: fallback tier)."""
+        cls = _mock_classification('scan_no_text', confidence=0.95,
+                                   density=5, kb_page=80.0, needs_ocr=True)
+        tq = _mock_text_quality('poor', score=10, hit_rate=0.05)
+        cs = _mock_chapters(bm_count=0, readable=False, source='regex')
+        hist = _mock_historical()
+        recipe = _generate_recipe(cls, tq, cs, None, hist, None, 'pdf')
+
+        self.assertIn('ocr', recipe['extraction_strategy'],
+                      'scan_no_text must still have ocr as primary strategy')
+        self.assertIn('gemini', recipe['extraction_strategy'],
+                      'scan_no_text should include gemini as fallback (EB-349)')
+
+    def test_scan_no_text_needs_paid_tier_gemini(self):
+        """scan_no_text with needs_paid_tier=gemini: gemini must be in strategy."""
+        # Build a classification that also sets needs_paid_tier
+        cls = _mock_classification('scan_no_text', confidence=0.95,
+                                   density=5, kb_page=80.0, needs_ocr=True)
+        cls['flags']['needs_paid_tier'] = True
+        cls['flags']['recommended_paid_tier'] = 'gemini'
+        tq = _mock_text_quality('poor', score=10, hit_rate=0.05)
+        cs = _mock_chapters(bm_count=0, readable=False, source='regex')
+        hist = _mock_historical()
+        recipe = _generate_recipe(cls, tq, cs, None, hist, None, 'pdf')
+
+        self.assertIn('gemini', recipe['extraction_strategy'],
+                      'scan_no_text with needs_paid_tier=gemini must include gemini in strategy')
+
+    def test_digital_native_not_affected(self):
+        """digital_native books must NOT get gemini in strategy (EB-349 regression guard)."""
+        cls = _mock_classification('digital_native', confidence=0.95,
+                                   density=1500, kb_page=12.0)
+        tq = _mock_text_quality('clean', score=88, hit_rate=0.82)
+        cs = _mock_chapters()
+        hist = _mock_historical()
+        recipe = _generate_recipe(cls, tq, cs, None, hist, None, 'pdf')
+
+        # digital_native should not trigger scan-only escalation
+        self.assertNotIn('scan_no_text',
+                         [recipe.get('classification', 'digital_native')])
+        # The strategy should be html_extraction-based, not ocr/gemini-only
+        self.assertNotEqual(recipe['extraction_strategy'], ['ocr', 'gemini'],
+                            'digital_native must not get ocr-only/gemini-only strategy')
+
+
 if __name__ == '__main__':
     unittest.main()

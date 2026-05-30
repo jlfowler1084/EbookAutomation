@@ -152,6 +152,9 @@
   "ocr_escalation": {
     "threshold": 0.15
   },
+  "classifier_escalation": {
+    "auto_gemini_on_scan": false
+  },
   "quality_gate": {
     "thresholds": {
       "clean": 90,
