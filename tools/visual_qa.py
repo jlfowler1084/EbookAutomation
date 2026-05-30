@@ -726,11 +726,22 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         overall_score = None
         overall_pass = None
 
-    # EB-149: coverage accounting — pages_evaluated is the count of pages that
-    # returned valid results; pages_sampled is what was requested. Any gap
-    # (truncation, parse failure, provider rejection) sets coverage_status "partial".
+    # EB-149/EB-347: coverage accounting. pages_evaluated is the count of pages
+    # that returned valid results. Coverage is judged against what was REQUESTED
+    # (pre large-file reduction), not just what was sampled — otherwise a 40-page
+    # request reduced to 4 by the large-file guard reports "complete". Any gap
+    # (large-file reduction, truncation, parse failure, provider rejection) sets
+    # coverage_status "partial". pages_requested is min(requested_max_pages,
+    # total_pages), so a short book (fewer pages than requested) is NOT mis-flagged;
+    # a None pages_requested (legacy callers) falls back to pages_sampled.
+    # Two independent coverage losses, both must be absent for "complete":
+    #   - render-stage: large-file guard reduced the request (pages_requested > rendered)
+    #   - eval-stage:   a batch truncated / failed to parse (pages_evaluated < pages_sampled)
     pages_evaluated = len(qa_data.get("pages", []))
-    coverage_status = "complete" if pages_evaluated >= pages_sampled else "partial"
+    _coverage_target = pages_requested if pages_requested is not None else pages_sampled
+    coverage_status = "complete" if (
+        pages_evaluated >= pages_sampled and pages_evaluated >= _coverage_target
+    ) else "partial"
 
     report = {
         "book": os.path.basename(book_path),
