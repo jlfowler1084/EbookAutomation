@@ -19,6 +19,7 @@ import json
 import logging
 import sys
 import time
+import urllib.request
 
 import openai
 
@@ -26,6 +27,10 @@ from .base import VisionResponse
 
 
 logger = logging.getLogger("visual_qa.local_provider")
+
+# EB-350: sentinel distinguishing "context window not yet probed" from a probe
+# that ran and returned no value (None).
+_UNPROBED = object()
 
 
 def _build_page_extraction_schema(page_count: int) -> dict:
@@ -398,6 +403,77 @@ class LocalVisionProvider:
                 "cloud_model='qwen/qwen3-vl-30b-a3b-instruct') and set OPENROUTER_API_KEY."
             )
         self._base_url = base_url
+        self._cached_n_ctx = _UNPROBED  # EB-350: lazy context-window probe cache
+
+    # ------------------------------------------------------------------
+    # EB-350: proactive context-window discovery
+    # ------------------------------------------------------------------
+
+    def probe_context_window(self) -> int | None:
+        """Best-effort discovery of the endpoint's context window (n_ctx).
+
+        Lets visual_qa.py size image batches to fit *before* sending, rather
+        than relying solely on the reactive ``ContextWindowOverflowError`` retry.
+        Tries llama.cpp's ``/props`` first, then the OpenAI-compatible
+        ``/v1/models`` (vLLM exposes ``max_model_len``). The result — including
+        a ``None`` when the probe fails or the value is not exposed — is cached,
+        so we probe at most once per provider instance. Any failure returns
+        ``None`` and the caller falls back to the configured batch_size plus the
+        reactive overflow retry, so this never makes reliability worse.
+        """
+        if self._cached_n_ctx is not _UNPROBED:
+            return self._cached_n_ctx
+        self._cached_n_ctx = self._discover_context_window()
+        return self._cached_n_ctx
+
+    def _discover_context_window(self) -> int | None:
+        root = self._base_url.rstrip("/")
+        if root.endswith("/v1"):
+            root = root[:-3].rstrip("/")
+
+        # 1) llama.cpp /props — context lives in default_generation_settings.n_ctx
+        props = self._http_get_json(root + "/props")
+        if isinstance(props, dict):
+            dgs = props.get("default_generation_settings")
+            if isinstance(dgs, dict) and isinstance(dgs.get("n_ctx"), int) and dgs["n_ctx"] > 0:
+                logger.info("EB-350: probed n_ctx=%d from %s/props", dgs["n_ctx"], root)
+                return dgs["n_ctx"]
+            if isinstance(props.get("n_ctx"), int) and props["n_ctx"] > 0:
+                logger.info("EB-350: probed n_ctx=%d from %s/props", props["n_ctx"], root)
+                return props["n_ctx"]
+
+        # 2) OpenAI-compatible /v1/models — vLLM exposes max_model_len
+        models = self._http_get_json(self._base_url.rstrip("/") + "/models")
+        if isinstance(models, dict) and isinstance(models.get("data"), list):
+            for entry in models["data"]:
+                if not isinstance(entry, dict):
+                    continue
+                candidates = [entry]
+                if isinstance(entry.get("meta"), dict):
+                    candidates.append(entry["meta"])
+                for obj in candidates:
+                    for key in ("max_model_len", "context_length", "context_window", "n_ctx"):
+                        val = obj.get(key)
+                        if isinstance(val, int) and val > 0:
+                            logger.info("EB-350: probed %s=%d from /v1/models", key, val)
+                            return val
+
+        logger.info(
+            "EB-350: context-window probe found no n_ctx at %s; using configured "
+            "batch_size with reactive overflow retry", self._base_url,
+        )
+        return None
+
+    @staticmethod
+    def _http_get_json(url: str, timeout: float = 4.0):
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+            return json.loads(body)
+        except Exception as exc:  # noqa: BLE001 — best-effort probe, never fatal
+            logger.debug("EB-350: probe GET %s failed: %s", url, exc)
+            return None
 
     # ------------------------------------------------------------------
     # Request construction

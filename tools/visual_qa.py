@@ -788,6 +788,67 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
 
 
 # ---------------------------------------------------------------------------
+# EB-350: adaptive batch sizing
+# ---------------------------------------------------------------------------
+
+# Conservative defaults for sizing image batches to a provider's context window.
+# Token costs are estimates; the reactive ContextWindowOverflowError retry remains
+# the safety net for cases where the estimate proves optimistic.
+_CTX_SAFETY_DEFAULTS = {
+    "tokens_per_image_100dpi": 1200,  # ~input tokens for one page-image at 100 DPI
+    "output_tokens_per_image": 400,   # ~output tokens emitted per page
+    "base_overhead_tokens": 600,      # instruction + JSON scaffolding (rubric added separately)
+    "safety_factor": 0.9,             # leave KV-cache headroom
+}
+
+
+def estimate_max_batch_for_context(n_ctx, dpi, rubric_text, configured_batch_size, cfg=None):
+    """Largest image batch that fits within ``n_ctx``, given DPI and rubric length.
+
+    Image token cost scales ~ pixel area ~ ``dpi**2`` (rendered page resolution),
+    so a 150-DPI page costs ~2.25x a 100-DPI page. Pure and deterministic so it is
+    unit-testable without a live endpoint. Returns an int in
+    ``[1, configured_batch_size]``. EB-350.
+    """
+    if not n_ctx or n_ctx <= 0 or configured_batch_size <= 1:
+        return max(1, configured_batch_size)
+    c = {**_CTX_SAFETY_DEFAULTS, **(cfg or {})}
+    dpi_scale = (max(dpi, 1) / 100.0) ** 2
+    per_image = c["tokens_per_image_100dpi"] * dpi_scale + c["output_tokens_per_image"]
+    rubric_tokens = len(rubric_text or "") // 4  # ~4 chars per token
+    overhead = c["base_overhead_tokens"] + rubric_tokens
+    budget = n_ctx * c["safety_factor"] - overhead
+    if budget <= 0:
+        return 1
+    max_images = int(budget // max(per_image, 1))
+    return max(1, min(configured_batch_size, max_images))
+
+
+def resolve_effective_batch_size(provider, configured_batch_size, dpi, rubric_text, cfg=None):
+    """Probe the provider's context window (if supported) and reduce batch_size
+    proactively to avoid context overflow.
+
+    Returns ``(effective_batch_size, n_ctx)`` where ``n_ctx`` is ``None`` when no
+    probe was available — cloud/Claude providers (which don't expose
+    ``probe_context_window``) or a failed/empty probe — in which case the
+    configured size is returned unchanged and the reactive overflow retry remains
+    the safety net. EB-350.
+    """
+    probe = getattr(provider, "probe_context_window", None)
+    if not callable(probe):
+        return configured_batch_size, None
+    try:
+        n_ctx = probe()
+    except Exception as exc:  # noqa: BLE001 — a probe must never break the run
+        logger.debug("EB-350: probe_context_window raised %s; using configured batch_size", exc)
+        return configured_batch_size, None
+    if not n_ctx:
+        return configured_batch_size, None
+    effective = estimate_max_batch_for_context(n_ctx, dpi, rubric_text, configured_batch_size, cfg)
+    return effective, n_ctx
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -926,12 +987,27 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     total_output_tokens = 0
     _truncation_attempts = []  # EB-149: raw truncation events, pages_lost resolved after retries
 
+    # EB-350: proactively size batches to the provider's context window so we
+    # avoid the overflow round-trip when the endpoint (e.g. the R9700 at a small
+    # n_ctx) cannot hold `batch_size` images at this DPI. Probe is best-effort;
+    # when unavailable the configured size + reactive overflow retry still apply.
+    effective_batch_size, probed_n_ctx = resolve_effective_batch_size(
+        provider, batch_size, dpi, rubric_text
+    )
+    if effective_batch_size < batch_size:
+        logger.warning(
+            "EB-350: provider context window (n_ctx=%s) too small for batch_size=%d "
+            "at %d DPI; reducing to %d image(s)/batch (reactive overflow-retry remains "
+            "as the fallback).",
+            probed_n_ctx, batch_size, dpi, effective_batch_size,
+        )
+
     batches = []
-    for i in range(0, len(page_images), batch_size):
-        batches.append(page_images[i:i + batch_size])
+    for i in range(0, len(page_images), effective_batch_size):
+        batches.append(page_images[i:i + effective_batch_size])
 
     logger.info("Sending %d images in %d batch(es) of up to %d via %s provider...",
-                len(page_images), len(batches), batch_size, provider.name)
+                len(page_images), len(batches), effective_batch_size, provider.name)
 
     for batch_idx, batch in enumerate(batches, 1):
         logger.info("  Batch %d/%d: %d pages [%s]",
