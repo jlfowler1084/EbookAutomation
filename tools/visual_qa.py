@@ -677,7 +677,9 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  input_tokens, output_tokens, provider=None, pass_threshold=70,
                  fallback_tokens=None, fallback_provider_name=None,
                  fallback_cost_usd=None, fallback_model=None,
-                 capture_pipeline=None, truncation_events=None):
+                 capture_pipeline=None, truncation_events=None,
+                 pages_requested=None, requested_dpi=None,
+                 coverage_loss_warning=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -734,11 +736,16 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         "book": os.path.basename(book_path),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
+        "pages_requested": pages_requested if pages_requested is not None else pages_sampled,
         "pages_sampled": pages_sampled,
+        "pages_rendered": pages_sampled,
         "pages_evaluated": pages_evaluated,
         "coverage_status": coverage_status,
+        "coverage_loss_warning": coverage_loss_warning,
         "truncation_events": truncation_events or [],
         "pages_total": total_pages,
+        "requested_dpi": requested_dpi if requested_dpi is not None else dpi,
+        "effective_dpi": dpi,
         "dpi": dpi,
         "evaluation_status": evaluation_status,
         "overall_score": overall_score,
@@ -880,6 +887,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     # per-batch image payload past the provider's per-call image-bytes limit.
     # Reduce DPI and max_pages before rendering so the request fits.
     input_size_bytes = input_path.stat().st_size if input_path.exists() else 0
+    requested_dpi = dpi
+    requested_max_pages = max_pages
     dpi, max_pages = _apply_large_file_dpi_reduction(
         kfx_size_bytes=input_size_bytes,
         total_pages=total_pages,
@@ -888,6 +897,14 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         user_supplied_dpi=user_supplied_dpi,
         user_supplied_max_pages=user_supplied_max_pages,
     )
+    coverage_loss_warning = None
+    if dpi != requested_dpi or max_pages != requested_max_pages:
+        coverage_loss_warning = (
+            "Large-file auto-reduction applied: requested "
+            f"{requested_max_pages} page(s) at {requested_dpi} DPI, rendered up to "
+            f"{max_pages} page(s) at {dpi} DPI."
+        )
+        logger.warning("EB-347: %s", coverage_loss_warning)
 
     # --- Select and render pages ---
     sample_pages = select_sample_pages(total_pages, max_pages, bookmark_pages)
@@ -1227,6 +1244,9 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         fallback_model=fallback_model_used,
         capture_pipeline=capture_pipeline,
         truncation_events=truncation_events,
+        pages_requested=min(requested_max_pages, total_pages),
+        requested_dpi=requested_dpi,
+        coverage_loss_warning=coverage_loss_warning,
     )
 
     # --- Write report ---

@@ -22,6 +22,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import gemini_ocr
+import extract_tts_text
 
 LOG = lambda msg: None  # silent logger
 
@@ -540,6 +541,33 @@ class TestEB349ClassifierDrivenEscalation(unittest.TestCase):
         )
         self.assertFalse(_should_enable,
             'Absent GEMINI_API_KEY must block auto-escalation')
+
+    def test_classifier_recommends_scan_strategy_gemini(self):
+        """scan recommended_strategies containing gemini should trigger the helper."""
+        verdict = {
+            'classification': 'scan_with_text',
+            'recommended_strategies': ['ocr', 'html_extraction', 'gemini'],
+            'flags': {'needs_paid_tier': False, 'recommended_paid_tier': None},
+        }
+        self.assertTrue(extract_tts_text._classifier_recommends_gemini(verdict))
+
+    def test_classifier_recommends_paid_tier_gemini(self):
+        """needs_paid_tier=gemini should trigger even if strategies omit gemini."""
+        verdict = {
+            'classification': 'scan_no_text',
+            'recommended_strategies': ['ocr'],
+            'flags': {'needs_paid_tier': True, 'recommended_paid_tier': 'gemini'},
+        }
+        self.assertTrue(extract_tts_text._classifier_recommends_gemini(verdict))
+
+    def test_digital_native_strategy_value_does_not_trigger_helper(self):
+        """digital_native books should not auto-escalate from a stray strategy."""
+        verdict = {
+            'classification': 'digital_native',
+            'recommended_strategies': ['html_extraction', 'gemini'],
+            'flags': {'needs_paid_tier': False, 'recommended_paid_tier': None},
+        }
+        self.assertFalse(extract_tts_text._classifier_recommends_gemini(verdict))
 
 
 if __name__ == '__main__':

@@ -6367,31 +6367,10 @@ def _fix_word_merges_html(para_dicts, log):
     return total_fixes
 
 
-def _flush_line_group(lines, all_paras):
-    """Helper: convert a group of lines with same font properties into a paragraph dict."""
-    if not lines:
-        return
-    # Join lines, handling hyphenated word breaks: "chal-" + "lenge" → "challenge"
-    parts = []
-    for k, ln in enumerate(lines):
-        t = ln['text']
-        if parts and parts[-1].endswith('-') and t and t[0].islower():
-            # Hyphenated break: remove trailing hyphen and join without space
-            parts[-1] = parts[-1][:-1]
-            parts.append(t)
-        else:
-            parts.append(t)
-    text = re.sub(r'[\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\t]+', ' ',
-                  ' '.join(parts))
-    text = re.sub(r' +', ' ', text).strip()
-    first = lines[0]
-    # EB-348: detect monospace fonts for code-block preservation.
-    # EB-348 fix: removed bare 'mono' (matched "Monotype" foundry fonts) and
-    # 'anon' (too short); expanded to full curated list of real monospace families;
-    # added explicit 'monotype' exclusion guard for e.g. MonotypeCorsiva.
-    _fnt = first.get('font_name', first.get('font', ''))
-    _fnt_lower = _fnt.lower() if _fnt else ''
-    _MONO_FONTS = (
+def _is_monospace_font(font_name):
+    """Return True when *font_name* is a known monospace/code font."""
+    fnt_lower = font_name.lower() if font_name else ''
+    mono_fonts = (
         'courier', 'consolas', 'inconsolata', 'menlo', 'monaco',
         'anonymous', 'dejavusansmono', 'dejavumono', 'ubuntumono',
         'cascadia', 'firacode', 'fira mono', 'jetbrains',
@@ -6400,10 +6379,41 @@ def _flush_line_group(lines, all_paras):
         'robotomono', 'roboto mono', 'spacemono', 'lucidaconsole',
         'lucida console', 'nimbusmono',
     )
-    is_monospace = (
-        any(kw in _fnt_lower for kw in _MONO_FONTS)
-        and 'monotype' not in _fnt_lower
+    return (
+        any(kw in fnt_lower for kw in mono_fonts)
+        and 'monotype' not in fnt_lower
     )
+
+
+def _flush_line_group(lines, all_paras):
+    """Helper: convert a group of lines with same font properties into a paragraph dict."""
+    if not lines:
+        return
+    first = lines[0]
+    # EB-348: detect monospace fonts for code-block preservation.
+    # EB-348 fix: removed bare 'mono' (matched "Monotype" foundry fonts) and
+    # 'anon' (too short); expanded to full curated list of real monospace families;
+    # added explicit 'monotype' exclusion guard for e.g. MonotypeCorsiva.
+    _fnt = first.get('font_name', first.get('font', ''))
+    is_monospace = _is_monospace_font(_fnt)
+    if is_monospace:
+        # Code lines with the same font are one visual block, not one prose
+        # paragraph. Preserve line boundaries so <pre> output remains readable.
+        text = '\n'.join(ln['text'].rstrip() for ln in lines).strip('\n')
+    else:
+        # Join lines, handling hyphenated word breaks: "chal-" + "lenge" → "challenge"
+        parts = []
+        for k, ln in enumerate(lines):
+            t = ln['text']
+            if parts and parts[-1].endswith('-') and t and t[0].islower():
+                # Hyphenated break: remove trailing hyphen and join without space
+                parts[-1] = parts[-1][:-1]
+                parts.append(t)
+            else:
+                parts.append(t)
+        text = re.sub(r'[\u00a0\u2000-\u200b\u2028\u2029\u202f\u205f\u3000\t]+', ' ',
+                      ' '.join(parts))
+        text = re.sub(r' +', ' ', text).strip()
     all_paras.append({
         'text': text,
         'font_size': first['size'],
@@ -7241,11 +7251,19 @@ code {{ font-family: monospace; font-size: 0.9em; }}
     heading_seen_pages = {}  # text_lower → first page where it was tagged as heading
     heading_dedup_skipped = 0
 
+    def _close_pre_block():
+        nonlocal in_pre_block, _cur_pre_group
+        if in_pre_block:
+            html_parts.append('</pre>\n')
+            in_pre_block = False
+            _cur_pre_group = None
+
     for i, p in enumerate(para_dicts):
         text = p.get('text', '').strip()
 
         # Track current page
         if p.get('is_page_marker'):
+            _close_pre_block()
             # Emit any remaining images from the previous page
             if page_images and current_page in page_images:
                 for img in page_images[current_page]:
@@ -7274,6 +7292,7 @@ code {{ font-family: monospace; font-size: 0.9em; }}
         if p.get('is_raw_html'):
             raw = p.get('raw_html', '')
             if raw and not in_toc_region:
+                _close_pre_block()
                 # Close any open blockquote or footnote section before the table
                 if in_blockquote:
                     html_parts.append('</blockquote>\n')
@@ -7287,6 +7306,7 @@ code {{ font-family: monospace; font-size: 0.9em; }}
 
         # Handle footnote paragraphs
         if p.get('is_footnote'):
+            _close_pre_block()
             if skip_footnotes:
                 continue  # Drop footnote paragraphs entirely
             # Close blockquote if transitioning into footnotes
@@ -7310,11 +7330,13 @@ code {{ font-family: monospace; font-size: 0.9em; }}
 
         # Skip running header candidates identified by pre-scan
         if i in _rh_strip_indices:
+            _close_pre_block()
             running_header_skipped += 1
             continue
 
         # Skip A2 running headers (long mixed-case headers that slip Phase 0 envelope)
         if p.get('_is_a2_running_header'):
+            _close_pre_block()
             running_header_skipped += 1
             continue
 
@@ -7323,12 +7345,14 @@ code {{ font-family: monospace; font-size: 0.9em; }}
         # Strip standalone page numbers (1-3 digit paragraphs at body/small font size)
         # Don't strip decorative chapter numbers (large heading fonts like 42pt)
         if re.match(r'^\d{1,3}$', text) and size <= body_size + 1:
+            _close_pre_block()
             continue
 
         # Skip TOC page content (but keep the "Contents" heading itself as h1)
         if in_toc_region:
             # Allow the "CONTENTS" heading itself through
             if not toc_heading_pattern.match(text):
+                _close_pre_block()
                 toc_skipped += 1
                 continue
 
@@ -7447,10 +7471,7 @@ code {{ font-family: monospace; font-size: 0.9em; }}
             continue
         else:
             # Not a monospace para — close any open pre block
-            if in_pre_block:
-                html_parts.append('</pre>\n')
-                in_pre_block = False
-                _cur_pre_group = None
+            _close_pre_block()
 
         # Determine tag using bookmark level > font cluster > fallback
         tag = 'p'
@@ -12767,6 +12788,53 @@ def _fix_ligature_splits(para_dicts, log):
         log(f"  Ligature fixes applied to {total_fixes} paragraphs")
 
 
+def _load_auto_gemini_on_scan_config():
+    """Read the EB-349 opt-in flag from config/settings.json."""
+    try:
+        cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
+        if not cfg_path.exists():
+            return False
+        return bool(
+            json.loads(cfg_path.read_text(encoding='utf-8'))
+            .get('classifier_escalation', {})
+            .get('auto_gemini_on_scan', False)
+        )
+    except Exception:
+        return False
+
+
+def _classifier_recommends_gemini(classifier_verdict):
+    """Return True when classifier output recommends Gemini for this PDF."""
+    if not classifier_verdict:
+        return False
+    flags = classifier_verdict.get('flags', {})
+    if (flags.get('needs_paid_tier')
+            and flags.get('recommended_paid_tier') == 'gemini'):
+        return True
+    classification = classifier_verdict.get('classification', '')
+    strategies = classifier_verdict.get('recommended_strategies') or []
+    return classification.startswith('scan') and 'gemini' in strategies
+
+
+def _classify_source_for_kindle(pdf_path, log):
+    """Best-effort source classification for the direct Kindle HTML path."""
+    try:
+        from classify_source import classify_pdf
+        verdict = classify_pdf(pdf_path)
+        if verdict:
+            strategies = verdict.get('recommended_strategies') or []
+            log(
+                "  [EB-349] Classifier: "
+                f"{verdict.get('classification', 'unknown')} "
+                f"(confidence: {verdict.get('confidence', 0):.2f}); "
+                f"recommended: {' -> '.join(strategies) if strategies else 'none'}"
+            )
+        return verdict
+    except Exception as exc:
+        log(f"  [EB-349] Classifier unavailable (non-blocking): {exc}")
+        return None
+
+
 def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=False,
                         skip_footnotes=False, apply_ai_fixes=False,
                         tesseract_path=None, poppler_path=None, ocr_dpi=300,
@@ -12862,27 +12930,13 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     # auto-enable Gemini without requiring --use-gemini CLI flag.
     # Gate: default=False (opt-in) so digital_native books are unaffected.
     if (not use_gemini and not use_vision and classifier_verdict is not None):
-        _cv_flags = classifier_verdict.get('flags', {})
-        _cv_needs_paid = _cv_flags.get('needs_paid_tier', False)
-        _cv_rec_tier = _cv_flags.get('recommended_paid_tier', '')
-        if _cv_needs_paid and _cv_rec_tier == 'gemini':
+        if _classifier_recommends_gemini(classifier_verdict):
             _gemini_key = os.environ.get('GEMINI_API_KEY', '')
-            # Load opt-in config key
-            _auto_gemini_enabled = False
-            try:
-                import json as _json_cfg
-                _cfg_path = Path(__file__).resolve().parent.parent / 'config' / 'settings.json'
-                _auto_gemini_enabled = bool(
-                    _json_cfg.loads(_cfg_path.read_text(encoding='utf-8'))
-                    .get('classifier_escalation', {})
-                    .get('auto_gemini_on_scan', False)
-                ) if _cfg_path.exists() else False
-            except Exception:
-                _auto_gemini_enabled = False
+            _auto_gemini_enabled = _load_auto_gemini_on_scan_config()
             if _auto_gemini_enabled and _gemini_key:
                 _book_label = getattr(pdf_path, 'name', str(pdf_path))
                 _cls_type = classifier_verdict.get('classification', 'unknown')
-                log(f'  [EB-349] Classifier verdict: {_cls_type} needs_paid_tier=gemini')
+                log(f'  [EB-349] Classifier verdict: {_cls_type} recommends Gemini')
                 log(f'  [EB-349] auto_gemini_on_scan=true + GEMINI_API_KEY present')
                 log(f'  [EB-349] Auto-enabling Gemini extraction for: {_book_label}')
                 log(f'  [EB-349] Cost note: ~$0.50/book (Gemini Flash). Gated by cost_limit.')
@@ -13197,11 +13251,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         _post_ocr_wc = len(_post_ocr_text.split())
         if (_post_ocr_wc < 200 and not use_gemini and not use_vision
                 and classifier_verdict is not None):
-            _cv_flags = classifier_verdict.get('flags', {})
             _cls_type = classifier_verdict.get('classification', '')
-            if (_cv_flags.get('needs_paid_tier') and
-                    _cv_flags.get('recommended_paid_tier') == 'gemini' and
-                    os.environ.get('GEMINI_API_KEY', '')):
+            if _classifier_recommends_gemini(classifier_verdict):
+                _auto_gemini_enabled = _load_auto_gemini_on_scan_config()
+                _gemini_key = os.environ.get('GEMINI_API_KEY', '')
+            else:
+                _auto_gemini_enabled = False
+                _gemini_key = ''
+            if _auto_gemini_enabled and _gemini_key:
                 log(f"  [EB-349] Zero-text scan detected ({_cls_type}) — attempting Gemini fallback")
                 try:
                     from gemini_ocr import extract_text_gemini as _etg
@@ -13231,6 +13288,10 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                     log(f"  [EB-349] Gemini fallback not available: {_ge}")
                 except Exception as _ge:
                     log(f"  [EB-349] Gemini fallback error (non-blocking): {_ge}")
+            elif _auto_gemini_enabled and not _gemini_key:
+                log(f"  [EB-349] Zero-text scan detected ({_cls_type}) but GEMINI_API_KEY is not set")
+            elif _classifier_recommends_gemini(classifier_verdict):
+                log(f"  [EB-349] Zero-text scan detected ({_cls_type}) but auto_gemini_on_scan=false")
 
         # ── STEP 1d2: Multi-extractor comparison for borderline quality ──
         _extractor_comparison = None
@@ -14731,6 +14792,9 @@ Examples:
                 log_fn("Extraction cache bypassed (--no-cache)")
 
             if not _cache_hit:
+                _classifier_verdict = None
+                if ext == 'pdf' and not args.use_vision and not args.use_gemini:
+                    _classifier_verdict = _classify_source_for_kindle(input_path, log_fn)
                 _html_result = process_kindle_html(input_path, html_output, log_fn, api_key=args.api_key,
                                     force_columns=args.force_columns,
                                     skip_footnotes=args.skip_footnotes,
@@ -14751,7 +14815,8 @@ Examples:
                                     export_corrections=args.export_corrections,
                                     chunk_size=args.chunk_size,
                                     chunk_threshold=args.chunk_threshold,
-                                    use_pymupdf_tables=args.pymupdf_tables)
+                                    use_pymupdf_tables=args.pymupdf_tables,
+                                    classifier_verdict=_classifier_verdict)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}
