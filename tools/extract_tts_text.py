@@ -7464,8 +7464,12 @@ code {{ font-family: monospace; font-size: 0.9em; }}
             else:
                 # Continuation of same pre block — add a newline separator
                 html_parts.append('\n')
-            # Emit the raw text (HTML-escaped, indentation preserved)
-            html_parts.append(_html_escape(text))
+            # Emit the source text with leading indentation preserved (EB-348).
+            # The loop-top `text` was .strip()ed for prose/heading logic, which
+            # drops the first line's leading indent — fatal for code blocks. Use
+            # the unstripped paragraph text here; rstrip() only, to trim trailing
+            # whitespace without touching the indentation.
+            html_parts.append(_html_escape(p.get('text', '').rstrip()))
             after_heading = False
             prev_was_heading = False
             continue

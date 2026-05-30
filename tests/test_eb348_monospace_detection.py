@@ -178,3 +178,22 @@ def test_pre_block_closes_before_page_anchor():
 
     assert "<pre>print('before page break')</pre>" in html
     assert html.index("</pre>") < html.index('<a id="page_2"></a>')
+
+
+def test_pre_block_preserves_leading_indentation():
+    # EB-348: the first line's leading indentation MUST survive into <pre>.
+    # Regression: the loop-top text.strip() dropped it, so "    if x:" rendered
+    # as "if x:" — destroying code-block structure the <pre> work is meant to keep.
+    html, _ = format_paragraphs_as_html(
+        [
+            _para("    if x:\n        return x", page=1, mono=True),
+        ],
+        body_size=10.0,
+        bookmarks=[],
+        log=lambda msg: None,
+        title="Indent Test",
+    )
+
+    assert "<pre>    if x:\n        return x</pre>" in html
+    # The opening tag must be followed by the indent, not a stripped first line.
+    assert "<pre>if x:" not in html
