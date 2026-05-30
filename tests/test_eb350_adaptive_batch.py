@@ -116,6 +116,20 @@ def test_resolve_probe_raises_is_safe():
     assert eff == 8 and n_ctx is None
 
 
+def test_resolve_probe_returns_nonint_passthrough():
+    # Regression: a MagicMock provider auto-creates probe_context_window() returning
+    # a truthy Mock. A non-int probe result must fall back to the configured size,
+    # not poison the estimator with arithmetic on a non-number.
+    class _Garbage:
+        name = "local"
+
+        def probe_context_window(self):
+            return object()  # not an int
+
+    eff, n_ctx = resolve_effective_batch_size(_Garbage(), 8, 150, RUBRIC)
+    assert eff == 8 and n_ctx is None
+
+
 # ---------------------------------------------------------------------------
 # LocalVisionProvider probe parsing (skipped on Linux — provider refuses to
 # instantiate off-LAN per EB-210/EB-339)

@@ -810,7 +810,8 @@ def estimate_max_batch_for_context(n_ctx, dpi, rubric_text, configured_batch_siz
     unit-testable without a live endpoint. Returns an int in
     ``[1, configured_batch_size]``. EB-350.
     """
-    if not n_ctx or n_ctx <= 0 or configured_batch_size <= 1:
+    if (not isinstance(n_ctx, int) or isinstance(n_ctx, bool) or n_ctx <= 0
+            or configured_batch_size <= 1):
         return max(1, configured_batch_size)
     c = {**_CTX_SAFETY_DEFAULTS, **(cfg or {})}
     dpi_scale = (max(dpi, 1) / 100.0) ** 2
@@ -842,7 +843,10 @@ def resolve_effective_batch_size(provider, configured_batch_size, dpi, rubric_te
     except Exception as exc:  # noqa: BLE001 — a probe must never break the run
         logger.debug("EB-350: probe_context_window raised %s; using configured batch_size", exc)
         return configured_batch_size, None
-    if not n_ctx:
+    # Accept only a genuine positive int. A probe that returns None (unsupported /
+    # failed), a non-int, or a test double (MagicMock) falls back to the configured
+    # size + the reactive overflow retry rather than poisoning the estimator.
+    if not isinstance(n_ctx, int) or isinstance(n_ctx, bool) or n_ctx <= 0:
         return configured_batch_size, None
     effective = estimate_max_batch_for_context(n_ctx, dpi, rubric_text, configured_batch_size, cfg)
     return effective, n_ctx
