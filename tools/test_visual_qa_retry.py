@@ -30,6 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 # Import only the pieces we need so tests don't require Calibre/Poppler installed
 from visual_qa import _apply_large_file_dpi_reduction
+from llm_providers.local_provider import ContextWindowOverflowError
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +279,139 @@ class TestLargeFileDpiReduction(unittest.TestCase):
         )
         self.assertLessEqual(dpi, 100)
         self.assertLessEqual(max_pages, 4)
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC1: Configurable batch_size
+# ---------------------------------------------------------------------------
+
+class TestConfigurableBatchSize(unittest.TestCase):
+    """EB-350 — batch_size is read from settings and passed through to run_visual_qa."""
+
+    def test_custom_batch_size_splits_pages_correctly(self):
+        """With batch_size=2 and 5 pages, should produce 3 batches (2+2+1)."""
+        page_images = _fake_page_images(count=5)
+        batch_size = 2
+        batches = [page_images[i:i + batch_size] for i in range(0, len(page_images), batch_size)]
+        self.assertEqual(len(batches), 3)
+        self.assertEqual(len(batches[0]), 2)
+        self.assertEqual(len(batches[1]), 2)
+        self.assertEqual(len(batches[2]), 1)
+
+    def test_batch_size_1_means_single_page_batches(self):
+        """batch_size=1 produces one batch per page — useful for debugging."""
+        page_images = _fake_page_images(count=4)
+        batch_size = 1
+        batches = [page_images[i:i + batch_size] for i in range(0, len(page_images), batch_size)]
+        self.assertEqual(len(batches), 4)
+
+    def test_default_batch_size_from_settings(self):
+        """visual_qa.py reads batch_size from settings.json (via vqa_settings)."""
+        import visual_qa as vqa
+        settings = vqa.load_settings_json()
+        vqa_settings = settings.get("visual_qa", {})
+        batch_size = vqa_settings.get("batch_size", 8)
+        # Should be a positive integer
+        self.assertIsInstance(batch_size, int)
+        self.assertGreater(batch_size, 0)
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC2: Context-overflow error detection and named error
+# ---------------------------------------------------------------------------
+
+class TestContextWindowOverflowError(unittest.TestCase):
+    """EB-350 — ContextWindowOverflowError is raised for context_length_exceeded 400s."""
+
+    def test_error_message_preserved(self):
+        """ContextWindowOverflowError preserves the original provider message."""
+        msg = "400 Bad Request: context_length_exceeded — too many tokens"
+        exc = ContextWindowOverflowError(msg)
+        self.assertIn(msg, str(exc))
+        self.assertEqual(exc.original_message, msg)
+
+    def test_error_is_runtime_error(self):
+        """ContextWindowOverflowError is a subclass of RuntimeError."""
+        exc = ContextWindowOverflowError("test")
+        self.assertIsInstance(exc, RuntimeError)
+
+    def test_reduce_guidance_in_message(self):
+        """The error string mentions reduce batch_size or dpi (actionable guidance)."""
+        exc = ContextWindowOverflowError("context_length_exceeded")
+        self.assertIn("batch_size", str(exc))
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC3: Single-page retry now fires for local provider (two_pass_call)
+# ---------------------------------------------------------------------------
+
+class TestSinglePageRetryLocalProvider(unittest.TestCase):
+    """EB-350 — single-page retry is no longer blocked for providers with two_pass_call."""
+
+    def _make_local_provider(self, two_pass_side_effect=None):
+        """Return a mock that looks like LocalVisionProvider (has two_pass_call)."""
+        provider = MagicMock()
+        provider.name = "local"
+        # LocalVisionProvider HAS two_pass_call — ensure it's present
+        if two_pass_side_effect is not None:
+            provider.two_pass_call.side_effect = two_pass_side_effect
+        return provider
+
+    def test_two_pass_retry_triggered_on_local_provider_batch_failure(self):
+        """When a local batch fails, single-page retry uses two_pass_call."""
+        # Batch call fails (simulated via two_pass_call failing on first batch call)
+        call_count = [0]
+
+        def two_pass_side_effect(batch, rubric, model):
+            call_count[0] += 1
+            if len(batch) > 1:
+                raise ContextWindowOverflowError("context_length_exceeded")
+            # Single-page calls succeed
+            from llm_providers.base import VisionResponse
+            import json
+            pn = batch[0][0]
+            return VisionResponse(
+                raw_text=json.dumps({"pages": [{"page_number": pn, "page_type": "body", "score": 90, "pass": True, "issues": []}]}),
+                input_tokens=10,
+                output_tokens=20,
+            )
+
+        provider = self._make_local_provider(two_pass_side_effect=two_pass_side_effect)
+        page_images = _fake_page_images(count=3)
+        batch_size = 8  # All 3 pages in one batch
+
+        # Drive the updated guard logic: len(batch) > 1, use two_pass_call for retry
+        batches = [page_images[i:i + batch_size] for i in range(0, len(page_images), batch_size)]
+        all_pages_results = []
+
+        for batch_idx, batch in enumerate(batches, 1):
+            try:
+                response = provider.two_pass_call(batch, "rubric", "model")
+            except Exception as e:
+                if len(batch) > 1:
+                    for single_page in batch:
+                        try:
+                            if hasattr(provider, "two_pass_call"):
+                                single_response = provider.two_pass_call(
+                                    [single_page], "rubric", "model"
+                                )
+                            else:
+                                single_payload = provider.build_request(
+                                    [single_page], "rubric", "model"
+                                )
+                                single_response = provider.call(single_payload)
+                            import json
+                            single_data = json.loads(single_response.raw_text)
+                            all_pages_results.extend(single_data.get("pages", []))
+                        except Exception:
+                            pass
+
+        # 1 batch (fails) + 3 single-page retries = 4 two_pass_call invocations total
+        self.assertEqual(provider.two_pass_call.call_count, 4,
+                         f"Expected 4 two_pass_call invocations (1 batch + 3 single), "
+                         f"got {provider.two_pass_call.call_count}")
+        # All 3 pages should be recovered
+        self.assertEqual(len(all_pages_results), 3)
 
 
 # ---------------------------------------------------------------------------

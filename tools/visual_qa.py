@@ -37,7 +37,7 @@ from pathlib import Path
 # calls through a pluggable backend so the orchestration code in this module
 # no longer contains provider-specific payload or pricing logic.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_providers import ClaudeVisionProvider, CloudVLProvider, LocalVisionProvider, OutputTruncatedError, VisionProvider, VisionResponse  # noqa: E402
+from llm_providers import ClaudeVisionProvider, CloudVLProvider, ContextWindowOverflowError, LocalVisionProvider, OutputTruncatedError, VisionProvider, VisionResponse  # noqa: E402
 from llm_providers.fingerprint_detector import FallbackFingerprintDetector, FingerprintSettings  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
@@ -750,6 +750,7 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
 def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   output_dir, dpi, max_pages, model, rubric_path,
                   pass_threshold=70,
+                  batch_size=8,
                   fallback_enabled=True,
                   fallback_claude_model="claude-sonnet-4-6",
                   fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
@@ -860,18 +861,19 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     logger.info("Rendered %d pages at %d DPI", len(page_images), dpi)
 
     # --- Send to Claude (batched) ---
-    BATCH_SIZE = 8
+    # EB-350: batch_size is configurable via run_visual_qa param, CLI --batch-size,
+    # or settings.json visual_qa.batch_size.  Default 8 preserves prior behaviour.
     all_pages_results = []
     total_input_tokens = 0
     total_output_tokens = 0
     _truncation_attempts = []  # EB-149: raw truncation events, pages_lost resolved after retries
 
     batches = []
-    for i in range(0, len(page_images), BATCH_SIZE):
-        batches.append(page_images[i:i + BATCH_SIZE])
+    for i in range(0, len(page_images), batch_size):
+        batches.append(page_images[i:i + batch_size])
 
     logger.info("Sending %d images in %d batch(es) of up to %d via %s provider...",
-                len(page_images), len(batches), BATCH_SIZE, provider.name)
+                len(page_images), len(batches), batch_size, provider.name)
 
     for batch_idx, batch in enumerate(batches, 1):
         logger.info("  Batch %d/%d: %d pages [%s]",
@@ -920,10 +922,19 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         except Exception as e:
             # SCRUM-319: Capture and log the full provider error string so
             # "All API batches failed" is no longer opaque.
-            logger.error(
-                "  Batch %d/%d failed: %s: %s",
-                batch_idx, len(batches), type(e).__name__, e,
-            )
+            # EB-350: ContextWindowOverflowError from the local provider is an
+            # expected payload-size failure — log at WARNING with actionable guidance.
+            if isinstance(e, ContextWindowOverflowError):
+                logger.warning(
+                    "  Batch %d/%d: context window overflow — reduce batch_size or "
+                    "dpi in settings.json and retry.  Falling back to single-page mode.",
+                    batch_idx, len(batches),
+                )
+            else:
+                logger.error(
+                    "  Batch %d/%d failed: %s: %s",
+                    batch_idx, len(batches), type(e).__name__, e,
+                )
             # EB-149: Record truncation attempt so pages_lost can be computed
             # after all retries complete (single-page retry may recover some pages).
             if isinstance(e, OutputTruncatedError):
@@ -933,11 +944,13 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                     "finish_reason": e.finish_reason,
                     "output_tokens": e.output_tokens,
                 })
-            # SCRUM-319: Single-page retry — if the batch had more than one
-            # page, try each page individually.  Payload-size errors (e.g. a
-            # 72 MB KFX generating 643 high-DPI pages) typically fail at the
-            # multi-image level but succeed when images are sent one at a time.
-            if len(batch) > 1 and not hasattr(provider, "two_pass_call"):
+            # SCRUM-319 / EB-350: Single-page retry — if the batch had more than one
+            # page, try each page individually.  This path is now enabled for ALL
+            # providers including LocalVisionProvider (which has two_pass_call).
+            # LocalVisionProvider batches that fail (e.g. context overflow) also
+            # benefit from single-page retry — route through two_pass_call when
+            # available, else the standard build_request+call path.
+            if len(batch) > 1:
                 logger.warning(
                     "  Batch %d: retrying %d pages one-at-a-time (single-page fallback)...",
                     batch_idx, len(batch),
@@ -945,10 +958,16 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 for single_page in batch:
                     page_num = single_page[0]
                     try:
-                        single_payload = provider.build_request(
-                            [single_page], rubric_text, model
-                        )
-                        single_response = provider.call(single_payload)
+                        if hasattr(provider, "two_pass_call"):
+                            single_response = provider.two_pass_call(
+                                [single_page], rubric_text, model
+                            )
+                            single_payload = None
+                        else:
+                            single_payload = provider.build_request(
+                                [single_page], rubric_text, model
+                            )
+                            single_response = provider.call(single_payload)
                         total_input_tokens += single_response.input_tokens
                         total_output_tokens += single_response.output_tokens
                         logger.info(
@@ -1215,6 +1234,7 @@ def main():
     vqa_settings = settings.get("visual_qa", {})
     default_dpi = vqa_settings.get("dpi", 100)
     default_max_pages = vqa_settings.get("max_pages", 8)
+    default_batch_size = vqa_settings.get("batch_size", 8)
     default_threshold = vqa_settings.get("pass_threshold", 70)
     # Provider: from settings.json visual_qa.provider, falling back to "claude"
     default_provider = vqa_settings.get("provider", "claude")
@@ -1283,6 +1303,11 @@ def main():
     parser.add_argument(
         "--max-pages", type=int, default=default_max_pages,
         help=f"Maximum pages to sample (default: {default_max_pages})"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=default_batch_size,
+        help=f"Number of pages per API batch (default: {default_batch_size}). "
+             f"Reduce if the local provider returns context overflow errors."
     )
     parser.add_argument(
         "--full", action="store_true",
@@ -1402,6 +1427,7 @@ def main():
             model=args.model,
             rubric_path=args.rubric,
             pass_threshold=args.pass_threshold,
+            batch_size=args.batch_size,
             fallback_enabled=args.fallback_enabled,
             fallback_claude_model=args.fallback_claude_model,
             fallback_corpus_path=args.fallback_corpus_path,
