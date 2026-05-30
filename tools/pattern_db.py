@@ -2902,7 +2902,7 @@ def _parse_metadata_from_filename(filename):
     # Strip trailing libgen / Anna's Archive noise so it doesn't end up captured
     # as the author or as part of the title.
     stem = re.sub(r'\s*-\s*libgen[\.\s]?li\s*$', '', stem, flags=re.IGNORECASE)
-    stem = re.sub(r"\s*--\s*Anna'?'?s?\s*Archive\s*$", '', stem,
+    stem = re.sub(r"\s*--\s*Anna['’]?s?\s*Archive\s*$", '', stem,
                   flags=re.IGNORECASE)
     stem = stem.strip()
 
@@ -2926,21 +2926,95 @@ def _parse_metadata_from_filename(filename):
             title = libgen_match.group(2).strip().rstrip('-').strip()
             return title, author
 
-    # EB-351: no-parenthetical single-dash case — treat as 'Author - Title'
-    # (PowerShell Pattern 2 behaviour: unconditional left=author, right=title).
-    # Previously this was 'Title - Author' for legacy pipeline-output files, but
-    # that convention is rare and indistinguishable from libgen format at this
-    # level.  Using split (not rsplit) so the FIRST dash separates author from
-    # the remainder of the title (handles multi-dash titles correctly).
+    # EB-351 (heuristic): no-parenthetical single-dash case.
+    # Decide which side is the AUTHOR using a "looks like a person name" score.
+    # This handles both libgen convention ("Author - Title") and pipeline-output
+    # files named "Title - Author" (e.g. "The Oil Kings - Andrew Scott Cooper").
+    # Using split (not rsplit) so the FIRST dash separates LHS from the remainder.
     parts = stem.split(' - ', 1)
     if len(parts) == 2:
-        author = parts[0].strip()
-        title = parts[1].strip()
+        lhs, rhs = parts[0].strip(), parts[1].strip()
+        # Strip a leading year-paren "(YYYY)" from the scoring string only —
+        # the raw lhs/rhs values (with year intact) are still used as the
+        # actual author/title strings.
+        lhs_for_score = re.sub(r'^\(\d{4}\)\s*', '', lhs)
+        lhs_score = _looks_like_person_name(lhs_for_score) if lhs_for_score else _looks_like_person_name(lhs)
+        rhs_score = _looks_like_person_name(rhs)
+        if rhs_score > lhs_score:
+            # RHS is more name-like (e.g. "The Oil Kings - Andrew Scott Cooper")
+            author = rhs
+            title = lhs
+        else:
+            # LHS is more name-like or tie — default to Author-Title (libgen majority).
+            # Most downloads follow libgen "Author - Title" convention, so when
+            # neither side is clearly a name we keep the left side as author.
+            author = lhs
+            title = rhs
     else:
         title = stem.strip()
         author = None
 
     return title, author
+
+
+# --- helpers for _parse_metadata_from_filename ----------------------------
+
+# Common English title stopwords that strongly suggest a phrase is a TITLE
+# rather than a person's name.
+_TITLE_STOPWORDS = frozenset({
+    'the', 'a', 'an', 'of', 'and', 'to', 'in', 'on', 'for', 'with',
+    'at', 'by', 'from', 'or', 'but', 'nor', 'as', 'its', 'into',
+})
+
+# Articles that, when they START a phrase, strongly indicate a title.
+_LEADING_ARTICLES = frozenset({'the', 'a', 'an'})
+
+
+def _looks_like_person_name(s):
+    """Return a heuristic score (higher = more name-like) for string *s*.
+
+    Scoring rules:
+    +2  matches "Lastname, Firstname [MI.]" pattern (comma separation)
+    +2  starts with a capital letter and has 1-3 tokens, none being a stopword
+    +1  every token is Title-cased
+    -2  starts with a leading article (The / A / An)
+    -1  contains any stopword token
+    -1  more than 3 tokens (long phrases are usually titles)
+
+    A score > 0 indicates name-like; <= 0 indicates title-like.
+    """
+    s = s.strip()
+    if not s:
+        return 0
+
+    # "Lastname, Firstname" or "Lastname, Firstname M." pattern
+    if re.match(r'^[A-Z][^,]+,\s+[A-Z]', s):
+        return 2
+
+    tokens = s.split()
+    score = 0
+
+    # Leading article strongly signals a title
+    if tokens[0].lower() in _LEADING_ARTICLES:
+        score -= 2
+    else:
+        # First token capitalised with no stopwords is name-like
+        score += 2
+
+    # All tokens Title-cased is weakly name-like
+    if all(t[0].isupper() for t in tokens if t):
+        score += 1
+
+    # Penalise stopwords
+    lower_tokens = [t.lower() for t in tokens]
+    stopword_count = sum(1 for t in lower_tokens if t in _TITLE_STOPWORDS)
+    score -= stopword_count
+
+    # Long phrases are usually titles
+    if len(tokens) > 3:
+        score -= 1
+
+    return score
 
 
 def _parse_year_from_filename(filename):

@@ -609,38 +609,72 @@ class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
         self.assertEqual(author, 'Helen Boak')
         self.assertIn('Women in the Weimar Republic', title)
 
-    def test_no_parens_single_dash_author_title(self):
-        """EB-351: no-parenthetical single-dash filenames are treated as 'Author - Title'
-        (PowerShell Pattern 2 behaviour), unconditionally.
+    def test_no_parens_single_dash_title_author_oil_kings(self):
+        """EB-351 (heuristic): pipeline-output file named 'Title - Author' is correctly
+        detected by the name-detection heuristic.
 
-        Previously the code used rsplit(' - ', 1) and assigned parts[0] to title,
-        parts[1] to author ('Title - Author' order, mirroring the legacy pipeline-output
-        naming convention).  Since the no-parenthetical form is structurally identical
-        for libgen files ('Author - Title') and pipeline-output files ('Title - Author'),
-        and the overwhelming majority of real-world downloads are libgen, we adopt the
-        'Author - Title' reading unconditionally — matching the PowerShell
-        Get-EbookMetadataFromFilename Pattern 2 logic.
-
-        Consequence: a pipeline-output file named "The Oil Kings - Andrew Scott Cooper.pdf"
-        now parses as author="The Oil Kings", title="Andrew Scott Cooper".  This is a
-        deliberate trade-off documented in EB-351.  The canonical regression test for the
-        WITH-parenthetical libgen format is test_libgen_format_oil_kings above.
+        'The Oil Kings' starts with a leading article ('The'), which makes it title-like.
+        'Andrew Scott Cooper' has no article and no stopwords, making it name-like.
+        The heuristic assigns the name-like side as author and the title-like side as title.
         """
         title, author = pattern_db._parse_metadata_from_filename(
             'The Oil Kings - Andrew Scott Cooper.pdf'
         )
-        # EB-351: left side is now treated as author, right side as title
-        self.assertEqual(author, 'The Oil Kings')
-        self.assertEqual(title, 'Andrew Scott Cooper')
+        # Heuristic: RHS ('Andrew Scott Cooper') scores higher as a name than
+        # LHS ('The Oil Kings', starts with article 'The').
+        self.assertEqual(title, 'The Oil Kings')
+        self.assertEqual(author, 'Andrew Scott Cooper')
+
+    def test_no_parens_lastname_comma_firstname(self):
+        """EB-351 (heuristic): 'Lastname, Firstname - Title' form is detected correctly.
+
+        A 'Lastname, Firstname' LHS pattern scores very high on the name heuristic
+        (comma-separated name pattern) and is assigned as author.
+        """
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Cooper, Andrew Scott - The Oil Kings.pdf'
+        )
+        self.assertEqual(author, 'Cooper, Andrew Scott')
+        self.assertEqual(title, 'The Oil Kings')
+
+    def test_no_parens_ambiguous_defaults_author_title(self):
+        """EB-351 (heuristic): when both sides look equally name-like (tie), default
+        to Author-Title order (libgen majority convention).
+
+        'Jane Smith - John Doe' — both sides are plain two-token capitalized names with
+        no stopwords and no leading article. The heuristic scores them equally, so the
+        tie-break keeps LHS as author (libgen default).
+        """
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Jane Smith - John Doe.pdf'
+        )
+        # Tie-break: LHS treated as author (libgen majority default)
+        self.assertEqual(author, 'Jane Smith')
+        self.assertEqual(title, 'John Doe')
+
+    def test_strips_annas_archive_curly_apostrophe(self):
+        """EB-351 (Change 2): 'Anna’s Archive' suffix with a curly apostrophe must
+        be stripped just like the straight-apostrophe variant.
+
+        The regex uses a character class ['\\u2019]? to handle both forms.
+        """
+        title, author = pattern_db._parse_metadata_from_filename(
+            'Aleister Crowley - Book Of The Law -- Anna’s Archive.pdf'
+        )
+        # The Anna's Archive suffix must be stripped before parsing
+        self.assertEqual(title, 'Book Of The Law')
+        self.assertEqual(author, 'Aleister Crowley')
 
     def test_eb351_crowley_author_title_no_parens(self):
         """EB-351 regression: libgen file without trailing parenthetical.
 
         'Aleister Crowley - Book Of The Law.pdf' was misread as
         title='Aleister Crowley', author='Book Of The Law' because the old
-        fallback used rsplit(' - ', 1) in Title-Author order.  After the fix
-        the no-parenthetical case is treated as Author - Title, matching the
-        PowerShell Get-EbookMetadataFromFilename Pattern 2.
+        fallback used rsplit(' - ', 1) in Title-Author order.
+
+        With the heuristic: LHS 'Aleister Crowley' scores high (no article, 2 tokens,
+        no stopwords); RHS 'Book Of The Law' scores low ('of', 'the' stopwords, 4
+        tokens > 3). LHS wins => author='Aleister Crowley', title='Book Of The Law'.
         """
         title, author = pattern_db._parse_metadata_from_filename(
             'Aleister Crowley - Book Of The Law.pdf'
@@ -654,8 +688,9 @@ class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
         self.assertIsNone(author)
 
     def test_strips_visual_qa_suffix(self):
-        # EB-351: after suffix strip the no-parens form is 'Author - Title',
-        # so 'Some Author - My Book' parses as author="Some Author", title="My Book".
+        # EB-351: after suffix strip the no-parens form is 'Some Author - My Book'.
+        # Heuristic: both sides are Title-cased 2-token phrases with no articles or
+        # stopwords — tie, so LHS wins (libgen default) => author="Some Author".
         title, author = pattern_db._parse_metadata_from_filename(
             'Some Author - My Book_visual_qa_report.pdf'
         )
@@ -665,16 +700,14 @@ class TestParseMetadataFromFilenameSCRUM323(unittest.TestCase):
     def test_year_in_leading_parenthetical_is_not_series(self):
         """A leading (YYYY) prefix is a year, not a series tag — don't strip it as series.
 
-        EB-351: with the Author-Title convention, the left side ('(2011) Some Author')
-        becomes the author token.  The guard is that the year-paren prefix stays
-        attached to the author string and does NOT get treated as a series that strips
-        'Some Author', leaving a blank.  Title must still be 'Some Book'.
+        EB-351: the year-paren prefix stays attached to the LHS string and is NOT
+        stripped as a series tag.  The heuristic will score both sides; regardless of
+        outcome, 'Some Book' (RHS) must remain the title.
         """
         title, author = pattern_db._parse_metadata_from_filename(
             '(2011) Some Author - Some Book.pdf'
         )
-        # Author is the left side: the year-paren stays attached (not stripped as series).
-        # Title is the right side: must not be empty or contain the year.
+        # Title must still be 'Some Book' and must not contain the year.
         self.assertIsNotNone(author)
         self.assertEqual(title, 'Some Book')
         self.assertNotIn('2011', title)
