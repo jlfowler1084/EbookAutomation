@@ -282,6 +282,109 @@ class TestLargeFileDpiReduction(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# EB-347: Honor explicit --dpi/--max-pages over large-file guard
+# ---------------------------------------------------------------------------
+
+class TestLargeFileDpiReductionUserSupplied(unittest.TestCase):
+    """EB-347 — user-supplied dpi/max_pages are not clamped; default path still clamps."""
+
+    def test_user_supplied_dpi_not_clamped(self):
+        """When user_supplied_dpi=True, DPI must NOT be clamped even for large files."""
+        dpi, max_pages = _apply_large_file_dpi_reduction(
+            kfx_size_bytes=80 * 1024 * 1024,
+            total_pages=700,
+            dpi=150,
+            max_pages=8,
+            user_supplied_dpi=True,
+            user_supplied_max_pages=False,
+        )
+        self.assertEqual(dpi, 150, "User-supplied DPI must be honored, not clamped")
+
+    def test_user_supplied_max_pages_not_clamped(self):
+        """When user_supplied_max_pages=True, max_pages must NOT be clamped."""
+        dpi, max_pages = _apply_large_file_dpi_reduction(
+            kfx_size_bytes=80 * 1024 * 1024,
+            total_pages=700,
+            dpi=100,
+            max_pages=20,
+            user_supplied_dpi=False,
+            user_supplied_max_pages=True,
+        )
+        self.assertEqual(max_pages, 20, "User-supplied max_pages must be honored, not clamped")
+
+    def test_both_user_supplied_not_clamped(self):
+        """Both user-supplied values are honored simultaneously."""
+        dpi, max_pages = _apply_large_file_dpi_reduction(
+            kfx_size_bytes=80 * 1024 * 1024,
+            total_pages=700,
+            dpi=200,
+            max_pages=30,
+            user_supplied_dpi=True,
+            user_supplied_max_pages=True,
+        )
+        self.assertEqual(dpi, 200)
+        self.assertEqual(max_pages, 30)
+
+    def test_default_path_still_clamps(self):
+        """When neither flag is set, existing clamp behaviour is preserved."""
+        dpi, max_pages = _apply_large_file_dpi_reduction(
+            kfx_size_bytes=80 * 1024 * 1024,
+            total_pages=700,
+            dpi=150,
+            max_pages=20,
+            user_supplied_dpi=False,
+            user_supplied_max_pages=False,
+        )
+        self.assertLessEqual(dpi, 72, "Default DPI should be clamped to <= 72")
+        self.assertLessEqual(max_pages, 4, "Default max_pages should be clamped to <= 4")
+
+    def test_user_supplied_dpi_warning_emitted(self):
+        """When user_supplied_dpi=True clamps would apply, a WARNING is logged."""
+        import visual_qa as vqa
+        with self.assertLogs("visual_qa", level="WARNING") as cm:
+            vqa._apply_large_file_dpi_reduction(
+                kfx_size_bytes=80 * 1024 * 1024,
+                total_pages=700,
+                dpi=150,
+                max_pages=4,
+                user_supplied_dpi=True,
+                user_supplied_max_pages=False,
+            )
+        combined = "\n".join(cm.output)
+        self.assertIn("EB-347", combined, "EB-347 reference must appear in WARNING log")
+        self.assertIn("--dpi", combined, "Log must mention --dpi flag")
+
+    def test_user_supplied_max_pages_warning_emitted(self):
+        """When user_supplied_max_pages=True and clamping would apply, a WARNING is logged."""
+        import visual_qa as vqa
+        with self.assertLogs("visual_qa", level="WARNING") as cm:
+            vqa._apply_large_file_dpi_reduction(
+                kfx_size_bytes=80 * 1024 * 1024,
+                total_pages=700,
+                dpi=72,
+                max_pages=20,
+                user_supplied_dpi=False,
+                user_supplied_max_pages=True,
+            )
+        combined = "\n".join(cm.output)
+        self.assertIn("EB-347", combined)
+        self.assertIn("--max-pages", combined)
+
+    def test_small_file_no_change_regardless_of_flags(self):
+        """Small files are never modified regardless of user_supplied flags."""
+        dpi, max_pages = _apply_large_file_dpi_reduction(
+            kfx_size_bytes=5 * 1024 * 1024,
+            total_pages=100,
+            dpi=150,
+            max_pages=20,
+            user_supplied_dpi=True,
+            user_supplied_max_pages=True,
+        )
+        self.assertEqual(dpi, 150)
+        self.assertEqual(max_pages, 20)
+
+
+# ---------------------------------------------------------------------------
 # EB-350 AC1: Configurable batch_size
 # ---------------------------------------------------------------------------
 

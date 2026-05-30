@@ -598,6 +598,8 @@ def _apply_large_file_dpi_reduction(
     total_pages: int,
     dpi: int,
     max_pages: int,
+    user_supplied_dpi: bool = False,
+    user_supplied_max_pages: bool = False,
 ) -> tuple:
     """Return (dpi, max_pages) adjusted for large KFX files.
 
@@ -611,6 +613,12 @@ def _apply_large_file_dpi_reduction(
     The caller-supplied DPI is never *raised* — if it is already at or below
     _LARGE_FILE_REDUCED_DPI, it is kept as-is.
 
+    EB-347: When the caller explicitly supplied --dpi or --max-pages on the CLI
+    (user_supplied_dpi / user_supplied_max_pages = True), those values are
+    honored and NOT clamped.  A logger.warning is emitted to make the override
+    visible.  When values come from defaults (user_supplied_* = False), the
+    existing clamp behaviour and logger.info message are preserved.
+
     Returns:
         (dpi, max_pages) — possibly unchanged if neither threshold is exceeded.
     """
@@ -621,18 +629,43 @@ def _apply_large_file_dpi_reduction(
     if not is_large:
         return dpi, max_pages
 
-    reduced_dpi = min(dpi, _LARGE_FILE_REDUCED_DPI)
-    reduced_max_pages = min(max_pages, _LARGE_FILE_REDUCED_MAX_PAGES)
-    logger.info(
-        "Large-file threshold exceeded (%.1f MB, %d pages) — "
-        "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
-        kfx_size_bytes / (1024 * 1024),
-        total_pages,
-        dpi,
-        reduced_dpi,
-        max_pages,
-        reduced_max_pages,
-    )
+    reduced_dpi = min(dpi, _LARGE_FILE_REDUCED_DPI) if not user_supplied_dpi else dpi
+    reduced_max_pages = min(max_pages, _LARGE_FILE_REDUCED_MAX_PAGES) if not user_supplied_max_pages else max_pages
+
+    # Build per-dimension log messages
+    if user_supplied_dpi and dpi > _LARGE_FILE_REDUCED_DPI:
+        logger.warning(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "DPI %d was supplied explicitly (--dpi) and will NOT be clamped to %d "
+            "(EB-347). Reduce dpi manually if you encounter context overflow.",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            dpi,
+            _LARGE_FILE_REDUCED_DPI,
+        )
+    if user_supplied_max_pages and max_pages > _LARGE_FILE_REDUCED_MAX_PAGES:
+        logger.warning(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "max_pages %d was supplied explicitly (--max-pages) and will NOT be clamped to %d "
+            "(EB-347). Reduce max_pages manually if you encounter context overflow.",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            max_pages,
+            _LARGE_FILE_REDUCED_MAX_PAGES,
+        )
+
+    if not user_supplied_dpi or not user_supplied_max_pages:
+        logger.info(
+            "Large-file threshold exceeded (%.1f MB, %d pages) — "
+            "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
+            kfx_size_bytes / (1024 * 1024),
+            total_pages,
+            dpi,
+            reduced_dpi,
+            max_pages,
+            reduced_max_pages,
+        )
+
     return reduced_dpi, reduced_max_pages
 
 
@@ -751,6 +784,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   output_dir, dpi, max_pages, model, rubric_path,
                   pass_threshold=70,
                   batch_size=8,
+                  user_supplied_dpi=False,
+                  user_supplied_max_pages=False,
                   fallback_enabled=True,
                   fallback_claude_model="claude-sonnet-4-6",
                   fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
@@ -846,6 +881,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         total_pages=total_pages,
         dpi=dpi,
         max_pages=max_pages,
+        user_supplied_dpi=user_supplied_dpi,
+        user_supplied_max_pages=user_supplied_max_pages,
     )
 
     # --- Select and render pages ---
@@ -1363,11 +1400,15 @@ def main():
         else:
             args.model = settings_reload.get("api_models", {}).get("sonnet_latest", "claude-sonnet-4-6")
 
+    # EB-347: detect explicitly supplied --dpi and --max-pages before --full override
+    user_supplied_dpi = any(a.startswith('--dpi') for a in sys.argv)
+    user_supplied_max_pages = any(a.startswith('--max-pages') for a in sys.argv)
+
     # --full overrides to comprehensive evaluation
     if args.full:
-        if not any(a.startswith('--dpi') for a in sys.argv):
+        if not user_supplied_dpi:
             args.dpi = 150
-        if not any(a.startswith('--max-pages') for a in sys.argv):
+        if not user_supplied_max_pages:
             args.max_pages = 20
 
     # Configure logging
@@ -1428,6 +1469,8 @@ def main():
             rubric_path=args.rubric,
             pass_threshold=args.pass_threshold,
             batch_size=args.batch_size,
+            user_supplied_dpi=user_supplied_dpi,
+            user_supplied_max_pages=user_supplied_max_pages,
             fallback_enabled=args.fallback_enabled,
             fallback_claude_model=args.fallback_claude_model,
             fallback_corpus_path=args.fallback_corpus_path,
