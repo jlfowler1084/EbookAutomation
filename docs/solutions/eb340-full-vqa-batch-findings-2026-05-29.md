@@ -135,3 +135,22 @@ paragraph_flow 126, heading_formatting 31, page_layout 27, cover_images 17, toc 
 5. **Grader hardening**: dedupe per-page criticals; calibrate code/math severity;
    category-score gating over raw critical counts.
 6. **Metadata title extraction bug** (F3 p10 "joel").
+
+## Addendum — large-book full-coverage re-run (2026-05-29, EB-347 stopgap)
+
+Re-ran the 4 reduced books with the SCRUM-319 large-file guard neutralized (unnecessary on
+the local 32k-ctx server), at 40 pages @ 150 DPI:
+
+| book | reduced (4pg @72) | full (40pg @150) | Δ |
+|---|---|---|---|
+| p05 finance | 79 | 82 | +3 |
+| p08 image plates | 89 | 88 | −1 |
+| p11 large old scan | 54 | **34** | **−20** |
+| p12 large technical | 96 | **55** | **−41** |
+
+The reduction produces **actively misleading scores**, not just lost coverage. p12 (whose KFX
+conversion *failed* → AZW3 fallback) scored **96** from 4 clean front-matter pages but **55**
+(38 critical/major) once 40 real pages are sampled; p11 fell 54→34 (83 critical/major). Books
+that genuinely convert well (p05, p08) barely moved — so the damage is concentrated on exactly
+the worst-converting large books, where QA matters most. A pass/fail gate on the reduced scores
+would have **passed a book whose conversion failed**. Direct evidence for EB-347.
