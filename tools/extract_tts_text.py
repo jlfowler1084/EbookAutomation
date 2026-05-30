@@ -6385,13 +6385,25 @@ def _flush_line_group(lines, all_paras):
                   ' '.join(parts))
     text = re.sub(r' +', ' ', text).strip()
     first = lines[0]
-    # EB-348: detect monospace fonts for code-block preservation
+    # EB-348: detect monospace fonts for code-block preservation.
+    # EB-348 fix: removed bare 'mono' (matched "Monotype" foundry fonts) and
+    # 'anon' (too short); expanded to full curated list of real monospace families;
+    # added explicit 'monotype' exclusion guard for e.g. MonotypeCorsiva.
     _fnt = first.get('font_name', first.get('font', ''))
     _fnt_lower = _fnt.lower() if _fnt else ''
-    _MONO_FONTS = ('courier', 'mono', 'console', 'anon', 'consolas',
-                   'inconsolata', 'sourcecodemono', 'menlo', 'monaco',
-                   'dejavumono', 'ubuntumono', 'cascadiacode', 'firacode')
-    is_monospace = any(kw in _fnt_lower for kw in _MONO_FONTS)
+    _MONO_FONTS = (
+        'courier', 'consolas', 'inconsolata', 'menlo', 'monaco',
+        'anonymous', 'dejavusansmono', 'dejavumono', 'ubuntumono',
+        'cascadia', 'firacode', 'fira mono', 'jetbrains',
+        'liberationmono', 'liberation mono', 'andale', 'ptmono', 'pt mono',
+        'ibmplexmono', 'ibm plex mono', 'sourcecodepro', 'source code pro',
+        'robotomono', 'roboto mono', 'spacemono', 'lucidaconsole',
+        'lucida console', 'nimbusmono',
+    )
+    is_monospace = (
+        any(kw in _fnt_lower for kw in _MONO_FONTS)
+        and 'monotype' not in _fnt_lower
+    )
     all_paras.append({
         'text': text,
         'font_size': first['size'],
