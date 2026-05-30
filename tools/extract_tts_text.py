@@ -7481,9 +7481,6 @@ code {{ font-family: monospace; font-size: 0.9em; }}
                 # It's a repeated chapter heading inside Notes/etc — demote to h3
                 bm_level = None
 
-        # EB-348: Handle monospace / code-block paragraphs.
-        # If this para belongs to a pre_group, open/close <pre> blocks and
-        # emit the text verbatim (preserving indentation). Skip normal tag logic.
         # Determine tag using bookmark level > font cluster > fallback
         tag = 'p'
 
