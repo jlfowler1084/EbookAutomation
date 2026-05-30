@@ -197,3 +197,44 @@ def test_pre_block_preserves_leading_indentation():
     assert "<pre>    if x:\n        return x</pre>" in html
     # The opening tag must be followed by the indent, not a stripped first line.
     assert "<pre>if x:" not in html
+
+
+def test_pre_block_keeps_numeric_only_line():
+    # EB-348: a monospace line that is just a number (e.g. "42" in a data/code
+    # block) must NOT be dropped by the prose ^\d{1,3}$ standalone-page-number
+    # filter. Regression: the <pre> branch ran AFTER that filter, so "42" was
+    # stripped, matched, and silently vanished from the code block.
+    html, _ = format_paragraphs_as_html(
+        [
+            _para("x = [", page=1, mono=True),
+            _para("    42,", page=1, mono=True),
+            _para("42", page=1, mono=True),
+            _para("]", page=1, mono=True),
+        ],
+        body_size=10.0,
+        bookmarks=[],
+        log=lambda msg: None,
+        title="Numeric Test",
+    )
+
+    # Whole block emitted verbatim, including the bare numeric line.
+    assert "<pre>x = [\n    42,\n42\n]</pre>" in html
+
+
+def test_pre_block_survives_blank_code_line():
+    # EB-348: a blank line inside a code block (empty text) is structurally
+    # meaningful and must survive — the prose `if not text: continue` would
+    # otherwise drop it. The <pre> branch runs before that filter now.
+    html, _ = format_paragraphs_as_html(
+        [
+            _para("def f():", page=1, mono=True),
+            _para("", page=1, mono=True),
+            _para("    return 7", page=1, mono=True),
+        ],
+        body_size=10.0,
+        bookmarks=[],
+        log=lambda msg: None,
+        title="Blank Line Test",
+    )
+
+    assert "<pre>def f():\n\n    return 7</pre>" in html

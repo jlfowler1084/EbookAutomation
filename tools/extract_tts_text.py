@@ -7285,6 +7285,45 @@ code {{ font-family: monospace; font-size: 0.9em; }}
             # Check if we're entering/leaving TOC region
             in_toc_region = current_page in toc_skip_pages
             continue
+
+        # EB-348: monospace/code paragraphs are handled HERE, before any prose
+        # filter (blank-text skip, raw-HTML, footnote routing, running-header and
+        # standalone-page-number skips, TOC skip). Those filters are designed for
+        # prose and would drop or mangle legitimate code/data content — e.g. a
+        # line " 42" is stripped to "42", matches ^\d{1,3}$, and silently vanishes;
+        # a blank code line is dropped by `if not text`. <pre> content must bypass
+        # prose cleanup entirely. (Also closes any open footnotes/blockquote so an
+        # open <pre> can never leak across those contexts.)
+        _this_pre_group = p.get('_pre_group_id')
+        if _this_pre_group is not None:
+            if in_footnotes:
+                html_parts.append('</div>\n')
+                in_footnotes = False
+            if in_blockquote:
+                html_parts.append('</blockquote>\n')
+                in_blockquote = False
+            if _this_pre_group != _cur_pre_group:
+                # Close previous pre block if open, then open a new one.
+                if in_pre_block:
+                    html_parts.append('</pre>\n')
+                    in_pre_block = False
+                html_parts.append('<pre>')
+                in_pre_block = True
+                _cur_pre_group = _this_pre_group
+                pre_count += 1
+            else:
+                # Continuation of the same pre block — newline separator.
+                html_parts.append('\n')
+            # Emit the unstripped paragraph text (rstrip only) so leading
+            # indentation survives — the loop-top .strip() would drop it.
+            html_parts.append(_html_escape(p.get('text', '').rstrip()))
+            after_heading = False
+            prev_was_heading = False
+            continue
+        else:
+            # Not a monospace paragraph — close any open <pre> block before prose.
+            _close_pre_block()
+
         if not text:
             continue
 
@@ -7445,38 +7484,6 @@ code {{ font-family: monospace; font-size: 0.9em; }}
         # EB-348: Handle monospace / code-block paragraphs.
         # If this para belongs to a pre_group, open/close <pre> blocks and
         # emit the text verbatim (preserving indentation). Skip normal tag logic.
-        _this_pre_group = p.get('_pre_group_id')
-        if _this_pre_group is not None:
-            # Close any open blockquote first
-            if in_blockquote:
-                html_parts.append('</blockquote>\n')
-                in_blockquote = False
-            if _this_pre_group != _cur_pre_group:
-                # Close previous pre block if open
-                if in_pre_block:
-                    html_parts.append('</pre>\n')
-                    in_pre_block = False
-                # Open new pre block
-                html_parts.append('<pre>')
-                in_pre_block = True
-                _cur_pre_group = _this_pre_group
-                pre_count += 1
-            else:
-                # Continuation of same pre block — add a newline separator
-                html_parts.append('\n')
-            # Emit the source text with leading indentation preserved (EB-348).
-            # The loop-top `text` was .strip()ed for prose/heading logic, which
-            # drops the first line's leading indent — fatal for code blocks. Use
-            # the unstripped paragraph text here; rstrip() only, to trim trailing
-            # whitespace without touching the indentation.
-            html_parts.append(_html_escape(p.get('text', '').rstrip()))
-            after_heading = False
-            prev_was_heading = False
-            continue
-        else:
-            # Not a monospace para — close any open pre block
-            _close_pre_block()
-
         # Determine tag using bookmark level > font cluster > fallback
         tag = 'p'
 
