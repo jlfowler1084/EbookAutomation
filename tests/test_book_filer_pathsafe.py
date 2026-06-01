@@ -59,3 +59,43 @@ def test_build_base_name_with_disambiguator():
     assert build_base_name(
         "Coogan, Michael", "The New Oxford Annotated Bible", 2010, disambiguator="NRSV",
     ) == "Coogan, Michael - The New Oxford Annotated Bible (2010) [NRSV]"
+
+
+from book_filer.pathsafe import compute_shelf_path
+
+
+def test_compute_shelf_path_layout():
+    p = compute_shelf_path(
+        library_root=Path("F:\\Books"),
+        section="01 History",
+        subcategory="World Wars (WWI, WWII, Weimar)",
+        author_sort="Cooper, Andrew Scott",
+        title="The Oil Kings",
+        ext=".pdf",
+        year=2011,
+        max_path_length=240,
+    )
+    assert p == Path(
+        "F:\\Books\\01 History\\World Wars (WWI, WWII, Weimar)\\"
+        "Cooper, Andrew Scott\\Cooper, Andrew Scott - The Oil Kings (2011).pdf"
+    )
+
+
+def test_compute_shelf_path_truncates_title_only_when_too_long():
+    long_title = "A " * 200  # 400 chars
+    p = compute_shelf_path(
+        library_root=Path("F:\\Books"),
+        section="02 Philosophy",
+        subcategory="Ethics & Political Philosophy",
+        author_sort="Author, Test",
+        title=long_title,
+        ext=".epub",
+        year=1999,
+        max_path_length=160,
+    )
+    assert len(str(p)) <= 160
+    assert "…" in p.name
+    assert p.name.endswith("(1999).epub")
+    assert p.parent == Path(
+        "F:\\Books\\02 Philosophy\\Ethics & Political Philosophy\\Author, Test"
+    )

@@ -50,3 +50,45 @@ def build_base_name(
     if disambiguator:
         out += f" [{sanitize_component(disambiguator)}]"
     return out
+
+
+def compute_shelf_path(
+    library_root: Path,
+    section: str,
+    subcategory: str,
+    author_sort: str,
+    title: str,
+    ext: str,
+    year: int | None = None,
+    series: str | None = None,
+    series_index: str | None = None,
+    disambiguator: str | None = None,
+    max_path_length: int = 240,
+) -> Path:
+    """Compose <root>/<Section>/<Subcategory>/<Author>/<base><ext>.
+
+    If the full path exceeds max_path_length, truncate the TITLE only (never
+    section/subcategory/author/year/disambiguator/extension), appending an
+    ellipsis. Returns a best-effort path even if the folder alone is over budget;
+    the caller (the guarded filer) quarantines anything still too long.
+    """
+    folder = (
+        Path(library_root)
+        / sanitize_component(section)
+        / sanitize_component(subcategory)
+        / sanitize_component(author_sort)
+    )
+
+    def assemble(t: str) -> Path:
+        base = build_base_name(author_sort, t, year, series, series_index, disambiguator)
+        return folder / f"{base}{ext}"
+
+    full = assemble(title)
+    if len(str(full)) <= max_path_length:
+        return full
+
+    overflow = len(str(full)) - max_path_length
+    san_title = sanitize_component(title)
+    keep = max(8, len(san_title) - overflow - 1)   # -1 reserves room for the ellipsis
+    truncated = san_title[:keep].rstrip() + "…"
+    return assemble(truncated)
