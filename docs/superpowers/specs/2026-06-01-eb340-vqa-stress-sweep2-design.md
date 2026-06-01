@@ -3,10 +3,15 @@
 **Date:** 2026-06-01
 **Status:** Design (pending implementation plan)
 **Anchor ticket:** EB-340 (auto-enable VQA on overnight batch)
-**Related:** EB-347 (large-file override — interim fix, landed), EB-348/EB-349 (extraction
-code-block `<pre>` + CID-glyph fixes / classifier OCR escalation — landed in PR #169),
-EB-342 / EB-148 (streaming render→eval→release chunker — out of scope here),
+**Related:** EB-347 (large-file `--dpi`/`--max-pages` override — interim fix, PR #167),
+EB-348 (CID-glyph + code-block `<pre>` extraction) / EB-349 (classifier-driven Gemini OCR
+escalation, opt-in) — both PR #168, EB-148 (full-book / streaming render→eval→release
+execution — out of scope here; prereq EB-342 tiering + 3-way coverage accounting),
 EB-150 (R9700 parity + baseline recapture — calibration gate, separate).
+
+> PR attribution per local git (`git log`): EB-347 = PR #167, EB-348/EB-349 = PR #168.
+> (The session handoff that referenced "PR #169" conflated the later coverage_status
+> follow-up; local git is the source of truth.)
 
 ## Problem
 
@@ -14,7 +19,8 @@ The 2026-05-29 EB-340 sweep (`docs/solutions/eb340-full-vqa-batch-findings-2026-
 proved the local **R9700 Qwen3-VL** endpoint makes visual QA effectively free, and surfaced
 real conversion-quality patterns that the cost-limited 8-page sample never saw (F1 large-file
 coverage collapse, F2 code/math extraction failure, F4 scan under-escalation). Since then,
-PR #169 landed the extraction-side fixes (EB-348/EB-349) and the EB-347 large-file override.
+PR #167 landed the EB-347 large-file override and PR #168 landed the extraction-side fixes
+(EB-348 CID/`<pre>`, EB-349 classifier OCR escalation).
 
 We want a **second, broader sweep** to (a) find new patterns at ~2× the corpus breadth, and
 (b) produce *causal* evidence that the PR #169 fixes actually moved the known failure cases —
@@ -34,6 +40,14 @@ A single bare `Convert-ToKindle -NoCache` run **cannot** validate everything, be
 The campaign is split into three lanes so each deliverable has clean causal attribution and a
 truthful cost label.
 
+### Session scope / lane ordering
+
+**This plan delivers Lane A + the F1 hardening only.** Lanes B and C are specified here but
+land as **explicit follow-up execution blocks**, gated on Lane A's harness proving stable.
+This reduces blast radius and keeps breadth findings ($0) from being mixed with two paid
+probes. Lane B additionally carries a **code prerequisite** (classifier handoff, below) that
+is sequenced after Lane A.
+
 ### Lane A — Zero-cloud conversion-quality sweep ($0)
 
 The breadth run. Validates **zero-cloud conversion quality** and the **EB-348/EB-349 code /
@@ -51,17 +65,36 @@ CID-glyph extraction fixes**. Does **not** validate OCR escalation.
 - **Node-down policy:** skip-and-warn per book; never hard-fail a conversion because the VQA
   node is down.
 
-### Lane B — OCR-escalation validation (small Gemini $)
+### Lane B — OCR-escalation validation (small Gemini $) — has a code prerequisite
 
-Proves classifier → Gemini escalation actually fires and helps. **Not $0.**
+Proves classifier → Gemini escalation actually fires and helps. **Not $0.** As written against
+the *current* checkout, a bare `Convert-ToKindle -NoCache` run **cannot** validate escalation —
+two blockers, both verified in code:
 
-- 1–2 `scan_with_text` books (e.g. the Zeitgeist-class case from sweep #1 that the classifier
-  flagged `ocr,gemini` but the default path didn't escalate).
-- Run once with `classifier_escalation.auto_gemini_on_scan: false` (baseline) and once with
-  it **`true`** (opt-in), comparing the **artifact metrics** below — primarily `(cid:N)` /
-  OCR-garble counts and `text_integrity`.
-- Cost is Gemini OCR calls only; record per-book token/$ in the manifest. Restore the config
-  toggle to `false` after the lane.
+1. **Handoff gap.** The CLI entry passes no `classifier_verdict` into `process_kindle_html`
+   ([extract_tts_text.py:14734](../../../tools/extract_tts_text.py)), and the EB-349 auto-Gemini
+   branch is gated on `classifier_verdict is not None and flags.needs_paid_tier and
+   recommended_paid_tier == 'gemini'` ([extract_tts_text.py:12864](../../../tools/extract_tts_text.py)).
+   So the branch is skipped regardless of the config toggle. **Lane B is blocked until a CLI/env
+   classifier handoff is added** (pass the verdict through, plus an **env override** for the
+   toggle so the tracked config file is never edited — see config handling below).
+2. **Book-class gap.** Only `needs_paid_tier=gemini` verdicts qualify. A generic
+   `scan_with_text` (e.g. Internet-Archive *with* text) sets `recommended_strategies=[...gemini]`
+   but **not** `needs_paid_tier` ([classify_source.py:434](../../../tools/classify_source.py)).
+   Lane B books MUST be a class that sets `needs_paid_tier=gemini` — `scan_no_text` /
+   IA-low-density / LuraDocument-low-density ([classify_source.py:427](../../../tools/classify_source.py)).
+
+**Validation gate (precondition assertions, not just a toggle flip):** a Lane B run counts as
+evidence only if, for the chosen book, (a) the classifier verdict qualifies
+(`needs_paid_tier=true`, `recommended_paid_tier='gemini'`), (b) the `[EB-349]` escalation log
+line fired, and (c) Gemini cost > $0. If any assertion fails, the run is **inconclusive** and
+the cause (handoff missing / wrong book class / no key) is recorded — escalation is *not*
+declared validated.
+
+- Procedure: run the qualifying book once **without** escalation (baseline) and once **with**
+  it enabled (via the env override), comparing the artifact metrics below — primarily `(cid:N)`
+  / OCR-garble counts and `text_integrity`.
+- Cost is Gemini OCR calls only; record per-book token/$ in the manifest.
 
 ### Lane C — Fallback-cost probe (small Claude $)
 
@@ -71,6 +104,24 @@ Answers the EB-340 *Claude fallback* cost question that Lane A explicitly cannot
   measure real Claude fallback token cost per book.
 - Pick books likely to trip the fallback (uniform-score / front-matter ceiling cases) so the
   probe actually exercises the path. Record per-provider and canonical total cost.
+- **Validation gate — key on "fallback fired," not on `--fallback-enabled true` or non-zero
+  cost.** A run where no page trips the gate legitimately costs $0 and answers nothing. The
+  probe is conclusive only if **at least one report contains Claude fallback token fields**
+  (`fallback_input_tokens`/`fallback_output_tokens`); otherwise it is **inconclusive** and
+  candidate selection repeats with books more likely to trip the gate.
+
+## Config handling (no tracked-file drift)
+
+`config/settings.json` is **already modified in the working tree** this session, so the campaign
+must not add or strand further edits there.
+
+- **Preferred:** the Lane B escalation toggle is read today *only* from the file
+  ([extract_tts_text.py:12874](../../../tools/extract_tts_text.py) — no env path). The handoff
+  prerequisite therefore adds an **env override** (e.g. `EB349_AUTO_GEMINI_ON_SCAN=1`) consulted
+  before the file value, so the tracked config is never touched.
+- **If a transient file edit is unavoidable:** snapshot the exact prior bytes (sha256), apply
+  via `try/finally`, and restore the **exact original content** — never write a hardcoded
+  `false`, which would clobber the working-tree state.
 
 ## Corpus & selection (~25–30 books)
 
@@ -133,7 +184,8 @@ future batch auto-enable can't pass a 4-of-900-page report off as "complete":
 
 This is the honest-accounting half of the tiered-VQA design's "coverage accounting" section,
 scoped to the interim guard. **Streaming render→eval→release chunking (full every-page
-coverage) is explicitly NOT in scope** — that remains EB-342 / EB-148.
+coverage) is explicitly NOT in scope** — that is **EB-148** (full-book / streaming execution),
+prereq **EB-342** (tiering + 3-way coverage accounting).
 
 ## Outputs
 
@@ -145,7 +197,8 @@ coverage) is explicitly NOT in scope** — that remains EB-342 / EB-148.
 
 ## Out of scope (YAGNI)
 
-- Streaming chunker / full per-page coverage → EB-342 / EB-148.
+- Streaming chunker / full per-page coverage → EB-148 (execution), prereq EB-342 (tiering +
+  3-way coverage accounting).
 - `vqa_policy` tiering layer + deterministic blind Claude audit slice → future tiered-VQA work.
 - Rubric content and converge-loop algorithm changes.
 - No new vision provider; reuse EB-339 local provider + existing Claude fallback.
@@ -156,5 +209,10 @@ coverage) is explicitly NOT in scope** — that remains EB-342 / EB-148.
 - F1 hardening: unit test that default-sourced reduction emits `coverage_status: partial` +
   warning, and that explicit-flag runs report `coverage_status: complete` with honored DPI.
 - Manifest completeness check: every per-book field present; sha256 + git SHA recorded.
-- Lane isolation check: Lane A reports show `fallback_enabled: false` and zero cloud cost;
-  Lane B/C cost is non-zero and attributed to the correct provider.
+- Lane isolation check: Lane A reports show `fallback_enabled: false` and zero cloud cost.
+- Lane B conclusive only if the precondition assertions pass (qualifying verdict + `[EB-349]`
+  log fired + Gemini cost > $0); otherwise recorded inconclusive with cause.
+- Lane C conclusive only if ≥1 report carries Claude fallback token fields; otherwise
+  inconclusive and candidates repeat.
+- Config check: no net change to tracked `config/settings.json` after any lane (env override
+  preferred; exact-bytes restore if a transient edit was used).
