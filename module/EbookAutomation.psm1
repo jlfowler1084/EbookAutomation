@@ -6737,6 +6737,453 @@ print(json.dumps({'switch_id': sid}))
 
 #endregion
 
+#region -- BookFinder — ebook search & download ─────────────────────────────
+
+function Invoke-EbookBookSearch {
+    <#
+    .SYNOPSIS
+        Search Library Genesis and Anna's Archive for ebooks.
+    .DESCRIPTION
+        Searches LibGen first (stable, structured API), falls back to
+        Anna's Archive (meta-indexer, catches LibGen-missing books).
+        Returns ranked results with format preference scoring.
+
+        Results are emitted as JSON objects that can be piped to
+        Invoke-EbookBookDownload.
+
+    .PARAMETER Title
+        Book title to search for.
+
+    .PARAMETER Titles
+        Array of book titles for batch search.
+
+    .PARAMETER Author
+        Author name (optional, improves match accuracy).
+
+    .PARAMETER Format
+        Preferred format: epub, pdf, mobi, azw3, txt, djvu.
+        Results are ranked with preference for this format.
+
+    .PARAMETER Top
+        Maximum results per source (default: 10).
+
+    .PARAMETER Sources
+        Which sources to search: libgen, anna. Defaults to both.
+
+    .PARAMETER Column
+        LibGen search column: title, author, or any. Default: any.
+
+    .PARAMETER PassThru
+        Output results as JSON to the pipeline instead of the console table.
+
+    .EXAMPLE
+        PS> Invoke-EbookBookSearch -Title "Atomic Habits" -Author "James Clear"
+
+    .EXAMPLE
+        PS> Invoke-EbookBookSearch -Titles @("Book One", "Book Two") -Format epub
+
+    .EXAMPLE
+        PS> Invoke-EbookBookSearch -Title "Deep Work" -Format epub |
+               Invoke-EbookBookDownload -Format epub
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(ParameterSetName = 'Single', Mandatory)][string]$Title,
+        [Parameter(ParameterSetName = 'Batch', Mandatory)][string[]]$Titles,
+        [string]$Author,
+        [ValidateSet('epub', 'pdf', 'mobi', 'azw3', 'txt', 'djvu')][string]$Format,
+        [int]$Top = 10,
+        [string[]]$Sources = @('libgen', 'anna'),
+        [ValidateSet('title', 'author', 'any')][string]$Column = 'any',
+        [switch]$PassThru
+    )
+
+    $cfg          = Get-EbookConfig
+    $python       = $cfg.paths.python
+    $toolsDir     = Join-Path $script:ModuleRoot 'tools'
+    $finderScript = Join-Path $toolsDir 'book_finder.py'
+
+    if (-not (Test-Path $finderScript)) {
+        Write-EbookLog "BookFinder: book_finder.py not found at $finderScript" -Level ERROR
+        return
+    }
+
+    $argsList = @('search', '-n', $Top.ToString())
+
+    if ($PSCmdlet.ParameterSetName -eq 'Batch') {
+        # Batch: write titles to temp file
+        $tmpFile = Join-Path $script:TempDir "bf_titles_$(Get-Random).txt"
+        $Titles | Out-File -FilePath $tmpFile -Encoding utf8
+        $argsList += @('--file', "`"$tmpFile`"")
+        Write-EbookLog "BookFinder: batch search $($_.Count) title(s)" -Level INFO
+    } else {
+        $argsList += @('--title', "`"$Title`"")
+        if ($Author) { $argsList += @('-a', "`"$Author`"") }
+    }
+
+    if ($Format) { $argsList += @('-f', $Format) }
+    $argsList += $Sources | ForEach-Object { '-s', $_ }
+    if ($Column -ne 'any') { $argsList += @('-c', $Column) }
+
+    Write-EbookLog "BookFinder: searching '$Title$(if ($Author) { " by $Author" })'..."
+
+    try {
+        $jsonOutput = & $python $finderScript @argsList --json 2>&1
+        if (-not $?) {
+            # Parse the table output from stdout for display
+            $consoleOutput = $jsonOutput | Where-Object { $_ -notmatch '^--- JSON' }
+            if ($consoleOutput) {
+                Write-EbookLog ($consoleOutput -join "`n") -Level INFO
+            }
+        }
+
+        # Extract JSON block from output
+        $jsonBlock = $jsonOutput -join "`n"
+        $jsonMatch = [regex]::Match($jsonBlock, '(?s)--- JSON START ---(.*?)(?=--- JSON END ---)')
+        if ($jsonMatch.Success) {
+            $jsonStr = $jsonMatch.Groups[1].Value.Trim()
+            if ($jsonStr) {
+                $results = $jsonStr | ConvertFrom-Json
+                if ($PassThru) {
+                    return $results
+                }
+                return $results
+            }
+        }
+    } catch {
+        Write-EbookLog "BookFinder search failed: $_" -Level ERROR
+    }
+}
+
+function Invoke-EbookBookDownload {
+    <#
+    .SYNOPSIS
+        Download books from search results with resume and retry support.
+    .DESCRIPTION
+        Queues books for download from LibGen / Anna's Archive.
+        Handles format preference, automatic resume of interrupted downloads,
+        and exponential backoff retry.
+
+        Accepts input from pipeline (JSON objects from Invoke-EbookBookSearch)
+        or from a file of book metadata.
+
+    .PARAMETER InputObject
+        Book objects from Invoke-EbookBookSearch pipeline output.
+
+    .PARAMETER Ids
+        Comma-separated book IDs (numeric IDs from previous download sessions).
+
+    .PARAMETER File
+        Path to a JSON file with book results (output from search).
+
+    .PARAMETER Format
+        Preferred download format: epub, pdf, mobi, azw3, txt, djvu.
+
+    .PARAMETER OutputDir
+        Download root directory. Default: F:\Books\BookFinder.
+
+    .PARAMETER MaxRetries
+        Max download retries per book (default: 5).
+
+    .PARAMETER DryRun
+        Show what would be downloaded without downloading.
+
+    .PARAMETER Resume
+        Resume failed downloads from the current queue.
+
+    .PARAMETER List
+        Show current download queue status.
+
+    .PARAMETER Stats
+        Show download statistics.
+
+    .PARAMETER History
+        Show download history.
+
+    .PARAMETER Limit
+        Max downloads to process (default: 100).
+
+    .EXAMPLE
+        PS> Invoke-EbookBookSearch -Title "Atomic Habits" |
+               Invoke-EbookBookDownload -Format epub
+
+    .EXAMPLE
+        PS> Invoke-EbookBookDownload -File "search-results.json" -Format epub
+
+    .EXAMPLE
+        PS> Invoke-EbookBookDownload -Resume
+
+    .EXAMPLE
+        PS> Invoke-EbookBookDownload -List
+
+    .EXAMPLE
+        PS> Invoke-EbookBookDownload -DryRun
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'FromResult')]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline, ParameterSetName = 'FromResult')]
+        $InputObject,
+
+        [Parameter(Mandatory, ParameterSetName = 'ById')][string]$Ids,
+
+        [Parameter(Mandatory, ParameterSetName = 'FromFile')][string]$File,
+
+        [Parameter(ParameterSetName = 'FromResult')][ValidateSet('epub', 'pdf', 'mobi', 'azw3', 'txt', 'djvu')][string]$Format = 'epub',
+
+        [Parameter(ParameterSetName = 'FromFile')][string]$OutputDir,
+
+        [int]$MaxRetries = 5,
+
+        [Parameter(ParameterSetName = 'FromFile')][string]$Timeout,
+
+        [switch]$DryRun,
+        [switch]$Resume,
+        [switch]$List,
+        [switch]$Stats,
+        [switch]$History,
+        [int]$Limit = 100
+    )
+
+    begin {
+        $cfg          = Get-EbookConfig
+        $python       = $cfg.paths.python
+        $dlScript     = Join-Path $script:ModuleRoot 'tools' 'book_downloader.py'
+        $bookFinderCfg = if ($cfg.BookFinder) { $cfg.BookFinder } else {}
+        $defaultOutputDir = if ($bookFinderCfg.output_root) {
+            $bookFinderCfg.output_root
+        } else {
+            'F:\Books\BookFinder'
+        }
+        $queued = @()
+    }
+
+    process {
+        if ($PSCmdlet.ParameterSetName -eq 'FromResult' -and $InputObject -and $InputObject.PSObject.TypeNames -notmatch 'string') {
+            if ($InputObject -is [System.Array]) {
+                $queued += $InputObject
+            } elseif ($InputObject -is [Object] -and $InputObject.PSObject.TypeNames -match 'PSCustomObject') {
+                $queued += $InputObject
+            }
+        }
+    }
+
+    end {
+        if (-not (Test-Path $dlScript)) {
+            Write-EbookLog "BookDownloader: book_downloader.py not found at $dlScript" -Level ERROR
+            return
+        }
+
+        $outputDir = if ($OutputDir) { $OutputDir } else { $defaultOutputDir }
+        $argsList = @()
+
+        # Handle sub-commands first
+        if ($List) {
+            $argsList = @('download', '--list')
+        }
+        elseif ($Resume) {
+            $argsList = @('download', '--resume')
+        }
+        elseif ($Stats) {
+            $argsList = @('download', '--stats')
+        }
+        elseif ($History) {
+            $argsList = @('download', '--history', '--limit', $Limit.ToString())
+        }
+        elseif ($PSCmdlet.ParameterSetName -eq 'ById') {
+            $argsList = @('download', '--ids', $Ids, '-f', $Format)
+        }
+        elseif ($PSCmdlet.ParameterSetName -eq 'FromFile' -and $File) {
+            $argsList = @('download', '--json', "`"$File`"")
+            if ($Format) { $argsList += @('-f', $Format) }
+            if ($DryRun) { $argsList += '--dry-run' }
+        }
+        elseif ($queued.Length -gt 0) {
+            # Queue results from pipeline and write to temp JSON file
+            $tmpJson = Join-Path $script:TempDir "bf_results_$(Get-Random).json"
+            $queued | ConvertTo-Json -Depth 5 | Out-File -FilePath $tmpJson -Encoding utf8
+            $argsList = @('download', '--json', "`"$tmpJson`"")
+            if ($Format) { $argsList += @('-f', $Format) }
+            if ($DryRun) { $argsList += '--dry-run' }
+        } else {
+            Write-EbookLog "BookDownloader: provide InputObject (pipeline), -Ids, or -File" -Level ERROR
+            return
+        }
+
+        $outputDirResolved = Resolve-ProjectPath $outputDir -ErrorAction SilentlyContinue
+        if (-not $outputDirResolved -or -not (Test-Path $outputDirResolved)) {
+            $outputDirResolved = $outputDir
+        }
+        if ($outputDirResolved -ne $defaultOutputDir) {
+            $argsList += @('-o', "`"$outputDirResolved`"")
+        }
+        if ($MaxRetries) {
+            $argsList += @('-r', $MaxRetries.ToString())
+        }
+
+        Write-EbookLog "BookDownloader: $(if ($DryRun) { 'DRY RUN' } else { 'downloading' }) $($argsList.Length) args..." -Level INFO
+
+        try {
+            $env:PYTHONIOENCODING = 'utf-8'
+            & $python $dlScript @argsList
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                Write-EbookLog "BookDownloader: exit code $exitCode" -Level ERROR
+            }
+        } catch {
+            Write-EbookLog "BookDownloader failed: $_" -Level ERROR
+        }
+    }
+}
+
+function Invoke-EbookBookDownloadFromList {
+    <#
+    .SYNOPSIS
+        Search for and download books from a file of titles.
+    .DESCRIPTION
+        Reads book titles from a file (one per line), searches LibGen +
+        Anna's Archive for each, queues downloads, and processes the queue.
+
+        This is a convenience wrapper that chains search + download.
+
+    .PARAMETER FilePath
+        Path to a text file with one book title per line.
+        Lines starting with # are comments.
+
+    .PARAMETER Format
+        Preferred format: epub, pdf, mobi, azw3, txt, djvu.
+
+    .PARAMETER OutputDir
+        Download root directory. Default: F:\Books\BookFinder.
+
+    .PARAMETER MaxRetries
+        Max download retries per book (default: 5).
+
+    .PARAMETER DryRun
+        Show what would be downloaded without downloading.
+
+    .PARAMETER SkipFormatCheck
+        Skip format verification before processing downloaded books.
+
+    .EXAMPLE
+        PS> Invoke-EbookBookDownloadFromList -FilePath ".\wishlist.txt" -Format epub
+
+    .EXAMPLE
+        PS> Get-Content ".\wishlist.txt" | Invoke-EbookBookDownloadFromList -Format epub
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)][string[]]$FilePath,
+        [ValidateSet('epub', 'pdf', 'mobi', 'azw3', 'txt', 'djvu')][string]$Format = 'epub',
+        [string]$OutputDir,
+        [int]$MaxRetries = 5,
+        [switch]$DryRun,
+        [switch]$SkipFormatCheck
+    )
+
+    begin {
+        $cfg          = Get-EbookConfig
+        $python       = $cfg.paths.python
+        $toolsDir     = Join-Path $script:ModuleRoot 'tools'
+        $finderScript = Join-Path $toolsDir 'book_finder.py'
+        $dlScript     = Join-Path $toolsDir 'book_downloader.py'
+        $bookFinderCfg = if ($cfg.BookFinder) { $cfg.BookFinder } else {}
+        $defaultOutputDir = if ($bookFinderCfg.output_root) {
+            $bookFinderCfg.output_root
+        } else {
+            'F:\Books\BookFinder'
+        }
+        $allTitles = @()
+    }
+
+    process {
+        foreach ($fp in $FilePath) {
+            if (Test-Path $fp) {
+                $titles = Get-Content $fp -Encoding utf8 |
+                          Where-Object { $_.Trim() -and $_.Trim() -notmatch '^#' } |
+                          ForEach-Object { $_.Trim() }
+                $allTitles += $titles
+            }
+        }
+    }
+
+    end {
+        if (-not $allTitles.Length) {
+            Write-EbookLog "BookDownloaderFromList: no titles found" -Level ERROR
+            return
+        }
+
+        Write-EbookLog "BookDownloaderFromList: searching $($_.Count) title(s)..." -Level INFO
+
+        # Phase 1: Search all titles
+        $allResults = @()
+        foreach ($title in $allTitles) {
+            try {
+                $results = & $python $finderScript search "$title" -n 5 -f $Format -s libgen -s anna --json 2>&1
+                $jsonBlock = $results -join "`n"
+                $jsonMatch = [regex]::Match($jsonBlock, '(?s)--- JSON START ---(.*?)(?=--- JSON END ---)')
+                if ($jsonMatch.Success) {
+                    $jsonStr = $jsonMatch.Groups[1].Value.Trim()
+                    if ($jsonStr) {
+                        $parsed = $jsonStr | ConvertFrom-Json
+                        if ($parsed) { $allResults += $parsed }
+                    }
+                }
+                Start-Sleep -Seconds 2
+            } catch {
+                Write-EbookLog "BookDownloaderFromList: search failed for '$title': $_" -Level WARN
+            }
+        }
+
+        if (-not $allResults.Length) {
+            Write-EbookLog "BookDownloaderFromList: no results found" -Level WARN
+            return
+        }
+
+        Write-EbookLog "BookDownloaderFromList: found $($_.Length) result(s), queuing downloads..." -Level INFO
+
+        # Phase 2: Queue downloads
+        $outputDirResolved = if ($OutputDir) { $OutputDir } else { $defaultOutputDir }
+        $dlArgs = @('download', '--json', (Join-Path $script:TempDir "bf_results_$(Get-Random).json"))
+
+        $allResults | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $script:TempDir "bf_results_$(Get-Random).json") -Encoding utf8
+
+        $dlArgs = @('download', '--json', $allResults | ConvertTo-Json -Depth 5 | Out-String | ForEach-Object {
+            Join-Path $script:TempDir "bf_results_download.json"
+        }) -join ';'
+
+        # Use simplified approach: write results and download
+        $resultFile = Join-Path $script:TempDir "bf_results_download.json"
+        $allResults | ConvertTo-Json -Depth 5 | Out-File -FilePath $resultFile -Encoding utf8
+
+        $finalArgs = @('download', '--json', "`"$resultFile`"")
+        if ($Format) { $finalArgs += @('-f', $Format) }
+        if ($MaxRetries) { $finalArgs += @('-r', $MaxRetries.ToString()) }
+        if ($outputDirResolved -ne $defaultOutputDir) {
+            $finalArgs += @('-o', "`"$outputDirResolved`"")
+        }
+        if ($DryRun) { $finalArgs += '--dry-run' }
+
+        try {
+            $env:PYTHONIOENCODING = 'utf-8'
+            & $python $dlScript @finalArgs
+        } catch {
+            Write-EbookLog "BookDownloaderFromList: download failed: $_" -Level ERROR
+        }
+
+        # Phase 3: If not DryRun, offer to run pipeline
+        if (-not $DryRun) {
+            $downloadedPath = Join-Path (if ($OutputDir) { $OutputDir } else { $defaultOutputDir }) '*'
+            $downloadedFiles = Get-ChildItem -Path $downloadedPath -Recurse -Include @('*.epub', '*.pdf', '*.mobi') -File -ErrorAction SilentlyContinue
+            if ($downloadedFiles) {
+                Write-EbookLog "Downloaded $($downloadedFiles.Count) file(s) to $outputDirResolved" -Level SUCCESS
+                Write-EbookLog "To process with pipeline: Get-ChildItem '$outputDirResolved\*' -Recurse -Include *.epub,*.pdf,*.mobi | Invoke-EbookPipeline"
+            }
+        }
+    }
+}
+
+#endregion
+
 #region -- User defaults -----------------------------------------------------
 
 function Get-EbookDefaults {
@@ -6898,6 +7345,9 @@ Export-ModuleMember -Function @(
     'Get-EbookDefaults'
     'Set-EbookDefaults'
     'Test-EbookFile'
+    'Invoke-EbookBookSearch'
+    'Invoke-EbookBookDownload'
+    'Invoke-EbookBookDownloadFromList'
 )
 
 #endregion

@@ -184,5 +184,14 @@
     }
   },
   "archive_originals": true,
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "BookFinder": {
+    "output_root": "F:\\Books\\BookFinder",
+    "default_format": "epub",
+    "format_preference": ["epub", "pdf", "mobi", "azw3", "txt", "djvu"],
+    "max_retries": 5,
+    "retry_delay_seconds": 30,
+    "max_retry_backoff_seconds": 300,
+    "timeout_seconds": 600
+  }
 }
