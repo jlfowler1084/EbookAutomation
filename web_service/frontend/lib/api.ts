@@ -86,9 +86,61 @@ export async function startConversion(
   return resp.json();
 }
 
-export async function createCheckoutSession(pack: string): Promise<CheckoutResponse> {
+// EB-253: UTM parameters captured from the page URL query string.
+export interface UtmParams {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+}
+
+/**
+ * Read UTM parameters from a URLSearchParams instance (typically
+ * `new URLSearchParams(window.location.search)`).
+ *
+ * Returns only the five canonical UTM params; any param that is missing or
+ * empty is omitted from the returned object.  The result is safe to pass
+ * directly to createCheckoutSession().
+ */
+export function readUtmParams(search: URLSearchParams): UtmParams {
+  const params: UtmParams = {};
+  const fields: Array<keyof UtmParams> = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+  ];
+  for (const field of fields) {
+    const value = search.get(field);
+    if (value) params[field] = value;
+  }
+  return params;
+}
+
+export async function createCheckoutSession(
+  pack: string,
+  utm?: UtmParams,
+): Promise<CheckoutResponse> {
   const formData = new FormData();
   formData.append("pack", pack);
+
+  // EB-253: forward UTM params to the backend so they can be stored in
+  // Stripe Session metadata for post-purchase attribution.
+  if (utm) {
+    const utmFields: Array<keyof UtmParams> = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+    ];
+    for (const field of utmFields) {
+      const value = utm[field];
+      if (value) formData.append(field, value);
+    }
+  }
 
   const resp = await fetch(`${API_URL}/stripe/create-session`, {
     method: "POST",

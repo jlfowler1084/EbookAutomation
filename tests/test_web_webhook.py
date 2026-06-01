@@ -1278,3 +1278,276 @@ class TestEB227AsyncPaymentEvents:
 
         assert resp.status_code == 200
         mock_mint.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# EB-253: Plausible purchase event emission
+# ---------------------------------------------------------------------------
+
+def _make_event_with_utms(
+    utm_source: str | None = None,
+    utm_medium: str | None = None,
+    utm_campaign: str | None = None,
+    utm_term: str | None = None,
+    utm_content: str | None = None,
+    pack: str = "starter",
+    payment_status: str = "paid",
+) -> dict:
+    """Build a checkout.session.completed event with optional UTM metadata."""
+    metadata: dict = {"pack": pack}
+    for field, value in [
+        ("utm_source", utm_source),
+        ("utm_medium", utm_medium),
+        ("utm_campaign", utm_campaign),
+        ("utm_term", utm_term),
+        ("utm_content", utm_content),
+    ]:
+        if value:
+            metadata[field] = value
+
+    return {
+        "id": "evt_utm_test",
+        "type": "checkout.session.completed",
+        "livemode": False,
+        "created": int(time.time()),
+        "data": {
+            "object": {
+                "id": "cs_test_utm_001",
+                "payment_intent": "pi_utm_001",
+                "metadata": metadata,
+                "payment_status": payment_status,
+            }
+        },
+    }
+
+
+class TestEB253PlausiblePurchaseEvent:
+    """EB-253: On paid checkout.session.completed the webhook emits a Plausible
+    custom event "Stripe Purchase Complete" with UTM props."""
+
+    def test_plausible_event_emitted_on_paid_checkout(self, client):
+        """_emit_plausible_purchase_event is called once per paid completed event."""
+        event = _make_event_with_utms(utm_source="mobileread", utm_medium="organic")
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event"
+            ) as mock_emit,
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_" + "A" * 43] * 3)
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_emit.assert_called_once()
+
+    def test_plausible_event_receives_utm_props(self, client):
+        """UTM fields from session metadata are forwarded to _emit_plausible_purchase_event."""
+        event = _make_event_with_utms(
+            utm_source="hackernews",
+            utm_medium="organic",
+            utm_campaign="launch-2026-q3",
+            utm_content="variant-a",
+            pack="standard",
+        )
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event"
+            ) as mock_emit,
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_" + "A" * 43] * 10)
+            _post_webhook(client, event)
+
+        # The function is called with (session_metadata, pack)
+        call_args = mock_emit.call_args
+        session_metadata = call_args.args[0]
+        pack_arg = call_args.args[1]
+
+        assert pack_arg == "standard"
+        assert session_metadata.get("utm_source") == "hackernews"
+        assert session_metadata.get("utm_medium") == "organic"
+        assert session_metadata.get("utm_campaign") == "launch-2026-q3"
+        assert session_metadata.get("utm_content") == "variant-a"
+
+    def test_plausible_event_not_emitted_when_unpaid(self, client):
+        """No Plausible event when payment_status != 'paid'."""
+        event = _make_event_with_utms(
+            utm_source="mobileread",
+            payment_status="unpaid",
+        )
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event"
+            ) as mock_emit,
+        ):
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_mint.assert_not_called()
+        mock_emit.assert_not_called()
+
+    def test_plausible_event_not_emitted_on_dispute(self, client):
+        """Dispute events do not trigger a Plausible purchase event."""
+        event = _make_event(event_type="charge.dispute.created")
+        pi_mock = _make_pi_mock("cs_dispute_abc")
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("stripe.PaymentIntent.retrieve", return_value=pi_mock),
+            patch("web_service.token_store.mark_disputed"),
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event"
+            ) as mock_emit,
+        ):
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_emit.assert_not_called()
+
+    def test_plausible_failure_does_not_break_webhook_200(self, client):
+        """A Plausible emission error must not prevent a 200 response.
+
+        _emit_plausible_purchase_event swallows its own exceptions — but even
+        if the function itself raises (e.g. an unexpected RuntimeError), the
+        webhook must still return 200 because tokens are already minted.
+        This test mocks the helper to raise and verifies the response.
+        """
+        event = _make_event_with_utms(utm_source="reddit-kindlescribe")
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event",
+                side_effect=RuntimeError("Plausible outage"),
+            ),
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_" + "A" * 43] * 3)
+            resp = _post_webhook(client, event)
+
+        # Webhook must still succeed even though Plausible blew up
+        assert resp.status_code == 200
+
+    def test_emit_plausible_purchase_event_unit_no_utm(self, monkeypatch):
+        """Unit test: _emit_plausible_purchase_event fires a POST with pack in props."""
+        import urllib.request
+        from web_service.routes.webhook import _emit_plausible_purchase_event
+
+        captured: list[dict] = []
+
+        class _FakeResponse:
+            status = 202
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        def _fake_urlopen(req, timeout=None):
+            import json as _json
+            captured.append(_json.loads(req.data))
+            return _FakeResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+        _emit_plausible_purchase_event(session_metadata={"pack": "power"}, pack="power")
+
+        assert len(captured) == 1
+        payload = captured[0]
+        assert payload["name"] == "Stripe Purchase Complete"
+        assert payload["props"]["pack"] == "power"
+        # No UTM fields in metadata — none should appear in props beyond pack
+        for utm_field in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"):
+            assert utm_field not in payload["props"]
+
+    def test_emit_plausible_purchase_event_unit_with_utms(self, monkeypatch):
+        """Unit test: _emit_plausible_purchase_event includes UTM props when present."""
+        import urllib.request
+        from web_service.routes.webhook import _emit_plausible_purchase_event
+
+        captured: list[dict] = []
+
+        class _FakeResponse:
+            status = 202
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        def _fake_urlopen(req, timeout=None):
+            import json as _json
+            captured.append(_json.loads(req.data))
+            return _FakeResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+        _emit_plausible_purchase_event(
+            session_metadata={
+                "pack": "standard",
+                "utm_source": "reddit-kindle",
+                "utm_medium": "organic",
+                "utm_campaign": "launch-2026-q3",
+            },
+            pack="standard",
+        )
+
+        assert len(captured) == 1
+        props = captured[0]["props"]
+        assert props["pack"] == "standard"
+        assert props["utm_source"] == "reddit-kindle"
+        assert props["utm_medium"] == "organic"
+        assert props["utm_campaign"] == "launch-2026-q3"
+        # utm_term and utm_content absent from metadata — must not appear
+        assert "utm_term" not in props
+        assert "utm_content" not in props
+
+    def test_emit_plausible_purchase_event_unit_survives_network_error(self, monkeypatch):
+        """Unit test: network errors are caught and do not propagate."""
+        import urllib.request
+        from web_service.routes.webhook import _emit_plausible_purchase_event
+
+        def _bad_urlopen(req, timeout=None):
+            raise OSError("Connection refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", _bad_urlopen)
+
+        # Must not raise
+        _emit_plausible_purchase_event(
+            session_metadata={"pack": "starter"},
+            pack="starter",
+        )
+
+    def test_plausible_event_emitted_for_async_payment_succeeded(self, client):
+        """Plausible event is also emitted for checkout.session.async_payment_succeeded."""
+        event = _make_event(
+            event_type="checkout.session.async_payment_succeeded",
+            pack="power",
+            payment_status="paid",
+        )
+
+        with (
+            patch("stripe.Webhook.construct_event", return_value=event),
+            patch("web_service.token_store.mint_tokens_if_absent") as mock_mint,
+            patch("stripe.PaymentIntent.modify"),
+            patch(
+                "web_service.routes.webhook._emit_plausible_purchase_event"
+            ) as mock_emit,
+        ):
+            mock_mint.return_value = MagicMock(ok=True, tokens=["lb_pk_" + "A" * 43] * 25)
+            resp = _post_webhook(client, event)
+
+        assert resp.status_code == 200
+        mock_emit.assert_called_once()

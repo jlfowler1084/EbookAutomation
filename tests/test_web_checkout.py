@@ -489,3 +489,143 @@ class TestEB227Idempotency:
         assert bucket1_key != bucket2_key, (
             "EB-227: distinct time buckets must produce distinct idempotency keys"
         )
+
+
+# ---------------------------------------------------------------------------
+# EB-253: UTM attribution — checkout.py
+# ---------------------------------------------------------------------------
+
+class TestEB253UtmMetadata:
+    """EB-253: UTM fields sent by the frontend are forwarded into Stripe Session
+    metadata alongside the pack name."""
+
+    def _mock_session(self, session_id: str = "cs_test_utm") -> MagicMock:
+        mock = MagicMock()
+        mock.id = session_id
+        mock.url = f"https://checkout.stripe.com/pay/{session_id}"
+        return mock
+
+    def test_utm_fields_included_in_session_metadata(self, client):
+        """All five UTM fields in the request appear in Session.create metadata."""
+        mock_session = self._mock_session()
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post(
+                "/stripe/create-session",
+                data={
+                    "pack": "starter",
+                    "utm_source": "reddit-kindlescribe",
+                    "utm_medium": "organic",
+                    "utm_campaign": "launch-2026-q3",
+                    "utm_term": "pdf-to-kfx",
+                    "utm_content": "variant-a",
+                },
+            )
+
+        assert resp.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        metadata = call_kwargs.get("metadata", {})
+
+        assert metadata.get("pack") == "starter"
+        assert metadata.get("utm_source") == "reddit-kindlescribe"
+        assert metadata.get("utm_medium") == "organic"
+        assert metadata.get("utm_campaign") == "launch-2026-q3"
+        assert metadata.get("utm_term") == "pdf-to-kfx"
+        assert metadata.get("utm_content") == "variant-a"
+
+    def test_no_utm_fields_session_metadata_has_pack_only(self, client):
+        """Without UTM fields, Session metadata only contains pack — backwards-compatible."""
+        mock_session = self._mock_session()
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post("/stripe/create-session", data={"pack": "standard"})
+
+        assert resp.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        metadata = call_kwargs.get("metadata", {})
+
+        assert metadata == {"pack": "standard"}, (
+            "Without UTMs, metadata must only contain pack (backwards-compat)"
+        )
+
+    def test_partial_utm_fields_included(self, client):
+        """Only the UTM fields that are provided are included in metadata."""
+        mock_session = self._mock_session()
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post(
+                "/stripe/create-session",
+                data={
+                    "pack": "power",
+                    "utm_source": "hackernews",
+                    "utm_medium": "organic",
+                    # utm_campaign, utm_term, utm_content absent
+                },
+            )
+
+        assert resp.status_code == 200
+        metadata = mock_create.call_args.kwargs.get("metadata", {})
+        assert metadata.get("utm_source") == "hackernews"
+        assert metadata.get("utm_medium") == "organic"
+        assert "utm_campaign" not in metadata
+        assert "utm_term" not in metadata
+        assert "utm_content" not in metadata
+
+    def test_oversized_utm_field_dropped(self, client):
+        """A UTM value longer than 100 chars is silently dropped."""
+        mock_session = self._mock_session()
+        oversized = "x" * 101
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post(
+                "/stripe/create-session",
+                data={"pack": "starter", "utm_source": oversized},
+            )
+
+        assert resp.status_code == 200
+        metadata = mock_create.call_args.kwargs.get("metadata", {})
+        assert "utm_source" not in metadata, (
+            "UTM values > 100 chars must be dropped silently"
+        )
+
+    def test_empty_utm_field_dropped(self, client):
+        """An empty UTM value is dropped — not stored as an empty string."""
+        mock_session = self._mock_session()
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post(
+                "/stripe/create-session",
+                data={"pack": "starter", "utm_source": ""},
+            )
+
+        assert resp.status_code == 200
+        metadata = mock_create.call_args.kwargs.get("metadata", {})
+        assert "utm_source" not in metadata, (
+            "Empty UTM values must be dropped — not stored as empty strings"
+        )
+
+    def test_utm_does_not_appear_in_payment_intent_metadata(self, client):
+        """UTM fields appear ONLY in Session metadata, not payment_intent_data.metadata.
+
+        payment_intent_data.metadata is reserved for pack only (Unit 3 contract).
+        UTMs are on the session — the webhook reads session metadata, not PI metadata.
+        """
+        mock_session = self._mock_session()
+
+        with patch("stripe.checkout.Session.create", return_value=mock_session) as mock_create:
+            resp = client.post(
+                "/stripe/create-session",
+                data={
+                    "pack": "starter",
+                    "utm_source": "mobileread",
+                    "utm_medium": "organic",
+                },
+            )
+
+        assert resp.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        pi_metadata = call_kwargs.get("payment_intent_data", {}).get("metadata", {})
+        assert "utm_source" not in pi_metadata, (
+            "UTMs must NOT be in payment_intent_data.metadata — session metadata only"
+        )
+        assert "utm_medium" not in pi_metadata
