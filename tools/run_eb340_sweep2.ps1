@@ -24,9 +24,14 @@ Phases:
 Results accumulate into run-summary.json (merged by id, rewritten after every book
 so partial results survive interruption). Fully local: zero cloud spend on Lane A.
 
-NOTE: the breadth sweep (full manifest Convert/Both) and findings are intentionally
-deferred until PR #170 is merged. Pre-merge, only Preflight / Select(dry-run) / Canary
-are exercised.
+NOTE: PR #170 (F1 coverage) and #171 (this runner) are merged. The breadth sweep
+(full manifest Convert/Both) and findings remain gated on the calibration step
+(pre-sweep determinism + canary, post-sweep spot-checks), not on preflight alone.
+
+KFX resolution: Convert-ToKindle names output from title/author metadata, NOT the
+source stem, so the convert path keys off the returned OutputPath (with a
+newest-KFX-written-this-run fallback) and derives the VQA report stem from the
+actual KFX file.
 #>
 [CmdletBinding()]
 param(
@@ -325,33 +330,65 @@ $i = 0
 foreach ($b in $books) {
   $i++; $r = $byId[$b.id]
   $tag = "[$i/$($books.Count)] $($b.id)"
-  $stem = [System.IO.Path]::GetFileNameWithoutExtension($b.source_path)
-  $expectKfx = Join-Path $KfxDir ($stem + '.kfx')
 
   if ($Phase -in 'Convert', 'Both') {
     Write-SweepLog "----- CONVERT $tag ($($b.mb) MB, $($b.classification)) : $($b.type_axis) -----"
     if (-not (Test-Path -LiteralPath $b.source_path)) { Write-SweepLog "  MISSING SOURCE" 'ERROR'; $r.error = 'missing_source'; Save-Summary; continue }
+    # Snapshot the start time so the newest-KFX fallback only matches files THIS run wrote.
+    $convStart = Get-Date
+    # Capture into script scope: ForEach-Object runs in a child scope, so a plain
+    # $convResult assignment inside the block would not escape to this scope.
+    $script:convResult = $null
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
+      # Convert-ToKindle names its KFX from title/author metadata (NOT the source
+      # stem), and returns a result hashtable on the success stream while logging
+      # progress on the others. Merge all streams, then split by type: capture the
+      # hashtable (carries .OutputPath) and write everything else to the run log.
       Convert-ToKindle -InputFile $b.source_path -OutputDir $KfxDir -NoCache *>&1 |
-        ForEach-Object { "$(Get-Date -Format 'HH:mm:ss') [CONV][$($b.id)] $_" | Add-Content -Path $RunLog }
+        ForEach-Object {
+          if ($_ -is [hashtable]) { $script:convResult = $_ }
+          else { "$(Get-Date -Format 'HH:mm:ss') [CONV][$($b.id)] $_" | Add-Content -Path $RunLog }
+        }
     } catch { Write-SweepLog "  CONVERT EXCEPTION: $($_.Exception.Message)" 'ERROR'; $r.error = "convert: $($_.Exception.Message)" }
     $sw.Stop(); $r.convert_sec = [math]::Round($sw.Elapsed.TotalSeconds, 1)
-    if (Test-Path -LiteralPath $expectKfx) {
-      $r.convert_ok = $true; $r.kfx_path = $expectKfx
-      Write-SweepLog "  CONVERT OK $($r.convert_sec)s -> $([math]::Round((Get-Item -LiteralPath $expectKfx).Length/1MB,2)) MB"
+    $convResult = $script:convResult
+
+    # Resolve the produced KFX. Primary: Convert-ToKindle's returned OutputPath.
+    # Fallback: newest .kfx written into $KfxDir at/after conversion start (covers
+    # the case where the return object was lost but the file landed).
+    $producedKfx = $null
+    if ($convResult -and $convResult.Success -and $convResult.OutputPath -and (Test-Path -LiteralPath $convResult.OutputPath)) {
+      $producedKfx = (Resolve-Path -LiteralPath $convResult.OutputPath).Path
+    } else {
+      $newest = Get-ChildItem -LiteralPath $KfxDir -Filter '*.kfx' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $convStart } | Sort-Object LastWriteTime | Select-Object -Last 1
+      if ($newest) {
+        $producedKfx = $newest.FullName
+        Write-SweepLog "  OutputPath unavailable from return value; using newest KFX written this run: $($newest.Name)" 'WARN'
+      }
+    }
+
+    if ($producedKfx) {
+      $r.convert_ok = $true; $r.kfx_path = $producedKfx
+      Write-SweepLog "  CONVERT OK $($r.convert_sec)s -> $([System.IO.Path]::GetFileName($producedKfx)) ($([math]::Round((Get-Item -LiteralPath $producedKfx).Length/1MB,2)) MB)"
     } else {
       Write-SweepLog "  CONVERT FAILED (no KFX) $($r.convert_sec)s" 'ERROR'
       if (-not $r.error) { $r.error = 'no_kfx_produced' }; Save-Summary; continue
     }
     Save-Summary
-  } else {
-    if (Test-Path -LiteralPath $expectKfx) { $r.convert_ok = $true; $r.kfx_path = $expectKfx }
   }
 
   if ($Phase -in 'VQA', 'Both') {
-    if (-not $r.kfx_path -or -not (Test-Path -LiteralPath $r.kfx_path)) { Write-SweepLog "  VQA SKIP $tag (no KFX)" 'WARN'; continue }
-    Invoke-Vqa -Row $r -KfxPath $r.kfx_path -Stem $stem
+    # kfx_path is set by Convert above, or restored from a prior run's run-summary.json
+    # for standalone -Phase VQA. We deliberately do NOT guess the path from the source
+    # stem: the report is named <kfx-stem>_visual_qa_report.json, so the report stem
+    # must come from the actual KFX file, never the source PDF.
+    if (-not $r.kfx_path -or -not (Test-Path -LiteralPath $r.kfx_path)) {
+      Write-SweepLog "  VQA SKIP $tag (no KFX path; run -Phase Convert/Both first)" 'WARN'; continue
+    }
+    $kfxStem = [System.IO.Path]::GetFileNameWithoutExtension($r.kfx_path)
+    Invoke-Vqa -Row $r -KfxPath $r.kfx_path -Stem $kfxStem
     Save-Summary
   }
 }
