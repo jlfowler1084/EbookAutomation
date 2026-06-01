@@ -167,5 +167,73 @@ class TestBuildReportEvaluationStatus(unittest.TestCase):
         self.assertIsNotNone(report["overall_pass"])
 
 
+class TestBuildReportCoverageAccounting(unittest.TestCase):
+    """EB-340 F1: requested-vs-effective coverage fields in build_report."""
+
+    def _report(self, qa_data, **overrides):
+        kwargs = dict(
+            book_path="/fake/path/book.kfx",
+            qa_data=qa_data,
+            total_pages=600,
+            pages_sampled=2,
+            dpi=72,
+            model="test-model",
+            input_tokens=0,
+            output_tokens=0,
+            provider=FakeProvider(),
+        )
+        kwargs.update(overrides)
+        return build_report(**kwargs)
+
+    @staticmethod
+    def _evaluated_qa(n_pages):
+        return {
+            "evaluation_status": "evaluated",
+            "overall_score": 90,
+            "pages": [{"page_number": i + 1, "score": 90, "issues": []}
+                      for i in range(n_pages)],
+            "category_scores": {},
+            "summary": f"Evaluated {n_pages} pages.",
+            "top_issues": [],
+        }
+
+    def test_explicit_flags_report_complete_with_honored_dpi(self):
+        """Requested == effective (explicit-flag run) -> complete, fields equal."""
+        report = self._report(
+            self._evaluated_qa(40), total_pages=600, pages_sampled=40, dpi=150,
+            pages_requested=40, requested_dpi=150, effective_dpi=150,
+            coverage_reason=None,
+        )
+        self.assertEqual(report["pages_requested"], 40)
+        self.assertEqual(report["requested_dpi"], 150)
+        self.assertEqual(report["effective_dpi"], 150)
+        self.assertIsNone(report["coverage_reason"])
+        self.assertEqual(report["coverage_status"], "complete")
+
+    def test_default_reduction_marks_partial_with_reason(self):
+        """A default large-file reduction -> partial + reason, effective < requested."""
+        report = self._report(
+            self._evaluated_qa(4), total_pages=900, pages_sampled=4, dpi=72,
+            pages_requested=50, requested_dpi=150, effective_dpi=72,
+            coverage_reason="large_file_default_reduction",
+        )
+        self.assertEqual(report["requested_dpi"], 150)
+        self.assertEqual(report["effective_dpi"], 72)
+        self.assertLess(report["effective_dpi"], report["requested_dpi"])
+        self.assertEqual(report["pages_requested"], 50)
+        self.assertEqual(report["coverage_reason"], "large_file_default_reduction")
+        self.assertEqual(report["coverage_status"], "partial")
+
+    def test_legacy_call_defaults_are_sensible(self):
+        """Legacy callers (no coverage kwargs) get non-null, self-consistent fields."""
+        report = self._report(self._evaluated_qa(2), pages_sampled=2, dpi=150)
+        self.assertIn("pages_requested", report)
+        self.assertEqual(report["requested_dpi"], 150)
+        self.assertEqual(report["effective_dpi"], 150)
+        self.assertEqual(report["pages_requested"], 2)
+        self.assertIsNone(report["coverage_reason"])
+        self.assertEqual(report["coverage_status"], "complete")
+
+
 if __name__ == "__main__":
     unittest.main()

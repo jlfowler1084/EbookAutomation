@@ -370,6 +370,44 @@ class TestLargeFileDpiReductionUserSupplied(unittest.TestCase):
         self.assertIn("EB-347", combined)
         self.assertIn("--max-pages", combined)
 
+    def test_default_path_reduction_emits_warning(self):
+        """EB-340 F1 — a DEFAULT-path large-file reduction logs a WARNING that
+        references EB-340 and announces partial coverage (no longer silent INFO)."""
+        import visual_qa as vqa
+        with self.assertLogs("visual_qa", level="WARNING") as cm:
+            vqa._apply_large_file_dpi_reduction(
+                kfx_size_bytes=80 * 1024 * 1024,
+                total_pages=700,
+                dpi=150,
+                max_pages=20,
+                user_supplied_dpi=False,
+                user_supplied_max_pages=False,
+            )
+        combined = "\n".join(cm.output)
+        self.assertIn("EB-340", combined,
+                      "Default-path reduction must reference EB-340")
+        self.assertIn("partial", combined.lower(),
+                      "Warning must announce partial coverage")
+
+    def test_default_no_reduction_does_not_warn(self):
+        """When the default path is large but nothing actually reduces (already-low
+        values), no EB-340 coverage warning fires."""
+        import logging
+        import visual_qa as vqa
+        with self.assertLogs("visual_qa", level="DEBUG") as cm:
+            logging.getLogger("visual_qa").debug("anchor")  # ensure assertLogs has output
+            vqa._apply_large_file_dpi_reduction(
+                kfx_size_bytes=80 * 1024 * 1024,
+                total_pages=700,
+                dpi=50,      # already below the 72 floor
+                max_pages=4,  # already at the floor
+                user_supplied_dpi=False,
+                user_supplied_max_pages=False,
+            )
+        combined = "\n".join(cm.output)
+        self.assertNotIn("EB-340", combined,
+                         "No coverage warning when nothing actually reduces")
+
     def test_small_file_no_change_regardless_of_flags(self):
         """Small files are never modified regardless of user_supplied flags."""
         dpi, max_pages = _apply_large_file_dpi_reduction(
