@@ -28,3 +28,25 @@ def sanitize_component(name: str) -> str:
     if name.split(".")[0].upper() in _RESERVED:
         name = f"_{name}"
     return name
+
+
+def build_base_name(
+    author_sort: str,
+    title: str,
+    year: int | None,
+    series: str | None = None,
+    series_index: str | None = None,
+    disambiguator: str | None = None,
+) -> str:
+    """Build the filename stem (no extension) per spec §5.1."""
+    author_sort = sanitize_component(author_sort)
+    title = sanitize_component(title)
+    out = f"{author_sort} - "
+    if series and series_index:
+        out += f"[{sanitize_component(series)} {series_index}] "
+    out += title
+    if year:
+        out += f" ({year})"
+    if disambiguator:
+        out += f" [{sanitize_component(disambiguator)}]"
+    return out

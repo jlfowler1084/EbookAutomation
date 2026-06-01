@@ -33,3 +33,29 @@ def test_sanitize_guards_reserved_names():
 def test_sanitize_empty_becomes_placeholder():
     assert sanitize_component("///") == "-"  # slashes -> ' - ', collapse, trim -> '-'
     assert sanitize_component("") == "_"
+
+
+from book_filer.pathsafe import build_base_name
+
+
+def test_build_base_name_simple():
+    assert build_base_name("Cooper, Andrew Scott", "The Oil Kings", 2011) == \
+        "Cooper, Andrew Scott - The Oil Kings (2011)"
+
+
+def test_build_base_name_no_year():
+    assert build_base_name("Spencer, Herbert", "The Man Versus the State", None) == \
+        "Spencer, Herbert - The Man Versus the State"
+
+
+def test_build_base_name_with_series():
+    assert build_base_name(
+        "Spengler, Oswald", "Form and Actuality", 1918,
+        series="Decline of the West", series_index="01",
+    ) == "Spengler, Oswald - [Decline of the West 01] Form and Actuality (1918)"
+
+
+def test_build_base_name_with_disambiguator():
+    assert build_base_name(
+        "Coogan, Michael", "The New Oxford Annotated Bible", 2010, disambiguator="NRSV",
+    ) == "Coogan, Michael - The New Oxford Annotated Bible (2010) [NRSV]"
