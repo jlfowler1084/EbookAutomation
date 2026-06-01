@@ -23,8 +23,8 @@ PR #167 landed the EB-347 large-file override and PR #168 landed the extraction-
 (EB-348 CID/`<pre>`, EB-349 classifier OCR escalation).
 
 We want a **second, broader sweep** to (a) find new patterns at ~2× the corpus breadth, and
-(b) produce *causal* evidence that the PR #169 fixes actually moved the known failure cases —
-not just a noisier overall score.
+(b) produce *causal* evidence that the PR #167/#168 fixes actually moved the known failure
+cases — not just a noisier overall score.
 
 ## Critical framing: separate lanes, honest cost labels
 
@@ -136,7 +136,8 @@ Source: `F:\Books`. Selected by **technical type, not topic**, labeled via
 ## A/B rerun protocol — measure artifacts, not scores
 
 Overall VQA score is too noisy (sweep #1: ±10 per-page, category labels change between runs).
-For PR #169 validation, rerun and compare **artifact metrics** against the sweep-#1 baseline:
+For PR #167/#168 fix validation, rerun and compare **artifact metrics** against the sweep-#1
+baseline:
 
 | Book class | Primary metrics |
 |---|---|
