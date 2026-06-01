@@ -744,6 +744,11 @@ def load_books_from_json(json_path: str) -> list[dict]:
         for key in ("results", "books", "data"):
             if key in data and isinstance(data[key], list):
                 return data[key]
+        # EB-356: a search that returns a SINGLE result is serialized by
+        # PowerShell's ConvertTo-Json as a bare object, not a 1-element array.
+        # Treat a lone book-like dict as a single-item list instead of "no books".
+        if any(k in data for k in ("title", "download_url", "md5")):
+            return [data]
         return []
 
     return []

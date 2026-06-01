@@ -6814,8 +6814,11 @@ function Invoke-EbookBookSearch {
         # Batch: write titles to temp file
         $tmpFile = Join-Path $script:TempDir "bf_titles_$(Get-Random).txt"
         $Titles | Out-File -FilePath $tmpFile -Encoding utf8
-        $argsList += @('--file', "`"$tmpFile`"")
-        Write-EbookLog "BookFinder: batch search $($_.Count) title(s)" -Level INFO
+        # EB-356: splatted (@argsList) native args must NOT be manually quoted —
+        # PowerShell passes embedded quotes literally, so book_finder.py would
+        # look for a file named `"...txt"` (with quotes) and fail.
+        $argsList += @('--file', $tmpFile)
+        Write-EbookLog "BookFinder: batch search $($Titles.Count) title(s)" -Level INFO
     } else {
         # EB-356: book_finder.py declares `title` as a POSITIONAL arg, not
         # --title. Pass the value positionally; array-splatting (@argsList)
@@ -6825,7 +6828,11 @@ function Invoke-EbookBookSearch {
     }
 
     if ($Format) { $argsList += @('-f', $Format) }
-    $argsList += $Sources | ForEach-Object { '-s', $_ }
+    # EB-356: pass sources as a single -s followed by all values. book_finder.py
+    # declares --sources with nargs="+", so repeating "-s libgen -s anna" keeps
+    # only the LAST occurrence — silently collapsing the default to Anna-only.
+    $argsList += '-s'
+    $argsList += $Sources
     if ($Column -ne 'any') { $argsList += @('-c', $Column) }
 
     Write-EbookLog "BookFinder: searching '$Title$(if ($Author) { " by $Author" })'..."
@@ -6931,13 +6938,18 @@ function Invoke-EbookBookDownload {
 
         [Parameter(Mandatory, ParameterSetName = 'FromFile')][string]$File,
 
-        [Parameter(ParameterSetName = 'FromResult')][ValidateSet('epub', 'pdf', 'mobi', 'azw3', 'txt', 'djvu')][string]$Format = 'epub',
+        # EB-356: Format/OutputDir/Timeout apply to every download path — the
+        # end{} block uses them for FromResult, ById, and FromFile alike. Pinning
+        # them to a single set made `-Ids x -Format pdf` and `-File x -Format pdf`
+        # fail parameter binding. Set-less (no ParameterSetName) = all sets, the
+        # same way MaxRetries/DryRun/Limit are already declared.
+        [ValidateSet('epub', 'pdf', 'mobi', 'azw3', 'txt', 'djvu')][string]$Format = 'epub',
 
-        [Parameter(ParameterSetName = 'FromFile')][string]$OutputDir,
+        [string]$OutputDir,
 
         [int]$MaxRetries = 5,
 
-        [Parameter(ParameterSetName = 'FromFile')][string]$Timeout,
+        [string]$Timeout,
 
         [switch]$DryRun,
         # EB-356: the standalone query/action switches live in their own
@@ -7000,7 +7012,8 @@ function Invoke-EbookBookDownload {
             $argsList = @('download', '--ids', $Ids, '-f', $Format)
         }
         elseif ($PSCmdlet.ParameterSetName -eq 'FromFile' -and $File) {
-            $argsList = @('download', '--json', "`"$File`"")
+            # EB-356: no manual quotes — splatted native args are passed verbatim.
+            $argsList = @('download', '--json', $File)
             if ($Format) { $argsList += @('-f', $Format) }
             if ($DryRun) { $argsList += '--dry-run' }
         }
@@ -7008,7 +7021,8 @@ function Invoke-EbookBookDownload {
             # Queue results from pipeline and write to temp JSON file
             $tmpJson = Join-Path $script:TempDir "bf_results_$(Get-Random).json"
             $queued | ConvertTo-Json -Depth 5 | Out-File -FilePath $tmpJson -Encoding utf8
-            $argsList = @('download', '--json', "`"$tmpJson`"")
+            # EB-356: no manual quotes — book_downloader.py must receive the bare path.
+            $argsList = @('download', '--json', $tmpJson)
             if ($Format) { $argsList += @('-f', $Format) }
             if ($DryRun) { $argsList += '--dry-run' }
         } else {
@@ -7021,7 +7035,7 @@ function Invoke-EbookBookDownload {
             $outputDirResolved = $outputDir
         }
         if ($outputDirResolved -ne $defaultOutputDir) {
-            $argsList += @('-o', "`"$outputDirResolved`"")
+            $argsList += @('-o', $outputDirResolved)
         }
         if ($MaxRetries) {
             $argsList += @('-r', $MaxRetries.ToString())
@@ -7119,13 +7133,14 @@ function Invoke-EbookBookDownloadFromList {
             return
         }
 
-        Write-EbookLog "BookDownloaderFromList: searching $($_.Count) title(s)..." -Level INFO
+        Write-EbookLog "BookDownloaderFromList: searching $($allTitles.Count) title(s)..." -Level INFO
 
         # Phase 1: Search all titles
         $allResults = @()
         foreach ($title in $allTitles) {
             try {
-                $results = & $python $finderScript search "$title" -n 5 -f $Format -s libgen -s anna --json 2>&1
+                # EB-356: single -s with both values (nargs="+"); "-s libgen -s anna" keeps only anna.
+                $results = & $python $finderScript search "$title" -n 5 -f $Format -s libgen anna --json 2>&1
                 $jsonBlock = $results -join "`n"
                 $jsonMatch = [regex]::Match($jsonBlock, '(?s)--- JSON START ---(.*?)(?=--- JSON END ---)')
                 if ($jsonMatch.Success) {
@@ -7146,27 +7161,23 @@ function Invoke-EbookBookDownloadFromList {
             return
         }
 
-        Write-EbookLog "BookDownloaderFromList: found $($_.Length) result(s), queuing downloads..." -Level INFO
+        Write-EbookLog "BookDownloaderFromList: found $($allResults.Length) result(s), queuing downloads..." -Level INFO
 
         # Phase 2: Queue downloads
         $outputDirResolved = if ($OutputDir) { $OutputDir } else { $defaultOutputDir }
-        $dlArgs = @('download', '--json', (Join-Path $script:TempDir "bf_results_$(Get-Random).json"))
 
-        $allResults | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $script:TempDir "bf_results_$(Get-Random).json") -Encoding utf8
-
-        $dlArgs = @('download', '--json', $allResults | ConvertTo-Json -Depth 5 | Out-String | ForEach-Object {
-            Join-Path $script:TempDir "bf_results_download.json"
-        }) -join ';'
-
-        # Use simplified approach: write results and download
+        # Write the collected results to a single temp JSON, then download from it.
+        # (EB-356: removed dead scratch code that built an unused $dlArgs and wrote
+        # an orphan temp file on every run.)
         $resultFile = Join-Path $script:TempDir "bf_results_download.json"
         $allResults | ConvertTo-Json -Depth 5 | Out-File -FilePath $resultFile -Encoding utf8
 
-        $finalArgs = @('download', '--json', "`"$resultFile`"")
+        # EB-356: splatted native args are passed verbatim — no manual quotes.
+        $finalArgs = @('download', '--json', $resultFile)
         if ($Format) { $finalArgs += @('-f', $Format) }
         if ($MaxRetries) { $finalArgs += @('-r', $MaxRetries.ToString()) }
         if ($outputDirResolved -ne $defaultOutputDir) {
-            $finalArgs += @('-o', "`"$outputDirResolved`"")
+            $finalArgs += @('-o', $outputDirResolved)
         }
         if ($DryRun) { $finalArgs += '--dry-run' }
 
