@@ -1,7 +1,7 @@
 # F:\Books Organization + Hermes Auto-Filing Enforcement — Design Spec
 
 - **Date:** 2026-06-01
-- **Status:** Design (approved in brainstorm; pending spec review)
+- **Status:** Design — brainstorm approved; spec reviewed; 4 open decisions resolved (§12) and 5 review findings amended; pending ticket creation
 - **Author:** Joe Fowler (with Claude)
 - **Scope:** Reorganize `F:\Books` into a subject-first "bookstore" taxonomy, adopt Calibre as the metadata system-of-record, and stand up a Hermes-driven auto-filer that enforces the structure on new arrivals.
 - **Spans:** EbookAutomation (book-domain), ClaudeInfra (Hermes control-plane), Plex (ingest source).
@@ -44,7 +44,7 @@ F:\Books\                  PLACEMENT authority (filer-materialized subject tree)
     _Needs_Review\           ambiguous classification, fragments, low-confidence
     _Quarantine\             blocked: path too long, unreadable, reparse-point in chain, outside fence
     _Duplicates_Pending\     non-canonical copies awaiting keep/discard sign-off
-    _Trash_Pending\          deletions held N days (the real undo backstop; never hard-delete)
+    _Trash_Pending\          trashed files held 30 days; permanent purge is a separate, manually-approved op (§6.6); never hard-deleted inline
     _Migration_Manifests\    plan-<ts>.{csv,json} + undo-<ts>.ps1 + shelf-index.json
     01 History\ … 12 …\      the shelves
     Audio_Books\             format root (scan-excluded)
@@ -52,15 +52,15 @@ F:\Books\                  PLACEMENT authority (filer-materialized subject tree)
 F:\Documents\              NON-LIBRARY: tax/admin/resumes/forms (scan-excluded, never shelved)
 ```
 
-**Ingest flow (one book):** `_Inbox` → `calibredb add` (→ Calibre ID, ISBN, dedup, metadata; Calibre takes ownership of the canonical copy) → filer reads clean metadata + `#genre` → computes sanitized canonical shelf path → **materializes** the file into the shelf (copy or hardlink — see §3) → writes manifest row + `shelf-index.json` entry → the consumed `_Inbox` source is removed to `_Trash_Pending` (never hard-deleted). A failure at any step leaves the source in `_Inbox` untouched and routes a marker to `_Needs_Review`.
+**Ingest flow (one book, apply path):** `_Inbox` → derivative check (§6.5) → `calibredb add` (→ Calibre ID, ISBN, dedup, metadata; Calibre takes ownership of the canonical copy) → filer reads clean metadata + `#genre` → computes sanitized canonical shelf path → **materializes every format Calibre holds for the book** into the shelf (copy or hardlink — §3; multiple formats co-locate under the Author folder, sharing the base name with distinct extensions) → writes manifest row(s) + `shelf-index.json` entry → the consumed `_Inbox` source is moved to `_Trash_Pending` (never hard-deleted). A failure at any step leaves the source in `_Inbox` untouched and routes a marker to `_Needs_Review`. **Note:** `calibredb add` mutates the library and assigns non-deterministic IDs, so it runs ONLY on approved apply — dry-run/plan manifests use a deterministic `planned_calibre_key` instead (§6.1).
 
 **Single-writer rule:** only the filer writes the shelf tree. Plex's downloader and EbookAutomation's BookFinder are repointed to `_Inbox` so there is exactly one chokepoint (§9).
 
 ---
 
-## 3. OPEN DECISION — Shelf materialization: copy vs hardlink
+## 3. DECISION (resolved: COPY mode) — Shelf materialization
 
-Calibre always owns its own file copies in `F:\Library\Calibre`. The shelf in `F:\Books` is a second on-disk view. How that view is materialized is the one unresolved decision:
+Calibre always owns its own file copies in `F:\Library\Calibre`. The shelf in `F:\Books` is a second on-disk view. How that view is materialized was **resolved at spec review to Copy mode** (Option A); hardlink remains a config-toggle option:
 
 ### Option A — Copy mode (RECOMMENDED default)
 Shelf entries are independent file copies.
@@ -75,7 +75,7 @@ Shelf entries are NTFS hardlinks to the Calibre library files (same volume requi
   - A replace-style tool (delete+create) breaks the association; link count drops 2→1 (detectable).
 - **Required contract (see §3.1).**
 
-**Recommendation:** default to **Copy mode**; expose `materialize_mode: copy|hardlink` in config. Decide at spec review.
+**Resolved:** **Copy mode** is the selected default; `materialize_mode: copy|hardlink` remains in config for an opt-in switch. (§12 #1)
 
 ### 3.1 The materialization contract (applies to whichever mode)
 1. **No tool opens a shelf or library book file for in-place write.** Transforms (Calibre convert, OCR, TTS, the EbookAutomation pipeline) READ the file and EMIT new outputs into `_Inbox`/`processing`. EbookAutomation already complies (inbox→processing→output). Calibre "convert" adds a new format file, not an in-place mutation. Calibre "embed metadata into book files" / "polish" is **disabled by default** (it mutates in place).
@@ -145,13 +145,13 @@ Each phase emits a manifest (§6.1) + a generated `undo-<ts>.ps1`. **Phases 3–
 
 | # | Phase | Risk | Gate |
 |---|-------|------|------|
-| 0 | **Full backup of `F:\Books`** to a second physical location; scaffold operational folders + `F:\Documents` + `F:\Library\Calibre`; add config block | none | backup verified |
-| 1 | Inventory + sha256 + embedded-metadata extract + classify (rule→metadata→LLM) + dup-group detect → **emit full plan manifest** (no moves) | read-only | — |
+| 0 | **Full backup of `F:\Books`** to a second physical location via `robocopy /MIR /XJ /XJD /XJF` (exclude all junctions/symlinks) + a skipped-reparse-points manifest; verify file count + sample hashes; scaffold operational folders + `F:\Documents` + `F:\Library\Calibre`; add config block | none | backup + count verified |
+| 1 | Inventory + sha256 + embedded-metadata extract + classify (rule→metadata→LLM) + dup-group detect → **emit full plan manifest** with deterministic `planned_calibre_key` (**no `calibredb add` against the real library**; an optional disposable staging library may aid dedup detection and is then discarded) — no moves | read-only | — |
 | 2 | **Calibration gate:** run Phase 1 twice; compare **normalized** output (§6.2) for determinism; human review + spot-check; tune taxonomy/rules; re-run until green | none | **sign-off** |
 | 3 | Extract **unambiguous** non-books → `F:\Documents`. (Potential book-fragments are NOT touched here — see §6.3) | low | propose→approve |
 | 4 | Dedup collapse: filer selects canonical (records `canonical_reason`), others → `_Duplicates_Pending` | medium | propose→approve |
 | 5 | **Fragment attribution** (exploded-EPUB, First-Folio, AA workbooks); only after attribution does confirmed debris → `_Trash_Pending`; reassembly candidates → `_Needs_Review` | medium | propose→approve |
-| 6 | Materialize tree: `calibredb add` survivors → materialize into shelves (§3), in **per-section batches** | high | propose→approve (batched) |
+| 6 | Apply: `calibredb add` survivors (assigns the real `calibre_id`, fills the manifest) → materialize **all formats** into shelves (§3), in **per-section batches** | high | propose→approve (batched) |
 | 7 | Normalize 35 audiobooks → `Audio_Books\Author Last, First\Title (Year)\` with zero-padded chapters | low | propose→approve |
 | 8 | Rewire automation (repo-wide literal-path audit, §9); run EbookAutomation test suite | low | tests green |
 | 9 | **Reconciliation job** stood up; deploy enforcement (filer + fence + crons) — propose-only until ADR grant lands (§8) | low | — |
@@ -159,24 +159,34 @@ Each phase emits a manifest (§6.1) + a generated `undo-<ts>.ps1`. **Phases 3–
 **Phase order rationale:** "shrink then sort" — pull non-books (Phase 3) and collapse duplicates (Phase 4) *before* the expensive materialize (Phase 6), so a duplicate can't be shelved into three sections and the reviewed manifest is the real one.
 
 ### 6.1 Manifest schema (CSV + JSON, one row per file)
-`original_path, destination_path, sha256, size, calibre_id, isbn, section, subcategory, author_sort, title, year, duplicate_group_id, canonical_reason, classification_confidence, classification_source {rule|metadata|llm}, taxonomy_version, tool_version, action {move|copy|hardlink|delete|quarantine|review}, undo_action, review_required`.
-Plus `_Migration_Manifests\shelf-index.json` mapping `shelf_path ↔ calibre_id ↔ sha256` (used by reconciliation, §6.4).
+`original_path, destination_path, sha256, size, planned_calibre_key, calibre_id, isbn, format, section, subcategory, author_sort, title, year, duplicate_group_id, canonical_reason, classification_confidence, classification_source {rule|metadata|llm}, taxonomy_version, tool_version, action {move|copy|hardlink|trash|quarantine|review|merge-format}, undo_action, review_required`.
+Plus `_Migration_Manifests\shelf-index.json` mapping `shelf_path ↔ (calibre_id, format) ↔ sha256` (used by reconciliation, §6.4). `planned_calibre_key` (deterministic: ISBN → else normalized `author+title+year` → else sha256) is set in plan manifests; the real `calibre_id` is filled only on approved apply (Phase 6). `action: trash` routes to `_Trash_Pending`, never an inline hard-delete (§6.6); `merge-format` attaches a format-twin to an existing Calibre book instead of creating a new one (§6.4).
 
 ### 6.2 Determinism gate — timestamp hygiene
 Byte-identical comparison runs against a **normalized canonical projection** of the manifest: generation timestamps, temp/run IDs are excluded; rows are sorted by a stable key (`original_path`); `taxonomy_version` + `tool_version` are treated as fixed inputs, not variable output. The human-facing manifest keeps real timestamps; only the normalized projection is compared. This prevents both false failures (timestamp noise) and false passes (nondeterministic row ordering hiding real drift).
 
 ### 6.3 Non-book boundaries & fragment-before-trash
 - **Unambiguous non-books** (tax/admin/insurance/passport/boarding-pass/resumes/forms) → `F:\Documents` (Phase 3, never deleted).
-- **arXiv-style papers** → `_Needs_Review` (decide as a class: 09/Science vs a non-book Papers store; not auto-shelved).
+- **arXiv-style papers** → shelve under **09 / Science & Academic Papers** by default; route to `_Needs_Review` only when a paper is actually a dataset, manual, or other non-library artifact (then → `F:\Documents` or trash per attribution). (Decision resolved, §12 #3.)
 - **Fragments** (exploded-EPUB `.xhtml/.opf/.ncx/.css`/images, First-Folio pieces, AA workbook `-1..-N`) are **not** classified as junk in Phase 3. In Phase 5, **fragment attribution** runs first: determine whether the fragments are the only recoverable parts of a damaged book. Only confirmed-redundant debris (a whole copy exists) → `_Trash_Pending`; reassembly candidates → `_Needs_Review`. Nothing that could be a book's only surviving content is trashed before attribution.
 - **Ambiguous anything** → `_Needs_Review`. Never silently shelved or deleted.
 
 ### 6.4 Calibre ↔ shelf reconciliation (ongoing job)
 Calibre DB is the metadata source; the filer materializes the shelf from it. The reconciliation job (scheduled, and on-demand after Calibre edits):
-1. For each Calibre book: compute the **expected** shelf path from current metadata + `#genre`. If the materialized path differs (metadata changed), move the shelf entry to the new path; the stale path → `_Trash_Pending`.
-2. Every shelf file must map to **exactly one** Calibre ID via `shelf-index.json`. Orphans (no Calibre book) → `_Needs_Review`.
+1. For each Calibre book **format**: compute the **expected** shelf path from current metadata + `#genre` (one shelf file per `(book, format)`; all formats co-locate under the Author folder, sharing the base name with distinct extensions). If the materialized path differs (metadata changed), move the shelf entry to the new path; the stale path → `_Trash_Pending`.
+2. Every shelf file must map to **exactly one** `(Calibre ID, format)` pair via `shelf-index.json`. Orphans (no Calibre book) → `_Needs_Review`.
 3. **Integrity:** hardlink mode — verify link count == 2 and same file ID; copy mode — verify shelf hash == Calibre file hash. Broken/drifted → re-materialize from Calibre, or `_Quarantine` on repeated failure.
-4. Calibre book deleted → its shelf entry → `_Trash_Pending`.
+4. Calibre book deleted → its shelf entries → `_Trash_Pending`.
+
+### 6.5 Source-vs-derivative rule (conversion outputs)
+EbookAutomation conversion outputs (KFX, TTS MP3, intermediate `.txt`/balabolka artifacts) are **derivatives** of a source book already (or being) cataloged — not new books. The completion hook (§8 ⑤) passes the **source Calibre ID** (or source path) with the artifact, and the filer's `_Inbox` derivative check routes by kind:
+- **KFX / alternate ebook format** → attached as a *format* to the source Calibre book (`merge-format`), materialized beside the source under the same Author/base name. Never a new book record.
+- **Audiobook MP3** → placed under `Audio_Books\<source author>\<source title>\`, tagged `derivative` and linked to the source Calibre ID; not ingested as a text book.
+- **Intermediate TTS `.txt` / balabolka artifacts** → not library items; not ingested.
+A derivative arriving with **no source link** → `_Needs_Review` (never auto-promoted to a fresh source). This breaks the re-ingest loop: a derivative can never be re-classified as an independent source and re-converted.
+
+### 6.6 Trashing vs purge
+`_Trash_Pending` is a holding area, not deletion. Every migration/filer action only ever **trashes** (moves into `_Trash_Pending` with a manifest row + undo entry). **Permanent purge** is a *separate, manual, manifest-backed* operation (`Invoke-BookTrashPurge.ps1`) that lists everything older than the retention window (**30 days**), requires explicit human approval, and logs exactly what it deleted. It runs **on demand only** — never on a schedule, never inline with filing. Nothing in the automated path hard-deletes.
 
 ---
 
@@ -196,7 +206,7 @@ Built on Hermes' actual capabilities (local Qwen brain, zero API cost; `terminal
 
 ## 8. Workflows — in scope vs deferred
 
-**In scope:** ① one-shot migration ② dedup pass ③ calibrated inbox auto-file (core enforce loop) ④ Calibre adoption + metadata enrichment ⑤ EbookAutomation conversion-output → `_Inbox` completion hook (reuses the qbit-finished pattern EB-352 already mirrors → converted KFX/TTS lands auto-filed) ⑥ audiobook normalize ⑦ reconciliation job.
+**In scope:** ① one-shot migration ② dedup pass ③ calibrated inbox auto-file (core enforce loop) ④ Calibre adoption + metadata enrichment ⑤ EbookAutomation conversion-output → `_Inbox` completion hook **carrying the source Calibre ID** (reuses the qbit-finished pattern EB-352 mirrors); derivatives attach to the source book per §6.5 — never re-ingested as new books ⑥ audiobook normalize ⑦ reconciliation job.
 **Deferred:** Audiobookshelf / Calibre-Web servers; quarterly density-audit cron.
 
 ---
@@ -242,7 +252,7 @@ Each child gets its own ticket before implementation; code lands on worktree bra
 **Dependencies:** Calibre desktop + `calibredb` CLI installed; `LongPathsEnabled=1`; same-volume `F:\Library\Calibre` and `F:\Books` (for hardlink mode); EbookAutomation metadata-extraction helper exposed to the filer; verified live Hermes state.
 
 **Risks & guardrails**
-- **Destructive move at 757-file scale** → Phase 0 full backup; `_Trash_Pending` (no hard-delete); fail-safe wrapper; `-WhatIf`; idempotent; propose-only first runs.
+- **Destructive move at 757-file scale** → Phase 0 full backup (`robocopy /XJ`, junctions excluded); trash-only with a separate manual purge (§6.6); fail-safe wrapper; `-WhatIf`; idempotent; propose-only first runs.
 - **Junction/reparse traversal wipe** (SCRUM-301) → reparse-point rejection across full ancestry (§5.3); no junctions created; run from main tree, not a worktree junction.
 - **Hardlink shared-attribute foot-gun** → copy-mode default; if hardlink, the §3.1 contract + link-count verification + reconciliation.
 - **Classification accuracy unproven** → determinism gate + calibration sign-off before any live move; embedded-metadata extraction beyond filename.
@@ -250,11 +260,14 @@ Each child gets its own ticket before implementation; code lands on worktree bra
 - **Duplication cascade** → dedup (Phase 4) precedes materialize (Phase 6).
 - **Fragment mis-filing** → fragment attribution before any trash (§6.3).
 - **Two-scheme collision** (Plex flat Author/Title vs subject tree) → resolved: subject-first wins; Plex output funnels through `_Inbox` so the filer re-files it.
+- **Derivative re-ingest loop** (KFX/TTS/audio re-classified as new source books) → source-vs-derivative rule (§6.5); derivatives attach to the source Calibre book, never re-enter as fresh sources.
+- **Calibre ID nondeterminism in dry-runs** → plan manifests use a deterministic `planned_calibre_key`; `calibredb add` (and the real `calibre_id`) happen only on approved apply (§6.1, Phase 6).
+- **Backup following a junction** → Phase 0 `robocopy /XJ /XJD /XJF` excludes reparse points and logs a skipped-reparse manifest.
 
 ---
 
-## 12. Open decisions for spec review
-1. **Materialization mode:** Copy (recommended) vs Hardlink (§3).
-2. **Epic board:** EB (book-centric, recommended) vs INFRA (cross-project) host for the umbrella epic.
-3. **arXiv papers as a class:** shelve in 09/Science vs a separate non-book Papers store (§6.3).
-4. **`_Trash_Pending` retention window** (N days) before permanent deletion.
+## 12. Decisions — resolved at spec review
+1. **Materialization mode:** ✅ **Copy mode** (`materialize_mode` toggle retained for opt-in hardlink). (§3)
+2. **Umbrella epic board:** ✅ **EB** umbrella epic, with **INFRA** + **PLEX** children. (§10)
+3. **arXiv papers:** ✅ default **09 / Science & Academic Papers**; only true non-library artifacts (dataset/manual/etc.) → `_Needs_Review` → `F:\Documents` or trash. (§6.3)
+4. **`_Trash_Pending` retention:** ✅ **30 days**; purge is **manual + separately approved** at first, never scheduled (§6.6).
