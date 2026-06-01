@@ -118,3 +118,10 @@ def test_unique_path_increments_until_free(tmp_path):
     (tmp_path / "Book.epub").write_text("x", encoding="utf-8")
     (tmp_path / "Book (2).epub").write_text("x", encoding="utf-8")
     assert unique_path(tmp_path / "Book.epub") == tmp_path / "Book (3).epub"
+
+
+def test_build_base_name_sanitizes_series_index():
+    # An illegal char in the series index must not slip into the "safe" stem.
+    assert build_base_name(
+        "Author, Test", "Title", 2000, series="Series", series_index="2/3",
+    ) == "Author, Test - [Series 2 - 3] Title (2000)"

@@ -43,7 +43,7 @@ def build_base_name(
     title = sanitize_component(title)
     out = f"{author_sort} - "
     if series and series_index:
-        out += f"[{sanitize_component(series)} {series_index}] "
+        out += f"[{sanitize_component(series)} {sanitize_component(series_index)}] "
     out += title
     if year:
         out += f" ({year})"
