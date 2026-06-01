@@ -99,3 +99,22 @@ def test_compute_shelf_path_truncates_title_only_when_too_long():
     assert p.parent == Path(
         "F:\\Books\\02 Philosophy\\Ethics & Political Philosophy\\Author, Test"
     )
+
+
+from book_filer.pathsafe import unique_path
+
+
+def test_unique_path_returns_input_when_free(tmp_path):
+    target = tmp_path / "Book.epub"
+    assert unique_path(target) == target
+
+
+def test_unique_path_suffixes_on_collision(tmp_path):
+    (tmp_path / "Book.epub").write_text("x", encoding="utf-8")
+    assert unique_path(tmp_path / "Book.epub") == tmp_path / "Book (2).epub"
+
+
+def test_unique_path_increments_until_free(tmp_path):
+    (tmp_path / "Book.epub").write_text("x", encoding="utf-8")
+    (tmp_path / "Book (2).epub").write_text("x", encoding="utf-8")
+    assert unique_path(tmp_path / "Book.epub") == tmp_path / "Book (3).epub"

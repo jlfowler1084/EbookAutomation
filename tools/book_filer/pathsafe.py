@@ -92,3 +92,17 @@ def compute_shelf_path(
     keep = max(8, len(san_title) - overflow - 1)   # -1 reserves room for the ellipsis
     truncated = san_title[:keep].rstrip() + "…"
     return assemble(truncated)
+
+
+def unique_path(dest: Path) -> Path:
+    """Return `dest` if free, else `dest (2)`, `dest (3)`, ... (spec §5.3)."""
+    dest = Path(dest)
+    if not dest.exists():
+        return dest
+    stem, suffix, parent = dest.stem, dest.suffix, dest.parent
+    i = 2
+    while True:
+        candidate = parent / f"{stem} ({i}){suffix}"
+        if not candidate.exists():
+            return candidate
+        i += 1
