@@ -184,5 +184,16 @@
     }
   },
   "archive_originals": true,
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "library": {
+    "library_root": "F:\\Books",
+    "calibre_library": "F:\\Library\\Calibre",
+    "audio_root": "F:\\Books\\Audio_Books",
+    "documents_root": "F:\\Documents",
+    "materialize_mode": "copy",
+    "trash_retention_days": 30,
+    "operational_folders": ["_Inbox", "_Needs_Review", "_Quarantine", "_Duplicates_Pending", "_Trash_Pending", "_Migration_Manifests"],
+    "scan_exclude": ["Audio_Books"],
+    "max_path_length": 240
+  }
 }
