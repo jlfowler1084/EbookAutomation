@@ -745,7 +745,7 @@ Expected: PASS (2 passed).
 - [ ] **Step 5: Run the whole new suite + commit**
 
 Run: `python -m pytest tests/test_book_filer_config.py tests/test_book_filer_pathsafe.py tests/test_book_filer_reparse.py tests/test_book_filer_scaffold.py -q`
-Expected: PASS (24 passed).
+Expected: PASS (23 passed).
 
 ```bash
 git add tools/book_filer/scaffold.py tests/test_book_filer_scaffold.py
