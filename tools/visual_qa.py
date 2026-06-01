@@ -654,10 +654,14 @@ def _apply_large_file_dpi_reduction(
             _LARGE_FILE_REDUCED_MAX_PAGES,
         )
 
-    if not user_supplied_dpi or not user_supplied_max_pages:
-        logger.info(
+    if (not user_supplied_dpi or not user_supplied_max_pages) and (
+        reduced_dpi < dpi or reduced_max_pages < max_pages
+    ):
+        logger.warning(
             "Large-file threshold exceeded (%.1f MB, %d pages) — "
-            "reducing DPI %d→%d, max_pages %d→%d (SCRUM-319)",
+            "reducing DPI %d→%d, max_pages %d→%d on DEFAULT settings "
+            "(SCRUM-319). Coverage will be marked partial (EB-340 F1); "
+            "pass explicit --dpi/--max-pages to override.",
             kfx_size_bytes / (1024 * 1024),
             total_pages,
             dpi,
@@ -677,7 +681,9 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  input_tokens, output_tokens, provider=None, pass_threshold=70,
                  fallback_tokens=None, fallback_provider_name=None,
                  fallback_cost_usd=None, fallback_model=None,
-                 capture_pipeline=None, truncation_events=None):
+                 capture_pipeline=None, truncation_events=None,
+                 pages_requested=None, requested_dpi=None, effective_dpi=None,
+                 coverage_reason=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -691,7 +697,24 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     truncation_events: list of EB-149 coverage-loss events from OutputTruncatedError
         failures, each with keys batch_index, pages_lost, finish_reason, output_tokens.
         None or [] when no truncation occurred.
+
+    EB-340 F1 coverage accounting (extends the EB-149 schema, additive):
+        pages_requested -- pages we intended to sample before any large-file
+            reduction. Defaults to pages_sampled (the rendered count) for legacy
+            callers, so the 3-way coverage chain reads
+            pages_requested -> pages_sampled (rendered) -> pages_evaluated.
+        requested_dpi / effective_dpi -- DPI asked for vs DPI actually rendered.
+            Both default to dpi for legacy callers.
+        coverage_reason -- non-null only when coverage was silently shrunk
+            (e.g. "large_file_default_reduction"). When set, coverage_status is
+            forced to "partial" so a reduced report can never read "complete".
     """
+    if requested_dpi is None:
+        requested_dpi = dpi
+    if effective_dpi is None:
+        effective_dpi = dpi
+    if pages_requested is None:
+        pages_requested = pages_sampled
     if provider is not None:
         estimated_cost = provider.estimate_cost(model, input_tokens, output_tokens)
     else:
@@ -729,17 +752,25 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     # (truncation, parse failure, provider rejection) sets coverage_status "partial".
     pages_evaluated = len(qa_data.get("pages", []))
     coverage_status = "complete" if pages_evaluated >= pages_sampled else "partial"
+    # EB-340 F1: a silent coverage reduction (e.g. large-file DPI/page clamp on
+    # default settings) must never read as "complete".
+    if coverage_reason:
+        coverage_status = "partial"
 
     report = {
         "book": os.path.basename(book_path),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
         "pages_sampled": pages_sampled,
+        "pages_requested": pages_requested,
         "pages_evaluated": pages_evaluated,
         "coverage_status": coverage_status,
+        "coverage_reason": coverage_reason,
         "truncation_events": truncation_events or [],
         "pages_total": total_pages,
         "dpi": dpi,
+        "requested_dpi": requested_dpi,
+        "effective_dpi": effective_dpi,
         "evaluation_status": evaluation_status,
         "overall_score": overall_score,
         "overall_pass": overall_pass,
@@ -880,6 +911,10 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     # per-batch image payload past the provider's per-call image-bytes limit.
     # Reduce DPI and max_pages before rendering so the request fits.
     input_size_bytes = input_path.stat().st_size if input_path.exists() else 0
+    # EB-340 F1: snapshot requested coverage before the reduction reassigns
+    # dpi/max_pages, so the report can record requested-vs-effective honestly.
+    requested_dpi = dpi
+    requested_max_pages = max_pages
     dpi, max_pages = _apply_large_file_dpi_reduction(
         kfx_size_bytes=input_size_bytes,
         total_pages=total_pages,
@@ -888,6 +923,13 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         user_supplied_dpi=user_supplied_dpi,
         user_supplied_max_pages=user_supplied_max_pages,
     )
+    effective_dpi = dpi
+    # A reduction only fires on the default (non-user-supplied) path, so any drop
+    # here is a silent coverage loss that the report must surface (EB-340 F1).
+    coverage_reason = None
+    if dpi < requested_dpi or max_pages < requested_max_pages:
+        coverage_reason = "large_file_default_reduction"
+    pages_requested = min(requested_max_pages, total_pages)
 
     # --- Select and render pages ---
     sample_pages = select_sample_pages(total_pages, max_pages, bookmark_pages)
@@ -1227,6 +1269,10 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         fallback_model=fallback_model_used,
         capture_pipeline=capture_pipeline,
         truncation_events=truncation_events,
+        pages_requested=pages_requested,
+        requested_dpi=requested_dpi,
+        effective_dpi=effective_dpi,
+        coverage_reason=coverage_reason,
     )
 
     # --- Write report ---
