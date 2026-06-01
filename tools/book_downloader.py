@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 BookDownloader — Download and manage ebook downloads with resume and retry.
 
 Manages downloads from LibGen and Anna's Archive with automatic resume for
@@ -158,11 +158,16 @@ class DownloadDB:
     def get_pending(self, session_id: int | None = None,
                     limit: int = 100) -> list[dict]:
         """Get pending/download-in-progress books."""
-        query = "SELECT * FROM books WHERE status IN ('pending', 'downloading') ORDER BY id"
+        # EB-356: build the full WHERE clause BEFORE ORDER BY. Previously the
+        # session filter was appended after "ORDER BY id", producing
+        # "... ORDER BY id AND session_id = ? LIMIT" — invalid filtering that
+        # returned rows from every session.
+        query = "SELECT * FROM books WHERE status IN ('pending', 'downloading')"
         params: list = []
         if session_id is not None:
             query += " AND session_id = ?"
             params.append(session_id)
+        query += " ORDER BY id"
         query += f" LIMIT {limit}"
         with sqlite3.Connection(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -216,6 +221,10 @@ class DownloadDB:
     def mark_complete(self, book_id: int, local_path: str,
                       file_size: str = ""):
         with sqlite3.Connection(self.db_path) as conn:
+            # EB-356: row_factory required — the history INSERT below indexes
+            # the fetched row by name (book["title"]); without it the row is a
+            # tuple and the lookup raises TypeError, failing the completion.
+            conn.row_factory = sqlite3.Row
             now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             conn.execute("""
                 UPDATE books SET status = 'complete', local_path = ?,
@@ -239,6 +248,9 @@ class DownloadDB:
     def get_stats(self) -> dict:
         """Return download statistics."""
         with sqlite3.Connection(self.db_path) as conn:
+            # EB-356: same row_factory fix as mark_complete — row["c"] below
+            # needs name access, not tuple indexing.
+            conn.row_factory = sqlite3.Row
             stats: dict = {}
             for status in ("pending", "downloading", "complete", "failed"):
                 row = conn.execute(
@@ -474,10 +486,17 @@ class BookDownloader:
 
         return success
 
-    def run(self, limit: int = 100) -> dict:
-        """Process the download queue. Returns summary stats."""
+    def run(self, limit: int = 100, books: list[dict] | None = None) -> dict:
+        """Process the download queue. Returns summary stats.
+
+        EB-356: when ``books`` is provided (e.g. an explicit --ids selection or
+        a --json-loaded list), download exactly those; otherwise pull the
+        pending queue (capped at ``limit``). Previously run() always re-pulled
+        the whole pending queue, so --ids was silently ignored.
+        """
         LOG.info("Starting download queue (limit=%d)", limit)
-        books = self.db.get_pending(limit=limit)
+        if books is None:
+            books = self.db.get_pending(limit=limit)
         if not books:
             print("No pending downloads.")
             return {"pending": 0, "downloading": 0, "complete": 0, "failed": 0}
@@ -827,8 +846,10 @@ def main() -> int:
                 print(f"    URL: {b['download_url']}")
             return 0
 
-        # Run downloads
-        result = downloader.run(limit=args.limit)
+        # Run downloads — EB-356: pass the explicit selection (--ids / --json)
+        # so run() downloads exactly those books instead of re-pulling the
+        # entire pending queue.
+        result = downloader.run(limit=args.limit, books=books_to_download)
         return 0
 
     elif args.command == "cleanup":

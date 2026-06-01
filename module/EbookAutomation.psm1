@@ -6817,8 +6817,11 @@ function Invoke-EbookBookSearch {
         $argsList += @('--file', "`"$tmpFile`"")
         Write-EbookLog "BookFinder: batch search $($_.Count) title(s)" -Level INFO
     } else {
-        $argsList += @('--title', "`"$Title`"")
-        if ($Author) { $argsList += @('-a', "`"$Author`"") }
+        # EB-356: book_finder.py declares `title` as a POSITIONAL arg, not
+        # --title. Pass the value positionally; array-splatting (@argsList)
+        # handles quoting, so no manual quotes are needed.
+        $argsList += $Title
+        if ($Author) { $argsList += @('-a', $Author) }
     }
 
     if ($Format) { $argsList += @('-f', $Format) }
@@ -6937,10 +6940,14 @@ function Invoke-EbookBookDownload {
         [Parameter(ParameterSetName = 'FromFile')][string]$Timeout,
 
         [switch]$DryRun,
-        [switch]$Resume,
-        [switch]$List,
-        [switch]$Stats,
-        [switch]$History,
+        # EB-356: the standalone query/action switches live in their own
+        # parameter set so they bind without the FromResult set's mandatory
+        # -InputObject. Previously `Invoke-EbookBookDownload -List` failed with
+        # "missing mandatory parameters: InputObject".
+        [Parameter(ParameterSetName = 'Query')][switch]$Resume,
+        [Parameter(ParameterSetName = 'Query')][switch]$List,
+        [Parameter(ParameterSetName = 'Query')][switch]$Stats,
+        [Parameter(ParameterSetName = 'Query')][switch]$History,
         [int]$Limit = 100
     )
 
