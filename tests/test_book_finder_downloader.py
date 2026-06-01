@@ -46,6 +46,26 @@ def test_search_rejects_title_flag():
 
 
 # ---------------------------------------------------------------------------
+# Multi-source args — contract the psm1 wrapper must satisfy (review Finding 3)
+# ---------------------------------------------------------------------------
+
+def test_sources_single_flag_takes_all_values():
+    """`-s libgen anna` (nargs="+") must yield BOTH sources — the form the
+    wrapper now emits."""
+    parser = book_finder.build_parser()
+    ns = parser.parse_args(["search", "A Title", "-s", "libgen", "anna"])
+    assert ns.sources == ["libgen", "anna"]
+
+
+def test_sources_repeated_flag_keeps_only_last():
+    """Documents WHY the wrapper must not repeat the flag: `-s libgen -s anna`
+    collapses to anna-only, silently dropping libgen."""
+    parser = book_finder.build_parser()
+    ns = parser.parse_args(["search", "A Title", "-s", "libgen", "-s", "anna"])
+    assert ns.sources == ["anna"]
+
+
+# ---------------------------------------------------------------------------
 # Defect 3 — mark_complete + get_stats require conn.row_factory = sqlite3.Row
 # ---------------------------------------------------------------------------
 
@@ -102,6 +122,44 @@ def test_get_pending_no_filter_returns_all(tmp_path):
 # ---------------------------------------------------------------------------
 # Defect 5 — run() honors an explicit books= selection (--ids path)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# load_books_from_json — single-result object (PowerShell ConvertTo-Json collapse)
+# ---------------------------------------------------------------------------
+
+def test_load_books_from_json_single_object(tmp_path):
+    """A one-result search serializes as a bare object, not a 1-element array.
+    Must be read as a single book, not "no books"."""
+    import json
+    p = tmp_path / "one.json"
+    p.write_text(json.dumps(
+        {"title": "Solo", "author": "A", "format": "epub",
+         "download_url": "http://example/s.epub"}), encoding="utf-8")
+    books = book_downloader.load_books_from_json(str(p))
+    assert len(books) == 1
+    assert books[0]["title"] == "Solo"
+
+
+def test_load_books_from_json_array(tmp_path):
+    """The multi-result path (a JSON array) is unchanged."""
+    import json
+    p = tmp_path / "many.json"
+    p.write_text(json.dumps(
+        [{"title": "One", "download_url": "u1"},
+         {"title": "Two", "download_url": "u2"}]), encoding="utf-8")
+    books = book_downloader.load_books_from_json(str(p))
+    assert [b["title"] for b in books] == ["One", "Two"]
+
+
+def test_load_books_from_json_container_dict(tmp_path):
+    """A {"results": [...]} container is still honored (not mistaken for a book)."""
+    import json
+    p = tmp_path / "wrapped.json"
+    p.write_text(json.dumps({"results": [{"title": "Wrapped", "download_url": "u"}]}),
+                 encoding="utf-8")
+    books = book_downloader.load_books_from_json(str(p))
+    assert [b["title"] for b in books] == ["Wrapped"]
+
 
 def _fake_book(book_id: int) -> dict:
     return {
