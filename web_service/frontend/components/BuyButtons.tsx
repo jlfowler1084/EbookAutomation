@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { createCheckoutSession } from "../lib/api";
+import { createCheckoutSession, readUtmParams } from "../lib/api";
 
 interface Pack {
   id: string;
@@ -22,7 +22,12 @@ export default function BuyButtons({ packs }: Props) {
     setCreating(packId);
     setError(null);
     try {
-      const resp = await createCheckoutSession(packId);
+      // EB-253: read UTM params from the current page URL at click time so we
+      // capture the attribution of the page that drove the purchase.  The params
+      // are forwarded to the backend as Stripe Session metadata and forwarded
+      // to Plausible on checkout.session.completed via the webhook handler.
+      const utm = readUtmParams(new URLSearchParams(window.location.search));
+      const resp = await createCheckoutSession(packId, utm);
       window.location.href = resp.checkout_url;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not start checkout");

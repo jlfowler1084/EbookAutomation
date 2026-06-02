@@ -139,7 +139,17 @@ The pattern that works:
 3. Stripe stores them on the resulting `payment_intent` and `customer` records.
 4. When the Stripe webhook fires `checkout.session.completed`, the metadata is in the event — read it and emit a Plausible custom event (`Stripe Purchase Complete` with the metadata as props).
 
-**Implementation note**: this requires a small backend change in the Stripe webhook handler. **Not in scope for this ticket** — file a follow-up if needed. For now, attribution lives at the pageview level (Plausible Sources dashboard), which is the dominant attribution surface anyway.
+**Status: IMPLEMENTED (EB-253, 2026-05-26)**
+
+- `BuyButtons.tsx`: reads UTMs from `window.location.search` at Buy click time using `readUtmParams()` from `lib/api.ts`; passes them to the backend as form fields alongside `pack`.
+- `web_service/routes/checkout.py`: accepts optional `utm_*` form fields; merges them with `pack` into the Stripe Session `metadata` dict. UTMs present on the session object survive into the `payment_intent` and `customer` records.
+- `web_service/routes/webhook.py`: on `checkout.session.completed` (and `checkout.session.async_payment_succeeded`) with `payment_status="paid"`, reads UTMs from session metadata and fires a Plausible custom event `"Stripe Purchase Complete"` with those UTMs as props.
+
+**Plausible dashboard**: to see purchase attribution, create a custom goal named `Stripe Purchase Complete` (exact string). The `props` will contain `pack`, and whichever of `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` were present on the buyer's URL.
+
+**Environment variables**: `PLAUSIBLE_SITE_DOMAIN` (default: `leafbind.io`) and `PLAUSIBLE_EVENT_URL` (default: `https://plausible.io/api/event`) can be overridden if the Plausible instance moves.
+
+**Note**: this plumbing is built ahead of Phase 3 marketing traffic. Until external campaigns run, no UTMs will be present on buyer URLs, so the custom event will fire with only `pack` in props. That is expected behaviour.
 
 ## Monthly review
 

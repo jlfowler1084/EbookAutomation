@@ -7,7 +7,9 @@ main.py's lifespan logs WARN if any non-allowlisted middleware is added.
 
 Handles four event types:
   - checkout.session.completed: mint tokens IFF payment_status == "paid";
-    extends PaymentIntent metadata with checkout_session_id for dispute lookup.
+    extends PaymentIntent metadata with checkout_session_id for dispute lookup;
+    emits a Plausible "Stripe Purchase Complete" custom event with UTM props
+    (EB-253).
   - checkout.session.async_payment_succeeded (EB-227): for async payment methods
     (ACH/SEPA), this is the event that fires after funds settle. Mints tokens
     using the same code path as completed-with-paid.
@@ -29,15 +31,31 @@ Response policy:
     backoff for ~3 days; mint-failure recovery via failed_mints table)
   - 200 on success or idempotent no-op (Stripe stops retrying)
   - 503 if DB circuit breaker is open (transient -- Stripe retries)
+
+EB-253 (UTM attribution via Plausible):
+  On every paid checkout.session.completed (and async_payment_succeeded) event,
+  the handler reads UTM fields from the session metadata (attached by checkout.py
+  when the buyer clicked Buy from a UTM-tagged URL) and fires a Plausible custom
+  event "Stripe Purchase Complete" with those UTMs as props.  This closes the
+  attribution loop: Plausible's pageview captures UTMs at browse time; this event
+  captures them at purchase time across the Stripe domain gap.
+
+  _emit_plausible_purchase_event() is intentionally best-effort — a Plausible
+  failure never blocks token minting or webhook response. The fire is synchronous
+  (urllib in a thread executor) to avoid adding another async concern to an already
+  complex handler, and the 5-second timeout prevents Plausible latency spikes from
+  extending the Stripe retry window.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import sqlite3
 import time
+import urllib.request
 
 import stripe
 from fastapi import APIRouter, HTTPException, Request
@@ -56,6 +74,87 @@ _PACK_TOKEN_COUNT: dict[str, int] = {
     "standard": 10,
     "power": 25,
 }
+
+# EB-253: Plausible custom event name emitted on each paid purchase.
+# Must match the goal name registered in the Plausible dashboard.
+_PLAUSIBLE_PURCHASE_EVENT = "Stripe Purchase Complete"
+
+# Plausible event API endpoint.  The production Plausible instance is at
+# plausible.io; if the project ever self-hosts, override this via the
+# PLAUSIBLE_EVENT_URL env var.
+_PLAUSIBLE_EVENT_URL = os.environ.get(
+    "PLAUSIBLE_EVENT_URL", "https://plausible.io/api/event"
+)
+
+# UTM field names preserved in Stripe session metadata (EB-253).
+_UTM_FIELDS: tuple[str, ...] = (
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+)
+
+
+def _emit_plausible_purchase_event(
+    session_metadata: dict,
+    pack: str,
+) -> None:
+    """Fire a Plausible custom event for a completed paid purchase.
+
+    This function is designed to run inside a ThreadPoolExecutor so it does not
+    block the asyncio event loop.  Failures are logged as warnings but never
+    propagated — attribution loss is acceptable; token-minting failure is not.
+
+    Args:
+        session_metadata: The metadata dict from the Stripe Checkout Session
+            object.  May contain UTM fields (utm_source, utm_medium, etc.) that
+            were attached by checkout.py from the buyer's page URL.
+        pack: The pack purchased ("starter" | "standard" | "power").
+    """
+    domain = os.environ.get("PLAUSIBLE_SITE_DOMAIN", "leafbind.io")
+    props: dict[str, str] = {"pack": pack}
+    for field_name in _UTM_FIELDS:
+        value = session_metadata.get(field_name)
+        if value:
+            props[field_name] = value
+
+    payload = json.dumps(
+        {
+            "name": _PLAUSIBLE_PURCHASE_EVENT,
+            "url": "https://leafbind.io/payment/success",
+            "domain": domain,
+            "props": props,
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        _PLAUSIBLE_EVENT_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "leafbind-webhook/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            status = resp.status
+        if status not in (200, 202):
+            log.warning(
+                "plausible_event_unexpected_status",
+                extra={"status": status, "pack": pack},
+            )
+        else:
+            log.info(
+                "plausible_purchase_event_sent",
+                extra={"pack": pack, "props": props},
+            )
+    except Exception as exc:  # noqa: BLE001 — best-effort, never block mint
+        log.warning(
+            "plausible_event_failed",
+            extra={"err": str(exc)[:200], "pack": pack},
+        )
 
 
 @router.post("/stripe/webhook")
@@ -210,6 +309,25 @@ async def stripe_webhook(request: Request) -> dict:
                             "err": str(stripe_exc)[:200],
                         },
                     )
+
+            # EB-253: emit a Plausible custom event with UTM props for attribution.
+            # Best-effort — failure never blocks token minting or webhook 200 response.
+            # The try/except guard here is belt-and-suspenders: _emit_plausible_purchase_event
+            # already swallows its own exceptions, but run_in_executor can re-raise
+            # if the callable itself raises unexpectedly (e.g. coding error, OOM).
+            session_metadata_dict = dict(obj.get("metadata", {}) or {})
+            try:
+                await loop.run_in_executor(
+                    job_queue.billing_executor,
+                    _emit_plausible_purchase_event,
+                    session_metadata_dict,
+                    pack,
+                )
+            except Exception as plausible_exc:  # noqa: BLE001
+                log.warning(
+                    "plausible_emit_error",
+                    extra={"err": str(plausible_exc)[:200]},
+                )
 
             circuit_breaker.db_call_succeeded()
 

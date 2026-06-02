@@ -16,6 +16,17 @@ Key design decisions (from Phase 2 plan, Unit 3):
   checkout_session_id to the PaymentIntent metadata, completing the chain.
 - Stripe SDK calls are blocking — run in billing_executor (ThreadPoolExecutor)
   to avoid blocking the asyncio event loop.
+
+EB-253 (UTM attribution):
+- Optional UTM form fields (utm_source, utm_medium, utm_campaign, utm_term,
+  utm_content) are accepted and stored in the Stripe Checkout *Session* metadata.
+- The webhook reads them from the `checkout.session.completed` event's Session
+  object (event.data.object.metadata) and forwards them to Plausible. NOTE:
+  Stripe does NOT auto-copy Session metadata to the PaymentIntent or Customer
+  (https://docs.stripe.com/metadata) — UTMs intentionally live on the Session
+  only; payment_intent_data.metadata carries `pack` alone.
+- UTM fields are optional and bounded to 100 chars each; missing/blank values are
+  silently dropped so the endpoint stays backwards-compatible.
 """
 
 from __future__ import annotations
@@ -24,6 +35,7 @@ import asyncio
 import hashlib
 import logging
 import time
+from typing import Optional
 
 import stripe
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -61,16 +73,56 @@ def _derive_idempotency_key(pack: str, client_host: str) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
+# EB-253: UTM field names that may be forwarded from the frontend.
+_UTM_FIELDS: tuple[str, ...] = (
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+)
+
+# Maximum character length for each UTM field value.  Stripe metadata values
+# are limited to 500 chars; 100 is a generous but sane upper bound for UTM
+# values in the wild (standard UTM params are typically < 50 chars).
+_UTM_MAX_LEN = 100
+
+
+def _build_utm_metadata(kwargs: dict[str, Optional[str]]) -> dict[str, str]:
+    """Return a dict containing only the non-empty, bounded UTM fields.
+
+    Fields that are None, empty string, or longer than _UTM_MAX_LEN are
+    silently dropped — the endpoint stays backwards-compatible with callers
+    that omit UTMs entirely.
+    """
+    result: dict[str, str] = {}
+    for field_name in _UTM_FIELDS:
+        value = kwargs.get(field_name)
+        if value and 0 < len(value) <= _UTM_MAX_LEN:
+            result[field_name] = value
+    return result
+
+
 @router.post("/stripe/create-session", status_code=200)
 async def create_checkout_session(
     request: Request,
     pack: str = Form(...),
+    utm_source: Optional[str] = Form(None),
+    utm_medium: Optional[str] = Form(None),
+    utm_campaign: Optional[str] = Form(None),
+    utm_term: Optional[str] = Form(None),
+    utm_content: Optional[str] = Form(None),
 ) -> dict:
     """Create a Stripe Checkout session for the requested token pack.
 
     Args:
         request: FastAPI Request — used to derive a per-client idempotency key.
         pack: One of "starter", "standard", or "power".
+        utm_source: Optional UTM source from the referring page URL.
+        utm_medium: Optional UTM medium from the referring page URL.
+        utm_campaign: Optional UTM campaign from the referring page URL.
+        utm_term: Optional UTM term from the referring page URL.
+        utm_content: Optional UTM content from the referring page URL.
 
     Returns:
         {"checkout_url": str, "session_id": str}
@@ -97,6 +149,22 @@ async def create_checkout_session(
     client_host = request.client.host if request.client else "unknown"
     idempotency_key = _derive_idempotency_key(pack, client_host)
 
+    # EB-253: build UTM metadata from optional form fields.
+    # Dropped when no UTMs are present; preserves backwards-compatibility.
+    utm_metadata = _build_utm_metadata(
+        {
+            "utm_source": utm_source,
+            "utm_medium": utm_medium,
+            "utm_campaign": utm_campaign,
+            "utm_term": utm_term,
+            "utm_content": utm_content,
+        }
+    )
+    # Merge pack + UTM fields into a single metadata dict.
+    # Stripe persists this dict on the Session object and makes it available
+    # to webhook handlers via event.data.object.metadata.
+    session_metadata = {"pack": pack, **utm_metadata}
+
     loop = asyncio.get_event_loop()
     try:
         session = await loop.run_in_executor(
@@ -120,8 +188,12 @@ async def create_checkout_session(
                     # the PI to add checkout_session_id (completing the chain).
                     "metadata": {"pack": pack},
                 },
-                # Session-level metadata for Stripe Dashboard debugging.
-                metadata={"pack": pack},
+                # Session-level metadata: pack + UTM fields (EB-253). The webhook
+                # reads these from the checkout.session.completed event's Session
+                # object. Stripe does NOT auto-copy Session metadata to the
+                # PaymentIntent/Customer (https://docs.stripe.com/metadata); UTMs
+                # live on the Session only by design.
+                metadata=session_metadata,
                 idempotency_key=idempotency_key,
             ),
         )
@@ -137,8 +209,9 @@ async def create_checkout_session(
         )
 
     log.info(
-        "Created Stripe Checkout session=%s for pack=%r",
+        "Created Stripe Checkout session=%s for pack=%r utm_source=%r",
         session.id,
         pack,
+        utm_source,
     )
     return {"checkout_url": session.url, "session_id": session.id}
