@@ -28,6 +28,25 @@ from .base import VisionResponse
 logger = logging.getLogger("visual_qa.local_provider")
 
 
+# EB-358: output-token budget for grading requests (batch and single-page retry).
+#
+# The sweep #2 evidence (docs/solutions/eb340-vqa-sweep2-findings-2026-06-01.md)
+# confirmed that dense/scan batches hit finish_reason='length' at the old 16,384
+# cap, returning truncated JSON that is discarded → partial coverage.
+#
+# Server ceiling: the local vLLM/sb-chat node runs Qwen3-VL-30B-A3B with
+# n_ctx=32768 (confirmed in sweep #2 run meta: http://192.168.1.33:8080,
+# n_ctx=32768).  The total context window (input tokens + output tokens) must
+# not exceed n_ctx.  Dense image batches consume up to ~8K input tokens; leaving
+# 24576 for output stays within the 32768 ceiling with a safe margin.
+#
+# ASSUMPTION: this value was chosen conservatively relative to the confirmed
+# n_ctx=32768.  If the server is reconfigured with a different n_ctx, this
+# constant must be revisited.  Do NOT raise above 32768 - (minimum input
+# overhead) without re-verifying the server n_ctx.
+GRADING_MAX_OUTPUT_TOKENS: int = 24576
+
+
 def _build_page_extraction_schema(page_count: int) -> dict:
     """Build a strict JSON schema for a VQA page-extraction report.
 
@@ -282,7 +301,7 @@ class OutputTruncatedError(RuntimeError):
     SCRUM-279 P1: guided_json schema enforcement makes the 221-entry
     hallucination cascade structurally impossible, but creates a new leading
     failure mode — the decoder is forced to keep generating toward the closing
-    bracket of the required schema; if max_tokens (16384) runs out first, the
+    bracket of the required schema; if max_tokens (GRADING_MAX_OUTPUT_TOKENS) runs out first, the
     output is truncated JSON.  Surface this explicitly rather than letting it
     fall through as a JSONDecodeError in parse_qa_response.
 
@@ -456,7 +475,9 @@ class LocalVisionProvider:
                 {"role": "system", "content": rubric_text},
                 {"role": "user", "content": user_content},
             ],
-            "max_tokens": 16384,
+            # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS to prevent
+            # dense-batch output truncation (finish_reason='length' → dropped pages).
+            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
             "temperature": 0,
             "seed": 42,
             # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
@@ -527,7 +548,10 @@ class LocalVisionProvider:
                 {"role": "system", "content": rubric_text},
                 {"role": "user", "content": user_content},
             ],
-            "max_tokens": 16384,
+            # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS (same as
+            # build_request).  Pass-1 detection enumerates issues verbosely and
+            # can itself hit the 16K cap on dense/scan pages.
+            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
             "temperature": 0,
             "seed": 42,
             "response_format": {
