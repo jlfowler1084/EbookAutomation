@@ -54,9 +54,19 @@ failure. 11 books scored < 70 (`vqa_exit=1`); all are real evaluations.
 `coverage_status` behaved **correctly**: `complete` when `pages_evaluated >= pages_sampled`,
 `partial` otherwise. The 5 partial books (p28 47/50, p242, p15 49/50, p292 48/50,
 p273 42/50) reflect the grader returning scores for **fewer pages than were
-rendered** — batch/parse loss on dense scans, related to EB-350 (batch sizing /
-context overflow). This is the EB-149 "report can never silently read complete"
-guarantee working.
+rendered**. The run.log identifies the specific cause as **output-token
+truncation**, not input/batch sizing: dense multi-image batches hit
+`finish_reason='length'` at the 16,384 output-token budget
+(`OutputTruncatedError: ... output_tokens=13740 (budget=16384) — report invalid`),
+returning incomplete JSON that is discarded; on these 5 books the single-page
+retry also truncated (it can itself hit 16,384). Truncation-event counts: p273 ×27,
+p242 ×17, p28 ×11, p292 ×9, p15 ×5. This is the EB-149 "report can never silently
+read complete" guarantee working (truncation surfaced as explicit coverage loss).
+
+> **Correction (per review):** an earlier draft attributed this to "batch/parse
+> loss" tied to EB-350. That is wrong. EB-350 / PR #169 addresses **input**
+> context sizing; it does not manage the **output**-token budget and does not
+> solve this mode. Tracked separately as **EB-358**. Do not close it under EB-350.
 
 **Coverage gap (sweep design):** `coverage_reason` was `None` on every row and
 `effective_dpi == requested_dpi` everywhere — i.e., the **`large_file_default_reduction`
@@ -84,7 +94,8 @@ Page 2 (title page) renders as genuinely corrupted OCR:
 `MoNu~IENTAL CHRISTIANITY`, `~rt nnh Sptnboliitn of tbt lrimitibt ~burcb`,
 `THEONECATHOLICFAITHANDPRACTICE`, `JOHNPLUNDY`, `PJU!.IB YTBil`. The 1876 scan's
 text layer is genuinely broken; the grader's "severe text corruption / garbling"
-findings (88 garble, 63 critical) are **correct**. Score 12 is justified — this
+findings (169 total issues, **63 critical**, 80 major across 42 evaluated pages)
+are **correct**. Score 12 is justified — this
 is a real conversion failure on an old scan, **not** a grader artifact.
 
 ### Spot-check 2 — abp06 ML for Asset Managers (score 79, worst page 51): MIXED
@@ -123,7 +134,7 @@ EB-353 lens.
 | id | book | type | score | note |
 |---|---|---|---|---|
 | p273 | Monumental Christianity (1876) | scan | 12 | real garbling (spot-checked) |
-| p15 | Weimar sourcebook | scan | 15 | old scan; 79 garble + 75 critical — probable real |
+| p15 | Weimar sourcebook | scan | 15 | old scan; 144 total issues / 75 critical (49 eval) — probable real |
 | p242 | (scan) | scan | 35 | partial coverage |
 | p28 | ACA syndrome workbook | scan | 39 | partial coverage |
 | p374 | Catholic Study Bible (203 MB) | scan | 41 | dense scan |
@@ -138,9 +149,12 @@ EB-353 lens.
   "garbled OCR" — confirmed again on abp06 page 51.
 - **EB-348** (open, PR #169 era): code-block structure loss + math `(cid:N)`
   glyph garbling — confirmed live on abp06 equations.
-- **EB-350**: batch/parse loss (`pages_evaluated < pages_sampled`) on dense
-  scans drove all 5 partial-coverage results — candidate to revisit batch sizing
-  / context-overflow handling for scan-heavy books.
+- **EB-358** (filed): **output-token truncation** at the 16,384 budget
+  (`finish_reason='length'`) on dense batches drove all 5 partial-coverage
+  results — incomplete JSON discarded, single-page retries also truncating. This
+  is the actual fix target for sweep #2 partials. **Distinct from EB-350/PR #169**,
+  which sizes *input* context and does not manage the output budget. EB-149 (Done)
+  only surfaces the loss as explicit partial coverage.
 - **F1 large-file-reduction path untested** this sweep (explicit flags bypassed
   the EB-347 guard) — schedule a no-explicit-flags run to exercise
   `coverage_reason = large_file_default_reduction` on the >30 MB books.
