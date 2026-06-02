@@ -651,9 +651,6 @@ def build_manifest_rows(
     # Build rows
     rows: list[ManifestRow] = []
 
-    # Track used destinations to disambiguate collisions (§1.6)
-    used_destinations: dict[str, str] = {}  # dest_path -> sha256 of first occupant
-
     for facts in facts_list:
         path_str = str(facts.path)
         member_info = path_to_member.get(path_str)
@@ -692,37 +689,11 @@ def build_manifest_rows(
             facts, member, has_metadata_in_group, fragment_verdict, config, dest_str
         )
 
-        # For shelf rows, handle destination disambiguation (§1.6)
-        if action not in ("review", "quarantine", "trash", "merge-format") and dest_str:
-            if dest_str in used_destinations and used_destinations[dest_str] != facts.sha256:
-                # Collision: two distinct-sha books map to same dest
-                # Append [sha <8>] disambiguator to this file
-                disambig = f"sha {facts.sha256[:8]}"
-                dest_str = _destination_path(facts, config, disambiguator=disambig)
-                # Also need to update the previous occupant if it's still in rows
-                # Find the previous row and update it
-                for existing_row in rows:
-                    if existing_row.destination_path == list(used_destinations.keys())[
-                        list(used_destinations.values()).index(
-                            used_destinations[
-                                list(used_destinations.keys())[
-                                    list(used_destinations.keys()).index(
-                                        next(k for k, v in used_destinations.items() if v == existing_row.sha256 and k == existing_row.destination_path)
-                                    )
-                                ]
-                            ]
-                        )
-                    ]:
-                        pass  # complex update — use simpler approach below
-                    break
-
-            # Simpler disambiguation: build a set of all destinations seen so far
-            if dest_str in used_destinations and used_destinations[dest_str] != facts.sha256:
-                # Re-disambiguate with sha
-                disambig = f"sha {facts.sha256[:8]}"
-                dest_str = _destination_path(facts, config, disambiguator=disambig)
-
-            used_destinations[dest_str] = facts.sha256
+        # Destination collisions are resolved deterministically AFTER all rows are
+        # built, by _disambiguate_destinations (called from scan()). An in-loop
+        # first-pass attempt was removed (EB-355 PR #185 review): it iterated the
+        # partial `rows` list and raised StopIteration when an earlier review row
+        # (empty destination) was present, aborting the whole scan.
 
         # G7: validate destination is under library_root
         if dest_str:
@@ -837,58 +808,72 @@ def _disambiguate_destinations(rows: list[ManifestRow], config: LibraryConfig,
 # ---------------------------------------------------------------------------
 
 def _build_spot_check(rows: list[ManifestRow], min_spots: int = 50) -> list[dict]:
-    """Build a deterministic stratified spot-check sheet.
+    """Build a deterministic stratified spot-check sheet of min(min_spots, len(rows)) rows.
 
-    Strata: shelf, review, non_library, other (trash/merge-format/fragment -> review stratum).
-    Sort each stratum by sha256, take first N per stratum.
-    Returns list of dicts for CSV/MD output.
+    Strata (by action): shelf (copy/hardlink), non_library, and review (everything
+    else: review/quarantine/trash/merge-format/fragment). Each stratum is sorted by
+    sha256 and a proportional slice is taken; then the deterministic remainder is
+    filled up to the target. The prior integer-proportional slicing alone could sum
+    to < min_spots even when enough rows existed (e.g. 51 shelf + 2 review -> 48 + 1
+    = 49), creating a FALSE calibration RED on sample size. Returns list of dicts.
     """
-    strata: dict[str, list[ManifestRow]] = {
-        "shelf": [],
-        "review": [],
-        "non_library": [],
-    }
-    for r in rows:
-        if r.action in ("trash", "merge-format") or (
-            r.action == "review" and r.canonical_reason and "fragment" in r.canonical_reason.lower()
-        ):
-            strata["review"].append(r)
-        elif r.action == "review" or r.action == "quarantine":
-            strata["review"].append(r)
-        elif r.action in ("copy", "hardlink"):
-            strata["shelf"].append(r)
-        else:
-            strata["review"].append(r)
-
-    # Determine per-stratum sample sizes (proportional, min 1 if any exist)
     total = len(rows)
     if total == 0:
         return []
 
-    target = max(min_spots, total)
-    spots: list[dict] = []
-    num = 0
-    for stratum_name, stratum_rows in strata.items():
+    strata: dict[str, list[ManifestRow]] = {"shelf": [], "non_library": [], "review": []}
+    for r in rows:
+        if r.action in ("copy", "hardlink"):
+            strata["shelf"].append(r)
+        elif r.action == "non_library":
+            strata["non_library"].append(r)
+        else:
+            strata["review"].append(r)
+
+    target = min(min_spots, total)
+
+    def _key(r: ManifestRow) -> tuple[str, str]:
+        return (r.sha256, r.original_path)
+
+    selected: list[ManifestRow] = []
+    seen: set[str] = set()
+
+    # 1) Proportional slice per stratum (deterministic by sha256, then path).
+    for stratum_rows in strata.values():
         if not stratum_rows:
             continue
-        # Sort by sha256 for determinism (not random)
-        stratum_sorted = sorted(stratum_rows, key=lambda r: r.sha256)
-        # Take proportional sample, at least 1
-        take = max(1, int(len(stratum_rows) / total * min_spots)) if total else 0
-        for i, r in enumerate(stratum_sorted[:take], num + 1):
-            spots.append({
-                "#": i,
-                "disposition": r.action,
-                "section": r.section or "",
-                "subcategory": r.subcategory or "",
-                "confidence": r.classification_confidence,
-                "filename": Path(r.original_path).name,
-                "dest-tail": Path(r.destination_path).name if r.destination_path else "",
-                "correct?": "",
-                "note": "",
-            })
-            num += 1
+        take = max(1, int(len(stratum_rows) / total * target))
+        for r in sorted(stratum_rows, key=_key)[:take]:
+            if r.original_path not in seen:
+                selected.append(r)
+                seen.add(r.original_path)
 
+    # 2) Fill the deterministic remainder up to the target (fixes integer-truncation
+    #    underfill: proportional slices can sum to < target even when rows exist).
+    if len(selected) < target:
+        for r in sorted(rows, key=_key):
+            if r.original_path not in seen:
+                selected.append(r)
+                seen.add(r.original_path)
+                if len(selected) >= target:
+                    break
+
+    # 3) Emit in deterministic order, capped at the target, with sequential numbering.
+    selected.sort(key=_key)
+    selected = selected[:target]
+    spots: list[dict] = []
+    for i, r in enumerate(selected, 1):
+        spots.append({
+            "#": i,
+            "disposition": r.action,
+            "section": r.section or "",
+            "subcategory": r.subcategory or "",
+            "confidence": r.classification_confidence,
+            "filename": Path(r.original_path).name,
+            "dest-tail": Path(r.destination_path).name if r.destination_path else "",
+            "correct?": "",
+            "note": "",
+        })
     return spots
 
 
@@ -959,6 +944,10 @@ def _write_scan_outputs(
 
     # plan-<stamp>.{csv,json,md}
     write_manifest(rows, out_dir, stamp)
+
+    # canonical-projection.txt — lets a later run compare via --compare-to (§3),
+    # so the two-run determinism verdict is real rather than a single-run placeholder.
+    _atomic_write_text(out_dir / "canonical-projection.txt", projection_a)
 
     # shelf-index.json — one entry per row with a destination, no clobber
     shelf_index: dict[str, dict] = {}
@@ -1108,6 +1097,7 @@ def scan(
     limit: int | None = None,
     force: bool = False,
     taxonomy_version_override: int | None = None,
+    compare_to: Path | None = None,
 ) -> list[ManifestRow]:
     """Run the -WhatIf scan. Returns the manifest rows.
 
@@ -1156,8 +1146,14 @@ def scan(
     rows = _disambiguate_destinations(rows, config, facts_by_path)
     rows.sort(key=lambda r: r.original_path)
 
-    # Compute canonical projection (single-run mode; determinism verified by calibration driver)
+    # Compute canonical projection (run A).
     proj_a = canonical_projection(rows)
+
+    # Two-run determinism (§3): if comparing to a prior run, load its persisted
+    # projection so _write_scan_outputs emits a REAL verdict, not a placeholder.
+    proj_b: str | None = None
+    if compare_to is not None:
+        proj_b = (Path(compare_to) / "canonical-projection.txt").read_text(encoding="utf-8")
 
     # Write outputs (G1-gated: only writes under out_dir)
     _write_scan_outputs(
@@ -1166,7 +1162,7 @@ def scan(
         stamp=stamp,
         skip_notes=skip_notes,
         projection_a=proj_a,
-        projection_b=None,  # single-run; calibration driver does the two-run comparison
+        projection_b=proj_b,
         corpus_count=corpus_count,
         corpus_size=corpus_size,
     )
@@ -1209,6 +1205,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="Path to settings.json (default: config/settings.json).")
     parser.add_argument("--taxonomy", type=Path, default=None,
                         help="Path to books-taxonomy.json (default: config/books-taxonomy.json).")
+    parser.add_argument("--compare-to", type=Path, default=None,
+                        help="Prior run's out-dir; loads its canonical-projection.txt to "
+                             "emit a real two-run determinism verdict.")
 
     args = parser.parse_args(argv)
 
@@ -1235,6 +1234,7 @@ def main(argv: list[str] | None = None) -> int:
             limit=args.limit,
             force=args.force,
             taxonomy_version_override=args.taxonomy_version,
+            compare_to=args.compare_to,
         )
         print(f"Scan complete: {len(rows)} rows. Manifest: {args.out_dir}", file=sys.stderr)
         return 0

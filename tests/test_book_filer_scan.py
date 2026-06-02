@@ -40,19 +40,22 @@ def _epub(path: Path, seed: str = "x") -> Path:
     return _write(path, f"PK fake epub seed={seed}".encode())
 
 
-def _make_real_epub(path: Path, title: str, author: str, date: str = "2011-01-01") -> Path:
-    """Write a VALID EPUB whose OPF carries title+author, so extract_metadata
-    returns real metadata (has_metadata=True). Mirrors
+def _make_real_epub(path: Path, title: str, author: str, date: str = "2011-01-01",
+                    isbn: str | None = None) -> Path:
+    """Write a VALID EPUB whose OPF carries title+author (+optional ISBN), so
+    extract_metadata returns real metadata (has_metadata=True). Mirrors
     test_book_filer_metadata._make_epub. Used to positively exercise the dedup
-    'trash' path, which (post M1/G11) requires a real metadata anchor."""
+    'trash' path (which post M1/G11 requires a real metadata anchor) and to build
+    distinct-work destination collisions (distinct ISBN -> distinct work_key)."""
     import zipfile
 
+    ident = f'<dc:identifier id="bookid">urn:isbn:{isbn}</dc:identifier>' if isbn else ""
     opf = (
         '<?xml version="1.0"?>'
         '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">'
         '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
         f"<dc:title>{title}</dc:title><dc:creator>{author}</dc:creator>"
-        f"<dc:date>{date}</dc:date>"
+        f"<dc:date>{date}</dc:date>{ident}"
         "</metadata><manifest/><spine/></package>"
     )
     container = (
@@ -1065,3 +1068,100 @@ def test_banned_content_grep_of_generated_undo(tmp_path):
             )
             # Even within comments, check for obviously uncommented code
             # (a comment starting with '# ' followed by a bare command is fine)
+
+
+# ---------------------------------------------------------------------------
+# PR #185 review regressions
+# ---------------------------------------------------------------------------
+
+def test_destination_collision_with_prior_review_row_does_not_abort(tmp_path):
+    """Blocker regression: two DISTINCT works (different ISBN -> different work_key,
+    so NOT deduped) that share author+title+year collide on one destination. With a
+    review row already emitted (empty destination), the old in-loop first-pass
+    disambiguation raised StopIteration and the scan exited non-zero. The scan must
+    now complete and _disambiguate_destinations must give the two a distinct dest."""
+    root = tmp_path / "root"
+    # Review row first (sorts before the epubs; ambiguous name -> low-confidence review).
+    _pdf(root / "0_unknown_thing.pdf", seed="ambiguous")
+    # Two distinct-ISBN, same author/title/year books -> same destination, NOT deduped.
+    # Filenames carry the 'python' taxonomy keyword so they classify to shelf
+    # (classification is filename-based); identical metadata -> identical destination.
+    _make_real_epub(root / "python_guide_a.epub", "Python Mastery", "Guido Rossum", isbn="9780000000017")
+    _make_real_epub(root / "python_guide_b.epub", "Python Mastery", "Guido Rossum", isbn="9780000000024")
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, (
+        f"scan aborted on destination collision (StopIteration bug?): "
+        f"rc={result.returncode}\n{result.stderr}"
+    )
+
+    rows = _load_rows(out, "TEST20260101")
+    shelf = [r for r in rows if r["action"] in ("copy", "hardlink") and r["destination_path"]]
+    assert len(shelf) == 2, (
+        f"expected 2 shelf rows for the distinct-ISBN books; got "
+        f"{[(Path(r['original_path']).name, r['action']) for r in rows]}"
+    )
+    dests = [r["destination_path"] for r in shelf]
+    assert dests[0] != dests[1], f"colliding shelf rows must get distinct destinations: {dests}"
+
+
+def test_spot_check_fills_to_min_when_enough_rows():
+    """Finding 3: _build_spot_check must not under-fill below min_spots when >= min_spots
+    rows exist. Integer-proportional slices alone can sum to < 50 (e.g. 51 shelf + 2
+    review -> 48 + 1 = 49), which would create a FALSE calibration RED on sample size."""
+    from book_filer.scan import _build_spot_check
+    from book_filer.manifest import ManifestRow
+
+    def _mrow(i: int, action: str) -> ManifestRow:
+        shelf = action in ("copy", "hardlink")
+        return ManifestRow(
+            original_path=f"F:\\Books\\b{i}.epub",
+            destination_path=(f"d{i}.epub" if shelf else ""),
+            sha256=f"{i:064x}", size=10, planned_calibre_key=f"meta:a|t{i}|2011",
+            calibre_id=None, isbn=None, format="epub",
+            section=("09 Technology" if shelf else None),
+            subcategory=("Programming" if shelf else None),
+            author_sort="A, B", title=f"t{i}", year=2011, duplicate_group_id=None,
+            canonical_reason=None, classification_confidence=0.9,
+            classification_source="rule", taxonomy_version=1, tool_version="0.4.0",
+            action=action, undo_action="# noop", review_required=(not shelf),
+        )
+
+    rows = [_mrow(i, "copy") for i in range(51)] + [_mrow(100 + i, "review") for i in range(2)]
+    assert len(rows) == 53
+
+    spots = _build_spot_check(rows, min_spots=50)
+    assert len(spots) == 50, f"under-filled spot-check: {len(spots)} with 53 rows available"
+    # Deterministic: same input -> same sheet.
+    assert _build_spot_check(rows, min_spots=50) == spots
+    # Genuine small corpus: take all rows, never pad past what exists.
+    assert len(_build_spot_check(rows[:10], min_spots=50)) == 10
+
+
+def test_two_run_compare_emits_real_determinism_report(tmp_path):
+    """Finding 2: with --compare-to, scan emits a REAL two-run determinism verdict
+    (not the single-run placeholder). Two runs over the same corpus are byte-identical
+    -> 'Deterministic: YES' and determinism-diff.json deterministic == true."""
+    root = tmp_path / "root"
+    _make_real_epub(root / "a.epub", "Python", "Guido Rossum")
+    _pdf(root / "b.pdf", seed="b")
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out_a = tmp_path / "out_a"
+    out_b = tmp_path / "out_b"
+
+    r1 = run_scan(root, out_a, cfg, tax)
+    assert r1.returncode == 0, r1.stderr
+    r2 = run_scan(root, out_b, cfg, tax, extra_args=["--compare-to", str(out_a)])
+    assert r2.returncode == 0, r2.stderr
+
+    det = (out_b / "determinism-report.md").read_text(encoding="utf-8")
+    assert "Single-run mode" not in det, "expected a real two-run comparison, got placeholder"
+    assert "**Deterministic:** YES" in det, det
+    diff = json.loads((out_b / "determinism-diff.json").read_text(encoding="utf-8"))
+    assert diff["deterministic"] is True
