@@ -34,3 +34,9 @@ def test_wrong_review_item_does_not_fail_green():
 def test_missing_signoff_or_small_sample_is_red():
     assert evaluate_calibration("P", "P", _OK_SAMPLE, signed_off_by=None, min_spot_check=20).green is False
     assert evaluate_calibration("P", "P", _OK_SAMPLE[:5], signed_off_by="joe", min_spot_check=20).green is False
+
+
+def test_empty_or_whitespace_signoff_is_red():
+    # A gate must not treat an empty / whitespace-only signer as a real sign-off.
+    assert evaluate_calibration("P", "P", _OK_SAMPLE, signed_off_by="", min_spot_check=20).green is False
+    assert evaluate_calibration("P", "P", _OK_SAMPLE, signed_off_by="   ", min_spot_check=20).green is False

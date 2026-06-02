@@ -37,7 +37,7 @@ def evaluate_calibration(
     deterministic = projection_a == projection_b
     wrong_shelf = sum(1 for c in spot_check if c.disposition == "shelf" and not c.correct)
     big_enough = len(spot_check) >= min_spot_check
-    signed = signed_off_by is not None
+    signed = bool(signed_off_by and signed_off_by.strip())
 
     green = deterministic and wrong_shelf == 0 and big_enough and signed
     if green:
