@@ -38,3 +38,23 @@ def test_sha_fallback_is_case_normalized():
 def test_is_deterministic():
     meta = BookMetadata("The Oil Kings", "Cooper, Andrew Scott", 2011, None)
     assert planned_calibre_key(meta, _SHA) == planned_calibre_key(meta, _SHA)
+
+
+# --- EB-355 finding #2: a truthy-but-shapeless isbn must not produce a bare "isbn:" key ---
+
+def test_junk_isbn_na_falls_through_to_meta():
+    """A junk isbn like 'N/A' has no ISBN digits; trusting it would emit 'isbn:'.
+    It must fall through to the author/title/year key instead."""
+    meta = BookMetadata("The Oil Kings", "Cooper, Andrew Scott", 2011, "N/A")
+    assert planned_calibre_key(meta, _SHA) == "meta:cooper-andrew-scott|the-oil-kings|2011"
+
+
+def test_too_short_isbn_falls_through_to_sha():
+    """An isbn with the wrong digit count is not a real ISBN -- fall through."""
+    meta = BookMetadata(None, None, None, "123")
+    assert planned_calibre_key(meta, _SHA) == f"sha:{_SHA[:16]}"
+
+
+def test_valid_isbn13_still_wins():
+    meta = BookMetadata("Title", "Author", 2011, "978-1-4165-9786-5")
+    assert planned_calibre_key(meta, _SHA) == "isbn:9781416597865"

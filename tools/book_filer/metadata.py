@@ -17,6 +17,31 @@ _CONTAINER_NS = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
 _YEAR_RE = re.compile(r"(\d{4})")
 _ISBN_RE = re.compile(r"(\d{13}|\d{9}[\dXx])")
 
+# Literal placeholder strings some authoring tools write into a metadata field
+# instead of leaving it empty (e.g. Pdf995 writes the text "None"). Mirrors
+# pattern_db._GARBAGE_PLACEHOLDERS (SCRUM-322), kept in sync deliberately:
+# pattern_db is the source of truth but is too heavy a dependency to import here.
+_GARBAGE_PLACEHOLDERS = frozenset({"none", "null", "n/a", "na", "undefined", "nil"})
+
+# PDF authoring tools whose embedded metadata is junk: they inject the filename
+# as the title field, the literal "None" as author, and the PDF generation date
+# as the year. When the creator/producer matches one of these, the whole embedded
+# record is dropped so the filer falls back to the filename parser. Mirrors
+# pattern_db._KNOWN_BAD_PDF_TOOLS (SCRUM-323 / EB-351). Tools whose embedded
+# metadata is reliable (calibre, Adobe InDesign, Acrobat Distiller) must NOT
+# appear here.
+_KNOWN_BAD_PDF_TOOLS = ("pdf995", "pdfcreator", "pdfsam", "acrobat pdfwriter")
+
+
+def _clean_field(value: str | None) -> str | None:
+    """Strip a metadata field; return ``None`` if empty or a literal placeholder."""
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not cleaned or cleaned.lower() in _GARBAGE_PLACEHOLDERS:
+        return None
+    return cleaned
+
 
 @dataclass(frozen=True)
 class BookMetadata:
@@ -56,7 +81,9 @@ def _extract_epub(path: Path) -> BookMetadata:
                 isbn = m.group(1)
                 break
 
-    return BookMetadata(_txt("title"), _txt("creator"), _year_from(_txt("date")), isbn)
+    return BookMetadata(
+        _clean_field(_txt("title")), _clean_field(_txt("creator")), _year_from(_txt("date")), isbn
+    )
 
 
 def _extract_pdf(path: Path) -> BookMetadata:
@@ -68,8 +95,13 @@ def _extract_pdf(path: Path) -> BookMetadata:
         return BookMetadata(None, None, None, None)
     if not info:
         return BookMetadata(None, None, None, None)
-    title = info.title or None
-    author = info.author or None
+    # Reject the whole embedded record when a known junk tool produced the PDF —
+    # its title/author/year are filename/placeholder/generation-date noise.
+    tool = f"{info.creator or ''} {info.producer or ''}".lower()
+    if any(bad in tool for bad in _KNOWN_BAD_PDF_TOOLS):
+        return BookMetadata(None, None, None, None)
+    title = _clean_field(info.title)
+    author = _clean_field(info.author)
     year = _year_from(str(info.get("/CreationDate", "")))
     return BookMetadata(title, author, year, None)
 
