@@ -68,7 +68,8 @@ assertions on both prompt artifacts) so the guardrails cannot be silently delete
 - **Reliable: render-based ground truth.** KFX→PDF→PNG renders of p62/p58/p65/p66/p51 were viewed
   directly. Confirmed the FPs are real bugs, the fix's direction is correct, and **genuine `(cid:N)`
   corruption is preserved** (abp06 p51/77/79 — recall-safe, the property EB-348 depends on).
-- **Reliable: deterministic contract tests** (15) + full suite (136 passing) + manifest verified.
+- **Reliable: deterministic contract tests** (15 in the new prompt-contract file) + full `pytest tests/`
+  suite **968 passed, 4 skipped** at ship time + manifest verified.
 - **NOT reliable right now: live canary scores.** See determinism finding below.
 
 ## Key lessons (compounding)
@@ -105,6 +106,7 @@ would have hidden. Worth the cost.
 2. **EB-348** (next): code-block + math `(cid:N)` rendering. Note PR #168 already merged its
    `<pre>`/code-block preservation + cid-glyph scoring; remaining scope is likely math→Gemini/MathML.
    Sequence after a deterministic grader so rendering-score deltas are measured cleanly (abp06 p51 is
-   the canonical mixed case). EB-348 ticket is still "To Do" despite the merged work — state-check first.
+   the canonical mixed case). EB-348 was marked **Done** via PR #168 (code-block/cid-scoring work) — but
+   state-check first: any remaining math→Gemini/MathML scope may warrant a follow-up rather than reopening.
 3. **Residual FPs** on the hardest dense code+math pages (abp06 p58/p62) persist intermittently under
    the non-deterministic grader; re-evaluate once the grader is deterministic.
