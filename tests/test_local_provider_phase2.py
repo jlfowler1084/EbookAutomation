@@ -24,7 +24,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from llm_providers import LocalVisionProvider  # noqa: E402
 from llm_providers.base import VisionResponse  # noqa: E402
-from llm_providers.local_provider import _build_page_extraction_schema  # noqa: E402
+from llm_providers.local_provider import (  # noqa: E402
+    GRADING_MAX_OUTPUT_TOKENS,
+    _build_page_extraction_schema,
+)
 
 
 PNG_FIXTURE = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
@@ -691,15 +694,16 @@ def test_call_raises_output_truncated_error_on_finish_reason_length(
     mock_client.chat.completions.create.return_value = _make_fake_completion(
         content='{"pages": [',  # truncated JSON
         finish_reason="length",
-        completion_tokens=16384,
+        completion_tokens=GRADING_MAX_OUTPUT_TOKENS,
     )
     with patch("openai.OpenAI", return_value=mock_client):
         with pytest.raises(OutputTruncatedError) as exc_info:
             provider.call(payload)
 
     assert exc_info.value.finish_reason == "length"
-    assert exc_info.value.output_tokens == 16384
-    assert exc_info.value.max_tokens_budget == 16384
+    assert exc_info.value.output_tokens == GRADING_MAX_OUTPUT_TOKENS
+    # Truncation guard reads budget from payload; must match the raised constant (EB-358).
+    assert exc_info.value.max_tokens_budget == GRADING_MAX_OUTPUT_TOKENS
 
 
 def test_call_does_not_raise_output_truncated_on_stop(provider: LocalVisionProvider) -> None:
@@ -746,6 +750,116 @@ def test_output_truncated_fires_before_json_loads(provider: LocalVisionProvider)
     with patch("openai.OpenAI", return_value=mock_client):
         with pytest.raises(OutputTruncatedError):
             provider.call(payload)
+
+
+# ---------------------------------------------------------------------------
+# EB-358: output-token budget tests
+# ---------------------------------------------------------------------------
+
+
+def test_grading_max_output_tokens_constant_value() -> None:
+    """GRADING_MAX_OUTPUT_TOKENS must be greater than the old 16,384 cap.
+
+    EB-358: the old cap caused dense/scan batches to hit finish_reason='length',
+    returning truncated JSON that was discarded → partial coverage.  The new
+    value must exceed 16384 to actually unblock those batches.
+    """
+    assert GRADING_MAX_OUTPUT_TOKENS > 16384, (
+        f"GRADING_MAX_OUTPUT_TOKENS ({GRADING_MAX_OUTPUT_TOKENS}) must exceed the old 16384 cap "
+        "(EB-358: old cap truncated dense-batch output)"
+    )
+
+
+def test_grading_max_output_tokens_within_server_ceiling() -> None:
+    """GRADING_MAX_OUTPUT_TOKENS must not exceed the confirmed server n_ctx ceiling.
+
+    Server n_ctx=32768 (Qwen3-VL-30B-A3B on R9700, documented in sweep #2 meta).
+    The output budget must leave room for input tokens — chosen conservatively.
+    """
+    SERVER_N_CTX = 32768
+    assert GRADING_MAX_OUTPUT_TOKENS <= SERVER_N_CTX, (
+        f"GRADING_MAX_OUTPUT_TOKENS ({GRADING_MAX_OUTPUT_TOKENS}) exceeds confirmed server "
+        f"n_ctx={SERVER_N_CTX} — this would cause context-window overflow on the server"
+    )
+
+
+def test_build_request_uses_grading_max_output_tokens(provider: LocalVisionProvider) -> None:
+    """build_request() must carry GRADING_MAX_OUTPUT_TOKENS, not a hardcoded 16384.
+
+    EB-358: batch grading (and single-page retry, which also calls build_request)
+    need the raised budget to complete dense/scan pages without truncation.
+    """
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] == GRADING_MAX_OUTPUT_TOKENS, (
+        f"build_request max_tokens must equal GRADING_MAX_OUTPUT_TOKENS "
+        f"({GRADING_MAX_OUTPUT_TOKENS}), got {payload['max_tokens']} — "
+        "EB-358: old 16384 cap truncated dense-batch output"
+    )
+
+
+def test_build_detection_request_uses_grading_max_output_tokens(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_detection_request() (two-pass Pass 1) must also use GRADING_MAX_OUTPUT_TOKENS.
+
+    EB-358: Pass-1 detection enumerates issues verbosely and can itself hit
+    the old 16K cap on dense/scan pages.  The retry path via build_request
+    uses GRADING_MAX_OUTPUT_TOKENS too; detection budget should be >= batch budget.
+    """
+    payload = provider.build_detection_request(
+        page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] == GRADING_MAX_OUTPUT_TOKENS, (
+        f"build_detection_request max_tokens must equal GRADING_MAX_OUTPUT_TOKENS "
+        f"({GRADING_MAX_OUTPUT_TOKENS}), got {payload['max_tokens']}"
+    )
+
+
+def test_build_scoring_request_keeps_small_budget(provider: LocalVisionProvider) -> None:
+    """build_scoring_request() (two-pass Pass 2) must NOT use GRADING_MAX_OUTPUT_TOKENS.
+
+    Pass 2 is text-only (no images) and just assigns a numeric score per page
+    from the already-computed issue list.  It only needs a small budget (1024).
+    Raising it would be wasteful and is not part of EB-358 scope.
+    """
+    detected_pages = [{"page_number": 1, "page_type": "body", "issues": []}]
+    payload = provider.build_scoring_request(
+        detected_pages=detected_pages,
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] < GRADING_MAX_OUTPUT_TOKENS, (
+        "build_scoring_request (Pass 2, text-only) must use a small budget, "
+        f"not GRADING_MAX_OUTPUT_TOKENS ({GRADING_MAX_OUTPUT_TOKENS})"
+    )
+
+
+def test_grading_budget_exceeds_single_page_retry_budget(provider: LocalVisionProvider) -> None:
+    """Single-page retry uses build_request — budget must be >= batch budget.
+
+    EB-358 task notes: 'The single-page retry path should use a budget >= the
+    batch budget'.  Since both paths call build_request(), the same constant
+    applies to both.  This test pins that relationship explicitly.
+    """
+    batch_payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    single_payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)],
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert single_payload["max_tokens"] >= batch_payload["max_tokens"], (
+        "Single-page retry budget must be >= batch budget (both use build_request/GRADING_MAX_OUTPUT_TOKENS)"
+    )
 
 
 def test_repair_payload_strips_response_format() -> None:
