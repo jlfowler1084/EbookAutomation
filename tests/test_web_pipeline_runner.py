@@ -624,7 +624,10 @@ class TestRunVqa:
         assert result["skipped_reason"] == "no_api_key"
 
     def test_returns_score_when_report_parses(self, tmp_path, settings, monkeypatch):
-        """Happy path: visual_qa.py runs, writes report.json, _run_vqa extracts the score."""
+        """Happy path: visual_qa.py runs, writes report.json, _run_vqa extracts the score.
+
+        EB-345: report uses canonical token_usage.total_estimated_cost_usd key.
+        """
         monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
         enabled_settings = Settings(
             **{**settings.__dict__, "premium_vqa_enabled": True}
@@ -633,13 +636,13 @@ class TestRunVqa:
         output.write_bytes(b"kfx")
 
         def fake_run(cmd, **kwargs):
-            # Simulate visual_qa.py writing its report file
+            # Simulate visual_qa.py writing its report file (post-EB-341 shape)
             vqa_dir = self._vqa_dir(output)
             vqa_dir.mkdir(parents=True, exist_ok=True)
             report = {
                 "overall_score": 87,
                 "overall_pass": True,
-                "token_counts": {"cost_usd": 0.0421},
+                "token_usage": {"total_estimated_cost_usd": 0.0421},
             }
             (vqa_dir / "book_visual_qa_report.json").write_text(
                 json.dumps(report), encoding="utf-8"
@@ -657,6 +660,117 @@ class TestRunVqa:
         assert result["pass"] is True
         assert result["cost_usd"] == pytest.approx(0.0421)
         assert result["skipped_reason"] is None
+
+    # --- EB-345 regression tests: VQA cost key extraction ---
+
+    def test_eb345_canonical_total_estimated_cost_usd(self, tmp_path, settings, monkeypatch):
+        """EB-345: token_usage.total_estimated_cost_usd (canonical post-EB-341) → non-zero cost."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            vqa_dir = self._vqa_dir(output)
+            vqa_dir.mkdir(parents=True, exist_ok=True)
+            report = {
+                "overall_score": 90,
+                "overall_pass": True,
+                "token_usage": {"total_estimated_cost_usd": 0.0350},
+            }
+            (vqa_dir / "book_visual_qa_report.json").write_text(
+                json.dumps(report), encoding="utf-8"
+            )
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_eb345_canonical")
+
+        assert result["cost_usd"] == pytest.approx(0.0350), (
+            "canonical token_usage.total_estimated_cost_usd must propagate as non-zero cost"
+        )
+        assert result["skipped_reason"] is None
+
+    def test_eb345_legacy_estimated_cost_usd_fallback(self, tmp_path, settings, monkeypatch):
+        """EB-345: token_usage.estimated_cost_usd (legacy fallback) also yields non-zero cost."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            vqa_dir = self._vqa_dir(output)
+            vqa_dir.mkdir(parents=True, exist_ok=True)
+            # Legacy shape: estimated_cost_usd present, total_estimated_cost_usd absent
+            report = {
+                "overall_score": 75,
+                "overall_pass": True,
+                "token_usage": {"estimated_cost_usd": 0.0210},
+            }
+            (vqa_dir / "book_visual_qa_report.json").write_text(
+                json.dumps(report), encoding="utf-8"
+            )
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_eb345_legacy")
+
+        assert result["cost_usd"] == pytest.approx(0.0210), (
+            "legacy token_usage.estimated_cost_usd must propagate as non-zero cost"
+        )
+        assert result["skipped_reason"] is None
+
+    def test_eb345_old_token_counts_key_yields_zero(self, tmp_path, settings, monkeypatch):
+        """EB-345: pre-fix shape token_counts.cost_usd is NOT read → cost stays 0.0.
+
+        This test would fail against the pre-fix code (which read token_counts.cost_usd
+        and would incorrectly return 0.0421 here as a 'success'), proving the fix is
+        necessary: the old key must be silently ignored.
+        """
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        enabled_settings = Settings(
+            **{**settings.__dict__, "premium_vqa_enabled": True}
+        )
+        output = tmp_path / "book.kfx"
+        output.write_bytes(b"kfx")
+
+        def fake_run(cmd, **kwargs):
+            vqa_dir = self._vqa_dir(output)
+            vqa_dir.mkdir(parents=True, exist_ok=True)
+            # Old (pre-EB-341) report shape — pipeline_runner must NOT read this
+            report = {
+                "overall_score": 80,
+                "overall_pass": True,
+                "token_counts": {"cost_usd": 0.0421},
+            }
+            (vqa_dir / "book_visual_qa_report.json").write_text(
+                json.dumps(report), encoding="utf-8"
+            )
+            proc = MagicMock()
+            proc.returncode = 0
+            proc.stdout = ""
+            proc.stderr = ""
+            return proc
+
+        with patch("web_service.pipeline_runner.subprocess.run", side_effect=fake_run):
+            result = _run_vqa(output, enabled_settings, "job_eb345_old_key")
+
+        # Post-fix: old token_counts.cost_usd is ignored → 0.0
+        assert result["cost_usd"] == 0.0, (
+            "pre-fix token_counts.cost_usd key must not be read; expected 0.0"
+        )
 
     def test_timeout_returns_skipped_reason(self, tmp_path, settings, monkeypatch):
         """visual_qa.py timeout → skipped_reason='timeout', conversion success preserved."""
