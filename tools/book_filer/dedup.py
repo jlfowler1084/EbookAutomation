@@ -55,16 +55,37 @@ def plan_dedup(files: list[FileInfo]) -> list[DupGroup]:
         overall_keeper = sorted(work_files, key=_keeper_sort_key)[0]
 
         for fmt, fmt_files in by_format.items():
-            fmt_keeper = sorted(fmt_files, key=_keeper_sort_key)[0]
+            # Exact duplicates share a sha256. Only byte-identical extras may be
+            # trashed; files that share a work_key but differ in content are NOT
+            # exact dups and are routed to review, never auto-trashed.
+            by_sha: dict[str, list[FileInfo]] = {}
             for f in fmt_files:
-                if f.path == fmt_keeper.path:
-                    if f.path == overall_keeper.path:
-                        members.append(Member(f.path, "keep", "canonical copy"))
-                    else:
-                        members.append(Member(f.path, "merge-format",
-                                              f"alternate format ({fmt}) of the same work"))
+                by_sha.setdefault(f.sha256, []).append(f)
+
+            sha_reps: list[FileInfo] = []
+            for dups in by_sha.values():
+                ranked = sorted(dups, key=_keeper_sort_key)
+                sha_reps.append(ranked[0])
+                for extra in ranked[1:]:
+                    members.append(Member(extra.path, "trash",
+                                          f"exact duplicate (sha256 match) of {ranked[0].path}"))
+
+            # Defensive: sha_reps is non-empty by construction (every format has
+            # >=1 file), but guard the index so a future filter inside this loop
+            # can't introduce an IndexError.
+            if not sha_reps:
+                continue
+            # Best distinct-content representative of this format.
+            fmt_rep = sorted(sha_reps, key=_keeper_sort_key)[0]
+            for rep in sha_reps:
+                if rep.path == overall_keeper.path:
+                    members.append(Member(rep.path, "keep", "canonical copy"))
+                elif rep.path == fmt_rep.path and fmt != overall_keeper.format:
+                    members.append(Member(rep.path, "merge-format",
+                                          f"alternate format ({fmt}) of the same work"))
                 else:
-                    members.append(Member(f.path, "trash",
-                                          f"redundant {fmt} copy; keeper={fmt_keeper.path}"))
+                    members.append(Member(rep.path, "review",
+                                          f"distinct same-work {fmt} copy (different content); "
+                                          "needs human review"))
         groups.append(DupGroup(work_key, tuple(sorted(members, key=lambda m: m.path))))
     return sorted(groups, key=lambda g: g.work_key)

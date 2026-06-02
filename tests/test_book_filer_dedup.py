@@ -43,3 +43,32 @@ def test_keeper_tiebreak_is_deterministic():
     a = [m.action for g in plan_dedup(files) for m in g.members]
     b = [m.action for g in plan_dedup(files) for m in g.members]
     assert a == b  # stable ordering, no randomness
+
+
+def test_nonidentical_same_format_collision_is_never_trashed():
+    # Two same-format files sharing a work_key but with DIFFERENT sha256 are NOT
+    # exact duplicates (different content). "Keep best of EXACT dups" must not
+    # trash them; the non-canonical one is routed to review.
+    files = [
+        FileInfo("ed1.epub", "hash-A", "epub", 100, True, "w"),
+        FileInfo("ed2.epub", "hash-B", "epub", 100, True, "w"),
+    ]
+    [group] = plan_dedup(files)
+    actions = {m.path: m.action for m in group.members}
+    assert "trash" not in actions.values()
+    assert actions == {"ed1.epub": "keep", "ed2.epub": "review"}
+
+
+def test_exact_sha_dup_still_collapses_alongside_a_distinct_copy():
+    # Within a format: byte-identical extras (same sha256) trash; a distinct-content
+    # copy (different sha256) survives as review.
+    files = [
+        FileInfo("a.epub", "h1", "epub", 100, True, "w"),
+        FileInfo("a-copy.epub", "h1", "epub", 100, True, "w"),  # exact dup of a.epub
+        FileInfo("b.epub", "h2", "epub", 100, True, "w"),       # distinct content
+    ]
+    [group] = plan_dedup(files)
+    actions = {m.path: m.action for m in group.members}
+    assert actions["a-copy.epub"] == "trash"          # byte-identical -> safe to trash
+    assert actions["b.epub"] == "review"              # distinct content -> never trashed
+    assert actions["a.epub"] == "keep"
