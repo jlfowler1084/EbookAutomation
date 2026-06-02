@@ -19,9 +19,12 @@ Key design decisions (from Phase 2 plan, Unit 3):
 
 EB-253 (UTM attribution):
 - Optional UTM form fields (utm_source, utm_medium, utm_campaign, utm_term,
-  utm_content) are accepted and forwarded into Stripe Checkout Session metadata.
-- Stripe preserves session metadata onto the resulting payment_intent and customer
-  records, enabling post-purchase attribution in the webhook handler.
+  utm_content) are accepted and stored in the Stripe Checkout *Session* metadata.
+- The webhook reads them from the `checkout.session.completed` event's Session
+  object (event.data.object.metadata) and forwards them to Plausible. NOTE:
+  Stripe does NOT auto-copy Session metadata to the PaymentIntent or Customer
+  (https://docs.stripe.com/metadata) — UTMs intentionally live on the Session
+  only; payment_intent_data.metadata carries `pack` alone.
 - UTM fields are optional and bounded to 100 chars each; missing/blank values are
   silently dropped so the endpoint stays backwards-compatible.
 """
@@ -185,9 +188,11 @@ async def create_checkout_session(
                     # the PI to add checkout_session_id (completing the chain).
                     "metadata": {"pack": pack},
                 },
-                # Session-level metadata: pack + UTM fields (EB-253).
-                # Stripe preserves this onto payment_intent and customer so the
-                # webhook handler can read and forward UTMs to Plausible.
+                # Session-level metadata: pack + UTM fields (EB-253). The webhook
+                # reads these from the checkout.session.completed event's Session
+                # object. Stripe does NOT auto-copy Session metadata to the
+                # PaymentIntent/Customer (https://docs.stripe.com/metadata); UTMs
+                # live on the Session only by design.
                 metadata=session_metadata,
                 idempotency_key=idempotency_key,
             ),
