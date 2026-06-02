@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "confidence_threshold": 0.34,
+  "non_library_keywords": [
+    "resume", "cover_letter", "cover letter", "_cv", "tax", "1040", "w-2", "w2",
+    "passport", "ds82", "boarding", "pasabordo", "insurance", "cobra", "unum",
+    "invoice", "receipt", "statement", "declarations page", "return to work",
+    "health_card", "health card", "scytl", "robocopy", ".log"
+  ],
+  "sections": [
+    {"code": "01 History", "subcategories": [
+      {"name": "World Wars (WWI, WWII, Weimar)", "keywords": ["world war", "wwi", "wwii", "weimar", "stab-in-the-back", "league of nations", "versailles", "nuremberg", "reich"]},
+      {"name": "Russia, Soviet & Eastern Europe", "keywords": ["soviet", "bolshevik", "russia", "stalin", "lenin", "ussr", "romanov"]},
+      {"name": "Revolution & Political Upheaval", "keywords": ["revolution", "french revolution", "reconstruction", "ancien", "tragedy and hope"]},
+      {"name": "Modern & 20th-Century General", "keywords": ["operation paperclip", "twentieth century", "history of"]},
+      {"name": "United States & Americas", "keywords": ["american", "washington", "jefferson", "founding", "civil war"]},
+      {"name": "Military History", "keywords": ["military", "battle", "war ", "campaign", "wehrmacht"]}
+    ]},
+    {"code": "02 Philosophy", "subcategories": [
+      {"name": "Ancient & Classical", "keywords": ["aristotle", "plato", "stoic", "socrates"]},
+      {"name": "Modern & Continental", "keywords": ["nietzsche", "hegel", "heidegger", "feuerbach", "spengler"]},
+      {"name": "Ethics & Political Philosophy", "keywords": ["ethics", "leviathan", "social contract", "man versus the state"]},
+      {"name": "Logic & Epistemology", "keywords": ["logic", "epistemology", "knowledge"]},
+      {"name": "Eastern & Comparative", "keywords": ["tao", "buddhis", "confucian", "vedanta"]}
+    ]},
+    {"code": "03 Religion & Bible Study", "subcategories": [
+      {"name": "Bible Study & Commentary", "keywords": ["bible", "commentary", "ezekiel", "revelation", "genesis", "annotated bible", "study bible", "septuagint"]},
+      {"name": "Theology & Doctrine", "keywords": ["theology", "doctrine", "trinity", "soteriology"]},
+      {"name": "Christianity (History & Denominations)", "keywords": ["church history", "papacy", "reformation", "catholic", "protestant"]},
+      {"name": "Comparative Religion & World Faiths", "keywords": ["world religions", "islam", "judaism", "comparative religion"]},
+      {"name": "Apologetics & Devotional", "keywords": ["apologetics", "devotional", "daily reflections"]}
+    ]},
+    {"code": "04 Politics & Society", "subcategories": [
+      {"name": "Marxism & Socialist Theory", "keywords": ["marx", "marxism", "kapital", "communist", "socialism", "kolakowski"]},
+      {"name": "Political Ideologies & Geopolitics", "keywords": ["geopolitics", "dugin", "mackinder", "fukuyama", "end of history", "ideology"]},
+      {"name": "Economics & Political Economy", "keywords": ["political economy", "public finance", "gruber"]},
+      {"name": "Government & International Relations", "keywords": ["foreign policy", "international relations", "diplomacy", "state department"]},
+      {"name": "Middle East & Foreign Policy", "keywords": ["iran", "shah", "mossad", "saudi", "israel lobby", "kingdom"]}
+    ]},
+    {"code": "05 Finance & Investing", "subcategories": [
+      {"name": "Stock Market & Trading", "keywords": ["stock", "trading", "technical analysis", "options", "natenberg", "mcmillan"]},
+      {"name": "Investing & Personal Finance", "keywords": ["investing", "investor", "portfolio", "reminiscences of a stock operator"]},
+      {"name": "Economics (Markets & Theory)", "keywords": ["economics", "market", "lopez de prado"]},
+      {"name": "Money, Banking & Macro", "keywords": ["lords of finance", "banking", "federal reserve", "macroeconomic"]},
+      {"name": "Business & Entrepreneurship", "keywords": ["startup", "mom test", "running lean", "zero to sold", "entrepreneur"]}
+    ]},
+    {"code": "06 Fiction & Literature", "subcategories": [
+      {"name": "Classic & Literary Fiction", "keywords": ["foucault's pendulum", "eco", "novel"]},
+      {"name": "Austen & 19th-Century Novel", "keywords": ["austen", "pride and prejudice", "dickens", "bronte"]},
+      {"name": "Poetry & Drama", "keywords": ["paradise lost", "milton", "shakespeare", "tempest", "poetry", "folio"]},
+      {"name": "Genre Fiction (SF / Fantasy / Mystery)", "keywords": ["science fiction", "fantasy", "mystery", "sherlock"]},
+      {"name": "Literary Criticism", "keywords": ["literary criticism", "critical essays"]}
+    ]},
+    {"code": "07 Conspiracy, Esoterica & Fringe", "subcategories": [
+      {"name": "Conspiracy & Hidden History", "keywords": ["illuminati", "bloodlines", "one nation under blackmail", "conspiracy", "hidden history"]},
+      {"name": "Esoteric, Occult, Kabbalah & Theosophy", "keywords": ["kabbalah", "occult", "crowley", "blavatsky", "theosophy", "secret doctrine", "codex magica"]},
+      {"name": "Secret Societies (Freemasonry, Illuminati)", "keywords": ["freemason", "masonic", "secret societ"]},
+      {"name": "UFO & Paranormal", "keywords": ["ufo", "alien", "abduction", "disclosure", "extraterrestrial", "the threat"]},
+      {"name": "Prophecy & Apocalyptic", "keywords": ["prophecy", "apocalyptic", "zeitgeist", "end times"]}
+    ]},
+    {"code": "08 Biography & Memoir", "subcategories": [
+      {"name": "Historical & Political Figures", "keywords": ["a biography", "his excellency", "colonel house", "caesar a biography"]},
+      {"name": "Military & War", "keywords": ["memoir of war", "general"]},
+      {"name": "Religious & Philosophical Figures", "keywords": ["life of", "saint"]},
+      {"name": "Literary & Artistic Lives", "keywords": ["life and times", "artist"]},
+      {"name": "Memoir & Autobiography", "keywords": ["memoir", "autobiography", "my life"]}
+    ]},
+    {"code": "09 Technology, Science & Reference", "subcategories": [
+      {"name": "Programming & Software (PowerShell / Python / CS)", "keywords": ["powershell", "python", "algorithm", "designing data-intensive", "programming", "code"]},
+      {"name": "Systems, Cloud & IT Admin", "keywords": ["windows server", "intune", "domain controller", "azure", "cloud"]},
+      {"name": "Science & Academic Papers", "keywords": ["quantum", "neutrino", "astronomy", "attention is all you need", "bert", "arxiv"]},
+      {"name": "AI & Prompt Engineering", "keywords": ["prompt engineering", "machine learning", "neural", "llm"]},
+      {"name": "Reference & Encyclopedic", "keywords": ["encyclopedia", "dictionary", "handbook", "atlas"]}
+    ]},
+    {"code": "10 How-To, Hobbies & Practical", "subcategories": [
+      {"name": "Crafts, Hobbies & Music", "keywords": ["woodwork", "piano", "guitar", "knitting", "hobby"]},
+      {"name": "Home, Garden & Aquatics", "keywords": ["aquaponic", "aquarium", "garden", "planted aquarium"]},
+      {"name": "Health, Fitness & Cooking", "keywords": ["cookbook", "recipe", "pressure cooker", "fitness", "diet"]},
+      {"name": "Career & Job Search (how-to)", "keywords": ["resume how", "tech resume", "cloud resume challenge", "career"]},
+      {"name": "Recovery & 12-Step", "keywords": ["twelve steps", "alcoholics anonymous", "adult children of alcoholics", "12-step", "guided workbook"]}
+    ]},
+    {"code": "11 Writing & Children's Books", "subcategories": [
+      {"name": "Writing the Children's Book", "keywords": ["children's book", "picture book", "kidlit"]},
+      {"name": "Craft of Writing (General)", "keywords": ["writing craft", "on writing", "story structure"]},
+      {"name": "Publishing & Self-Publishing", "keywords": ["self-publish", "kdp", "publishing"]},
+      {"name": "Picture Books & Read-Alouds (study)", "keywords": ["read-aloud", "read aloud"]}
+    ]},
+    {"code": "12 Periodicals & Magazines", "subcategories": [
+      {"name": "By Publication Title", "keywords": ["magazine", "culture wars", "issue", "vol.", "no."]}
+    ]}
+  ]
+}
