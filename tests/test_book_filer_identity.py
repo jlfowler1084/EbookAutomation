@@ -30,6 +30,11 @@ def test_falls_back_to_sha_when_no_usable_metadata():
     assert planned_calibre_key(meta, _SHA) == f"sha:{_SHA[:16]}"
 
 
+def test_sha_fallback_is_case_normalized():
+    meta = BookMetadata(None, None, None, None)
+    assert planned_calibre_key(meta, _SHA.upper()) == planned_calibre_key(meta, _SHA)
+
+
 def test_is_deterministic():
     meta = BookMetadata("The Oil Kings", "Cooper, Andrew Scott", 2011, None)
     assert planned_calibre_key(meta, _SHA) == planned_calibre_key(meta, _SHA)

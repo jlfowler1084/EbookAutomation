@@ -25,4 +25,4 @@ def planned_calibre_key(meta: BookMetadata, content_sha256: str) -> str:
     if meta.author and meta.title:
         year = str(meta.year) if meta.year else ""
         return f"meta:{_normalize(meta.author)}|{_normalize(meta.title)}|{year}"
-    return f"sha:{content_sha256[:16]}"
+    return f"sha:{content_sha256.lower()[:16]}"
