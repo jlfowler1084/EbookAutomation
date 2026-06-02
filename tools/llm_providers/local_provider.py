@@ -61,8 +61,9 @@ def _build_page_extraction_schema(page_count: int) -> dict:
     the load-bearing constraint.  See also ``PageCountMismatchError`` which
     stays in place as belt-and-suspenders post-parse defense.
 
-    Enums mirror ``tools/visual_qa_rubric.md`` verbatim (line 59 for
-    page_type; lines 62-63 for category and severity).  Three distinct object
+    Enums mirror the page_type/category/severity lists in the "Scoring
+    Instructions" section of ``tools/visual_qa_rubric.md`` verbatim (referenced
+    by section, not line number, since rubric edits shift line numbers).  Three distinct object
     shapes are declared with ``additionalProperties: false`` throughout, as
     required by OpenAI strict-mode:
       1. per-page objects (items of ``pages[]``)
@@ -137,7 +138,7 @@ def _build_page_extraction_schema(page_count: int) -> dict:
             "page_number": {"type": "integer"},
             "page_type": {
                 "type": "string",
-                # Order matches tools/visual_qa_rubric.md line 59
+                # Order matches the page_type list in the "Scoring Instructions" section of tools/visual_qa_rubric.md
                 "enum": [
                     "cover",
                     "toc",

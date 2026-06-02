@@ -41,7 +41,7 @@ Score each category from 0–100. Weight them as shown to compute the page score
 **Common issues to flag:**
 - Garbled characters or mojibake (encoding failures)
 - Split words ("aft er", "be cause") from PDF extraction
-- OCR debris (random characters, numbers embedded in text)
+- OCR debris — but ONLY genuine non-character corruption (see the disambiguation note below); legible code, identifiers, operators, and numbers that legitimately appear in the text are NOT OCR debris
 - Missing text (visible gaps where content should be)
 - Orphaned fragments (partial words at line/page boundaries)
 - Running headers/footers that bled into body text
@@ -50,6 +50,45 @@ Score each category from 0–100. Weight them as shown to compute the page score
 - Index entries, bibliographic citations, or footnote references — these have inherently irregular formatting
 - The author's intentional formatting choices (poetry line breaks, epigraph styling)
 - Non-English characters or diacritical marks that render correctly
+
+**Genuine corruption vs. legible-but-unusual content — READ THIS before scoring Text Integrity.**
+
+Text Integrity measures whether the *characters are correct and readable* — NOT whether code or
+tables kept their formatting. Before flagging any Text Integrity issue, apply the **legibility gate**:
+
+- **If you can read and transcribe the words/tokens, the text is legible by definition.** Do NOT call
+  it "garbled", "unreadable", "OCR artifacts", an "OCR failure", or an "extraction failure", and do
+  NOT suggest re-running OCR. Legible text scores in the **70–100** Text Integrity band no matter how its lines are wrapped or spaced.
+- **Genuine corruption requires concrete character-level evidence** that you must quote in the
+  description, such as: mojibake (mis-decoded UTF-8: an accented letter shown as a run of two or three stray Latin-1 characters); the Unicode **replacement character**
+  `U+FFFD` (rendered as `�`, or as empty boxes / "tofu"); `(cid:NN)` glyph-mapping artifacts; math/symbol glyph soup where words should be
+  (`fλngn1/4`, `eC 1 ¼ WeΛ`); or random character substitution (`KKKKK`, reversed/scrambled letters).
+  Only this is Text Integrity corruption.
+
+**Source code, shell commands, and syntax templates are legitimate book content — never OCR debris.**
+Do NOT flag any of the following as garbled, malformed, or corrupted text:
+- Source code and identifiers in any style — `camelCase`, `snake_case`, `denoisedCorr`, `var_1`,
+  `tkinter.messagebox` — and code operators/punctuation (`=`, `()`, `[]`, `*`, `>`, `#`, `:`).
+- Hyphenated **placeholder**/template tokens in syntax skeletons, e.g.
+  `statements-to-execute-when-test-expression-1-is-True` or `instance-name.method-name()`. These are
+  intentional teaching placeholders, not malformed words; their repetition is the author's design.
+- HTML/markup shown as example code (`lang="en">`, `<h1>...</h1>`).
+
+**Route lost line/format structure to the correct category.** When legible text — code, a template,
+OR ordinary prose — merely lost its line breaks, wrapping, indentation, or **monospace** styling
+(statements or sentences merged onto one line; code not visually distinct from prose), that is a
+**paragraph_flow** issue (or **page_layout** for margin/spacing problems) — NOT text_integrity.
+Severity is at most **moderate**, because the content is fully readable; never mark
+legible-but-unformatted text as `major` or `critical`.
+
+**Mixed pages — score each region independently.** A page may contain BOTH genuine corruption (e.g. a
+`(cid:N)` equation) AND perfectly legible code. Flag the corrupt region as text_integrity, but do NOT
+let it bleed into the legible region: a readable `def ...(...)` snippet on the same page is still
+legible and must not be called "illegible".
+
+**Do not invent missing content from pagination.** A table or sentence cut off at the page bottom and
+continuing on the next page is normal pagination — not a "missing" or "incomplete" entry. Do not flag
+it as a Text Integrity defect.
 
 ### 2. Heading Formatting (20%)
 

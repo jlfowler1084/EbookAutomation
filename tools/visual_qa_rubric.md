@@ -11,6 +11,8 @@ You are evaluating the visual rendering quality of a converted ebook (KFX/AZW3/E
 - Ligatures render correctly (fi, fl, ff, ffi, ffl)
 - Special characters (em-dashes, smart quotes, ellipses) display properly
 - No corrupted Unicode (replacement characters, boxes)
+- **Legible code/text is not corruption (EB-353):** source code, identifiers (`camelCase`/`snake_case`/`denoisedCorr`), operators, and hyphenated placeholder/template tokens (e.g. `statements-to-execute-when-test-expression-1-is-True`) are legitimate content. If you can read it, it is legible — do NOT call it garbled or an OCR/extraction failure, and do NOT suggest re-running OCR. Genuine corruption needs character-level evidence (mojibake, `(cid:N)` glyphs, the Unicode replacement character `U+FFFD`/boxes). Lost line-breaks/indentation/monospace on legible text (code, template, OR ordinary prose) is a `paragraph_flow` issue — at most moderate severity, never `critical` (and never `major`) on legible content — not `text_integrity`. On mixed pages, score the corrupt region and the legible region independently.
+- **Pagination is not missing content (EB-353):** a table, sentence, or list cut off at the page bottom and continuing on the next page is normal pagination, not "missing" or "truncated" text. Do not flag it as a `text_integrity` defect.
 
 ### 2. Heading Formatting (20%)
 - Chapter titles are visually distinct from body text (larger, bolder, or different style)
