@@ -29,3 +29,19 @@ def test_never_auto_trashes():
     paths = [f"x-{i}.pdf" for i in range(1, 5)]
     # Policy: fragments are ALWAYS routed to review, never to trash, in the migration.
     assert all(s.disposition == "review" for s in detect_fragment_sets(paths))
+
+
+def test_windows_paths_in_different_folders_are_not_grouped():
+    # Real corpus uses Windows paths. EPUB-debris extensions in DIFFERENT real
+    # folders must not be merged into one fragment set (the PurePosixPath bug
+    # collapsed every backslash path to parent '.').
+    paths = [r"F:\Books\A\ch1.xhtml", r"F:\Books\B\content.opf"]
+    assert detect_fragment_sets(paths) == []
+
+
+def test_windows_exploded_epub_in_one_folder_is_flagged():
+    paths = [r"F:\Books\bk\content.opf", r"F:\Books\bk\toc.ncx", r"F:\Books\bk\ch1.xhtml"]
+    sets = detect_fragment_sets(paths)
+    assert len(sets) == 1
+    assert sets[0].disposition == "review"
+    assert set(sets[0].members) == set(paths)

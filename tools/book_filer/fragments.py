@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import PureWindowsPath
 
 # stem ending in -N, (N), or _NN  (N >= 1)
 _NUMBERED_RE = re.compile(r"^(?P<stem>.+?)[ _-]\(?(?P<num>\d{1,3})\)?$")
@@ -25,9 +25,9 @@ def detect_fragment_sets(paths: list[str]) -> list[FragmentVerdict]:
     # 1. Exploded-EPUB debris: a directory containing OPF/NCX/XHTML/CSS together.
     by_dir: dict[str, list[str]] = defaultdict(list)
     for p in paths:
-        by_dir[str(PurePosixPath(p).parent)].append(p)
+        by_dir[str(PureWindowsPath(p).parent)].append(p)
     for _dir, members in by_dir.items():
-        exts = {PurePosixPath(m).suffix.lower() for m in members}
+        exts = {PureWindowsPath(m).suffix.lower() for m in members}
         if len(_EPUB_DEBRIS & exts) >= 2:
             verdicts.append(FragmentVerdict(tuple(sorted(members)), "review",
                                             "exploded-EPUB debris (OPF/NCX/XHTML/CSS in one folder)"))
@@ -38,7 +38,7 @@ def detect_fragment_sets(paths: list[str]) -> list[FragmentVerdict]:
     for p in paths:
         if p in used:
             continue
-        name = PurePosixPath(p).stem
+        name = PureWindowsPath(p).stem
         m = _NUMBERED_RE.match(name)
         if m:
             by_stem[m.group("stem")].append(p)
