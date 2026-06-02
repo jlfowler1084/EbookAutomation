@@ -20,7 +20,7 @@ def _normalize(text: str) -> str:
 
 def planned_calibre_key(meta: BookMetadata, content_sha256: str) -> str:
     if meta.isbn:
-        digits = re.sub(r"[^0-9Xx]", "", meta.isbn)
+        digits = re.sub(r"[^0-9Xx]", "", meta.isbn).upper()
         return f"isbn:{digits}"
     if meta.author and meta.title:
         year = str(meta.year) if meta.year else ""

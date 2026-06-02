@@ -13,6 +13,13 @@ def test_isbn_takes_priority():
     assert planned_calibre_key(meta, _SHA) == "isbn:9781416597865"
 
 
+def test_isbn_10_check_digit_is_case_normalized():
+    upper = BookMetadata("Title", "Author", 2011, "0-8044-2957-X")
+    lower = BookMetadata("Title", "Author", 2011, "0-8044-2957-x")
+    assert planned_calibre_key(upper, _SHA) == "isbn:080442957X"
+    assert planned_calibre_key(lower, _SHA) == planned_calibre_key(upper, _SHA)
+
+
 def test_falls_back_to_normalized_author_title_year():
     meta = BookMetadata("The Oil Kings", "Cooper, Andrew Scott", 2011, None)
     assert planned_calibre_key(meta, _SHA) == "meta:cooper-andrew-scott|the-oil-kings|2011"
