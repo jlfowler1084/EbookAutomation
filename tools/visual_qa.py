@@ -951,12 +951,28 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     total_output_tokens = 0
     _truncation_attempts = []  # EB-149: raw truncation events, pages_lost resolved after retries
 
+    # EB-350: adaptive batch-size cap — guard with hasattr so the cloud/Claude
+    # provider path is completely unaffected (it has no max_batch_size method).
+    # The isinstance(provider_max, int) guard prevents TypeError when the method
+    # is present but returns a non-integer (e.g., MagicMock in unit tests that
+    # don't configure the return value — those providers are treated as uncapped).
+    effective_batch = batch_size
+    if hasattr(provider, "max_batch_size"):
+        provider_max = provider.max_batch_size()
+        if isinstance(provider_max, int) and provider_max < batch_size:
+            logger.info(
+                "EB-350: provider max_batch_size=%d is less than configured "
+                "batch_size=%d — using %d to stay within server n_ctx",
+                provider_max, batch_size, provider_max,
+            )
+            effective_batch = provider_max
+
     batches = []
-    for i in range(0, len(page_images), batch_size):
-        batches.append(page_images[i:i + batch_size])
+    for i in range(0, len(page_images), effective_batch):
+        batches.append(page_images[i:i + effective_batch])
 
     logger.info("Sending %d images in %d batch(es) of up to %d via %s provider...",
-                len(page_images), len(batches), batch_size, provider.name)
+                len(page_images), len(batches), effective_batch, provider.name)
 
     for batch_idx, batch in enumerate(batches, 1):
         logger.info("  Batch %d/%d: %d pages [%s]",

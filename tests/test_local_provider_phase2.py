@@ -25,7 +25,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 from llm_providers import LocalVisionProvider  # noqa: E402
 from llm_providers.base import VisionResponse  # noqa: E402
 from llm_providers.local_provider import (  # noqa: E402
+    CONTEXT_SAFETY_MARGIN,
+    DEFAULT_CONTEXT_WINDOW,
     GRADING_MAX_OUTPUT_TOKENS,
+    MIN_OUTPUT_BUDGET,
+    PER_IMAGE_TOKEN_ESTIMATE,
+    RUBRIC_TOKEN_RESERVE,
     _build_page_extraction_schema,
 )
 
@@ -1431,4 +1436,325 @@ def test_visual_qa_routes_to_two_pass_when_provider_has_attribute() -> None:
 
     assert len(two_pass_called) == 1, (
         "two_pass_call was not invoked — duck-typing routing is broken"
+    )
+
+
+# ---------------------------------------------------------------------------
+# EB-350: Adaptive context-budget manager
+# ---------------------------------------------------------------------------
+
+# Helper: minimal /models JSON response as bytes.
+def _models_response(n_ctx: int) -> bytes:
+    payload = {
+        "data": [{"id": "test-model", "meta": {"n_ctx": n_ctx}}],
+        "object": "list",
+    }
+    return json.dumps(payload).encode("utf-8")
+
+
+class _FakeHTTPResponse:
+    """Minimal stand-in for urllib.request.urlopen context manager."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#1: get_context_window — parse, cache, fallback
+# ---------------------------------------------------------------------------
+
+
+def test_get_context_window_parses_n_ctx(provider: LocalVisionProvider) -> None:
+    """get_context_window() returns data[0].meta.n_ctx from /models response."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(49152)),
+    ):
+        result = provider.get_context_window()
+    assert result == 49152
+
+
+def test_get_context_window_caches_result(provider: LocalVisionProvider) -> None:
+    """Second call must NOT make another network request (result is cached)."""
+    call_count = []
+
+    def fake_urlopen(url, timeout=None):
+        call_count.append(1)
+        return _FakeHTTPResponse(_models_response(32768))
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        first = provider.get_context_window()
+        second = provider.get_context_window()
+
+    assert first == second == 32768
+    assert len(call_count) == 1, (
+        f"urlopen called {len(call_count)} times — result was not cached after first call"
+    )
+
+
+def test_get_context_window_returns_fallback_on_network_error(
+    provider: LocalVisionProvider,
+) -> None:
+    """On network failure, get_context_window() logs a warning and returns DEFAULT_CONTEXT_WINDOW."""
+    import urllib.error
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.URLError("connection refused"),
+    ):
+        result = provider.get_context_window()
+
+    assert result == DEFAULT_CONTEXT_WINDOW
+
+
+def test_get_context_window_returns_fallback_on_missing_field(
+    provider: LocalVisionProvider,
+) -> None:
+    """If /models response is missing meta.n_ctx, return DEFAULT_CONTEXT_WINDOW."""
+    bad_response = json.dumps({"data": [{"id": "test", "meta": {}}], "object": "list"}).encode()
+    with patch("urllib.request.urlopen", return_value=_FakeHTTPResponse(bad_response)):
+        result = provider.get_context_window()
+    assert result == DEFAULT_CONTEXT_WINDOW
+
+
+def test_get_context_window_returns_fallback_on_malformed_json(
+    provider: LocalVisionProvider,
+) -> None:
+    """If /models response is malformed JSON, return DEFAULT_CONTEXT_WINDOW."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(b"not json {{{"),
+    ):
+        result = provider.get_context_window()
+    assert result == DEFAULT_CONTEXT_WINDOW
+
+
+def test_get_context_window_fallback_is_also_cached(
+    provider: LocalVisionProvider,
+) -> None:
+    """Even the fallback value is cached — no repeated probe attempts on error."""
+    call_count = []
+
+    def fake_urlopen(url, timeout=None):
+        call_count.append(1)
+        raise ConnectionError("host unreachable")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        r1 = provider.get_context_window()
+        r2 = provider.get_context_window()
+
+    assert r1 == r2 == DEFAULT_CONTEXT_WINDOW
+    assert len(call_count) == 1, "Probe must not be retried after a cached fallback"
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#2: output_budget_for — single page, large batch, clamps
+# ---------------------------------------------------------------------------
+
+
+def test_output_budget_for_single_page_returns_ceiling_at_32768(
+    provider: LocalVisionProvider,
+) -> None:
+    """Single-image batch at n_ctx=32768 must resolve to GRADING_MAX_OUTPUT_TOKENS (24576)."""
+    budget = provider.output_budget_for(num_images=1, n_ctx=32768)
+    assert budget == GRADING_MAX_OUTPUT_TOKENS, (
+        f"Single-page budget at n_ctx=32768 must be {GRADING_MAX_OUTPUT_TOKENS}, got {budget}"
+    )
+
+
+def test_output_budget_for_large_batch_is_reduced(
+    provider: LocalVisionProvider,
+) -> None:
+    """A large batch must produce a budget smaller than GRADING_MAX_OUTPUT_TOKENS."""
+    budget_8 = provider.output_budget_for(num_images=8, n_ctx=32768)
+    assert budget_8 < GRADING_MAX_OUTPUT_TOKENS, (
+        f"8-image batch budget ({budget_8}) should be below the 24576 ceiling at n_ctx=32768"
+    )
+    assert budget_8 >= MIN_OUTPUT_BUDGET, (
+        f"8-image batch budget ({budget_8}) must not drop below MIN_OUTPUT_BUDGET={MIN_OUTPUT_BUDGET}"
+    )
+
+
+def test_output_budget_for_never_below_min(
+    provider: LocalVisionProvider,
+) -> None:
+    """Even a pathologically large batch or tiny n_ctx must not go below MIN_OUTPUT_BUDGET."""
+    # 100 images at n_ctx=32768 would give a huge negative raw value
+    budget = provider.output_budget_for(num_images=100, n_ctx=32768)
+    assert budget == MIN_OUTPUT_BUDGET
+
+
+def test_output_budget_for_never_above_grading_max(
+    provider: LocalVisionProvider,
+) -> None:
+    """Even num_images=0 (edge case) must not exceed GRADING_MAX_OUTPUT_TOKENS."""
+    budget = provider.output_budget_for(num_images=0, n_ctx=32768)
+    assert budget <= GRADING_MAX_OUTPUT_TOKENS
+
+
+def test_output_budget_for_math_correctness(
+    provider: LocalVisionProvider,
+) -> None:
+    """Verify the formula at a mid-range batch size (not clamped)."""
+    n_ctx = 32768
+    num_images = 8
+    available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+    expected_raw = available - num_images * PER_IMAGE_TOKEN_ESTIMATE
+    expected = max(MIN_OUTPUT_BUDGET, min(GRADING_MAX_OUTPUT_TOKENS, expected_raw))
+    assert provider.output_budget_for(num_images=num_images, n_ctx=n_ctx) == expected
+
+
+def test_output_budget_for_uses_probe_when_n_ctx_not_supplied(
+    provider: LocalVisionProvider,
+) -> None:
+    """When n_ctx is not passed, output_budget_for calls get_context_window()."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        budget = provider.output_budget_for(num_images=1)
+    assert budget == GRADING_MAX_OUTPUT_TOKENS
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#3: max_batch_size — computed value at n_ctx=32768
+# ---------------------------------------------------------------------------
+
+
+def test_max_batch_size_at_32768(provider: LocalVisionProvider) -> None:
+    """max_batch_size at n_ctx=32768 with chosen constants must be 10.
+
+    available = 32768 - 1024 - 1500 = 30244
+    N = floor((30244 - 8192) / 2200) = floor(22052 / 2200) = 10
+    """
+    result = provider.max_batch_size(n_ctx=32768)
+    assert result == 10, (
+        f"max_batch_size at n_ctx=32768 expected 10, got {result}. "
+        "If constants changed, re-verify the math and update this assertion."
+    )
+
+
+def test_max_batch_size_at_least_one(provider: LocalVisionProvider) -> None:
+    """max_batch_size is always at least 1, even for a tiny n_ctx."""
+    result = provider.max_batch_size(n_ctx=4096)
+    assert result >= 1
+
+
+def test_max_batch_size_uses_probe_when_n_ctx_not_supplied(
+    provider: LocalVisionProvider,
+) -> None:
+    """When n_ctx is not passed, max_batch_size calls get_context_window()."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        result = provider.max_batch_size()
+    assert result == 10
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#4: build_request / build_detection_request carry adaptive budget
+# ---------------------------------------------------------------------------
+
+
+def test_build_request_carries_adaptive_budget_single_page(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_request for 1 image (n_ctx=32768 fallback) must carry 24576."""
+    # The probe will fail (no live server) and fall back to DEFAULT_CONTEXT_WINDOW=32768.
+    # At n_ctx=32768 with 1 image, output_budget_for returns 24576 (ceiling).
+    with patch("urllib.request.urlopen", side_effect=ConnectionError("no server")):
+        payload = provider.build_request(
+            page_images=[(1, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert payload["max_tokens"] == GRADING_MAX_OUTPUT_TOKENS
+
+
+def test_build_request_carries_adaptive_budget_mocked_small_n_ctx(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_request reflects the server n_ctx when the probe succeeds."""
+    small_n_ctx = 16384
+    # available = 16384 - 1024 - 1500 = 13860
+    # budget = clamp(13860 - 1*2200, 8192, 24576) = clamp(11660, 8192, 24576) = 11660
+    expected = 11660
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(small_n_ctx)),
+    ):
+        payload = provider.build_request(
+            page_images=[(1, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert payload["max_tokens"] == expected
+
+
+def test_build_detection_request_carries_adaptive_budget(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_detection_request carries the same adaptive budget as build_request."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        det_payload = provider.build_detection_request(
+            page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+        req_payload = provider.build_request(
+            page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert det_payload["max_tokens"] == req_payload["max_tokens"], (
+        "Detection and extraction requests for the same image count must "
+        "carry the same adaptive budget"
+    )
+
+
+def test_build_request_adaptive_budget_large_batch_below_ceiling(
+    provider: LocalVisionProvider,
+) -> None:
+    """A large batch (>10 images) at n_ctx=32768 produces a budget below 24576."""
+    # Force the probe to return 32768 directly to eliminate test-order dependency.
+    provider._cached_context_window = 32768
+    payload = provider.build_request(
+        page_images=[(i, PNG_FIXTURE) for i in range(1, 12)],  # 11 images
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] < GRADING_MAX_OUTPUT_TOKENS, (
+        "11-image batch budget must be below the 24576 ceiling at n_ctx=32768"
+    )
+    assert payload["max_tokens"] >= MIN_OUTPUT_BUDGET
+
+
+def test_build_scoring_request_unchanged_at_1024(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_scoring_request (Pass 2, text-only) must stay at max_tokens=1024.
+
+    EB-350 hard constraint: text-only pass budget is NOT adaptive.
+    """
+    detected_pages = [{"page_number": 1, "page_type": "body", "issues": []}]
+    payload = provider.build_scoring_request(
+        detected_pages=detected_pages,
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] == 1024, (
+        "build_scoring_request must stay at 1024 (text-only pass, EB-350 hard constraint)"
     )
