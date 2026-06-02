@@ -215,8 +215,10 @@ def _run_vqa(output_path: Path, cfg: Settings, job_id: str) -> dict:
         log.warning("[%s] VQA report unreadable: %s", job_id, exc)
         return {**empty, "skipped_reason": "parse_error"}
 
-    # token_counts.cost_usd accumulates primary-provider + fallback cost when present.
-    cost_usd = float(report.get("token_counts", {}).get("cost_usd", 0.0) or 0.0)
+    # token_usage.total_estimated_cost_usd (canonical, post-EB-341) accumulates
+    # primary-provider + fallback cost; fall back to legacy estimated_cost_usd key.
+    tu = report.get("token_usage", {})
+    cost_usd = float(tu.get("total_estimated_cost_usd", tu.get("estimated_cost_usd", 0.0)) or 0.0)
 
     return {
         "score": report.get("overall_score"),
