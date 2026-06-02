@@ -19,6 +19,8 @@ import json
 import logging
 import sys
 import time
+import urllib.request
+import urllib.error
 
 import openai
 
@@ -45,6 +47,40 @@ logger = logging.getLogger("visual_qa.local_provider")
 # constant must be revisited.  Do NOT raise above 32768 - (minimum input
 # overhead) without re-verifying the server n_ctx.
 GRADING_MAX_OUTPUT_TOKENS: int = 24576
+
+# EB-350: Adaptive context-budget constants.
+#
+# The probe (get_context_window) is the source of truth for n_ctx; these
+# constants are used to size the output budget and batch limit to fit within
+# whatever n_ctx the server reports.
+#
+# DEFAULT_CONTEXT_WINDOW: last-resort fallback when the /models probe fails.
+# Set to 32768 because that is the confirmed production value for the R9700
+# Qwen3-VL-30B-A3B node (sweep #2, 2026-06-01).  If the server is
+# reconfigured, the probe will pick up the change automatically; this default
+# is only reached on network errors or a malformed /models response.
+DEFAULT_CONTEXT_WINDOW: int = 32768
+
+# PER_IMAGE_TOKEN_ESTIMATE: approximate input-token cost of one PNG page image
+# at the default 150 DPI rendering resolution.  Measured at ~2198 tokens/image
+# in the EB-350 sweep.  Rounded to 2200 for a small headroom buffer.
+# NOTE: this estimate is calibrated for 150 DPI.  Higher DPI under-estimates
+# input tokens (known v1 limitation; a DPI-aware estimate is a future refinement).
+PER_IMAGE_TOKEN_ESTIMATE: int = 2200
+
+# RUBRIC_TOKEN_RESERVE: estimated token cost of the system (rubric) message and
+# the trailing instruction text block.  A generous 1500-token reserve keeps the
+# budget math valid even for long rubrics.
+RUBRIC_TOKEN_RESERVE: int = 1500
+
+# CONTEXT_SAFETY_MARGIN: headroom subtracted from n_ctx before any calculation
+# to account for tokenizer variance, KV-cache bookkeeping, and rounding.
+CONTEXT_SAFETY_MARGIN: int = 1024
+
+# MIN_OUTPUT_BUDGET: floor for the computed output budget.  8192 tokens is
+# sufficient for a single-page grading report with multiple issues and ensures
+# the model always has a meaningful generation budget even on small n_ctx nodes.
+MIN_OUTPUT_BUDGET: int = 8192
 
 
 def _build_page_extraction_schema(page_count: int) -> dict:
@@ -418,6 +454,91 @@ class LocalVisionProvider:
                 "cloud_model='qwen/qwen3-vl-30b-a3b-instruct') and set OPENROUTER_API_KEY."
             )
         self._base_url = base_url
+        self._cached_context_window: int | None = None
+
+    # ------------------------------------------------------------------
+    # Adaptive context-budget API (EB-350)
+    # ------------------------------------------------------------------
+
+    def get_context_window(self) -> int:
+        """Return the server's advertised n_ctx, probing at most once per instance.
+
+        HTTP GET {base_url}/models, parses data[0].meta.n_ctx.  The result is
+        cached on the instance so subsequent calls never make a network request.
+
+        On ANY failure (network error, missing field, unexpected schema), logs a
+        WARNING and returns DEFAULT_CONTEXT_WINDOW (32768 — confirmed production
+        value for the R9700 Qwen3-VL-30B-A3B node).  DEFAULT_CONTEXT_WINDOW is
+        the last-resort fallback only; the probe is the source of truth.
+        """
+        cached = getattr(self, "_cached_context_window", None)
+        if cached is not None:
+            return cached
+
+        models_url = f"{self._base_url}/models"
+        try:
+            with urllib.request.urlopen(models_url, timeout=5) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            n_ctx = body["data"][0]["meta"]["n_ctx"]
+            if not isinstance(n_ctx, int) or n_ctx <= 0:
+                raise ValueError(f"n_ctx is not a positive integer: {n_ctx!r}")
+            self._cached_context_window = n_ctx
+            logger.info("EB-350: probed server n_ctx=%d from %s", n_ctx, models_url)
+            return n_ctx
+        except Exception as exc:
+            logger.warning(
+                "EB-350: failed to probe n_ctx from %s (%s: %s) — "
+                "using fallback DEFAULT_CONTEXT_WINDOW=%d",
+                models_url, type(exc).__name__, exc, DEFAULT_CONTEXT_WINDOW,
+            )
+            self._cached_context_window = DEFAULT_CONTEXT_WINDOW
+            return DEFAULT_CONTEXT_WINDOW
+
+    def output_budget_for(self, num_images: int, n_ctx: int | None = None) -> int:
+        """Compute the max_tokens output budget for a batch of num_images images.
+
+        Formula:
+            budget = clamp(
+                n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+                      - num_images * PER_IMAGE_TOKEN_ESTIMATE,
+                MIN_OUTPUT_BUDGET,
+                GRADING_MAX_OUTPUT_TOKENS,   # MAX_OUTPUT_BUDGET = 24576
+            )
+
+        A single-image batch at n_ctx=32768 resolves to 24576 (ceiling).
+        Large batches receive a proportionally smaller output budget so that
+        total (input + output) tokens stay within n_ctx.
+
+        Args:
+            num_images: number of page images in the batch.
+            n_ctx: server context window; if None, calls get_context_window().
+        """
+        if n_ctx is None:
+            n_ctx = self.get_context_window()
+        available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+        raw = available - num_images * PER_IMAGE_TOKEN_ESTIMATE
+        return max(MIN_OUTPUT_BUDGET, min(GRADING_MAX_OUTPUT_TOKENS, raw))
+
+    def max_batch_size(self, n_ctx: int | None = None) -> int:
+        """Return the largest batch N that keeps input + MIN_OUTPUT within n_ctx.
+
+        Formula (solved for N):
+            N = floor((available - MIN_OUTPUT_BUDGET) / PER_IMAGE_TOKEN_ESTIMATE)
+        where available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE.
+        Result is at minimum 1.
+
+        At n_ctx=32768 with the chosen constants:
+            available = 32768 - 1024 - 1500 = 30244
+            N = floor((30244 - 8192) / 2200) = floor(22052 / 2200) = 10
+
+        Args:
+            n_ctx: server context window; if None, calls get_context_window().
+        """
+        if n_ctx is None:
+            n_ctx = self.get_context_window()
+        available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+        n = (available - MIN_OUTPUT_BUDGET) // PER_IMAGE_TOKEN_ESTIMATE
+        return max(1, n)
 
     # ------------------------------------------------------------------
     # Request construction
@@ -470,6 +591,12 @@ class LocalVisionProvider:
             ),
         })
 
+        # EB-350: adaptive output budget — sized to fit within the server's n_ctx.
+        # Single-page batches resolve to GRADING_MAX_OUTPUT_TOKENS (ceiling) at
+        # n_ctx=32768; larger batches receive a proportionally smaller budget so
+        # that total (input + output) tokens stay within the server window.
+        adaptive_budget = self.output_budget_for(len(page_images))
+
         return {
             "model": model,
             "messages": [
@@ -478,7 +605,8 @@ class LocalVisionProvider:
             ],
             # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS to prevent
             # dense-batch output truncation (finish_reason='length' → dropped pages).
-            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
+            # EB-350: now adaptive — sized by output_budget_for() to fit n_ctx.
+            "max_tokens": adaptive_budget,
             "temperature": 0,
             "seed": 42,
             # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
@@ -543,6 +671,10 @@ class LocalVisionProvider:
 
         page_count = len(page_images)
         schema = _build_detection_schema(page_count)
+        # EB-350: adaptive output budget — same logic as build_request.
+        # Pass-1 detection enumerates issues verbosely and benefits from the
+        # same context-aware sizing so it doesn't overflow the server window.
+        adaptive_budget = self.output_budget_for(page_count)
         return {
             "model": model,
             "messages": [
@@ -552,7 +684,8 @@ class LocalVisionProvider:
             # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS (same as
             # build_request).  Pass-1 detection enumerates issues verbosely and
             # can itself hit the 16K cap on dense/scan pages.
-            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
+            # EB-350: now adaptive — sized by output_budget_for() to fit n_ctx.
+            "max_tokens": adaptive_budget,
             "temperature": 0,
             "seed": 42,
             "response_format": {
