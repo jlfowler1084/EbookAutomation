@@ -807,6 +807,13 @@ def _disambiguate_destinations(rows: list[ManifestRow], config: LibraryConfig,
 # Spot-check sheet generation (§3, deterministic stratified sampling)
 # ---------------------------------------------------------------------------
 
+def _spot_disposition(action: str) -> str:
+    """Map a manifest action to the calibration vocabulary (shelf/review) so the
+    spot-check sheet ingests directly into evaluate_calibration, which counts
+    wrong-shelf only when disposition == 'shelf' (EB-355 gate-hardening)."""
+    return "shelf" if action in ("copy", "hardlink") else "review"
+
+
 def _build_spot_check(rows: list[ManifestRow], min_spots: int = 50) -> list[dict]:
     """Build a deterministic stratified spot-check sheet of min(min_spots, len(rows)) rows.
 
@@ -864,8 +871,8 @@ def _build_spot_check(rows: list[ManifestRow], min_spots: int = 50) -> list[dict
     spots: list[dict] = []
     for i, r in enumerate(selected, 1):
         spots.append({
-            "#": i,
-            "disposition": r.action,
+            "spot_index": i,
+            "disposition": _spot_disposition(r.action),
             "section": r.section or "",
             "subcategory": r.subcategory or "",
             "confidence": r.classification_confidence,
@@ -1046,7 +1053,7 @@ def _write_scan_outputs(
 
     # spot-check-sheet.{csv,md}
     spots = _build_spot_check(rows)
-    spot_fields = ["#", "disposition", "section", "subcategory", "confidence",
+    spot_fields = ["spot_index", "disposition", "section", "subcategory", "confidence",
                    "filename", "dest-tail", "correct?", "note"]
     spot_csv_path = out_dir / "spot-check-sheet.csv"
     tmp_csv = Path(str(spot_csv_path) + ".tmp")
@@ -1057,11 +1064,11 @@ def _write_scan_outputs(
     os.replace(tmp_csv, spot_csv_path)
 
     spot_md_lines = ["# Spot-Check Sheet", "",
-                     "| # | disposition | section | subcategory | confidence | filename | dest-tail | correct? | note |",
+                     "| spot_index | disposition | section | subcategory | confidence | filename | dest-tail | correct? | note |",
                      "|---|---|---|---|---|---|---|---|---|"]
     for s in spots:
         spot_md_lines.append(
-            f"| {s['#']} | {s['disposition']} | {s['section']} | {s['subcategory']} | "
+            f"| {s['spot_index']} | {s['disposition']} | {s['section']} | {s['subcategory']} | "
             f"{s['confidence']:.2f} | {s['filename']} | {s['dest-tail']} | "
             f"{s['correct?']} | {s['note']} |"
         )

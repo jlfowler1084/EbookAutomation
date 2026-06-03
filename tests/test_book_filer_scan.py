@@ -1165,3 +1165,68 @@ def test_two_run_compare_emits_real_determinism_report(tmp_path):
     assert "**Deterministic:** YES" in det, det
     diff = json.loads((out_b / "determinism-diff.json").read_text(encoding="utf-8"))
     assert diff["deterministic"] is True
+
+
+# ---------------------------------------------------------------------------
+# Gate-hardening regressions — calibration measurement layer (EB-355)
+# ---------------------------------------------------------------------------
+
+def _gate_row(action: str, n: int = 0):
+    """Minimal ManifestRow for gate-vocabulary tests."""
+    from book_filer.manifest import ManifestRow
+    shelf = action in ("copy", "hardlink")
+    return ManifestRow(
+        original_path=f"F:\\Books\\g{n}.epub",
+        destination_path=(f"d{n}.epub" if shelf else ""),
+        sha256=f"{n:064x}", size=10, planned_calibre_key=f"meta:a|t{n}|2011",
+        calibre_id=None, isbn=None, format="epub",
+        section=("09 Technology" if shelf else None),
+        subcategory=("Programming" if shelf else None),
+        author_sort="A, B", title=f"t{n}", year=2011, duplicate_group_id=None,
+        canonical_reason=None, classification_confidence=0.9,
+        classification_source="rule", taxonomy_version=1, tool_version="0.4.0",
+        action=action, undo_action="# noop", review_required=(not shelf),
+    )
+
+
+def test_spot_check_disposition_uses_calibration_vocabulary():
+    """Finding 1: the spot-check sheet must emit the CALIBRATION vocabulary
+    (shelf/review), not the raw manifest action (copy/hardlink/trash). Otherwise an
+    automated ingestion under-counts wrong-shelf (evaluate_calibration only counts
+    disposition == 'shelf') and can FALSE-GREEN."""
+    from book_filer.scan import _build_spot_check
+    rows = [_gate_row("copy", 1), _gate_row("hardlink", 2),
+            _gate_row("review", 3), _gate_row("trash", 4)]
+    by_path = {s["filename"]: s["disposition"] for s in _build_spot_check(rows, min_spots=4)}
+    assert by_path["g1.epub"] == "shelf"
+    assert by_path["g2.epub"] == "shelf"
+    assert by_path["g3.epub"] == "review"
+    assert by_path["g4.epub"] == "review"   # trash maps to review for spot-check, never 'shelf'
+
+
+def test_wrong_copy_row_increments_wrong_shelf_count():
+    """Finding 1 consequence: a copy row marked incorrect must count as wrong-shelf
+    when the sheet's own disposition is fed to evaluate_calibration UNCHANGED
+    (no manual copy->shelf remap)."""
+    from book_filer.scan import _build_spot_check
+    from book_filer.calibration import SpotCheck, evaluate_calibration
+    spots = _build_spot_check([_gate_row("copy", 1)], min_spots=1)
+    sc = [SpotCheck(path=s["filename"], disposition=s["disposition"], correct=False) for s in spots]
+    v = evaluate_calibration("P", "P", sc, signed_off_by="tester", min_spot_check=1)
+    assert v.wrong_shelf_count == 1
+    assert v.green is False
+
+
+def test_spot_check_csv_header_is_powershell_importable(tmp_path):
+    """Finding 2: the spot-check CSV header must NOT start with '#' (PowerShell
+    Import-Csv treats a leading '#' line as a comment, corrupting the header)."""
+    root = tmp_path / "root"
+    _pdf(root / "python_book.pdf", seed="g")
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out = tmp_path / "out"
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+    header = (out / "spot-check-sheet.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert not header.startswith("#"), f"header starts with '#' (breaks Import-Csv): {header!r}"
+    assert header.split(",")[0] == "spot_index", header
