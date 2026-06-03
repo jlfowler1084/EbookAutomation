@@ -1,7 +1,7 @@
 # EB-365 — Format-Tier Demotion (GREEN-minimal): Requirements & Design
 
 **Ticket:** EB-365 (Story, under epic EB-354). **Follow-up to:** EB-355 Plan 5 (merged `f4c9367`).
-**Date:** 2026-06-03. **Status:** design approved → planning.
+**Date:** 2026-06-03. **Status:** pending user approval → planning.
 **Scope class:** deterministic, no-LLM, read-only. Gates the (separate, later) file-moving actuator.
 
 ---
@@ -19,8 +19,10 @@ scores by keyword **hit-count** (`confidence = best_hits / total`), matched on w
 
 ### 1.1 Verified root cause (characterized against the real artifact, not assumed)
 
-Reading the prior run's own `plan-20260602-212244.json` (read-only; no gated corpus scan), the
-**3** files auto-shelved into *Reference & Encyclopedic* decompose as:
+Reading the prior run's operator-local full plan artifact (`plan-20260602-212244.json` — **not** part
+of the committed durable subset at `9f3ccad`; see the EB-355 durability note — read-only, no gated
+corpus scan), the **3** files auto-shelved into *Reference & Encyclopedic* decompose as summarized
+below:
 
 | # | Title | Matched keywords | conf | True home (latent) |
 |---|---|---|---|---|
@@ -78,21 +80,30 @@ For a file, let `M` = the **union** of all keywords that match its boilerplate-c
 subject_evidence = M − format_keywords − boilerplate_tokens
 ```
 
-**Demotion guard.** If `M` is non-empty **and** `subject_evidence` is empty (everything that matched
-was form/boilerplate), route the file to `review` with reason
-`"format-only: no subject evidence"`, never auto-shelf. The would-be `section` / `subcategory` are
-retained on the row for audit. **Any file with ≥1 subject-tier match classifies exactly as today**
-(zero behavior change → zero regression for that majority).
+**Demotion guard.** If `M ∩ format_keywords ≠ ∅` (at least one **form** word matched) **and**
+`subject_evidence` is empty (everything that matched was form/boilerplate), route the file to
+`review` with reason `"format-only: no subject evidence"`, never auto-shelf. The would-be `section` /
+`subcategory` are retained on the row for audit. **Any file with ≥1 subject-tier match — or with no
+form-word hit at all — classifies exactly as today** (zero behavior change → zero regression for that
+majority).
+
+The format-hit precondition matters: without it, a `publishing`-only book (`M = {publishing}`, which
+is boilerplate, so `subject_evidence = {}`) would be wrongly demoted, contradicting the rule that
+`publishing` stays a usable classifier keyword. Requiring a form word scopes the guard to exactly the
+"Form-word of <no-subject>" bug class.
 
 Worked cases:
-- #32: `M = {dictionary, publishing}` → `subject_evidence = {}` → **review** ✓ (`publishing` is
-  excluded; this is the correction that makes the rule actually fire on #32).
-- Encyclopedias #1/#2: `M = {encyclopedia}` → `{}` → **review** ✓
+- #32: `M = {dictionary, publishing}` → `M ∩ format = {dictionary} ≠ ∅`, `subject_evidence = {}`
+  → **review** ✓ (`publishing` excluded from subject evidence — the correction that makes the rule fire).
+- Encyclopedias #1/#2: `M = {encyclopedia}` → form hit, `subject_evidence = {}` → **review** ✓
 - "Python … Handbook": `M = {python, handbook}` → `subject_evidence = {python}` → classify as today ✓
+- `publishing`-only title (no form word): `M = {publishing}` → `M ∩ format = ∅` → **not** demoted;
+  classifies as today (this is the §4.1 dual-use case — `publishing` stays a valid keyword) ✓
 - A title matching no keyword: already `review` under existing logic — unaffected.
 
 `publishing` remains a valid classifier keyword for genuine self-publishing books; the exclusion
-applies **only** to the demotion guard's subject-evidence test, not to scoring.
+applies **only** to the demotion guard's subject-evidence test, not to scoring, and the guard only
+fires when a form word is also present.
 
 ---
 
@@ -163,8 +174,11 @@ outside this subcategory; the gated A/B run (§7) is the authoritative floor mea
 - **Format-only siblings:** bare "Encyclopedia of X" / "Atlas of Y" (X/Y not keywords) → `review`.
 - **No-regression — co-occurrence:** "Python … Handbook" → still `shelf` (has subject evidence).
 - **No-regression — pure subject:** a handful of pure-subject titles classify identically to today.
-- **Boilerplate exclusion:** a title whose only non-format match is `publishing` → `review`
-  (guards the exact #32 correction).
+- **Boilerplate exclusion:** a title with a form word whose only *other* match is `publishing`
+  (e.g. `dictionary` + `publishing`) → `review` (guards the exact #32 correction).
+- **Publishing-only (precondition guard):** a title whose only match is `publishing` (no form word)
+  → classifies as today, **not** demoted — locks the `M ∩ format_keywords ≠ ∅` precondition and the
+  §4.1 dual-use guarantee.
 - **Taxonomy v2 load:** `format_keywords` / `boilerplate_keywords` parse into frozensets; a v1 file
   (no keys) still loads with empty sets.
 - **Reason wiring:** a demoted row surfaces the format-only reason through `_resolve_action`.
@@ -202,5 +216,3 @@ gated behind EB-365 reaching strict GREEN.
 - Plan 5: [`docs/plans/2026-06-02-001-feat-eb355-plan5-classification-metadata-accuracy-plan.md`](../plans/2026-06-02-001-feat-eb355-plan5-classification-metadata-accuracy-plan.md)
 - Prior runs (evidence committed `9f3ccad`): `data/batch_reports/book_filer_whatif/{20260602-182319,20260602-212244}/run-b/`
 - Primitive follow-ups already filed: EB-359 (fragments folder-blind), EB-360 (reparse fail-open).
-</content>
-</invoke>
