@@ -1,0 +1,13 @@
+{
+  "green": false,
+  "deterministic": true,
+  "wrong_shelf_count": 1,
+  "spot_check_size": 50,
+  "signed_off_by": "Joe Fowler",
+  "reason": "RED: 1 wrong-shelf",
+  "wrong_shelf_rows": [
+    32
+  ],
+  "wrong_shelf_detail": "#32 Theological Dictionary of the New Testament -> Technology/Reference; belongs in Religion (generic 'dictionary/reference' beat 'theological/new testament').",
+  "improvement_vs_prior": "confident mis-shelves 4 -> 1; auto_shelf 224 -> 228 (>=224 floor); trash-safety 0 violations."
+}

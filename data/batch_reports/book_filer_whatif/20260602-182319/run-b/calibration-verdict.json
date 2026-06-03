@@ -1,0 +1,14 @@
+{
+  "green": false,
+  "deterministic": true,
+  "wrong_shelf_count": 4,
+  "spot_check_size": 50,
+  "signed_off_by": "Joe Fowler",
+  "reason": "RED: 4 wrong-shelf",
+  "wrong_shelf_rows": [
+    1,
+    6,
+    9,
+    30
+  ]
+}
