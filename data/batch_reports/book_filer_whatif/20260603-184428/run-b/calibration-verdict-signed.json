@@ -1,0 +1,53 @@
+{
+  "run": "20260603-184428",
+  "branch": "worktree-feat+EB-365-llm-tail-keyword-precedence",
+  "ticket": "EB-365",
+  "green": true,
+  "gates": {
+    "determinism": {
+      "pass": true,
+      "run_a_len": 680,
+      "run_b_len": 680
+    },
+    "wrong_shelf": {
+      "pass": true,
+      "count": 0,
+      "shelf_rows_sampled": 16
+    },
+    "auto_shelf_floor": {
+      "pass": true,
+      "auto_shelf_count": 225,
+      "floor": 224
+    },
+    "trash_safety": {
+      "pass": true,
+      "trash_rows": 44,
+      "violations": 0
+    },
+    "human_sign_off": {
+      "pass": true,
+      "signed_off_by": "Joe Fowler (jlfowler1084)",
+      "spot_check_size": 50
+    }
+  },
+  "action_tally": {
+    "review": 409,
+    "copy": 225,
+    "trash": 44,
+    "quarantine": 2
+  },
+  "format_only_demotions": [
+    "Fritz Zimmerman - The Encyclopedia of Ancient Giants in North America (2015) - libgen.li.pdf",
+    "Thomas N. Bulkowski - Encyclopedia of chart patterns (2016, Wiley) - libgen.li.epub",
+    "Theological Dictionary of the New Testament -- Gerhard Friedrich -- Volume 8, 1972 -- Wm_ B_ Eerdmans Publishing Co_ -- 7d03f4e167a31af56cb1c042ff81cfbb -- Anna’s Archive.pdf"
+  ],
+  "evaluate_calibration": {
+    "deterministic": true,
+    "wrong_shelf_count": 0,
+    "spot_check_size": 50,
+    "signed_off_by": "Joe Fowler (jlfowler1084)",
+    "green": true,
+    "reason": "GREEN: deterministic, zero wrong-shelf, signed off."
+  },
+  "reason": "GREEN: determinism YES, wrong_shelf==0 (signed), auto_shelf 225>=224, trash-safety 0 violations."
+}

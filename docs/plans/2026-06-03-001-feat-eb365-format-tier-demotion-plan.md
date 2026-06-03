@@ -1,12 +1,18 @@
 ---
 title: "feat(EB-365): book_filer format-tier demotion → strict GREEN (deterministic)"
 type: feat
-status: active
+status: complete
 date: 2026-06-03
 origin: docs/brainstorms/2026-06-03-eb365-format-tier-demotion-requirements.md
 ---
 
 # feat(EB-365): book_filer format-tier demotion → strict GREEN (deterministic)
+
+> **COMPLETE (2026-06-03).** Units 1–5 done. Code committed `dece0bd`. Gated A/B run
+> `20260603-184428` reached **strict GREEN**: determinism YES, wrong_shelf==0 (human-signed),
+> auto_shelf 225≥224, trash-safety 0 violations. Exactly 3 format-only demotions (#32 + 2
+> encyclopedias). Signed verdict: `data/batch_reports/book_filer_whatif/20260603-184428/run-b/
+> calibration-verdict-signed.json`. Compound: `docs/solutions/eb365-book-filer-format-tier-demotion-2026-06-03.md`.
 
 ## Overview
 
@@ -138,7 +144,7 @@ where `subject_evidence = M − format_keywords − boilerplate_keywords`.
 
 ## Implementation Units
 
-- [ ] **Unit 1: Taxonomy overlay — `format_keywords` + `boilerplate_keywords` + version bump**
+- [x] **Unit 1: Taxonomy overlay — `format_keywords` + `boilerplate_keywords` + version bump**
 
 **Goal:** Express the format and boilerplate tiers in config and load them onto `Taxonomy`.
 
@@ -167,7 +173,7 @@ where `subject_evidence = M − format_keywords − boilerplate_keywords`.
 
 **Verification:** loader exposes both sets; existing taxonomy tests still pass.
 
-- [ ] **Unit 2: Classifier demotion guard + matched-keyword accounting + `Classification.reason`**
+- [x] **Unit 2: Classifier demotion guard + matched-keyword accounting + `Classification.reason`**
 
 **Goal:** Route format-only files to `review`; carry an auditable reason; preserve all current behavior otherwise.
 
@@ -213,7 +219,7 @@ no-regression cases, then implement the guard.
 **Verification:** #32 and siblings route to `review`; co-occurrence and pure-subject cases unchanged;
 full classify test module green.
 
-- [ ] **Unit 3: Wire the demotion reason through `scan.py`**
+- [x] **Unit 3: Wire the demotion reason through `scan.py`**
 
 **Goal:** Surface `Classification.reason` on the manifest/spot-check for demoted rows.
 
@@ -240,7 +246,7 @@ full classify test module green.
 
 **Verification:** demoted rows carry the format-only reason; low-confidence rows unchanged.
 
-- [ ] **Unit 4: Feature-manifest refresh + full suite + determinism guard green**
+- [x] **Unit 4: Feature-manifest refresh + full suite + determinism guard green**
 
 **Goal:** Keep the manifest honest and prove no regression across the book_filer suite.
 
@@ -262,7 +268,7 @@ full classify test module green.
 
 **Verification:** manifest verification passes; full suite green; no dedup/trash-safety drift.
 
-- [ ] **Unit 5: Gated GREEN run (manual A/B; requires explicit "frozen + go")**
+- [x] **Unit 5: Gated GREEN run (manual A/B; requires explicit "frozen + go")**
 
 **Goal:** Re-run the read-only `-WhatIf` two-run A/B on the frozen corpus and reach strict GREEN.
 
