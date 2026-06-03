@@ -6700,8 +6700,10 @@ def _mark_a2_running_headers(para_dicts, log):
     prefix_stripped = 0
     if confirmed_short_headers:
         confirmed_short_headers.sort(key=len, reverse=True)  # longest pattern first
+        # Allow an OPTIONAL leading page number ("82 PILGRIM PEOPLE ...", verso
+        # running head) as well as a trailing one ("PILGRIM PEOPLE 82 ...", recto).
         _prefix_res = [
-            (pat, re.compile(re.escape(pat) + r'\s*\d{0,4}\s+(?=\S)'))
+            (pat, re.compile(r'\d{0,4}\s*' + re.escape(pat) + r'\s*\d{0,4}\s+(?=\S)'))
             for pat in confirmed_short_headers
         ]
         for p in para_dicts:
