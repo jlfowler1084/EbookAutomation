@@ -101,7 +101,18 @@ def _get_kfx_dir() -> Path:
 def find_poppler_path(explicit_path=None):
     """Locate the poppler bin directory."""
     if explicit_path and os.path.isdir(explicit_path):
-        return explicit_path
+        ep = Path(explicit_path)
+        # An explicit path that already contains the poppler binary is used as-is.
+        if (ep / "pdftoppm.exe").exists() or (ep / "pdftoppm").exists():
+            return explicit_path
+        # Otherwise it may be a poppler *root* (e.g. settings.json "tools\\poppler")
+        # whose binary lives under a nested Library/bin. Descend to it rather than
+        # returning the root, which pdf2image cannot use (EB-361: the determinism
+        # checker passed the root and rendering failed before reaching the provider).
+        for lib_bin in ep.rglob("Library/bin"):
+            if (lib_bin / "pdftoppm.exe").exists():
+                return str(lib_bin)
+        # Neither direct nor nested — fall through to the standard candidate search.
 
     # Check relative to this script (tools\poppler\...\Library\bin)
     script_dir = Path(__file__).resolve().parent
