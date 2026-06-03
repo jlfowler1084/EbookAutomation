@@ -124,3 +124,88 @@ def test_unseen_realm_not_misshelved_to_fiction():
     assert r.disposition == "review" or r.section == "03 Religion & Bible Study", (
         f"biblical book must not auto-shelf to Fiction; got {r.disposition}/{r.section}"
     )
+
+
+# ---------------------------------------------------------------------------
+# EB-365 Unit 2 — format-tier demotion guard. A file whose entire keyword
+# evidence is form-tier (dictionary/encyclopedia/...) + boilerplate
+# (publishing), with NO subject-tier hit, routes to review instead of being
+# auto-shelved to the Reference subcategory. Pinned #32 leads.
+# ---------------------------------------------------------------------------
+
+def test_theological_dictionary_32_demoted_to_review():
+    # Pinned spot-check #32: "Theological Dictionary of the New Testament".
+    # Only matches: `dictionary` (form word, title+name) + `publishing`
+    # (filename boilerplate, e.g. "Eerdmans Publishing"). theology != theological
+    # on a word boundary; "testament" is not a keyword. Lone form word wins
+    # uncontested today -> Reference shelf. The guard must demote to review.
+    r = classify_name(
+        "Kittel - Theological Dictionary of the New Testament (Eerdmans Publishing).pdf",
+        TAX,
+        title="Theological Dictionary of the New Testament",
+    )
+    assert r.disposition == "review"
+    assert r.reason == "format-only: no subject evidence"
+    # Would-be target retained for audit.
+    assert r.section == "09 Technology, Science & Reference"
+    assert r.subcategory == "Reference & Encyclopedic"
+
+
+def test_encyclopedia_of_unknown_subject_demoted_to_review():
+    r = classify_name("The Encyclopedia of Ancient Giants in North America.pdf", TAX)
+    assert r.disposition == "review"
+    assert r.reason == "format-only: no subject evidence"
+
+
+def test_atlas_of_unknown_subject_demoted_to_review():
+    r = classify_name("Atlas of Remote Islands.epub", TAX)
+    assert r.disposition == "review"
+    assert r.reason == "format-only: no subject evidence"
+
+
+def test_form_word_plus_subject_keyword_still_shelves():
+    # R2 co-occurrence: a real subject (`python`) alongside the form word
+    # (`handbook`) -> subject_evidence non-empty -> classify as today (shelf).
+    r = classify_name("The Python Handbook.pdf", TAX)
+    assert r.disposition == "shelf"
+    assert r.section == "09 Technology, Science & Reference"
+    assert r.reason is None
+
+
+def test_publishing_only_is_not_demoted_precondition_guard():
+    # R3 / §4.1 dual-use: `publishing` with NO form word -> M ∩ format == ∅ ->
+    # guard does not fire; `publishing` stays a valid classifier keyword.
+    r = classify_name("The Art of Publishing.pdf", TAX)
+    assert r.disposition == "shelf"
+    assert r.section == "11 Writing & Children's Books"
+    assert r.reason is None
+
+
+def test_form_word_plus_only_boilerplate_demoted():
+    # Locks the exact #32 correction: a form word that WINS (present in title and
+    # name) whose only other evidence is `publishing` boilerplate (name-only).
+    # `publishing` is excluded from subject_evidence -> review. Without the
+    # exclusion this would auto-shelf to Reference.
+    r = classify_name(
+        "Atlas of Cartography (Penguin Publishing).pdf",
+        TAX,
+        title="Atlas of Cartography",
+    )
+    assert r.disposition == "review"
+    assert r.reason == "format-only: no subject evidence"
+
+
+def test_pure_subject_titles_unchanged_no_reason():
+    # R2: pure-subject titles classify exactly as before, with reason None.
+    weimar = classify_name(
+        "The Stab-in-the-Back Myth and the Fall of the Weimar Republic.pdf", TAX
+    )
+    assert weimar.disposition == "shelf"
+    assert weimar.section == "01 History"
+    assert weimar.reason is None
+
+
+def test_demotion_is_deterministic():
+    name = "Kittel - Theological Dictionary of the New Testament (Eerdmans Publishing).pdf"
+    title = "Theological Dictionary of the New Testament"
+    assert classify_name(name, TAX, title=title) == classify_name(name, TAX, title=title)

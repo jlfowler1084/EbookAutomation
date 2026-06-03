@@ -1294,3 +1294,68 @@ def test_spot_check_csv_header_is_powershell_importable(tmp_path):
     header = (out / "spot-check-sheet.csv").read_text(encoding="utf-8").splitlines()[0]
     assert not header.startswith("#"), f"header starts with '#' (breaks Import-Csv): {header!r}"
     assert header.split(",")[0] == "spot_index", header
+
+
+# ---------------------------------------------------------------------------
+# EB-365 Unit 3 — the classifier's demotion reason reaches the manifest row.
+# ---------------------------------------------------------------------------
+
+def _make_format_taxonomy(tmp: Path) -> Path:
+    """Taxonomy v2 with a format-tier overlay and a Reference subcategory."""
+    taxonomy = {
+        "version": 2,
+        "confidence_threshold": 0.34,
+        "format_keywords": ["encyclopedia", "dictionary", "atlas"],
+        "boilerplate_keywords": ["publishing"],
+        "non_library_keywords": ["resume"],
+        "sections": [
+            {"code": "09 Technology", "subcategories": [
+                {"name": "Programming", "keywords": ["python"]},
+                {"name": "Reference", "keywords": ["encyclopedia", "dictionary", "atlas"]},
+            ]},
+        ],
+    }
+    cfg_dir = tmp / "config"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    tax_path = cfg_dir / "books-taxonomy-format.json"
+    tax_path.write_text(json.dumps(taxonomy), encoding="utf-8")
+    return tax_path
+
+
+def test_format_only_demotion_reason_reaches_manifest(tmp_path):
+    """A format-only file (form word + boilerplate, no subject) must produce a
+    review row whose canonical_reason is the format-only reason — not the generic
+    low-confidence string."""
+    root = tmp_path / "root"
+    _pdf(root / "Encyclopedia of Widgets (Acme Publishing).pdf", seed="fmt")
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_format_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+
+    rows = _load_rows(out, "TEST20260101")
+    row = next(r for r in rows if "Encyclopedia of Widgets" in r["original_path"])
+    assert row["action"] == "review"
+    assert row["canonical_reason"] == "format-only: no subject evidence"
+
+
+def test_low_confidence_file_keeps_generic_reason(tmp_path):
+    """A genuinely unmatched/low-confidence file (classifier reason None) must
+    still emit the generic review reason — no regression from Unit 3."""
+    root = tmp_path / "root"
+    _pdf(root / "-jd55w3j.pdf", seed="cryptic")
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_format_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+
+    rows = _load_rows(out, "TEST20260101")
+    row = next(r for r in rows if "jd55w3j" in r["original_path"])
+    assert row["action"] == "review"
+    assert row["canonical_reason"] == "low-confidence/ambiguous classification"

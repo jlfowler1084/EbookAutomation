@@ -1,6 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "confidence_threshold": 0.34,
+  "format_keywords": ["encyclopedia", "dictionary", "handbook", "atlas"],
+  "boilerplate_keywords": ["publishing"],
   "non_library_keywords": [
     "resume", "cover_letter", "cover letter", "_cv", "tax", "1040", "w-2", "w2",
     "passport", "ds82", "boarding", "pasabordo", "insurance", "cobra", "unum",

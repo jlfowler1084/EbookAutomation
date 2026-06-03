@@ -22,6 +22,7 @@ class Classification:
     subcategory: str | None
     confidence: float
     source: str = "rule"
+    reason: str | None = None        # audit note when a rule routes to review
 
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -68,6 +69,49 @@ def _score_text(normalized_text: str, taxonomy: Taxonomy) -> Counter[tuple[str, 
     return scores
 
 
+def _collect_matches(normalized_text: str, taxonomy: Taxonomy) -> set[str]:
+    """Return the set of indexed keywords that match the text (identities, not counts)."""
+    if not normalized_text:
+        return set()
+    return {kw for kw in taxonomy._index if _keyword_matches(kw, normalized_text)}
+
+
+_FORMAT_ONLY_REASON = "format-only: no subject evidence"
+
+
+def _apply_format_guard(
+    result: Classification,
+    name_text: str,
+    title_text: str,
+    taxonomy: Taxonomy,
+) -> Classification:
+    """EB-365: demote a would-be shelf whose only evidence is form-tier + boilerplate.
+
+    Fires only when at least one *form* word matched (precondition) and nothing
+    that matched is subject evidence. Keeps the would-be section/subcategory on
+    the row for audit. Any subject-tier hit — or no form-word hit — is untouched.
+    """
+    if result.disposition != "shelf":
+        return result
+
+    matched = _collect_matches(name_text, taxonomy) | _collect_matches(title_text, taxonomy)
+    if not (matched & taxonomy.format_keywords):
+        return result  # no form word -> classify as today (R2/R3 precondition)
+
+    subject_evidence = matched - taxonomy.format_keywords - taxonomy.boilerplate_keywords
+    if subject_evidence:
+        return result  # a real subject co-occurs -> classify as today (R2)
+
+    return Classification(
+        "review",
+        result.section,
+        result.subcategory,
+        result.confidence,
+        result.source,
+        reason=_FORMAT_ONLY_REASON,
+    )
+
+
 def _rank_scores(scores: Counter[tuple[str, str]]) -> list[tuple[tuple[str, str], int]]:
     return sorted(scores.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
 
@@ -95,10 +139,7 @@ def _classification_from_scores(
     return Classification("shelf", best_section, best_sub, confidence, source)
 
 
-def classify_name(name: str, taxonomy: Taxonomy, title: str | None = None) -> Classification:
-    name_text = _strip_source_boilerplate(_normalize_match_text(name))
-    title_text = _normalize_match_text(title) if title else ""
-
+def _classify_core(name_text: str, title_text: str, taxonomy: Taxonomy) -> Classification:
     # 1. Non-library short-circuit.
     if any(
         _keyword_matches(kw, name_text) or (title_text and _keyword_matches(kw, title_text))
@@ -127,3 +168,12 @@ def classify_name(name: str, taxonomy: Taxonomy, title: str | None = None) -> Cl
         return _classification_from_scores(title_scores, taxonomy, "metadata")
 
     return _classification_from_scores(name_scores, taxonomy, "rule")
+
+
+def classify_name(name: str, taxonomy: Taxonomy, title: str | None = None) -> Classification:
+    name_text = _strip_source_boilerplate(_normalize_match_text(name))
+    title_text = _normalize_match_text(title) if title else ""
+
+    result = _classify_core(name_text, title_text, taxonomy)
+    # 3. EB-365 format-tier demotion: final check before any shelf is honored.
+    return _apply_format_guard(result, name_text, title_text, taxonomy)

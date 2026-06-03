@@ -37,3 +37,46 @@ def test_load_taxonomy_rejects_duplicate_section_codes(tmp_path):
     )
     with pytest.raises(ValueError, match="duplicate section"):
         load_taxonomy(bad)
+
+
+# ---------------------------------------------------------------------------
+# EB-365 Unit 1 — format-tier / boilerplate overlay + version bump.
+# Form words describe a book's *form*, not its subject; the overlay tags them
+# so the Unit 2 demotion guard can route "form-word of <no-subject>" to review.
+# ---------------------------------------------------------------------------
+
+def test_v2_taxonomy_loads_format_and_boilerplate_overlays():
+    tax = load_taxonomy()
+    assert tax.format_keywords == frozenset(
+        {"encyclopedia", "dictionary", "handbook", "atlas"}
+    )
+    assert tax.boilerplate_keywords == frozenset({"publishing"})
+
+
+def test_taxonomy_version_reads_as_two():
+    tax = load_taxonomy()
+    assert tax.version == 2
+
+
+def test_format_words_remain_in_reference_index_overlay_not_removal():
+    # The overlay tags form words; it must NOT remove them from their
+    # Reference & Encyclopedic subcategory, so a co-occurring subject can
+    # still reach the Reference shelf.
+    tax = load_taxonomy()
+    assert ("09 Technology, Science & Reference", "Reference & Encyclopedic") in tax.lookup(
+        "dictionary"
+    )
+
+
+def test_v1_file_without_overlay_keys_loads_with_empty_frozensets(tmp_path):
+    v1 = tmp_path / "v1.json"
+    v1.write_text(
+        '{"version":1,"confidence_threshold":0.34,"non_library_keywords":[],'
+        '"sections":[{"code":"01 X","subcategories":['
+        '{"name":"Sub","keywords":["alpha"]}]}]}',
+        encoding="utf-8",
+    )
+    tax = load_taxonomy(v1)
+    assert tax.version == 1
+    assert tax.format_keywords == frozenset()
+    assert tax.boilerplate_keywords == frozenset()
