@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -31,6 +32,10 @@ _GARBAGE_PLACEHOLDERS = frozenset({"none", "null", "n/a", "na", "undefined", "ni
 # metadata is reliable (calibre, Adobe InDesign, Acrobat Distiller) must NOT
 # appear here.
 _KNOWN_BAD_PDF_TOOLS = ("pdf995", "pdfcreator", "pdfsam", "acrobat pdfwriter")
+_MIN_PLAUSIBLE_YEAR = 1450
+_MAX_PLAUSIBLE_YEAR = datetime.now().year + 1
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_FAKE_AUTHOR_HANDLES = frozenset({"svejk", "svejk josef"})
 
 
 def _clean_field(value: str | None) -> str | None:
@@ -39,6 +44,16 @@ def _clean_field(value: str | None) -> str | None:
         return None
     cleaned = value.strip()
     if not cleaned or cleaned.lower() in _GARBAGE_PLACEHOLDERS:
+        return None
+    return cleaned
+
+
+def _clean_author(value: str | None) -> str | None:
+    cleaned = _clean_field(value)
+    if cleaned is None:
+        return None
+    author_key = " ".join(_NON_ALNUM_RE.sub(" ", cleaned.lower()).split())
+    if author_key in _FAKE_AUTHOR_HANDLES:
         return None
     return cleaned
 
@@ -57,7 +72,12 @@ def _year_from(text: str | None) -> int | None:
     if not text:
         return None
     m = _YEAR_RE.search(text)
-    return int(m.group(1)) if m else None
+    if not m:
+        return None
+    year = int(m.group(1))
+    if year < _MIN_PLAUSIBLE_YEAR or year > _MAX_PLAUSIBLE_YEAR:
+        return None
+    return year
 
 
 def _extract_epub(path: Path) -> BookMetadata:
@@ -82,7 +102,7 @@ def _extract_epub(path: Path) -> BookMetadata:
                 break
 
     return BookMetadata(
-        _clean_field(_txt("title")), _clean_field(_txt("creator")), _year_from(_txt("date")), isbn
+        _clean_field(_txt("title")), _clean_author(_txt("creator")), _year_from(_txt("date")), isbn
     )
 
 
@@ -101,7 +121,7 @@ def _extract_pdf(path: Path) -> BookMetadata:
     if any(bad in tool for bad in _KNOWN_BAD_PDF_TOOLS):
         return BookMetadata(None, None, None, None)
     title = _clean_field(info.title)
-    author = _clean_field(info.author)
+    author = _clean_author(info.author)
     year = _year_from(str(info.get("/CreationDate", "")))
     return BookMetadata(title, author, year, None)
 

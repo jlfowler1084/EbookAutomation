@@ -410,7 +410,7 @@ def _build_file_facts(path: Path, taxonomy: Taxonomy) -> _FileFacts:
 
     # Classification (wrapped defensively)
     try:
-        cls = classify_name(path.name, taxonomy)
+        cls = classify_name(path.name, taxonomy, title=meta.title if meta else None)
     except Exception as e:
         log.warning("Classification failed for %s: %s", path, e)
         cls = Classification("review", None, None, 0.0)
