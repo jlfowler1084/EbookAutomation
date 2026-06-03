@@ -1,9 +1,17 @@
 # EB-367 — Running-header bleed (HTML path): investigation notes
 
-Status: **diagnosis in progress — root cause narrowed to the chunked extraction path.**
-No production code changed yet (project rule: diagnose across corpus before editing
-heading/header logic). A failing characterization test exists:
-`tests/test_eb367_header_bleed_html.py`.
+Status: **FIXED (pending full-corpus regression sign-off).** Root cause corrected below.
+Implemented in commit on branch `fix/EB-367-header-bleed`. Characterization test
+`tests/test_eb367_header_bleed_html.py` goes 28 -> 0.
+
+> CORRECTION (supersedes the "chunking-specific" hypothesis previously recorded here):
+> the bug is NOT chunk-specific. The earlier direct `extract -> format` test simply
+> SKIPPED the `rejoin_html_fragments()` step that the full pipeline runs before format.
+> Re-running with the real order (`_mark_a2_running_headers` -> `rejoin_html_fragments`
+> -> `format`) reproduces the weld identically with or without chunking. Credit: reviewer
+> caught this by pointing at the STEP 1a2 / STEP 1b ordering (lines ~13070/13073) and the
+> rejoin skip logic (line ~6447). Real surface: **headers are unmarked before rejoin, so
+> rejoin welds them into body text; format-only stripping is too late.**
 
 ## Symptom
 Full conversion of "Pilgrim People" (Lebeson, 1950; 662 pp; single-column; HTML path)
@@ -26,18 +34,17 @@ Second confirming book: Fruchtenbaum (Israelology) — 250 hits ("ISRAELOLOGY", 
    flagged `_is_running_header_candidate` (set only on the multi-column PyMuPDF path) -> does
    not touch single-column pdfminer output.
 
-## The decisive discrepancy (the real bug surface)
-- DIRECT unchunked call: `extract_with_pdfminer_html(pdf, page_range=(0,60))` then
-  `format_paragraphs_as_html(...)` -> **42 header paragraphs become 2** in the output.
-  So SOMETHING in the format pass already removes them when run unchunked. (Mechanism not
-  yet pinned — it is NOT A2 and NOT the column-path candidate stripper.)
-- FULL pipeline (CLI `--mode kindle --html-extraction`): 662 > 500-page threshold triggers
-  CHUNKED extraction (`_extract_chunked`, 4 x 200 pages; line ~5719). On this merged path the
-  same format pass leaves **all ~310** headers.
+## The real bug surface (corrected)
+The variable was the **rejoin step**, not chunking:
+- `extract -> format` (no rejoin): 42 header paragraphs -> 2. (This path is NOT what the
+  pipeline runs; it skips rejoin, which is why the first measurement misled.)
+- `extract -> _mark_a2_running_headers -> rejoin_html_fragments -> format` (the real order):
+  42 -> **28 welded into body paragraphs**. Identical with or without chunking.
 
-=> The header-stripping that works on unchunked extraction FAILS on the chunked path used for
-500+ page books. This is why the bug shows up specifically on large scanned books and keeps
-recurring (EB-143, EB-174, EB-212, SCRUM-299 all targeted other facets).
+=> `rejoin_html_fragments` welds the running header into adjacent body text because the header
+was never marked `_is_a2_running_header` (A2's 15-char floor + unique page numbers). Prior
+fixes (EB-143/174/212, SCRUM-299) targeted other facets and never closed this short-ALL-CAPS,
+unmarked-before-rejoin case.
 
 ## Next steps for the focused implementation session
 1. Pin the unchunked stripper: instrument `format_paragraphs_as_html` to find which pass
