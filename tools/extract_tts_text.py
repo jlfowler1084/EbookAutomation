@@ -6273,6 +6273,15 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=No
         # Relative vertical position (0 = page bottom, 1 = page top)
         y_ratio = y0_min / ph
 
+        # EB-367: mark paragraphs that sit in the top or bottom margin band, where
+        # running headers / footers live. Used to gate SHORT all-caps header
+        # candidacy in _mark_a2_running_headers so that body-zone labels like
+        # "EXERCISE"/"SUMMARY" (which can legitimately repeat on >=10% of pages)
+        # are NOT treated as running headers. y0_max = paragraph top edge.
+        y0_max = p.get('y0_max')
+        if y0_max is not None and (y0_max / ph >= 0.85 or y_ratio <= 0.15):
+            p['_margin_zone'] = True
+
         # Font size ratio relative to body
         size_ratio = font_sz / body_size
 
@@ -6443,6 +6452,15 @@ def rejoin_html_fragments(para_dicts, body_size, log):
             i += 1
             continue
 
+        # EB-367: never merge FROM an A2-marked running header. The candidate
+        # search below already skips marked headers as the *next* paragraph, but
+        # a marked header reached as the *current* paragraph would otherwise be
+        # welded onto the following body text. Leaving it standalone lets HTML
+        # emission drop it.
+        if a.get('_is_a2_running_header'):
+            i += 1
+            continue
+
         # Find next non-page-marker, non-empty paragraph
         # Skip non-body-sized fragments (footnotes, running headers) between
         # body paragraphs. These small-font interruptions at page boundaries
@@ -6575,6 +6593,24 @@ def rejoin_html_fragments(para_dicts, body_size, log):
     return para_dicts
 
 
+def _is_short_allcaps_header(text):
+    """True if text's alphabetic core is ALL-CAPS with >=5 letters (EB-367).
+
+    Used to admit short running headers like "PILGRIM PEOPLE" (14 chars),
+    "ISRAELOLOGY" (11), or "INTRODUCTION" (12) into the A2 frequency filter
+    below its normal 15-char floor. Digits (page numbers) and punctuation are
+    ignored. The guard is intentionally strict — every letter uppercase and at
+    least 5 letters — so ordinary short content and short acronyms do not
+    qualify. The >=5-distinct-pages and >=10%-density thresholds in
+    _mark_a2_running_headers still apply on top of this, so a transient
+    all-caps heading (appearing on one page) is never marked.
+    """
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 5:
+        return False
+    return all(c.isupper() for c in letters)
+
+
 def _mark_a2_running_headers(para_dicts, log):
     """Mark para_dicts entries that are A2 running headers.
 
@@ -6610,7 +6646,19 @@ def _mark_a2_running_headers(para_dicts, log):
         if p.get('is_page_marker'):
             continue
         text = p.get('text', '').strip()
-        if not text or len(text) < 15 or len(text) > 150:
+        if not text or len(text) > 150:
+            continue
+        # EB-367: admit short ALL-CAPS running headers (e.g. "PILGRIM PEOPLE"=14,
+        # "ISRAELOLOGY"=11) that fall below the original 15-char floor. Two extra
+        # guards keep this tight: the alpha core must be all-caps, AND the
+        # paragraph must sit in the top/bottom margin band (_margin_zone). The
+        # latter is what separates a true running header from a body-zone label
+        # like "EXERCISE"/"SUMMARY"/"QUESTIONS" that can legitimately repeat on
+        # >=10% of pages. The >=5-page / >=10%-density thresholds still apply too.
+        if len(text) < 15 and not (
+                _is_short_allcaps_header(text) and p.get('_margin_zone')):
+            continue
+        if len(text) < 7:
             continue
         if p.get('heading_level'):
             continue
@@ -6622,33 +6670,79 @@ def _mark_a2_running_headers(para_dicts, log):
             candidates[norm] = []
         candidates[norm].append((idx, p.get('page_number', 0)))
 
+        _margin = p.get('_margin_zone')
         norm_nonum = _TRAILING_NUM.sub('', norm).strip()
-        if len(norm_nonum) >= 15 and norm_nonum != norm:
+        # EB-367: allow short ALL-CAPS number-stripped forms ("PILGRIM PEOPLE 73"
+        # -> "PILGRIM PEOPLE") down to 7 chars, but only for margin-zone paragraphs;
+        # otherwise keep the 15-char floor.
+        _nonum_ok = len(norm_nonum) >= 15 or (
+            len(norm_nonum) >= 7 and _is_short_allcaps_header(norm_nonum) and _margin)
+        if _nonum_ok and norm_nonum != norm:
             if norm_nonum not in candidates:
                 candidates[norm_nonum] = []
             candidates[norm_nonum].append((idx, p.get('page_number', 0)))
 
         norm_leadnum = _LEADING_NUM.sub('', norm).strip()
-        if len(norm_leadnum) >= 15 and norm_leadnum != norm:
+        _leadnum_ok = len(norm_leadnum) >= 15 or (
+            len(norm_leadnum) >= 7 and _is_short_allcaps_header(norm_leadnum) and _margin)
+        if _leadnum_ok and norm_leadnum != norm:
             if norm_leadnum not in candidates:
                 candidates[norm_leadnum] = []
             candidates[norm_leadnum].append((idx, p.get('page_number', 0)))
 
     strip_count = 0
     pattern_count = 0
+    confirmed_short_headers = []  # EB-367: all-caps header patterns proven by frequency
     for norm, occurrences in candidates.items():
         distinct_pages = {pg for _, pg in occurrences}
         if (len(distinct_pages) >= 5
                 and len(distinct_pages) / total_pages >= min_density):
             pattern_count += 1
+            if _is_short_allcaps_header(norm):
+                confirmed_short_headers.append(norm)
             for idx, _ in occurrences:
                 if not para_dicts[idx].get('_is_a2_running_header'):
                     para_dicts[idx]['_is_a2_running_header'] = True
                     strip_count += 1
 
-    if strip_count:
-        log(f"  A2 filter: stripped {strip_count} running-header paragraphs "
-            f"across {pattern_count} normalized patterns")
+    # EB-367: strip a confirmed all-caps running header welded to the START of a
+    # body paragraph during per-page line grouping (within-page weld). Marking +
+    # rejoin only handle standalone headers; this handles the case where the
+    # header and the first body line were merged into one paragraph at extraction
+    # time. Only patterns already confirmed as running headers above are used, the
+    # match is case-sensitive (all-caps), a page number is REQUIRED on the leading
+    # (verso: "82 PILGRIM PEOPLE ...") or trailing (recto: "PILGRIM PEOPLE 82 ...")
+    # side, and body text must follow. Requiring the page number is what prevents
+    # stripping a legitimate sentence that opens with the title phrase
+    # ("PILGRIM PEOPLE should ...", no number) — a real but rare risk.
+    prefix_stripped = 0
+    if confirmed_short_headers:
+        confirmed_short_headers.sort(key=len, reverse=True)  # longest pattern first
+        _prefix_res = []
+        for pat in confirmed_short_headers:
+            esc = re.escape(pat)
+            # trailing page number ("PILGRIM PEOPLE 7 clusively ...")
+            _prefix_res.append(re.compile(esc + r'\s+\d{1,4}\s+(?=\S)'))
+            # leading page number ("82 PILGRIM PEOPLE But ...")
+            _prefix_res.append(re.compile(r'\d{1,4}\s+' + esc + r'\s+(?=\S)'))
+        for p in para_dicts:
+            if p.get('is_page_marker') or p.get('_is_a2_running_header'):
+                continue
+            t = p.get('text', '')
+            if not t:
+                continue
+            for rx in _prefix_res:
+                m = rx.match(t)
+                if m and len(t) - m.end() >= 10:
+                    p['text'] = t[m.end():]
+                    prefix_stripped += 1
+                    break
+
+    if strip_count or prefix_stripped:
+        log(f"  A2 filter: marked {strip_count} running-header paragraphs "
+            f"across {pattern_count} normalized patterns"
+            + (f"; stripped {prefix_stripped} welded header prefixes (EB-367)"
+               if prefix_stripped else ""))
 
 
 def _strip_page_number_debris(para_dicts, log):
