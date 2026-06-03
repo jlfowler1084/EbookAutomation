@@ -34,12 +34,13 @@ def _make_pdf(
     author: str,
     creator: str | None = None,
     producer: str | None = None,
+    creation_date: str = "D:20110101000000",
 ) -> None:
     from pypdf import PdfWriter
 
     writer = PdfWriter()
     writer.add_blank_page(width=72, height=72)
-    meta = {"/Title": title, "/Author": author, "/CreationDate": "D:20110101000000"}
+    meta = {"/Title": title, "/Author": author, "/CreationDate": creation_date}
     if creator is not None:
         meta["/Creator"] = creator
     if producer is not None:
@@ -147,3 +148,43 @@ def test_epub_literal_none_creator_is_scrubbed(tmp_path):
     meta = extract_metadata(epub)
     assert meta.title == "A Real Title"
     assert meta.author is None
+
+
+def test_epub_implausible_year_is_scrubbed(tmp_path):
+    for raw_year in ("0101-01-01", "0000-01-01", "9999-01-01"):
+        epub = tmp_path / f"book-{raw_year[:4]}.epub"
+        _make_epub(epub, "A Real Title", "Andrew Scott Cooper", raw_year)
+        meta = extract_metadata(epub)
+        assert meta.title == "A Real Title"
+        assert meta.author == "Andrew Scott Cooper"
+        assert meta.year is None
+
+
+def test_pdf_implausible_creation_year_is_scrubbed(tmp_path):
+    pdf = tmp_path / "book.pdf"
+    _make_pdf(
+        pdf,
+        "A Real Title",
+        "Andrew Scott Cooper",
+        creation_date="D:01010101000000",
+    )
+    meta = extract_metadata(pdf)
+    assert meta.title == "A Real Title"
+    assert meta.author == "Andrew Scott Cooper"
+    assert meta.year is None
+
+
+def test_fake_uploader_author_is_scrubbed(tmp_path):
+    epub = tmp_path / "book.epub"
+    _make_epub(epub, "A Real Title", "svejk, josef", "2011-01-01")
+    meta = extract_metadata(epub)
+    assert meta.title == "A Real Title"
+    assert meta.author is None
+    assert meta.year == 2011
+
+
+def test_lowercase_real_author_is_preserved(tmp_path):
+    epub = tmp_path / "book.epub"
+    _make_epub(epub, "A Real Title", "bell hooks", "2011-01-01")
+    meta = extract_metadata(epub)
+    assert meta.author == "bell hooks"

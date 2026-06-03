@@ -237,6 +237,51 @@ def test_sha_only_duplicate_without_metadata_is_review_not_trash(tmp_path):
     )
 
 
+def test_sanitized_implausible_year_keeps_exact_duplicate_trash_safe(tmp_path):
+    """A scrubbed year changes the meta work_key but must not break exact-dup safety."""
+    root = tmp_path / "root"
+    _make_real_epub(root / "book_a.epub", "Python Programming", "Guido Rossum", date="0101-01-01")
+    _write(root / "book_a_copy.epub", (root / "book_a.epub").read_bytes())
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+
+    rows = _load_rows(out, "TEST20260101")
+    assert {r["year"] for r in rows} == {None}
+    assert {r["planned_calibre_key"] for r in rows} == {"meta:guido-rossum|python-programming|"}
+
+    trash_rows = [r for r in rows if r["action"] == "trash"]
+    assert len(trash_rows) == 1
+    assert trash_rows[0]["duplicate_group_id"]
+    assert any(r["sha256"] == trash_rows[0]["sha256"] and r["action"] != "trash" for r in rows)
+
+
+def test_sanitized_fake_author_downgrades_sha_duplicate_to_review(tmp_path):
+    """Scrubbing a fake author removes the metadata anchor, so exact dups stay review."""
+    root = tmp_path / "root"
+    _make_real_epub(root / "book_a.epub", "Python Programming", "svejk, josef")
+    _write(root / "book_a_copy.epub", (root / "book_a.epub").read_bytes())
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+
+    rows = _load_rows(out, "TEST20260101")
+    assert {r["author_sort"] for r in rows} == {None}
+    assert all(r["action"] != "trash" for r in rows)
+    assert any(
+        r["action"] == "review" and "metadata anchor" in (r["canonical_reason"] or "")
+        for r in rows
+    )
+
+
 # ---------------------------------------------------------------------------
 # [M] Test 2 — zero-byte files never trashed
 # ---------------------------------------------------------------------------
@@ -807,6 +852,25 @@ def test_shelf_index_one_entry_per_row(tmp_path):
     row_dests = {r["destination_path"] for r in rows if r["destination_path"]}
     for dest in shelf_index:
         assert dest in row_dests, f"shelf-index entry {dest!r} not in manifest rows"
+
+
+def test_scan_classifies_using_embedded_title_when_filename_is_cryptic(tmp_path):
+    """A metadata-rich EPUB with a cryptic filename should classify from meta.title."""
+    root = tmp_path / "root"
+    _make_real_epub(root / "x19a3.epub", "Python Programming", "Guido Rossum")
+
+    cfg = _make_settings(tmp_path, root)
+    tax = _make_taxonomy(tmp_path)
+    out = tmp_path / "out"
+
+    result = run_scan(root, out, cfg, tax)
+    assert result.returncode == 0, result.stderr
+
+    rows = _load_rows(out, "TEST20260101")
+    assert len(rows) == 1
+    assert rows[0]["section"] == "09 Technology"
+    assert rows[0]["subcategory"] == "Programming"
+    assert rows[0]["classification_source"] == "metadata"
 
 
 # ---------------------------------------------------------------------------
