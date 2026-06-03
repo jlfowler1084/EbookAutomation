@@ -14,6 +14,13 @@ class Taxonomy:
     confidence_threshold: float
     non_library_keywords: tuple[str, ...]
     sections: dict[str, tuple[str, ...]]
+    version: int = 1
+    # EB-365 overlay: subject-agnostic *form* words (dictionary/encyclopedia/...)
+    # and non-topical boilerplate tokens (publishing) used only by the demotion
+    # guard's subject-evidence test. Form words remain in their Reference
+    # subcategory index — this is an overlay flag, not a removal.
+    format_keywords: frozenset[str] = frozenset()
+    boilerplate_keywords: frozenset[str] = frozenset()
     _index: dict[str, set[tuple[str, str]]] = field(default_factory=dict)
 
     def lookup(self, keyword: str) -> set[tuple[str, str]]:
@@ -40,5 +47,8 @@ def load_taxonomy(path: Path | None = None) -> Taxonomy:
         confidence_threshold=float(data["confidence_threshold"]),
         non_library_keywords=tuple(k.lower() for k in data["non_library_keywords"]),
         sections=sections,
+        version=int(data.get("version", 1)),
+        format_keywords=frozenset(k.lower() for k in data.get("format_keywords", ())),
+        boilerplate_keywords=frozenset(k.lower() for k in data.get("boilerplate_keywords", ())),
         _index=index,
     )

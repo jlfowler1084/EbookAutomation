@@ -558,9 +558,10 @@ def _resolve_action(
     if facts.cls.disposition == "non_library":
         return "review", True, "non-library file"
 
-    # 8. Low-confidence/ambiguous classification
+    # 8. Low-confidence/ambiguous classification (or a classifier-supplied reason,
+    #    e.g. EB-365 format-tier demotion: "format-only: no subject evidence").
     if facts.cls.disposition == "review":
-        return "review", True, "low-confidence/ambiguous classification"
+        return "review", True, facts.cls.reason or "low-confidence/ambiguous classification"
 
     # 9. Dedup: merge-format
     if member is not None and member.action == "merge-format":
