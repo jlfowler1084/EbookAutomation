@@ -35,13 +35,14 @@ if sys.platform == "win32":
 TESTS_DIR = Path(__file__).resolve().parent
 WORKTREE_ROOT = TESTS_DIR.parent  # code under test always lives here
 
-if not (WORKTREE_ROOT / "inbox").is_dir() or not list((WORKTREE_ROOT / "inbox").glob("Pilgrim*")):
+if not (WORKTREE_ROOT / "archive").is_dir():
     # Running from a worktree (.worktrees/<branch>/); data is in main project
     DATA_ROOT = WORKTREE_ROOT.parent.parent  # F:/Projects/EbookAutomation/
 else:
     DATA_ROOT = WORKTREE_ROOT
 
 TOOLS_DIR = WORKTREE_ROOT / "tools"  # import modified code from THIS worktree
+ARCHIVE_DIR = DATA_ROOT / "archive"
 INBOX_DIR = DATA_ROOT / "inbox"
 
 sys.path.insert(0, str(TOOLS_DIR))
@@ -54,7 +55,12 @@ from extract_tts_text import (  # noqa: E402
     rejoin_html_fragments,
 )
 
-_PILGRIM_PDF = INBOX_DIR / "Pilgrim People - Anita Libman Lebeson (1950).pdf"
+_PILGRIM_NAME = "Pilgrim People - Anita Libman Lebeson (1950).pdf"
+# Durable home is archive/ (matches the SCRUM-299 anchor convention); fall back
+# to inbox/ if the book has not yet been moved to archive.
+_PILGRIM_PDF = ARCHIVE_DIR / _PILGRIM_NAME
+if not _PILGRIM_PDF.is_file() and (INBOX_DIR / _PILGRIM_NAME).is_file():
+    _PILGRIM_PDF = INBOX_DIR / _PILGRIM_NAME
 
 # The running header as it appears in the source text layer (book title, caps).
 _PILGRIM_HEADER = "PILGRIM PEOPLE"
