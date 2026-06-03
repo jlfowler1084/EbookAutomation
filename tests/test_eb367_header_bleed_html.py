@@ -8,10 +8,12 @@ string is unique due to the trailing page number; the number-stripped form
 page-boundary rejoin pass welds the header into adjacent body paragraphs —
 sometimes mid-word. Once embedded, no downstream filter can remove it.
 
-The fix adds position-based running-header detection to the single-column
-pdfminer path (top-margin zone, repeated across pages), mirroring the existing
-bottom-zone footnote detection, so headers are isolated and stripped before
-rejoin welds them into prose.
+The fix marks these headers as `_is_a2_running_header` BEFORE rejoin (so rejoin
+skips them, both as the current paragraph and as the next candidate), gated on
+margin-zone position so body-zone labels (EXERCISE/SUMMARY) are not affected,
+plus a number-required prefix strip for headers welded into a paragraph start
+during per-page line grouping. The header is thus isolated/stripped before
+rejoin can weld it into prose.
 
 Repro book: Pilgrim People (Lebeson, 1950) — scan_with_text, single-column,
 HTML path. PDF text layer literally begins each page with "PILGRIM PEOPLE <n>".
@@ -133,4 +135,76 @@ def test_pilgrim_running_header_not_welded_into_body():
         f"Expected 0 body <p> paragraphs containing the running header "
         f"'{_PILGRIM_HEADER}', got {count}. The header is being welded into "
         f"body text by the page-boundary rejoin pass (EB-367)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# False-positive guards for the short-ALL-CAPS path (EB-367 review hardening)
+# ---------------------------------------------------------------------------
+
+from extract_tts_text import _mark_a2_running_headers  # noqa: E402
+
+
+def _mk(text, pages, margin=False):
+    out = []
+    for pg in pages:
+        d = {"text": text, "page_number": pg, "is_page_marker": False,
+             "heading_level": None}
+        if margin:
+            d["_margin_zone"] = True
+        out.append(d)
+    return out
+
+
+def test_body_zone_short_allcaps_label_not_marked():
+    """A short ALL-CAPS label in the BODY zone (no _margin_zone) must NOT be
+    marked as a running header, even when it repeats on >=10% of pages.
+
+    Guards textbook labels like EXERCISE / SUMMARY / QUESTIONS, which legitimately
+    recur in body content. The position guard (_margin_zone) is what distinguishes
+    them from true running headers in the top/bottom margin.
+    """
+    for label in ("EXERCISE", "SUMMARY", "QUESTIONS"):
+        para_dicts = _mk(label, range(1, 11), margin=False) + _mk(
+            "ordinary body content paragraph", range(1, 101))
+        _mark_a2_running_headers(para_dicts, _noop_log)
+        marked = sum(1 for p in para_dicts
+                     if p["text"] == label and p.get("_is_a2_running_header"))
+        assert marked == 0, (
+            f"Body-zone label '{label}' was wrongly marked as a running header "
+            f"({marked} times). Short ALL-CAPS marking must require margin-zone "
+            f"position."
+        )
+
+
+def test_title_phrase_start_without_page_number_not_stripped():
+    """A body paragraph that opens with the confirmed title phrase but has NO
+    adjacent page number must NOT have that phrase stripped.
+
+    The welded-prefix stripper requires a leading or trailing page number, so a
+    legitimate sentence like 'PILGRIM PEOPLE should ...' is preserved, while the
+    real welds ('PILGRIM PEOPLE 7 clusively ...', '82 PILGRIM PEOPLE But ...')
+    are still removed.
+    """
+    para_dicts = _mk("PILGRIM PEOPLE", range(1, 41), margin=True)
+    legit = {"text": "PILGRIM PEOPLE should never be forgotten by the generations "
+                     "that follow them today.",
+             "page_number": 5, "is_page_marker": False, "heading_level": None}
+    trailing = {"text": "PILGRIM PEOPLE 7 clusively Jewish science and a great deal "
+                        "more body text follows here.",
+                "page_number": 6, "is_page_marker": False, "heading_level": None}
+    leading = {"text": "82 PILGRIM PEOPLE But he pleads the necessity for an English "
+                       "prayer book in this passage.",
+               "page_number": 7, "is_page_marker": False, "heading_level": None}
+    para_dicts += [legit, trailing, leading]
+    _mark_a2_running_headers(para_dicts, _noop_log)
+
+    assert legit["text"].startswith("PILGRIM PEOPLE should"), (
+        "Legitimate title-phrase sentence (no page number) was wrongly stripped."
+    )
+    assert trailing["text"].startswith("clusively"), (
+        "Trailing-page-number welded header was not stripped."
+    )
+    assert leading["text"].startswith("But he pleads"), (
+        "Leading-page-number welded header was not stripped."
     )

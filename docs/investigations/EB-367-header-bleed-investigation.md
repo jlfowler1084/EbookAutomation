@@ -46,30 +46,39 @@ was never marked `_is_a2_running_header` (A2's 15-char floor + unique page numbe
 fixes (EB-143/174/212, SCRUM-299) targeted other facets and never closed this short-ALL-CAPS,
 unmarked-before-rejoin case.
 
-## Next steps for the focused implementation session
-1. Pin the unchunked stripper: instrument `format_paragraphs_as_html` to find which pass
-   reduces 42 -> 2 on the direct call (candidate: heading classification / repeated-short-caps
-   handling). Then determine why the chunked-merge defeats it (likely a per-chunk state reset,
-   page-number namespace, or an ordering difference in the merged para_dicts).
-2. Implement the chosen fix (owner-approved): position-based running-header detection on the
-   single-column pdfminer path — mark top-margin (top ~12-15%, y0_max/page_height) short
-   paragraphs that repeat across >=3 pages as `_is_running_header_candidate` at extraction
-   time (mirrors the existing bottom-zone footnote detection at lines ~6250-6289, which already
-   uses page_heights + y0). This routes them into the existing 7114-7144 stripper and is robust
-   to chunking because it operates per-page within each chunk. Secondary: lower the A2
-   number-stripped floor from 15 to ~7 chars so short titles ("PILGRIM PEOPLE"=14,
-   "ISRAELOLOGY"=11, "INTRODUCTION"=12, "ATOMIC HABITS"=13) are also caught.
-3. Make the characterization test chunking-aware (force chunk_size small or test via the
-   chunked entry point) so it reproduces the 310, not the unchunked 2.
-4. Add "Pilgrim People" (or a page subset) to `tests/expected_baselines.json` as the permanent
-   anchor for "short ALL-CAPS title + running header on single-column HTML path" — the class the
-   corpus currently does NOT cover.
-5. Full 10-book corpus regression (`tests/validate_against_baseline.py`,
-   `tools/test_pipeline.py`) with zero PASS->FAIL; preserve endnote/heading/TOC/PAGE-marker
-   invariants. Re-run the full Pilgrim conversion and confirm 310 -> ~0.
+## Implemented fix (PR #190)
+Three coordinated changes in `tools/extract_tts_text.py`:
+1. **Mark short ALL-CAPS headers before rejoin.** `_mark_a2_running_headers` admits
+   candidates >=7 chars via `_is_short_allcaps_header` (every letter uppercase, >=5 letters),
+   GATED on `_margin_zone` (top/bottom margin band, set at extraction from `y0_max`/`y0_min`
+   vs page height). The existing >=5-distinct-pages AND >=10%-density thresholds still apply.
+   The position gate is what keeps body-zone labels (EXERCISE/SUMMARY/QUESTIONS) — which can
+   recur on >=10% of pages — from being marked.
+2. **Rejoin skips `_is_a2_running_header` as the CURRENT paragraph**, not only as the next
+   candidate, so a marked header is never the merge source.
+3. **Number-required welded-prefix strip.** For headers welded into a paragraph start during
+   per-page grouping, strip a confirmed all-caps pattern with a REQUIRED leading
+   ("82 PILGRIM PEOPLE But ...") or trailing ("PILGRIM PEOPLE 7 clusively ...") page number.
+   Requiring the number prevents stripping a legitimate sentence that opens with the title
+   phrase ("PILGRIM PEOPLE should ...").
 
-## Guardrails
-- Do NOT junction data dirs into the worktree (CLAUDE.md SCRUM-301 warning). Run pipeline/tests
-  against the main-tree data via absolute paths or env overrides.
-- False-positive protection is essential: any position/frequency change must keep Python in Easy
-  Steps code literals, Atomic Habits cheat-sheet, and all current baselines green.
+## Results
+- Characterization test (`tests/test_eb367_header_bleed_html.py`, real mark->rejoin->format
+  order, Pilgrim pp.1-60): **28 welded headers -> 0**.
+- Full-book Pilgrim re-extraction: **310 -> ~0** (no-number within-page welds, if any, are the
+  documented residual of requiring a page number in the prefix strip — accepted to avoid the
+  legitimate-title-phrase false strip).
+- Full 10-book baseline regression: **10 passed, 0 failed** (re-run after each prod-code change).
+- SCRUM-299 A2 guards pass; new false-positive guards added (body-zone label not marked;
+  no-number title-phrase not stripped).
+
+## Regression anchor
+`tests/test_eb367_header_bleed_html.py` (source PDF in `archive/`). Adding the full book to
+`expected_baselines.json` was rejected as too slow for marginal coverage; the targeted
+characterization + synthetic guards are the durable anchor for this class.
+
+## Guardrails honored
+- No data-dir junctions in the worktree (CLAUDE.md SCRUM-301). Ran tests against main-tree data
+  via `ARCHIVE_DIR`/`OUTPUT_DIR` env overrides.
+- False-positive protection: code literals, Atomic cheat-sheet, body-zone labels, and
+  legitimate title-phrase sentences all verified safe; all 10 baselines green.

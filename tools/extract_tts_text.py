@@ -6273,6 +6273,15 @@ def extract_with_pdfminer_html(pdf_path, log, force_columns=False, page_range=No
         # Relative vertical position (0 = page bottom, 1 = page top)
         y_ratio = y0_min / ph
 
+        # EB-367: mark paragraphs that sit in the top or bottom margin band, where
+        # running headers / footers live. Used to gate SHORT all-caps header
+        # candidacy in _mark_a2_running_headers so that body-zone labels like
+        # "EXERCISE"/"SUMMARY" (which can legitimately repeat on >=10% of pages)
+        # are NOT treated as running headers. y0_max = paragraph top edge.
+        y0_max = p.get('y0_max')
+        if y0_max is not None and (y0_max / ph >= 0.85 or y_ratio <= 0.15):
+            p['_margin_zone'] = True
+
         # Font size ratio relative to body
         size_ratio = font_sz / body_size
 
@@ -6640,10 +6649,14 @@ def _mark_a2_running_headers(para_dicts, log):
         if not text or len(text) > 150:
             continue
         # EB-367: admit short ALL-CAPS running headers (e.g. "PILGRIM PEOPLE"=14,
-        # "ISRAELOLOGY"=11) that fall below the original 15-char floor. The
-        # >=5-page / >=10%-density thresholds below still gate marking, so this
-        # only widens candidacy for repeated all-caps headers, not short content.
-        if len(text) < 15 and not _is_short_allcaps_header(text):
+        # "ISRAELOLOGY"=11) that fall below the original 15-char floor. Two extra
+        # guards keep this tight: the alpha core must be all-caps, AND the
+        # paragraph must sit in the top/bottom margin band (_margin_zone). The
+        # latter is what separates a true running header from a body-zone label
+        # like "EXERCISE"/"SUMMARY"/"QUESTIONS" that can legitimately repeat on
+        # >=10% of pages. The >=5-page / >=10%-density thresholds still apply too.
+        if len(text) < 15 and not (
+                _is_short_allcaps_header(text) and p.get('_margin_zone')):
             continue
         if len(text) < 7:
             continue
@@ -6657,11 +6670,13 @@ def _mark_a2_running_headers(para_dicts, log):
             candidates[norm] = []
         candidates[norm].append((idx, p.get('page_number', 0)))
 
+        _margin = p.get('_margin_zone')
         norm_nonum = _TRAILING_NUM.sub('', norm).strip()
         # EB-367: allow short ALL-CAPS number-stripped forms ("PILGRIM PEOPLE 73"
-        # -> "PILGRIM PEOPLE") down to 7 chars; otherwise keep the 15-char floor.
+        # -> "PILGRIM PEOPLE") down to 7 chars, but only for margin-zone paragraphs;
+        # otherwise keep the 15-char floor.
         _nonum_ok = len(norm_nonum) >= 15 or (
-            len(norm_nonum) >= 7 and _is_short_allcaps_header(norm_nonum))
+            len(norm_nonum) >= 7 and _is_short_allcaps_header(norm_nonum) and _margin)
         if _nonum_ok and norm_nonum != norm:
             if norm_nonum not in candidates:
                 candidates[norm_nonum] = []
@@ -6669,7 +6684,7 @@ def _mark_a2_running_headers(para_dicts, log):
 
         norm_leadnum = _LEADING_NUM.sub('', norm).strip()
         _leadnum_ok = len(norm_leadnum) >= 15 or (
-            len(norm_leadnum) >= 7 and _is_short_allcaps_header(norm_leadnum))
+            len(norm_leadnum) >= 7 and _is_short_allcaps_header(norm_leadnum) and _margin)
         if _leadnum_ok and norm_leadnum != norm:
             if norm_leadnum not in candidates:
                 candidates[norm_leadnum] = []
@@ -6694,25 +6709,29 @@ def _mark_a2_running_headers(para_dicts, log):
     # body paragraph during per-page line grouping (within-page weld). Marking +
     # rejoin only handle standalone headers; this handles the case where the
     # header and the first body line were merged into one paragraph at extraction
-    # time. Only patterns already confirmed as running headers above are used,
-    # the match is case-sensitive (all-caps), and a trailing page number plus
-    # following body text are required — so ordinary prose cannot be stripped.
+    # time. Only patterns already confirmed as running headers above are used, the
+    # match is case-sensitive (all-caps), a page number is REQUIRED on the leading
+    # (verso: "82 PILGRIM PEOPLE ...") or trailing (recto: "PILGRIM PEOPLE 82 ...")
+    # side, and body text must follow. Requiring the page number is what prevents
+    # stripping a legitimate sentence that opens with the title phrase
+    # ("PILGRIM PEOPLE should ...", no number) — a real but rare risk.
     prefix_stripped = 0
     if confirmed_short_headers:
         confirmed_short_headers.sort(key=len, reverse=True)  # longest pattern first
-        # Allow an OPTIONAL leading page number ("82 PILGRIM PEOPLE ...", verso
-        # running head) as well as a trailing one ("PILGRIM PEOPLE 82 ...", recto).
-        _prefix_res = [
-            (pat, re.compile(r'\d{0,4}\s*' + re.escape(pat) + r'\s*\d{0,4}\s+(?=\S)'))
-            for pat in confirmed_short_headers
-        ]
+        _prefix_res = []
+        for pat in confirmed_short_headers:
+            esc = re.escape(pat)
+            # trailing page number ("PILGRIM PEOPLE 7 clusively ...")
+            _prefix_res.append(re.compile(esc + r'\s+\d{1,4}\s+(?=\S)'))
+            # leading page number ("82 PILGRIM PEOPLE But ...")
+            _prefix_res.append(re.compile(r'\d{1,4}\s+' + esc + r'\s+(?=\S)'))
         for p in para_dicts:
             if p.get('is_page_marker') or p.get('_is_a2_running_header'):
                 continue
             t = p.get('text', '')
             if not t:
                 continue
-            for pat, rx in _prefix_res:
+            for rx in _prefix_res:
                 m = rx.match(t)
                 if m and len(t) - m.end() >= 10:
                     p['text'] = t[m.end():]
