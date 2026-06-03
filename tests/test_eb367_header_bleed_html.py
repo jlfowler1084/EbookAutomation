@@ -49,6 +49,9 @@ sys.path.insert(0, str(TOOLS_DIR))
 from extract_tts_text import (  # noqa: E402
     extract_with_pdfminer_html,
     format_paragraphs_as_html,
+    _fix_word_merges_html,
+    _mark_a2_running_headers,
+    rejoin_html_fragments,
 )
 
 _PILGRIM_PDF = INBOX_DIR / "Pilgrim People - Anita Libman Lebeson (1950).pdf"
@@ -56,9 +59,12 @@ _PILGRIM_PDF = INBOX_DIR / "Pilgrim People - Anita Libman Lebeson (1950).pdf"
 # The running header as it appears in the source text layer (book title, caps).
 _PILGRIM_HEADER = "PILGRIM PEOPLE"
 
-# 0-indexed page slice (pdfminer page_numbers) that carries the running header.
-# Confirmed via PyMuPDF: doc[90]="PILGRIM PEOPLE \n73", doc[92]="PILGRIM PEOPLE 75".
-_PAGE_RANGE = (84, 104)
+# 0-indexed page slice (pdfminer page_numbers). Pages ~5-60 carry the
+# "PILGRIM PEOPLE [n]" running header densely. With the real preprocessing
+# order (mark -> rejoin -> format), this slice welds ~28 headers into body
+# paragraphs pre-fix; the title-page h3 (page 1) is a heading, not a <p>, so
+# it is not counted by the body matcher.
+_PAGE_RANGE = (0, 60)
 
 
 def _noop_log(msg: str) -> None:
@@ -66,9 +72,22 @@ def _noop_log(msg: str) -> None:
 
 
 def _extract_html(pdf_path: Path, page_range) -> str:
+    """Run extraction + the welding-relevant preprocessing, then format.
+
+    CRITICAL (EB-367): the full pipeline (process_kindle_html) runs
+    _mark_a2_running_headers() then rejoin_html_fragments() BEFORE
+    format_paragraphs_as_html(). The rejoin pass is what welds unmarked
+    running headers into adjacent body paragraphs. A test that calls
+    extract -> format directly SKIPS rejoin and does NOT reproduce the bug.
+    This helper replicates the real STEP 1a/1a2/1b order so the test
+    characterizes the actual defect surface.
+    """
     para_dicts, body_size = extract_with_pdfminer_html(
         str(pdf_path), _noop_log, page_range=page_range
     )
+    _fix_word_merges_html(para_dicts, _noop_log)          # STEP 1a
+    _mark_a2_running_headers(para_dicts, _noop_log)       # STEP 1a2 (must mark headers)
+    para_dicts = rejoin_html_fragments(para_dicts, body_size, _noop_log)  # STEP 1b (welds if unmarked)
     result = format_paragraphs_as_html(para_dicts, body_size, bookmarks=[], log=_noop_log)
     return result[0] if isinstance(result, tuple) else result
 

@@ -6443,6 +6443,15 @@ def rejoin_html_fragments(para_dicts, body_size, log):
             i += 1
             continue
 
+        # EB-367: never merge FROM an A2-marked running header. The candidate
+        # search below already skips marked headers as the *next* paragraph, but
+        # a marked header reached as the *current* paragraph would otherwise be
+        # welded onto the following body text. Leaving it standalone lets HTML
+        # emission drop it.
+        if a.get('_is_a2_running_header'):
+            i += 1
+            continue
+
         # Find next non-page-marker, non-empty paragraph
         # Skip non-body-sized fragments (footnotes, running headers) between
         # body paragraphs. These small-font interruptions at page boundaries
@@ -6575,6 +6584,24 @@ def rejoin_html_fragments(para_dicts, body_size, log):
     return para_dicts
 
 
+def _is_short_allcaps_header(text):
+    """True if text's alphabetic core is ALL-CAPS with >=5 letters (EB-367).
+
+    Used to admit short running headers like "PILGRIM PEOPLE" (14 chars),
+    "ISRAELOLOGY" (11), or "INTRODUCTION" (12) into the A2 frequency filter
+    below its normal 15-char floor. Digits (page numbers) and punctuation are
+    ignored. The guard is intentionally strict — every letter uppercase and at
+    least 5 letters — so ordinary short content and short acronyms do not
+    qualify. The >=5-distinct-pages and >=10%-density thresholds in
+    _mark_a2_running_headers still apply on top of this, so a transient
+    all-caps heading (appearing on one page) is never marked.
+    """
+    letters = [c for c in text if c.isalpha()]
+    if len(letters) < 5:
+        return False
+    return all(c.isupper() for c in letters)
+
+
 def _mark_a2_running_headers(para_dicts, log):
     """Mark para_dicts entries that are A2 running headers.
 
@@ -6610,7 +6637,15 @@ def _mark_a2_running_headers(para_dicts, log):
         if p.get('is_page_marker'):
             continue
         text = p.get('text', '').strip()
-        if not text or len(text) < 15 or len(text) > 150:
+        if not text or len(text) > 150:
+            continue
+        # EB-367: admit short ALL-CAPS running headers (e.g. "PILGRIM PEOPLE"=14,
+        # "ISRAELOLOGY"=11) that fall below the original 15-char floor. The
+        # >=5-page / >=10%-density thresholds below still gate marking, so this
+        # only widens candidacy for repeated all-caps headers, not short content.
+        if len(text) < 15 and not _is_short_allcaps_header(text):
+            continue
+        if len(text) < 7:
             continue
         if p.get('heading_level'):
             continue
@@ -6623,32 +6658,70 @@ def _mark_a2_running_headers(para_dicts, log):
         candidates[norm].append((idx, p.get('page_number', 0)))
 
         norm_nonum = _TRAILING_NUM.sub('', norm).strip()
-        if len(norm_nonum) >= 15 and norm_nonum != norm:
+        # EB-367: allow short ALL-CAPS number-stripped forms ("PILGRIM PEOPLE 73"
+        # -> "PILGRIM PEOPLE") down to 7 chars; otherwise keep the 15-char floor.
+        _nonum_ok = len(norm_nonum) >= 15 or (
+            len(norm_nonum) >= 7 and _is_short_allcaps_header(norm_nonum))
+        if _nonum_ok and norm_nonum != norm:
             if norm_nonum not in candidates:
                 candidates[norm_nonum] = []
             candidates[norm_nonum].append((idx, p.get('page_number', 0)))
 
         norm_leadnum = _LEADING_NUM.sub('', norm).strip()
-        if len(norm_leadnum) >= 15 and norm_leadnum != norm:
+        _leadnum_ok = len(norm_leadnum) >= 15 or (
+            len(norm_leadnum) >= 7 and _is_short_allcaps_header(norm_leadnum))
+        if _leadnum_ok and norm_leadnum != norm:
             if norm_leadnum not in candidates:
                 candidates[norm_leadnum] = []
             candidates[norm_leadnum].append((idx, p.get('page_number', 0)))
 
     strip_count = 0
     pattern_count = 0
+    confirmed_short_headers = []  # EB-367: all-caps header patterns proven by frequency
     for norm, occurrences in candidates.items():
         distinct_pages = {pg for _, pg in occurrences}
         if (len(distinct_pages) >= 5
                 and len(distinct_pages) / total_pages >= min_density):
             pattern_count += 1
+            if _is_short_allcaps_header(norm):
+                confirmed_short_headers.append(norm)
             for idx, _ in occurrences:
                 if not para_dicts[idx].get('_is_a2_running_header'):
                     para_dicts[idx]['_is_a2_running_header'] = True
                     strip_count += 1
 
-    if strip_count:
-        log(f"  A2 filter: stripped {strip_count} running-header paragraphs "
-            f"across {pattern_count} normalized patterns")
+    # EB-367: strip a confirmed all-caps running header welded to the START of a
+    # body paragraph during per-page line grouping (within-page weld). Marking +
+    # rejoin only handle standalone headers; this handles the case where the
+    # header and the first body line were merged into one paragraph at extraction
+    # time. Only patterns already confirmed as running headers above are used,
+    # the match is case-sensitive (all-caps), and a trailing page number plus
+    # following body text are required — so ordinary prose cannot be stripped.
+    prefix_stripped = 0
+    if confirmed_short_headers:
+        confirmed_short_headers.sort(key=len, reverse=True)  # longest pattern first
+        _prefix_res = [
+            (pat, re.compile(re.escape(pat) + r'\s*\d{0,4}\s+(?=\S)'))
+            for pat in confirmed_short_headers
+        ]
+        for p in para_dicts:
+            if p.get('is_page_marker') or p.get('_is_a2_running_header'):
+                continue
+            t = p.get('text', '')
+            if not t:
+                continue
+            for pat, rx in _prefix_res:
+                m = rx.match(t)
+                if m and len(t) - m.end() >= 10:
+                    p['text'] = t[m.end():]
+                    prefix_stripped += 1
+                    break
+
+    if strip_count or prefix_stripped:
+        log(f"  A2 filter: marked {strip_count} running-header paragraphs "
+            f"across {pattern_count} normalized patterns"
+            + (f"; stripped {prefix_stripped} welded header prefixes (EB-367)"
+               if prefix_stripped else ""))
 
 
 def _strip_page_number_debris(para_dicts, log):
