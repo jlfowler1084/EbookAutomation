@@ -1,3 +1,4 @@
+import shutil
 import sys
 from pathlib import Path
 
@@ -105,3 +106,42 @@ def test_verify_passes_for_external_mirror(tmp_path):
     _make_tree(live, files)
     _make_tree(mirror, files)
     assert verify_backup_proof(live, build_backup_proof(mirror)).ok is True
+
+
+def test_verify_fails_when_mirror_contents_are_gone(tmp_path):
+    """The mirror ROOT existing is not enough: if its contents are wiped the backup is empty
+    and must be refused, even though the live corpus still matches the proof."""
+    live, mirror = tmp_path / "live", tmp_path / "mirror"
+    files = _corpus(10)
+    _make_tree(live, files)
+    _make_tree(mirror, files)
+    proof = build_backup_proof(mirror)
+    for child in list(mirror.iterdir()):          # wipe contents, keep the (empty) root dir
+        shutil.rmtree(child) if child.is_dir() else child.unlink()
+    r = verify_backup_proof(live, proof)
+    assert r.ok is False and "mirror" in r.reason.lower()
+
+
+def test_verify_fails_when_a_sampled_mirror_file_is_mutated(tmp_path):
+    live, mirror = tmp_path / "live", tmp_path / "mirror"
+    files = _corpus(10)
+    _make_tree(live, files)
+    _make_tree(mirror, files)
+    proof = build_backup_proof(mirror)
+    sampled_rel = proof["sample"][0]["relpath"]
+    (mirror / sampled_rel).write_bytes(b"MIRROR-TAMPERED")   # same count, different content
+    r = verify_backup_proof(live, proof)
+    assert r.ok is False and sampled_rel in r.reason
+
+
+def test_verify_fails_when_a_sampled_mirror_file_is_missing(tmp_path):
+    live, mirror = tmp_path / "live", tmp_path / "mirror"
+    files = _corpus(10)
+    _make_tree(live, files)
+    _make_tree(mirror, files)
+    proof = build_backup_proof(mirror)
+    sampled_rel = proof["sample"][0]["relpath"]
+    (mirror / sampled_rel).unlink()
+    (mirror / "replacement.epub").write_bytes(b"z")          # keep the mirror count equal
+    r = verify_backup_proof(live, proof)
+    assert r.ok is False and sampled_rel in r.reason
