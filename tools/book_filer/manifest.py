@@ -6,6 +6,14 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+# Sibling import for the binding-digest primitive; dual form mirrors scan.py so the module
+# also resolves when tools/ is on sys.path without package context. No cycle: calibration
+# does not import manifest at load time (its verify_binding imports manifest_digest lazily).
+if __package__:
+    from .calibration import digest_projection
+else:
+    from book_filer.calibration import digest_projection
+
 # calibre_id is assigned only at APPLY (Plan 5); excluded from the determinism projection.
 _VOLATILE = {"calibre_id"}
 
@@ -70,6 +78,16 @@ def canonical_projection(rows: list[ManifestRow]) -> str:
     for row in sorted(rows, key=lambda r: r.original_path):
         projected.append({k: v for k, v in asdict(row).items() if k not in _VOLATILE})
     return json.dumps(projected, sort_keys=True)
+
+
+def manifest_digest(rows: list[ManifestRow]) -> str:
+    """sha256(canonical_projection(rows)) — binds a signed verdict to an exact manifest (EB-373 R2).
+
+    Order- and calibre_id-invariant because it hashes the already-sorted, volatile-dropped
+    projection. The actuator re-derives this at apply time and refuses unless a signed verdict
+    records the same digest.
+    """
+    return digest_projection(canonical_projection(rows))
 
 
 def generate_undo_script(rows: list[ManifestRow]) -> str:
