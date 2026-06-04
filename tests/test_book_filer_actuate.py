@@ -173,6 +173,26 @@ def test_refuses_on_backup_proof_failure_with_no_moves(tmp_path):
     assert _snapshot(lib) == before
 
 
+def test_dry_run_refuses_run_dir_inside_library_and_stays_inert(tmp_path):
+    """R9: a run-dir inside the library would write artifacts into F:\\Books -- refuse before
+    creating anything, so dry-run truly mutates nothing."""
+    lib, rows = _build_library(tmp_path)
+    before = _snapshot(lib)
+    inside = lib / "_Migration_Manifests" / "run"   # a run-dir INSIDE the library
+    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                            lib, inside, mode="dry-run", stamp="S")
+    assert result.ok is False and "run-dir" in result.refused_reason.lower()
+    assert _snapshot(lib) == before        # nothing written into the library
+    assert not inside.exists()             # run_dir not even created
+
+
+def test_apply_refuses_run_dir_inside_library(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                            lib, lib / "run", mode="apply", stamp="S")
+    assert result.ok is False and "run-dir" in result.refused_reason.lower()
+
+
 # --------------------------------------------------------------------------- #
 # Resume (R6) — interrupt after 2, re-run completes the remaining 2
 # --------------------------------------------------------------------------- #

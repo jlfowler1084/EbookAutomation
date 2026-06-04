@@ -120,12 +120,31 @@ def _write_journal_preview(run_dir: Path, results: list[RowResult]) -> Path:
     return path
 
 
+def _run_dir_conflict(run_dir: Path, library_root: Path) -> str | None:
+    """R9 guard: run artifacts (lock/journal/reports) must live OUTSIDE the library, or even a
+    dry-run would write into F:\\Books. Returns a reason if run_dir is inside library_root, or
+    library_root inside run_dir, or they are equal (both-directions, case-insensitive)."""
+    try:
+        rd = tuple(p.lower() for p in run_dir.resolve().parts)
+        lib = tuple(p.lower() for p in library_root.resolve().parts)
+    except OSError as e:
+        return f"cannot resolve run-dir / library-root paths: {e}"
+    if len(rd) >= len(lib) and rd[:len(lib)] == lib:
+        return f"--run-dir {run_dir} is inside the library root {library_root} (R9: artifacts must be external)"
+    if len(lib) >= len(rd) and lib[:len(rd)] == rd:
+        return f"library root {library_root} is inside --run-dir {run_dir} (R9: artifacts must be external)"
+    return None
+
+
 def apply_manifest(rows, verdict, backup_proof, library_root, run_dir, *,
                    mode: str = "dry-run", operational: dict | None = None,
                    stamp: str = "unstamped", lock: bool = True) -> ApplyResult:
     """Apply (or dry-run) a manifest behind the full gate stack. See module docstring."""
     library_root = Path(library_root)
     run_dir = Path(run_dir)
+    conflict = _run_dir_conflict(run_dir, library_root)
+    if conflict:  # refuse BEFORE creating run_dir / lock / artifacts -> dry-run stays inert
+        return ApplyResult(False, conflict, mode, [], None, None)
     run_dir.mkdir(parents=True, exist_ok=True)
     operational = operational or DEFAULT_OPERATIONAL
     journal_path = run_dir / "journal.jsonl"
@@ -274,6 +293,8 @@ def undo_apply(run_dir, library_root, *, lock: bool = True, stamp: str = "unstam
     signature symmetry with apply; reparse safety comes from the move primitive itself.
     """
     run_dir = Path(run_dir)
+    if _run_dir_conflict(run_dir, Path(library_root)):  # R9: never write artifacts into the library
+        return UndoResult(False, 0, [], None)
     journal_path = run_dir / "journal.jsonl"
     lock_path = run_dir / "apply.lock"
     records = read_records(journal_path)
