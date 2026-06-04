@@ -294,3 +294,82 @@ def test_apply_undo_reapply_undo_roundtrips(tmp_path):
         assert undo_apply(run_dir, lib, stamp="S").ok
         assert _snapshot(lib) == before
         (run_dir / "journal.jsonl").unlink(missing_ok=True)  # fresh run for the next cycle
+
+
+# --------------------------------------------------------------------------- #
+# Unit 7 — staged-rollout integration + safety-contract regressions
+# --------------------------------------------------------------------------- #
+
+def _content_multiset(root: Path) -> list:
+    return sorted(hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in root.rglob("*") if p.is_file())
+
+
+def test_full_staged_rollout_dry_run_apply_undo_reapply_finalize(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    verdict = _signed_verdict(rows)
+    before = _snapshot(lib)
+
+    # 1. dry-run is inert.
+    dry = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="dry-run", stamp="S")
+    assert dry.ok and _snapshot(lib) == before and not (run_dir / "journal.jsonl").exists()
+
+    # 2. apply realizes the multi-folder target layout.
+    applied = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    assert applied.ok and applied.moved_count == 4 and _snapshot(lib) != before
+
+    # 3. undo restores exactly.
+    assert undo_apply(run_dir, lib, stamp="S").ok and _snapshot(lib) == before
+
+    # 4. re-apply (fresh) then finalize closes the undo window.
+    (run_dir / "journal.jsonl").unlink(missing_ok=True)
+    reapplied = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    assert reapplied.ok and reapplied.moved_count == 4
+    fin = finalize_run(run_dir, stamp="S")
+    assert fin.ok and not (run_dir / "journal.jsonl").exists()
+
+
+def test_no_hard_delete_content_multiset_conserved(tmp_path):
+    """R8: in-place moves relocate bytes; the set of file contents is invariant across
+    apply and undo -- nothing is ever deleted or corrupted."""
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    before = _content_multiset(lib)
+    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    assert _content_multiset(lib) == before    # same bytes, relocated -- nothing deleted
+    undo_apply(run_dir, lib, stamp="S")
+    assert _content_multiset(lib) == before    # undo conserves content too
+
+
+def test_determinism_drift_after_signing_is_refused_with_no_moves(tmp_path):
+    """EB-353: the apply re-derives the manifest digest; a row edited after signing no
+    longer matches the signed verdict -> refuse, zero moves."""
+    lib, rows = _build_library(tmp_path)
+    verdict = _signed_verdict(rows)                       # bound to rows as signed
+    tampered = list(rows)
+    tampered[0] = _row(original_path=rows[0].original_path,
+                       destination_path=rows[0].destination_path,
+                       action="copy", section="99 Tampered After Signing",
+                       sha256=rows[0].sha256)
+    before = _snapshot(lib)
+    result = apply_manifest(tampered, verdict, build_backup_proof(lib), lib, tmp_path / "run",
+                            mode="apply", stamp="S")
+    assert result.ok is False and "binding" in result.refused_reason.lower()
+    assert _snapshot(lib) == before
+
+
+def test_actuator_source_has_no_recursive_or_library_delete():
+    """R8 source contract: move.py (the only module that touches library-file paths) is
+    delete-free; actuate.py uses no recursive delete and unlinks only its own lock artifact."""
+    tools = Path(__file__).resolve().parents[1] / "tools" / "book_filer"
+    move_src = (tools / "move.py").read_text(encoding="utf-8")
+    actuate_src = (tools / "actuate.py").read_text(encoding="utf-8")
+    for forbidden in ("os.remove", "os.unlink", "shutil", ".unlink(", ".rmdir(", "rmtree"):
+        assert forbidden not in move_src, f"move.py must be delete-free; found {forbidden!r}"
+    for forbidden in ("shutil.rmtree", "os.removedirs", "rmtree"):
+        assert forbidden not in actuate_src, f"actuate.py must not recursively delete; found {forbidden!r}"
+    unlink_lines = [ln for ln in actuate_src.splitlines() if ".unlink(" in ln]
+    assert unlink_lines, "expected the lock-file unlink to be present"
+    assert all("lock_path" in ln for ln in unlink_lines), \
+        f"actuate.py may only unlink its lock file; found: {unlink_lines}"

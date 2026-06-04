@@ -145,3 +145,27 @@ def test_dangling_junction_in_source_path_skips(tmp_path):
         assert decision.action == "skip"
     finally:
         _rm_junction(link)
+
+
+# --------------------------------------------------------------------------- #
+# Unit 7 safety contracts — lock the fail-closed branches (EB-353)
+# --------------------------------------------------------------------------- #
+
+def test_every_unsafe_condition_skips_contract(tmp_path):
+    """Regression lock: each fail-closed branch of plan_move yields action='skip'."""
+    assert plan_move(tmp_path / "missing.epub", tmp_path / "d.epub").action == "skip"   # missing src
+    a_dir = tmp_path / "adir"
+    a_dir.mkdir()
+    assert plan_move(a_dir, tmp_path / "d.epub").action == "skip"                        # src is a dir
+    src = _file(tmp_path / "s" / "a.epub", b"x")
+    _file(tmp_path / "d" / "a.epub", b"y")
+    assert plan_move(src, tmp_path / "d" / "a.epub", allow_unique=False).action == "skip"  # dest collision
+
+
+def test_move_module_relocates_via_atomic_replace_only():
+    """Contract: move.py relocates via os.replace (atomic same-volume rename) and is
+    delete-free / copy-free -- it never shutil-copies or deletes a library file."""
+    src = (Path(__file__).resolve().parents[1] / "tools" / "book_filer" / "move.py").read_text(encoding="utf-8")
+    assert "os.replace(" in src
+    for forbidden in ("shutil", "os.remove", "os.unlink", ".unlink(", ".rmdir(", "rmtree"):
+        assert forbidden not in src, f"move.py must be delete-free; found {forbidden!r}"
