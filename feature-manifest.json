@@ -213,6 +213,12 @@
       "mode": "direct",
       "flags": ["--quick", "--list", "--recapture", "--capture-only", "--corpus", "--verbose"],
       "description": "Regression test harness"
+    },
+    {
+      "script": "tools/check_header_bleed.py",
+      "mode": "direct",
+      "flags": ["--input", "--glob", "--out", "--min-distinct-pages", "--min-density", "--len-min", "--len-max", "--quiet", "--verbose"],
+      "description": "EB-370: Detect welded ALL-CAPS running headers in _kindle.html intermediate artifacts"
     }
   ],
 
@@ -227,6 +233,7 @@
     {"path": "tools/visual_qa.py", "type": "python_script", "min_lines": 1100},
     {"path": "tools/vqa_determinism_check.py", "type": "python_script", "min_lines": 300},
     {"path": "tools/test_pipeline.py", "type": "test_harness", "min_lines": 1320},
+    {"path": "tools/check_header_bleed.py", "type": "python_script", "min_lines": 299},
     {"path": "tools/classify_source.py", "type": "python_script", "min_lines": 391},
     {"path": "tools/detect_headings_font.py", "type": "python_script", "min_lines": 916},
     {"path": "config/settings.json", "type": "config", "min_lines": 99},
