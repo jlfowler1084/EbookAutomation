@@ -10,25 +10,18 @@ double-moves.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
 
-_HASH_CHUNK = 1 << 20  # 1 MiB, matches scan._hash_file
+if __package__:
+    from .move import sha256_file
+else:  # imported with tools/ on sys.path but no package context (mirrors scan.py)
+    from book_filer.move import sha256_file
 
 
 class JournalCorruptError(RuntimeError):
     """A non-final journal line failed to parse -- real corruption, not a torn tail."""
-
-
-def _sha256_file(path: Path) -> str:
-    """sha256 hex of a file, read-only in 'rb' chunks (mirrors scan._hash_file)."""
-    h = hashlib.sha256()
-    with open(path, "rb", buffering=_HASH_CHUNK) as fh:
-        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def append_record(path: Path, record: dict) -> None:
@@ -78,4 +71,4 @@ def already_applied(src: Path, dst: Path, sha256: str) -> bool:
         return False
     if not dst.is_file():
         return False
-    return _sha256_file(dst) == sha256
+    return sha256_file(dst) == sha256

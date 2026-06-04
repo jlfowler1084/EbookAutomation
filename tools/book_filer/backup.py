@@ -14,11 +14,14 @@ and only the sampled files are hashed (cheap on a large corpus).
 """
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-_HASH_CHUNK = 1 << 20  # 1 MiB, matches scan._hash_file
+if __package__:
+    from .move import sha256_file
+else:  # imported with tools/ on sys.path but no package context (mirrors scan.py)
+    from book_filer.move import sha256_file
+
 _DEFAULT_SAMPLE = 64
 
 
@@ -26,15 +29,6 @@ _DEFAULT_SAMPLE = 64
 class BackupVerification:
     ok: bool
     reason: str
-
-
-def _sha256_file(path: Path) -> str:
-    """sha256 hex of a file, read-only in 'rb' chunks (mirrors scan._hash_file)."""
-    h = hashlib.sha256()
-    with open(path, "rb", buffering=_HASH_CHUNK) as fh:
-        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _relpaths(root: Path) -> list[str]:
@@ -59,7 +53,7 @@ def build_backup_proof(mirror_root: Path, sample_size: int = _DEFAULT_SAMPLE) ->
     mirror_root = Path(mirror_root)
     relpaths = _relpaths(mirror_root)
     sample = [
-        {"relpath": rel, "sha256": _sha256_file(mirror_root / rel)}
+        {"relpath": rel, "sha256": sha256_file(mirror_root / rel)}
         for rel in _sample_relpaths(relpaths, sample_size)
     ]
     return {"mirror_root": str(mirror_root), "file_count": len(relpaths), "sample": sample}
@@ -93,7 +87,7 @@ def verify_backup_proof(live_root: Path, proof: dict) -> BackupVerification:
         f = live_root / rel
         if not f.is_file():
             return BackupVerification(False, f"sampled file missing in live corpus: {rel}")
-        if _sha256_file(f) != want:
+        if sha256_file(f) != want:
             return BackupVerification(False, f"sha256 mismatch for sampled file: {rel}")
 
     return BackupVerification(

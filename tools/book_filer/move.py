@@ -8,6 +8,7 @@ invariants are re-asserted at the destructive moment (TOCTOU defense).
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,19 @@ if __package__:
 else:  # imported with tools/ on sys.path but no package context (mirrors scan.py)
     from book_filer.pathsafe import unique_path
     from book_filer.reparse import has_reparse_in_ancestry
+
+_HASH_CHUNK = 1 << 20  # 1 MiB, matches scan._hash_file
+
+
+def sha256_file(path: Path) -> str:
+    """sha256 hex of a file, read-only in 'rb' chunks. The single hashing primitive the
+    actuator shares (binding, backup-proof, journal idempotency, undo verification) so
+    they can never compute divergent digests for the same bytes."""
+    h = hashlib.sha256()
+    with open(path, "rb", buffering=_HASH_CHUNK) as fh:
+        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 @dataclass(frozen=True)

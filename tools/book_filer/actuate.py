@@ -13,7 +13,6 @@ F:\\Books corpus.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -25,14 +24,14 @@ if __package__:
     from .calibration import verify_binding
     from .journal import already_applied, append_record, applied_sources, read_records
     from .manifest import ManifestRow
-    from .move import execute_move, plan_move
+    from .move import execute_move, plan_move, sha256_file
 else:  # run directly as a script: add tools/ to sys.path so `book_filer` resolves (mirrors scan.py)
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from book_filer.backup import verify_backup_proof
     from book_filer.calibration import verify_binding
     from book_filer.journal import already_applied, append_record, applied_sources, read_records
     from book_filer.manifest import ManifestRow
-    from book_filer.move import execute_move, plan_move
+    from book_filer.move import execute_move, plan_move, sha256_file
 
 EXIT_OK = 0
 EXIT_BAD_ENV = 1     # PYTHONHASHSEED != 0
@@ -210,16 +209,6 @@ def _run(rows, verdict, backup_proof, library_root, run_dir, journal_path,
 # Undo (R5) + finalize (R8)
 # --------------------------------------------------------------------------- #
 
-_HASH_CHUNK = 1 << 20
-
-
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb", buffering=_HASH_CHUNK) as fh:
-        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
 
 @dataclass(frozen=True)
 class UndoRecordOutcome:
@@ -290,7 +279,7 @@ def undo_apply(run_dir, library_root, *, lock: bool = True, stamp: str = "unstam
             outcome = execute_move(plan_move(cur, orig, allow_unique=False))
             if not outcome.moved:
                 outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, outcome.reason))
-            elif sha and _sha256_file(orig) != sha:
+            elif sha and sha256_file(orig) != sha:
                 outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, "restored but sha mismatch"))
             else:
                 outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "restored"))
