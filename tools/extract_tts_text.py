@@ -6633,6 +6633,13 @@ def _mark_a2_running_headers(para_dicts, log):
     """
     _TRAILING_NUM = re.compile(r'\s+\d{1,4}\s*$')
     _LEADING_NUM = re.compile(r'^\d{1,4}\s+')
+    # EB-374: roman-numeral page numbers (front matter: viii, XXIV, …). Strict
+    # roman grammar anchored to a whole token so ordinary words don't match as a
+    # whole (e.g. "DID" is not valid roman); "MIX" can, but the >=5-page/>=10%
+    # density gate below still governs whether anything is marked.
+    _ROMAN = r'(?:m{0,4}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3}))'
+    _LEADING_ROMAN = re.compile(r'^(?=[mdclxvi])' + _ROMAN + r'\s+', re.IGNORECASE)
+    _TRAILING_ROMAN = re.compile(r'\s+(?=[mdclxvi])' + _ROMAN + r'\s*$', re.IGNORECASE)
     _CODE_LITERAL = re.compile(r'\w\(')  # function-call pattern: word then open-paren
 
     total_pages = max((p.get('page_number', 0) for p in para_dicts), default=1) or 1
@@ -6690,6 +6697,28 @@ def _mark_a2_running_headers(para_dicts, log):
                 candidates[norm_leadnum] = []
             candidates[norm_leadnum].append((idx, p.get('page_number', 0)))
 
+        # EB-374: same grouping for ROMAN-numeral page numbers, so e.g.
+        # "viii ON FIRST PRINCIPLES" / "xii ON FIRST PRINCIPLES" collapse to one
+        # candidate and hit the density gate. Same length floor as the arabic
+        # variants; the density gate is the false-positive guard (constant text
+        # with a varying leading/trailing roman token IS the running-header
+        # signature — numbered lists vary their content and so never group).
+        norm_leadroman = _LEADING_ROMAN.sub('', norm).strip()
+        _leadroman_ok = len(norm_leadroman) >= 15 or (
+            len(norm_leadroman) >= 7 and _is_short_allcaps_header(norm_leadroman) and _margin)
+        if _leadroman_ok and norm_leadroman != norm:
+            if norm_leadroman not in candidates:
+                candidates[norm_leadroman] = []
+            candidates[norm_leadroman].append((idx, p.get('page_number', 0)))
+
+        norm_trailroman = _TRAILING_ROMAN.sub('', norm).strip()
+        _trailroman_ok = len(norm_trailroman) >= 15 or (
+            len(norm_trailroman) >= 7 and _is_short_allcaps_header(norm_trailroman) and _margin)
+        if _trailroman_ok and norm_trailroman != norm:
+            if norm_trailroman not in candidates:
+                candidates[norm_trailroman] = []
+            candidates[norm_trailroman].append((idx, p.get('page_number', 0)))
+
     strip_count = 0
     pattern_count = 0
     confirmed_short_headers = []  # EB-367: all-caps header patterns proven by frequency
@@ -6719,12 +6748,19 @@ def _mark_a2_running_headers(para_dicts, log):
     if confirmed_short_headers:
         confirmed_short_headers.sort(key=len, reverse=True)  # longest pattern first
         _prefix_res = []
+        # EB-374: roman token, case-insensitive, but keep the header (esc)
+        # case-sensitive (all-caps) so prose isn't over-stripped.
+        _roman_ci = r'(?i:(?=[mdclxvi])' + _ROMAN + r')'
         for pat in confirmed_short_headers:
             esc = re.escape(pat)
             # trailing page number ("PILGRIM PEOPLE 7 clusively ...")
             _prefix_res.append(re.compile(esc + r'\s+\d{1,4}\s+(?=\S)'))
             # leading page number ("82 PILGRIM PEOPLE But ...")
             _prefix_res.append(re.compile(r'\d{1,4}\s+' + esc + r'\s+(?=\S)'))
+            # EB-374: roman variants ("ON FIRST PRINCIPLES iv clusively ...",
+            # "xl ON FIRST PRINCIPLES but ...")
+            _prefix_res.append(re.compile(esc + r'\s+' + _roman_ci + r'\s+(?=\S)'))
+            _prefix_res.append(re.compile(_roman_ci + r'\s+' + esc + r'\s+(?=\S)'))
         for p in para_dicts:
             if p.get('is_page_marker') or p.get('_is_a2_running_header'):
                 continue
