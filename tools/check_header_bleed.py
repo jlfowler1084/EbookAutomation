@@ -46,8 +46,9 @@ DEFAULT_GLOB = "*_kindle.html"
 
 # ── Candidate pattern ───────────────────────────────────────────────────────
 # ALL-CAPS token: uppercase letters + straight/curly apostrophes + hyphen.
-# chr() avoids any encoding ambiguity for the curly quote code points.
-_APOSTROPHES = "’" + chr(0x2018) + chr(0x2019)   # U+0027 + U+2018 + U+2019
+# chr() for all three so the literal can't silently drift (EB-372: the ASCII
+# straight apostrophe was previously omitted — "’" is U+2019, not U+0027).
+_APOSTROPHES = chr(0x27) + chr(0x2018) + chr(0x2019)   # U+0027 straight, U+2018/U+2019 curly
 _CAPS_TOKEN = f"[A-Z][A-Z{_APOSTROPHES}-]*"
 # A run of 2+ ALL-CAPS tokens, optionally followed by 1-4 digit page number.
 _CANDIDATE_PAT = rf"({_CAPS_TOKEN}(?: {_CAPS_TOKEN})+)(?: (\d{{1,4}}))?"

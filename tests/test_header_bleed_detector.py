@@ -342,6 +342,29 @@ def test_curly_apostrophe_candidate():
     )
 
 
+def test_straight_apostrophe_candidate():
+    """EB-372: ASCII straight apostrophe (U+0027) must be in the token class.
+
+    Before the fix, _APOSTROPHES omitted U+0027 (it duplicated U+2019), so
+    straight-apostrophe headers were either missed (e.g. JOHN'S WAR -> clean)
+    or misreported with a split candidate (KING'S ROAD -> 's road'). This
+    asserts both detection AND the correctly-normalized candidate.
+    """
+    pages = []
+    for pg in range(1, 51):
+        if pg <= 8:
+            pages.append((pg, f"KING'S ROAD {pg} the story continues with more text here."))
+        else:
+            pages.append((pg, f"Normal body text on page {pg}."))
+    html = _make_html(pages)
+    result = detect(html)
+    assert result.weld_total > 0, "Straight-apostrophe CAPS candidate should be detected as weld"
+    norms = [f.normalized for f in result.findings]
+    assert "king's road" in norms, (
+        f"Expected candidate \"king's road\" with straight apostrophe preserved, got {norms}"
+    )
+
+
 def test_non_page_anchors_ignored():
     """Non-page_ anchors (endnote_, footnote_, noteref_) must be ignored."""
     pages = []
