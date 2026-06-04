@@ -38,6 +38,15 @@ if sys.platform == 'win32':
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_DB_PATH = _PROJECT_ROOT / "data" / "ebook_patterns.db"
 
+# EB-369: bound how long any pattern-DB connection waits on a lock, so a stale
+# writer (abandoned process) cannot block a new connection indefinitely.
+_BUSY_TIMEOUT_MS = 5000
+
+
+def _warn(msg):
+    """Emit a non-fatal warning to stderr (pattern_db has no logger of its own)."""
+    print(f"[pattern_db] WARNING: {msg}", file=sys.stderr)
+
 
 # ---------------------------------------------------------------------------
 # Hashing utilities
@@ -299,13 +308,32 @@ def get_db(db_path=None):
     """Get a database connection. Creates DB and tables if they don't exist."""
     path = _resolve_db_path(db_path)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=_BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")  # EB-369: explicit bound
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA_SQL)
     _migrate(conn)
     conn.executescript(_INDEXES_SQL)
+    return conn
+
+
+def get_db_readonly(db_path=None):
+    """Open a read-only, no-DDL connection for query-only consumers (EB-369).
+
+    A WAL reader never needs the write lock, so this connection cannot be blocked
+    by a writer or stalled by the schema/migrate/index DDL that get_db() runs on
+    every connect. Returns None if the database file does not exist yet — callers
+    should treat that as "no data" rather than creating the DB as a side effect.
+    """
+    path = _resolve_db_path(db_path)
+    if not os.path.exists(path):
+        return None
+    conn = sqlite3.connect(
+        f"file:{path}?mode=ro", uri=True, timeout=_BUSY_TIMEOUT_MS / 1000)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     return conn
 
 
@@ -366,8 +394,12 @@ def _migrate(conn):
     for table, col, col_type in _new_columns:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+        except sqlite3.OperationalError as e:
+            # Expected: "duplicate column name" when the column already exists.
+            # EB-369: surface anything else (e.g. "database is locked") instead
+            # of silently swallowing it.
+            if "duplicate column" not in str(e).lower():
+                _warn(f"migrate ALTER {table}.{col} skipped: {e}")
 
     # EB-73: Per-book corrections column on book_overrides
     try:
@@ -390,8 +422,10 @@ def _migrate(conn):
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_source_profiles_key "
             "ON source_profiles(COALESCE(publisher, ''), COALESCE(decade, ''), COALESCE(format, ''))")
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError as e:
+        # EB-369: surface lock/busy errors rather than swallowing them silently.
+        if "duplicate column" not in str(e).lower():
+            _warn(f"migrate source_profiles dedup/index skipped: {e}")
     conn.commit()
 
 
@@ -1355,17 +1389,21 @@ def get_recommended_strategy(filename=None, source_file_path=None, isbn=None,
 
     Returns dict with strategy_order, flags, confidence, reason, source.
     """
-    conn = get_db(db_path)
+    result = {
+        "strategy_order": [],
+        "flags": {"UseClaudeChapters": False, "ForceColumns": False},
+        "confidence": 0.0,
+        "reason": "no historical data available",
+        "source": "default",
+        "best_prior_score": None,
+        "prior_conversions": 0,
+    }
+    # EB-369: read-only, no-DDL connection — this query can't be blocked by a
+    # writer and won't create the DB. Missing DB → no history (return default).
+    conn = get_db_readonly(db_path)
+    if conn is None:
+        return result
     try:
-        result = {
-            "strategy_order": [],
-            "flags": {"UseClaudeChapters": False, "ForceColumns": False},
-            "confidence": 0.0,
-            "reason": "no historical data available",
-            "source": "default",
-            "best_prior_score": None,
-            "prior_conversions": 0,
-        }
 
         # --- Level 1: This exact book ---
         book_id = None
