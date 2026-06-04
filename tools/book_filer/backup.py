@@ -59,11 +59,38 @@ def build_backup_proof(mirror_root: Path, sample_size: int = _DEFAULT_SAMPLE) ->
     return {"mirror_root": str(mirror_root), "file_count": len(relpaths), "sample": sample}
 
 
+def _disjoint(a: Path, b: Path) -> bool:
+    """True if neither path is the other nor nested inside it (resolved, case-insensitive)."""
+    try:
+        ap = tuple(p.lower() for p in a.resolve().parts)
+        bp = tuple(p.lower() for p in b.resolve().parts)
+    except OSError:
+        return False
+    n = min(len(ap), len(bp))
+    return ap[:n] != bp[:n]
+
+
 def verify_backup_proof(live_root: Path, proof: dict) -> BackupVerification:
-    """Confirm the live corpus matches a backup proof. Fail closed on any drift."""
+    """Confirm an EXTERNAL mirror of the live corpus exists and matches the proof.
+
+    Fail closed on any drift. The mirror_root recorded in the proof must be present, exist,
+    and be external to (disjoint from) live_root -- otherwise a proof generated from the live
+    library itself would pass, proving nothing. Then the live file count and the sampled
+    sha256s must match the proof.
+    """
     live_root = Path(live_root)
     if not isinstance(proof, dict):
         return BackupVerification(False, "backup proof is not a mapping (fail closed)")
+
+    mirror_root = proof.get("mirror_root")
+    if not isinstance(mirror_root, str) or not mirror_root:
+        return BackupVerification(False, "backup proof missing mirror_root (cannot prove an external backup)")
+    mirror = Path(mirror_root)
+    if not mirror.exists():
+        return BackupVerification(False, f"backup mirror_root does not exist: {mirror_root}")
+    if not _disjoint(mirror, live_root):
+        return BackupVerification(
+            False, f"backup mirror_root is not external to the live root (inside/equal): {mirror_root}")
 
     expected_count = proof.get("file_count")
     if not isinstance(expected_count, int):

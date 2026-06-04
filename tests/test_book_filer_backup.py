@@ -75,3 +75,33 @@ def test_verify_fails_closed_on_empty_or_malformed_proof(tmp_path):
     _make_tree(live, _corpus(10))
     assert verify_backup_proof(live, {"file_count": 10, "sample": []}).ok is False
     assert verify_backup_proof(live, "not-a-dict").ok is False
+
+
+def test_verify_fails_when_mirror_root_is_the_live_root(tmp_path):
+    """P3: a proof generated from the live library itself (mirror_root == live) proves no
+    external backup exists -- refuse."""
+    lib = tmp_path / "Books"
+    _make_tree(lib, _corpus(10))
+    proof = build_backup_proof(lib)            # mirror_root == lib (the reported bug)
+    r = verify_backup_proof(lib, proof)
+    assert r.ok is False and "external" in r.reason.lower()
+
+
+def test_verify_fails_when_mirror_root_missing_or_nonexistent(tmp_path):
+    live, mirror = tmp_path / "live", tmp_path / "mirror"
+    _make_tree(live, _corpus(10))
+    _make_tree(mirror, _corpus(10))
+    proof = build_backup_proof(mirror)
+    proof["mirror_root"] = str(tmp_path / "ghost")   # points at a nonexistent path
+    assert verify_backup_proof(live, proof).ok is False
+    del proof["mirror_root"]
+    assert verify_backup_proof(live, proof).ok is False
+
+
+def test_verify_passes_for_external_mirror(tmp_path):
+    """A proof from a genuinely separate (disjoint) mirror tree still verifies."""
+    live, mirror = tmp_path / "live", tmp_path / "mirror"
+    files = _corpus(10)
+    _make_tree(live, files)
+    _make_tree(mirror, files)
+    assert verify_backup_proof(live, build_backup_proof(mirror)).ok is True

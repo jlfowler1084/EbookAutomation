@@ -81,6 +81,16 @@ def _snapshot(root: Path) -> dict:
     return {str(p): p.stat().st_size for p in sorted(root.rglob("*")) if p.is_file()}
 
 
+def _backup_proof_from_mirror(lib: Path, tmp_path: Path) -> dict:
+    """Build a backup proof from a genuine EXTERNAL mirror (a disjoint copy of the library),
+    as the actuator now requires (P3) -- not from the live library itself."""
+    mirror = tmp_path / "mirror"
+    if mirror.exists():
+        shutil.rmtree(mirror)
+    shutil.copytree(lib, mirror)
+    return build_backup_proof(mirror)
+
+
 # --------------------------------------------------------------------------- #
 # Routing
 # --------------------------------------------------------------------------- #
@@ -107,7 +117,7 @@ def test_route_target_maps_each_action(tmp_path):
 def test_apply_realizes_target_layout(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, run_dir, mode="apply", stamp="S")
     assert result.ok and result.moved_count == 4
     assert (lib / "01 History" / "A - Good.epub").read_bytes() == b"good-content"
@@ -124,7 +134,7 @@ def test_apply_realizes_target_layout(tmp_path):
 
 def test_trash_routes_to_trash_pending_and_is_not_deleted(tmp_path):
     lib, rows = _build_library(tmp_path)
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, tmp_path / "run", mode="apply", stamp="S")
     assert result.ok
     trashed = lib / "_Trash_Pending" / "_Inbox" / "dupe.epub"
@@ -139,7 +149,7 @@ def test_dry_run_mutates_nothing_and_writes_preview(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
     before = _snapshot(lib)
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, run_dir, mode="dry-run", stamp="S")
     assert result.ok
     assert _snapshot(lib) == before                       # R9: nothing mutated
@@ -156,7 +166,7 @@ def test_refuses_on_binding_mismatch_with_no_moves(tmp_path):
     lib, rows = _build_library(tmp_path)
     wrong_verdict = _signed_verdict([_row(original_path="OTHER", section="ZZ")])  # bound to other rows
     before = _snapshot(lib)
-    result = apply_manifest(rows, wrong_verdict, build_backup_proof(lib),
+    result = apply_manifest(rows, wrong_verdict, _backup_proof_from_mirror(lib, tmp_path),
                             lib, tmp_path / "run", mode="apply", stamp="S")
     assert result.ok is False and "binding" in result.refused_reason.lower()
     assert _snapshot(lib) == before
@@ -164,7 +174,7 @@ def test_refuses_on_binding_mismatch_with_no_moves(tmp_path):
 
 def test_refuses_on_backup_proof_failure_with_no_moves(tmp_path):
     lib, rows = _build_library(tmp_path)
-    proof = build_backup_proof(lib)
+    proof = _backup_proof_from_mirror(lib, tmp_path)
     proof["file_count"] = 999  # tampered -> count drift
     before = _snapshot(lib)
     result = apply_manifest(rows, _signed_verdict(rows), proof,
@@ -179,7 +189,7 @@ def test_dry_run_refuses_run_dir_inside_library_and_stays_inert(tmp_path):
     lib, rows = _build_library(tmp_path)
     before = _snapshot(lib)
     inside = lib / "_Migration_Manifests" / "run"   # a run-dir INSIDE the library
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, inside, mode="dry-run", stamp="S")
     assert result.ok is False and "run-dir" in result.refused_reason.lower()
     assert _snapshot(lib) == before        # nothing written into the library
@@ -188,7 +198,7 @@ def test_dry_run_refuses_run_dir_inside_library_and_stays_inert(tmp_path):
 
 def test_apply_refuses_run_dir_inside_library(tmp_path):
     lib, rows = _build_library(tmp_path)
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, lib / "run", mode="apply", stamp="S")
     assert result.ok is False and "run-dir" in result.refused_reason.lower()
 
@@ -217,7 +227,7 @@ def test_resume_completes_only_remaining_rows(tmp_path):
 
     # Resume: journal is non-empty, so the backup gate is skipped and the first two are
     # idempotently skipped; only dupe (trash) and weird (quarantine) move now.
-    result = apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                             lib, run_dir, mode="apply", stamp="S")
     assert result.ok and result.moved_count == 2
     assert (lib / "_Trash_Pending" / "_Inbox" / "dupe.epub").is_file()
@@ -250,12 +260,12 @@ def test_crash_after_move_before_commit_resume_then_undo_restores_all(tmp_path, 
 
     monkeypatch.setattr(actuate_mod, "append_record", flaky_append)
     with pytest.raises(OSError):
-        apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir,
+        apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path), lib, run_dir,
                        mode="apply", stamp="S")
     assert state["crashed"]
     monkeypatch.undo()  # crash is over; resume with a healthy journal writer
 
-    assert apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir,
+    assert apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path), lib, run_dir,
                           mode="apply", stamp="S").ok
 
     undo = undo_apply(run_dir, lib, stamp="S")
@@ -274,7 +284,7 @@ def _write_inputs(tmp_path, lib, rows):
     vpath = tmp_path / "verdict.json"
     vpath.write_text(json.dumps(_signed_verdict(rows)), encoding="utf-8")
     ppath = tmp_path / "proof.json"
-    ppath.write_text(json.dumps(build_backup_proof(lib)), encoding="utf-8")
+    ppath.write_text(json.dumps(_backup_proof_from_mirror(lib, tmp_path)), encoding="utf-8")
     return mpath, vpath, ppath
 
 
@@ -313,7 +323,7 @@ def test_undo_restores_exact_original_layout(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
     before = _snapshot(lib)
-    assert apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    assert apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                           lib, run_dir, mode="apply", stamp="S").moved_count == 4
     assert _snapshot(lib) != before                 # layout changed by the apply
     undo = undo_apply(run_dir, lib, stamp="S")
@@ -325,7 +335,7 @@ def test_undo_restores_exact_original_layout(tmp_path):
 def test_undo_reports_incomplete_when_a_dst_was_removed(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
-    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                    lib, run_dir, mode="apply", stamp="S")
     (lib / "_Quarantine" / "_Inbox" / "weird.epub").unlink()  # independently removed before undo
     undo = undo_apply(run_dir, lib, stamp="S")
@@ -336,7 +346,7 @@ def test_undo_reports_incomplete_when_a_dst_was_removed(tmp_path):
 def test_finalize_purges_journal_without_deleting_files(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
-    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+    apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                    lib, run_dir, mode="apply", stamp="S")
     trashed = lib / "_Trash_Pending" / "_Inbox" / "dupe.epub"
     assert trashed.is_file()
@@ -353,7 +363,7 @@ def test_apply_undo_reapply_undo_roundtrips(tmp_path):
     run_dir = tmp_path / "run"
     before = _snapshot(lib)
     for _ in range(2):
-        apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+        apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
                        lib, run_dir, mode="apply", stamp="S")
         assert _snapshot(lib) != before
         assert undo_apply(run_dir, lib, stamp="S").ok
@@ -377,11 +387,11 @@ def test_full_staged_rollout_dry_run_apply_undo_reapply_finalize(tmp_path):
     before = _snapshot(lib)
 
     # 1. dry-run is inert.
-    dry = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="dry-run", stamp="S")
+    dry = apply_manifest(rows, verdict, _backup_proof_from_mirror(lib, tmp_path), lib, run_dir, mode="dry-run", stamp="S")
     assert dry.ok and _snapshot(lib) == before and not (run_dir / "journal.jsonl").exists()
 
     # 2. apply realizes the multi-folder target layout.
-    applied = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    applied = apply_manifest(rows, verdict, _backup_proof_from_mirror(lib, tmp_path), lib, run_dir, mode="apply", stamp="S")
     assert applied.ok and applied.moved_count == 4 and _snapshot(lib) != before
 
     # 3. undo restores exactly.
@@ -389,7 +399,7 @@ def test_full_staged_rollout_dry_run_apply_undo_reapply_finalize(tmp_path):
 
     # 4. re-apply (fresh) then finalize closes the undo window.
     (run_dir / "journal.jsonl").unlink(missing_ok=True)
-    reapplied = apply_manifest(rows, verdict, build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    reapplied = apply_manifest(rows, verdict, _backup_proof_from_mirror(lib, tmp_path), lib, run_dir, mode="apply", stamp="S")
     assert reapplied.ok and reapplied.moved_count == 4
     fin = finalize_run(run_dir, stamp="S")
     assert fin.ok and not (run_dir / "journal.jsonl").exists()
@@ -401,7 +411,7 @@ def test_no_hard_delete_content_multiset_conserved(tmp_path):
     lib, rows = _build_library(tmp_path)
     run_dir = tmp_path / "run"
     before = _content_multiset(lib)
-    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir, mode="apply", stamp="S")
+    apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path), lib, run_dir, mode="apply", stamp="S")
     assert _content_multiset(lib) == before    # same bytes, relocated -- nothing deleted
     undo_apply(run_dir, lib, stamp="S")
     assert _content_multiset(lib) == before    # undo conserves content too
@@ -418,7 +428,7 @@ def test_determinism_drift_after_signing_is_refused_with_no_moves(tmp_path):
                        action="copy", section="99 Tampered After Signing",
                        sha256=rows[0].sha256)
     before = _snapshot(lib)
-    result = apply_manifest(tampered, verdict, build_backup_proof(lib), lib, tmp_path / "run",
+    result = apply_manifest(tampered, verdict, _backup_proof_from_mirror(lib, tmp_path), lib, tmp_path / "run",
                             mode="apply", stamp="S")
     assert result.ok is False and "binding" in result.refused_reason.lower()
     assert _snapshot(lib) == before
