@@ -57,6 +57,14 @@ CANDIDATE_RE = re.compile(_CANDIDATE_PAT)
 # Page anchors: only ids matching ^page_N$ count toward total_pages.
 _PAGE_ANCHOR_RE = re.compile(r"^page_(\d+)$")
 
+# EB-374: a page-number token (arabic or roman) at a paragraph edge is NOT body
+# text. A candidate flanked only by such tokens is a standalone running-header
+# repeat, not a body weld. Roman uses a strict grammar, case-insensitive.
+_ROMAN_TOKEN = (r"(?i:(?=[mdclxvi])m{0,4}(?:cm|cd|d?c{0,3})"
+                r"(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3}))")
+_EDGE_LEAD = re.compile(r"^(?:\d{1,4}|" + _ROMAN_TOKEN + r")\s+")
+_EDGE_TRAIL = re.compile(r"\s+(?:\d{1,4}|" + _ROMAN_TOKEN + r")$")
+
 
 # ── Data classes ────────────────────────────────────────────────────────────
 
@@ -149,8 +157,18 @@ def _classify_glue(text: str, match: re.Match) -> str:
     text is already whitespace-normalized (single spaces, stripped).
     match covers the full candidate including optional trailing page number.
     """
-    at_start = match.start() == 0
-    at_end = match.end() >= len(text)
+    # EB-374: ignore a leading/trailing page-number token (arabic or roman) when
+    # deciding standalone vs weld, so "viii HEADER" / "HEADER 73" are standalone.
+    core_start = 0
+    core_end = len(text)
+    lead = _EDGE_LEAD.match(text)
+    if lead and lead.end() <= match.start():
+        core_start = lead.end()
+    trail = _EDGE_TRAIL.search(text)
+    if trail and trail.start() >= match.end():
+        core_end = trail.start()
+    at_start = match.start() <= core_start
+    at_end = match.end() >= core_end
     if at_start and at_end:
         return "standalone"
     if at_start:
