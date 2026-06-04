@@ -7,7 +7,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from book_filer.actuate import DEFAULT_OPERATIONAL, apply_manifest, route_target
+from book_filer.actuate import (
+    DEFAULT_OPERATIONAL,
+    apply_manifest,
+    finalize_run,
+    route_target,
+    undo_apply,
+)
 from book_filer.backup import build_backup_proof
 from book_filer.journal import append_record
 from book_filer.manifest import ManifestRow, manifest_digest
@@ -232,3 +238,59 @@ def test_cli_dry_run_smoke_is_inert(tmp_path):
     assert r.returncode == 0, r.stderr
     assert _snapshot(lib) == before
     assert (tmp_path / "run" / "journal-preview.json").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Undo + finalize (R5/R8)
+# --------------------------------------------------------------------------- #
+
+def test_undo_restores_exact_original_layout(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    before = _snapshot(lib)
+    assert apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                          lib, run_dir, mode="apply", stamp="S").moved_count == 4
+    assert _snapshot(lib) != before                 # layout changed by the apply
+    undo = undo_apply(run_dir, lib, stamp="S")
+    assert undo.ok and undo.restored_count == 4
+    assert _snapshot(lib) == before                 # byte-for-byte original layout restored
+    assert (lib / "_Inbox" / "good.epub").read_bytes() == b"good-content"
+
+
+def test_undo_reports_incomplete_when_a_dst_was_removed(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                   lib, run_dir, mode="apply", stamp="S")
+    (lib / "_Quarantine" / "_Inbox" / "weird.epub").unlink()  # independently removed before undo
+    undo = undo_apply(run_dir, lib, stamp="S")
+    assert undo.ok is False and undo.restored_count == 3      # the other three restored; reported
+    assert (run_dir / "undo-report.md").exists()
+
+
+def test_finalize_purges_journal_without_deleting_files(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                   lib, run_dir, mode="apply", stamp="S")
+    trashed = lib / "_Trash_Pending" / "_Inbox" / "dupe.epub"
+    assert trashed.is_file()
+    fin = finalize_run(run_dir, stamp="S")
+    assert fin.ok and fin.finalized_count == 4
+    assert not (run_dir / "journal.jsonl").exists()        # active journal purged (undo window closed)
+    assert (run_dir / "journal.finalized.jsonl").exists()  # archived for audit
+    assert trashed.is_file()                               # R8: no library file deleted
+    assert undo_apply(run_dir, lib, stamp="S").restored_count == 0  # nothing to undo after finalize
+
+
+def test_apply_undo_reapply_undo_roundtrips(tmp_path):
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    before = _snapshot(lib)
+    for _ in range(2):
+        apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib),
+                       lib, run_dir, mode="apply", stamp="S")
+        assert _snapshot(lib) != before
+        assert undo_apply(run_dir, lib, stamp="S").ok
+        assert _snapshot(lib) == before
+        (run_dir / "journal.jsonl").unlink(missing_ok=True)  # fresh run for the next cycle

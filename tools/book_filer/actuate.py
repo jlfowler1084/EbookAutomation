@@ -13,6 +13,7 @@ F:\\Books corpus.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -205,6 +206,121 @@ def _run(rows, verdict, backup_proof, library_root, run_dir, journal_path,
                        journal_path if mode == "apply" else None, report)
 
 
+# --------------------------------------------------------------------------- #
+# Undo (R5) + finalize (R8)
+# --------------------------------------------------------------------------- #
+
+_HASH_CHUNK = 1 << 20
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb", buffering=_HASH_CHUNK) as fh:
+        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class UndoRecordOutcome:
+    seq: object
+    src: str          # the original location being restored TO
+    dst: str          # the current location being moved FROM
+    restored: bool
+    reason: str
+
+
+@dataclass
+class UndoResult:
+    ok: bool                         # every journaled move restored AND sha-verified
+    restored_count: int
+    outcomes: list[UndoRecordOutcome]
+    report_path: Path | None
+
+
+@dataclass
+class FinalizeResult:
+    ok: bool
+    finalized_count: int
+    audit_path: Path | None
+    reason: str
+
+
+def _write_undo_report(run_dir: Path, outcomes: list[UndoRecordOutcome], ok: bool) -> Path:
+    restored = sum(1 for o in outcomes if o.restored)
+    lines = ["# book_filer undo report", "",
+             f"{'COMPLETE' if ok else 'INCOMPLETE'}: {restored}/{len(outcomes)} records restored.", "",
+             "| seq | restored | dst -> src | reason |", "|---|---|---|---|"]
+    for o in outcomes:
+        lines.append(f"| {o.seq} | {o.restored} | `{o.dst}` -> `{o.src}` | {o.reason} |")
+    path = run_dir / "undo-report.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def undo_apply(run_dir, library_root, *, lock: bool = True, stamp: str = "unstamped") -> UndoResult:
+    """Reverse-replay the journal (last move first), restoring each file to its EXACT
+    original path through the same fail-closed move primitive, and verify the restore by
+    re-hashing against the journal's recorded sha256. A record whose current location was
+    independently moved/removed is skipped + reported (fail-closed, no guessing); the run
+    is then reported INCOMPLETE. Never deletes anything. `library_root` is accepted for
+    signature symmetry with apply; reparse safety comes from the move primitive itself.
+    """
+    run_dir = Path(run_dir)
+    journal_path = run_dir / "journal.jsonl"
+    lock_path = run_dir / "apply.lock"
+    records = read_records(journal_path)
+
+    if lock:
+        try:
+            with open(lock_path, "x", encoding="utf-8") as fh:
+                fh.write(f"undo {stamp}\n")
+        except FileExistsError:
+            return UndoResult(False, 0, [], None)
+    try:
+        outcomes: list[UndoRecordOutcome] = []
+        for rec in reversed(records):  # reverse-replay: last move undone first
+            seq = rec.get("seq")
+            cur = Path(rec["dst"])     # where the file is now
+            orig = Path(rec["src"])    # where it must return
+            sha = rec.get("sha256", "")
+            if already_applied(cur, orig, sha):  # idempotent: already restored
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "already restored"))
+                continue
+            outcome = execute_move(plan_move(cur, orig, allow_unique=False))
+            if not outcome.moved:
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, outcome.reason))
+            elif sha and _sha256_file(orig) != sha:
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, "restored but sha mismatch"))
+            else:
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "restored"))
+        ok = bool(outcomes) and all(o.restored for o in outcomes) or not records
+        report = _write_undo_report(run_dir, outcomes, ok) if outcomes else None
+        return UndoResult(ok, sum(1 for o in outcomes if o.restored), outcomes, report)
+    finally:
+        if lock:
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+
+
+def finalize_run(run_dir, *, stamp: str = "unstamped") -> FinalizeResult:
+    """End the undo window: archive the active journal (so undo finds nothing) and write a
+    closing audit record. Deletes NO library files -- _Trash_Pending retention is separate (R8)."""
+    run_dir = Path(run_dir)
+    journal_path = run_dir / "journal.jsonl"
+    if not journal_path.exists():
+        return FinalizeResult(False, 0, None, "no active journal to finalize")
+    records = read_records(journal_path)
+    archived = run_dir / "journal.finalized.jsonl"
+    os.replace(journal_path, archived)  # purge the active journal; keep an audit copy
+    audit = {"finalized": len(records), "stamp": stamp, "archived_journal": archived.name}
+    audit_path = run_dir / "finalize-audit.json"
+    audit_path.write_text(json.dumps(audit, indent=2), encoding="utf-8")
+    return FinalizeResult(True, len(records), audit_path, "undo window closed; journal archived")
+
+
 def _load_json(path: Path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -216,19 +332,40 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_BAD_ENV
 
     parser = argparse.ArgumentParser(
-        description="EB-373 book_filer actuator -- apply a signed-GREEN manifest as in-place moves.")
-    parser.add_argument("--manifest", required=True, type=Path, help="plan-<stamp>.json")
-    parser.add_argument("--verdict", required=True, type=Path, help="signed calibration verdict JSON")
-    parser.add_argument("--backup-proof", required=True, type=Path, help="external-mirror backup-proof JSON")
+        description="EB-373 book_filer actuator -- apply/undo/finalize a signed-GREEN manifest "
+                    "as in-place moves.")
+    parser.add_argument("--manifest", type=Path, help="plan-<stamp>.json (apply/dry-run)")
+    parser.add_argument("--verdict", type=Path, help="signed calibration verdict JSON (apply/dry-run)")
+    parser.add_argument("--backup-proof", type=Path, help="external-mirror backup-proof JSON (apply)")
     parser.add_argument("--library-root", required=True, type=Path,
                         help="Live corpus root (e.g. F:\\Books). Explicit by design -- the actuator "
                              "never defaults to the real library.")
     parser.add_argument("--run-dir", required=True, type=Path, help="Run artifacts (journal, report).")
-    parser.add_argument("--mode", choices=["dry-run", "apply"], default="dry-run")
+    parser.add_argument("--mode", choices=["dry-run", "apply", "undo", "finalize"], default="dry-run")
     parser.add_argument("--stamp", default="unstamped")
     parser.add_argument("--no-lock", action="store_true", help="Disable the single-run lock (tests).")
     args = parser.parse_args(argv)
 
+    if args.mode == "finalize":
+        fin = finalize_run(args.run_dir, stamp=args.stamp)
+        if not fin.ok:
+            print(f"REFUSED: {fin.reason}", file=sys.stderr)
+            return EXIT_REFUSED
+        print(f"finalize complete: {fin.finalized_count} moves; {fin.reason}.", file=sys.stderr)
+        return EXIT_OK
+
+    if args.mode == "undo":
+        undo = undo_apply(args.run_dir, args.library_root, stamp=args.stamp, lock=not args.no_lock)
+        verb = "COMPLETE" if undo.ok else "INCOMPLETE"
+        print(f"undo {verb}: {undo.restored_count} restored. Report: {undo.report_path}", file=sys.stderr)
+        return EXIT_OK if undo.ok else EXIT_REFUSED
+
+    # apply / dry-run
+    missing = [name for name, val in (("--manifest", args.manifest), ("--verdict", args.verdict),
+                                      ("--backup-proof", args.backup_proof)) if val is None]
+    if missing:
+        print(f"ERROR: {args.mode} requires {', '.join(missing)}", file=sys.stderr)
+        return EXIT_BAD_ARGS
     try:
         rows = [ManifestRow(**d) for d in _load_json(args.manifest)]
         verdict = _load_json(args.verdict)
