@@ -22,14 +22,14 @@ from pathlib import Path
 if __package__:
     from .backup import verify_backup_proof
     from .calibration import verify_binding
-    from .journal import already_applied, append_record, applied_sources, read_records
+    from .journal import already_applied, append_record, committed_seqs, intents_by_seq, read_records
     from .manifest import ManifestRow
     from .move import execute_move, plan_move, sha256_file
 else:  # run directly as a script: add tools/ to sys.path so `book_filer` resolves (mirrors scan.py)
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from book_filer.backup import verify_backup_proof
     from book_filer.calibration import verify_binding
-    from book_filer.journal import already_applied, append_record, applied_sources, read_records
+    from book_filer.journal import already_applied, append_record, committed_seqs, intents_by_seq, read_records
     from book_filer.manifest import ManifestRow
     from book_filer.move import execute_move, plan_move, sha256_file
 
@@ -170,7 +170,8 @@ def _run(rows, verdict, backup_proof, library_root, run_dir, journal_path,
         if not bproof.ok:
             return refuse(f"backup proof refused (R3): {bproof.reason}")
 
-    done = applied_sources(journal_records) if mode == "apply" else set()
+    intents = intents_by_seq(journal_records)
+    committed = committed_seqs(journal_records)
     results: list[RowResult] = []
     for seq, row in enumerate(rows):
         src = Path(row.original_path)
@@ -179,22 +180,39 @@ def _run(rows, verdict, backup_proof, library_root, run_dir, journal_path,
             results.append(RowResult(seq, str(src), "", row.action, False,
                                      "unhandled action or missing destination -- skipped"))
             continue
-        if mode == "apply" and (str(src) in done or already_applied(src, target, row.sha256)):
-            results.append(RowResult(seq, str(src), str(target), row.action, False,
-                                     "already applied (resume skip)"))
-            continue
+        if mode == "apply":
+            # Resume: a committed move, or one whose move completed but whose commit was lost
+            # in a crash (intent is durable and the filesystem is already at the resolved dst).
+            # Backfill the missing commit so undo stays complete, then skip.
+            if seq in committed:
+                results.append(RowResult(seq, str(src), str(target), row.action, False,
+                                         "already applied (committed)"))
+                continue
+            intent = intents.get(seq)
+            if intent and already_applied(Path(intent["src"]), Path(intent["dst"]),
+                                          intent.get("sha256", "")):
+                append_record(journal_path, {**intent, "state": "commit"})
+                results.append(RowResult(seq, str(src), str(intent["dst"]), row.action, False,
+                                         "already applied (commit backfilled)"))
+                continue
         decision = plan_move(src, target, allow_unique=True)
         if mode == "dry-run":
             results.append(RowResult(seq, str(src), str(decision.dst), row.action,
                                      decision.action == "move",
                                      f"dry-run {decision.action}: {decision.reason}"))
             continue
+        if decision.action != "move":
+            results.append(RowResult(seq, str(src), str(decision.dst), row.action, False,
+                                     f"skipped: {decision.reason}"))
+            continue
+        # Write-ahead: a durable intent BEFORE the move, a commit AFTER. A crash in between
+        # leaves the intent + the filesystem at the resolved dst, which resume/undo reconcile.
+        record = {"seq": seq, "src": str(decision.src), "dst": str(decision.dst),
+                  "action": row.action, "sha256": row.sha256, "ts": stamp}
+        append_record(journal_path, {**record, "state": "intent"})
         outcome = execute_move(decision)
         if outcome.moved:
-            append_record(journal_path, {
-                "seq": seq, "src": str(outcome.src), "dst": str(outcome.dst),
-                "action": row.action, "sha256": row.sha256, "ts": stamp,
-            })
+            append_record(journal_path, {**record, "state": "commit"})
         results.append(RowResult(seq, str(outcome.src), str(outcome.dst), row.action,
                                  outcome.moved, outcome.reason))
 
@@ -267,23 +285,40 @@ def undo_apply(run_dir, library_root, *, lock: bool = True, stamp: str = "unstam
         except FileExistsError:
             return UndoResult(False, 0, [], None)
     try:
+        intents = intents_by_seq(records)
+        committed = committed_seqs(records)
         outcomes: list[UndoRecordOutcome] = []
-        for rec in reversed(records):  # reverse-replay: last move undone first
-            seq = rec.get("seq")
-            cur = Path(rec["dst"])     # where the file is now
+        for seq in sorted(intents, reverse=True):  # reverse-replay: last move undone first
+            rec = intents[seq]
+            cur = Path(rec["dst"])     # where the move put the file
             orig = Path(rec["src"])    # where it must return
             sha = rec.get("sha256", "")
-            if already_applied(cur, orig, sha):  # idempotent: already restored
-                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "already restored"))
+            # The file is currently at the destination -> the move applied (committed OR the
+            # commit was lost in a crash). Reverse it. This is the P1 fix: undo follows the
+            # filesystem, not just committed records, so no applied move is ever missed.
+            if cur.is_file() and (not sha or sha256_file(cur) == sha):
+                outcome = execute_move(plan_move(cur, orig, allow_unique=False))
+                if not outcome.moved:
+                    outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, outcome.reason))
+                elif sha and sha256_file(orig) != sha:
+                    outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, "restored but sha mismatch"))
+                else:
+                    outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "restored"))
                 continue
-            outcome = execute_move(plan_move(cur, orig, allow_unique=False))
-            if not outcome.moved:
-                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, outcome.reason))
-            elif sha and sha256_file(orig) != sha:
-                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False, "restored but sha mismatch"))
+            # Already at the original (restored earlier, or the move never happened) -> no-op.
+            if orig.is_file() and (not sha or sha256_file(orig) == sha):
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True,
+                                                  "already restored or never applied"))
+                continue
+            # Neither location holds the file. A confirmed-committed move whose file is gone was
+            # independently moved/removed -> cannot restore (INCOMPLETE). Otherwise the move
+            # never completed, so there is nothing to undo.
+            if seq in committed:
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), False,
+                                                  "current location missing -- cannot restore"))
             else:
-                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "restored"))
-        ok = bool(outcomes) and all(o.restored for o in outcomes) or not records
+                outcomes.append(UndoRecordOutcome(seq, str(orig), str(cur), True, "move was never applied"))
+        ok = all(o.restored for o in outcomes) if outcomes else True
         report = _write_undo_report(run_dir, outcomes, ok) if outcomes else None
         return UndoResult(ok, sum(1 for o in outcomes if o.restored), outcomes, report)
     finally:
@@ -302,12 +337,13 @@ def finalize_run(run_dir, *, stamp: str = "unstamped") -> FinalizeResult:
     if not journal_path.exists():
         return FinalizeResult(False, 0, None, "no active journal to finalize")
     records = read_records(journal_path)
+    finalized = len(committed_seqs(records))  # count committed MOVES, not raw WAL lines
     archived = run_dir / "journal.finalized.jsonl"
     os.replace(journal_path, archived)  # purge the active journal; keep an audit copy
-    audit = {"finalized": len(records), "stamp": stamp, "archived_journal": archived.name}
+    audit = {"finalized": finalized, "stamp": stamp, "archived_journal": archived.name}
     audit_path = run_dir / "finalize-audit.json"
     audit_path.write_text(json.dumps(audit, indent=2), encoding="utf-8")
-    return FinalizeResult(True, len(records), audit_path, "undo window closed; journal archived")
+    return FinalizeResult(True, finalized, audit_path, "undo window closed; journal archived")
 
 
 def _load_json(path: Path):

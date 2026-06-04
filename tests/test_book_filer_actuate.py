@@ -1,10 +1,13 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from book_filer.actuate import (
@@ -112,8 +115,10 @@ def test_apply_realizes_target_layout(tmp_path):
     assert (lib / "_Trash_Pending" / "_Inbox" / "dupe.epub").read_bytes() == b"dupe-content"
     assert (lib / "_Quarantine" / "_Inbox" / "weird.epub").read_bytes() == b"weird-content"
     assert not (lib / "_Inbox" / "good.epub").exists()   # source gone
-    journal_lines = (run_dir / "journal.jsonl").read_text(encoding="utf-8").strip().splitlines()
-    assert len(journal_lines) == 4
+    journal_records = [json.loads(ln) for ln in
+                       (run_dir / "journal.jsonl").read_text(encoding="utf-8").strip().splitlines()]
+    assert sum(1 for r in journal_records if r.get("state") == "intent") == 4   # WAL: intent...
+    assert sum(1 for r in journal_records if r.get("state") == "commit") == 4   # ...then commit per move
     assert (run_dir / "apply-report.md").exists()
 
 
@@ -184,9 +189,11 @@ def test_resume_completes_only_remaining_rows(tmp_path):
     ]
     for i, (src, dst) in enumerate(moved):
         dst.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"seq": i, "src": str(src), "dst": str(dst),
+               "action": rows[i].action, "sha256": rows[i].sha256, "ts": "S"}
+        append_record(journal, {**rec, "state": "intent"})
         os.replace(src, dst)
-        append_record(journal, {"seq": i, "src": str(src), "dst": str(dst),
-                                "action": rows[i].action, "sha256": rows[i].sha256, "ts": "S"})
+        append_record(journal, {**rec, "state": "commit"})
 
     # Resume: journal is non-empty, so the backup gate is skipped and the first two are
     # idempotently skipped; only dupe (trash) and weird (quarantine) move now.
@@ -197,6 +204,44 @@ def test_resume_completes_only_remaining_rows(tmp_path):
     assert (lib / "_Quarantine" / "_Inbox" / "weird.epub").is_file()
     # The two pre-moved files are intact and were not double-moved.
     assert (lib / "01 History" / "A - Good.epub").read_bytes() == b"good-content"
+
+
+def test_crash_after_move_before_commit_resume_then_undo_restores_all(tmp_path, monkeypatch):
+    """P1 regression: a move can be durable BEFORE its journal record is. If the process
+    crashes in that window, resume must recognize the applied move and undo must still
+    restore it -- the journal can never be behind the filesystem."""
+    lib, rows = _build_library(tmp_path)
+    run_dir = tmp_path / "run"
+    before_snap = _snapshot(lib)
+    before_content = _content_multiset(lib)
+
+    import book_filer.actuate as actuate_mod
+    real_append = actuate_mod.append_record
+    target_src = str(Path(rows[1].original_path))
+    state = {"crashed": False}
+
+    def flaky_append(path, record):
+        # Fail the COMMIT of row 1 -- its os.replace has already happened, so row 1 is
+        # applied-but-uncommitted. (On a single-record model this is just row 1's record.)
+        if record.get("src") == target_src and record.get("state", "commit") == "commit":
+            state["crashed"] = True
+            raise OSError("simulated crash committing row 1's move")
+        return real_append(path, record)
+
+    monkeypatch.setattr(actuate_mod, "append_record", flaky_append)
+    with pytest.raises(OSError):
+        apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir,
+                       mode="apply", stamp="S")
+    assert state["crashed"]
+    monkeypatch.undo()  # crash is over; resume with a healthy journal writer
+
+    assert apply_manifest(rows, _signed_verdict(rows), build_backup_proof(lib), lib, run_dir,
+                          mode="apply", stamp="S").ok
+
+    undo = undo_apply(run_dir, lib, stamp="S")
+    assert undo.ok, [f"{o.seq}:{o.reason}" for o in undo.outcomes]
+    assert _snapshot(lib) == before_snap          # EVERY file restored, incl. the uncommitted one
+    assert _content_multiset(lib) == before_content
 
 
 # --------------------------------------------------------------------------- #

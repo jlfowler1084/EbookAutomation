@@ -58,8 +58,23 @@ def read_records(path: Path) -> list[dict]:
 
 
 def applied_sources(records: list[dict]) -> set[str]:
-    """The set of source paths already recorded as moved (primary resume filter)."""
+    """The set of source paths already recorded as moved (legacy single-record filter)."""
     return {r["src"] for r in records if isinstance(r, dict) and "src" in r}
+
+
+def intents_by_seq(records: list[dict]) -> dict:
+    """Latest write-ahead `intent` record per seq. A re-attempt overwrites an earlier intent,
+    so the last one carries the resolved (possibly unique_path) destination."""
+    out: dict = {}
+    for r in records:
+        if isinstance(r, dict) and r.get("state") == "intent" and "seq" in r:
+            out[r["seq"]] = r
+    return out
+
+
+def committed_seqs(records: list[dict]) -> set:
+    """Seqs with a durable `commit` record (the move definitely completed)."""
+    return {r["seq"] for r in records if isinstance(r, dict) and r.get("state") == "commit" and "seq" in r}
 
 
 def already_applied(src: Path, dst: Path, sha256: str) -> bool:
