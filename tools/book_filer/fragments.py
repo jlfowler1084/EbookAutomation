@@ -36,7 +36,7 @@ def detect_fragment_sets(paths: list[str]) -> list[FragmentVerdict]:
     # 2. Numbered-suffix sets: >= 3 files sharing a stem with consecutive-ish
     #    numbers IN THE SAME FOLDER. The grouping key includes the parent dir
     #    (EB-359) so a shared stem across different real folders cannot merge
-    #    into one cross-folder set — mirrors step 1's by_dir keying.
+    #    into one cross-folder set. This mirrors step 1's by_dir keying.
     by_dir_stem: dict[tuple[str, str], list[str]] = defaultdict(list)
     for p in paths:
         if p in used:

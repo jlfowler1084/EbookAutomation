@@ -48,18 +48,22 @@ def test_windows_exploded_epub_in_one_folder_is_flagged():
 
 
 # ---------------------------------------------------------------------------
-# EB-359 — step-2 numbered-suffix grouping must be folder-aware. A shared stem
+# EB-359: step-2 numbered-suffix grouping must be folder-aware. A shared stem
 # across DIFFERENT real folders must not collapse into one cross-folder set.
-# (scan.py mitigates by calling per-folder; direct callers — incl. the future
-# actuator — must be safe at the primitive.)
+# (scan.py mitigates by calling per-folder; direct callers, including the future
+# actuator, must be safe at the primitive.)
 # ---------------------------------------------------------------------------
 
 def test_numbered_set_must_not_span_multiple_folders():
-    # Same stem 'vol', three different real folders — the folder-blind code
+    # Same stem 'vol', three different real folders; the folder-blind code
     # wrongly groups all three into one cross-folder set. Each folder holds <3
     # numbered files, so the correct result is no fragment set; and NO verdict
     # may ever span more than one parent directory.
-    paths = [r"F:\Books\A\vol-1.pdf", r"F:\Books\B\vol-2.pdf", r"F:\Books\C\vol-3.pdf"]
+    paths = [
+        r"F:\Books\A\vol-1.pdf",
+        r"F:\Books\B\vol-2.pdf",
+        r"F:\Books\C\vol-3.pdf",
+    ]
     sets = detect_fragment_sets(paths)
     for s in sets:
         parents = {str(PureWindowsPath(m).parent) for m in s.members}
@@ -78,7 +82,7 @@ def test_numbered_set_within_one_folder_still_flagged():
 
 def test_same_stem_split_across_folders_does_not_merge_when_one_folder_qualifies():
     # Folder A has a real 3-part set; folder B has 2 same-stem parts. The B parts
-    # must NOT be absorbed into A's set — the set stays within folder A only.
+    # must NOT be absorbed into A's set; the set stays within folder A only.
     a = [rf"F:\Books\A\doc-{i}.pdf" for i in range(1, 4)]
     b = [rf"F:\Books\B\doc-{i}.pdf" for i in range(1, 3)]
     sets = detect_fragment_sets(a + b)
