@@ -49,7 +49,7 @@ Plus origin §5 staged rollout and origin §7 success criteria.
 
 ### Deferred to Separate Tasks
 
-- **ADR-0043** (actuator safety-model decision record) — authored in the **ClaudeInfra** repo, ADR-00NN series, as a sibling task; this plan references it as the gating rationale, but the ADR file is not created in this repo.
+- **ADR-0045** (actuator safety-model decision record; ClaudeInfra, INFRA-552) — authored in the **ClaudeInfra** repo as a sibling task; this plan references it as the gating rationale, but the ADR file is not created in this repo. (Originally mis-cited as "ADR-0043"; that number belongs to the unrelated Hermes Tiered Autonomy ADR / INFRA-491.)
 - **First real full apply against `F:\Books`** — a gated operational event (backup + approval + fresh signed GREEN), not a code deliverable of this plan.
 
 ## Context & Research
@@ -71,7 +71,7 @@ Plus origin §5 staged rollout and origin §7 success criteria.
 
 ### Institutional Learnings
 
-- `docs/solutions/eb365-book-filer-format-tier-demotion-2026-06-03.md` — the actuator's gate is verbatim: **strict-GREEN signed verdict + external backup + approval + ADR-0043**. `evaluate_calibration()` does not encode floor/trash-safety; the **signed** artifact does — the actuator must assert those fields, not trust a bare verdict. Monotonic safety: prefer operations that can only fail *closed*.
+- `docs/solutions/eb365-book-filer-format-tier-demotion-2026-06-03.md` — the actuator's gate is: **strict-GREEN signed verdict + external backup + approval + ADR-0045**. `evaluate_calibration()` does not encode floor/trash-safety; the **signed** artifact does — the actuator must assert those fields, not trust a bare verdict. Monotonic safety: prefer operations that can only fail *closed*.
 - `docs/solutions/eb355-book-filer-classification-metadata-accuracy-2026-06-02.md` — "GREEN is gameable"; consume the signed verdict, don't re-derive GREEN. Collision/dest-exists checks must key off the same sanitized author/year/`planned_calibre_key` the manifest used.
 - `docs/solutions/eb353-vqa-grader-code-false-positive-2026-06-02.md` — determinism-as-prerequisite: re-derive the projection at apply time and confirm byte-identity to the approved manifest before the first move; lock fail-closed branches with deterministic contract tests so they can't be silently removed.
 - `docs/decisions/ADR-EB-181-data-exemption-scope.md` — `data/batch_reports/**` is worktree-exempt: the move journal + run reports land there and may be committed directly. Any actuator artifact that becomes a **regression-gate input** is NOT exempt → must ride a PR.
@@ -85,8 +85,8 @@ Plus origin §5 staged rollout and origin §7 success criteria.
 
 - **Apply model = in-place move (D1).** `os.replace`/atomic rename within `F:\Books` (same volume). No copy tree.
 - **Manifest↔verdict binding (R2).** Add `manifest_digest: str | None` (and `stamp`) to `CalibrationVerdict` / the signed sidecar = `sha256(canonical_projection(rows))`. Actuator re-derives the digest from the manifest it is about to apply and refuses unless a signed verdict records that digest, `green==True`, and the floor + trash-safety fields are present. Determinism gate re-checked at apply time (EB-353).
-- **Journal = append-only JSONL (net-new).** One record per committed move (`seq`, `src`, `dst`, `action`, `sha256`, `ts`), `fsync`'d, written **before** the next move begins, via append (crash-safe: a torn final line is detected and ignored on resume). Reverse-replay (last→first) mirrors `generate_undo_script`.
-- **Collision resolution at apply time.** Call `pathsafe.unique_path(dest)` only in `apply` (never dry-run); a destination that already exists and is NOT the expected source → **fail closed** (skip + log), do not overwrite.
+- **Journal = append-only JSONL (net-new), write-ahead.** Per move: append an **intent** record (`fsync`) BEFORE `os.replace`, then a **commit** record (`fsync`) after (`seq`, `src`, `dst`, `action`, `sha256`, `ts`, `phase`). On resume/undo, an intent without a matching commit triggers reconciliation against actual FS state (idempotency key); a torn final line is detected and ignored. This closes the move-without-record crash window. Reverse-replay (last→first) mirrors `generate_undo_script`. (Per ADR-0045 D3.)
+- **Collision resolution at apply time.** Default: a destination that already exists and is NOT the expected source → **fail closed** (skip + log), never overwrite. `pathsafe.unique_path(dest)` is applied ONLY when the signed manifest/binding explicitly authorizes uniquifying (never in dry-run); otherwise apply would diverge from the approved target layout.
 - **Operational-folder routing.** Derive target from `action`: shelve→`destination_path`; `review`→`_Needs_Review/<original-relative>`; `trash`→`_Trash_Pending`; `quarantine`→`_Quarantine`. Reconcile the brainstorm naming with config (`_Duplicates_Pending` exists; confirm whether dedup-`trash` routes to `_Trash_Pending` or `_Duplicates_Pending`).
 - **Idempotency key.** A row is "already applied" iff source absent AND destination present with matching `sha256`; such rows are skipped on resume (R6).
 - **Single-run lock.** A lock file under the run dir; refuse concurrent apply/undo.
@@ -135,8 +135,8 @@ Per-row apply decision (the fail-closed move primitive, R4/R7):
 | source missing AND destination present w/ matching sha | **skip** (already applied — idempotent resume) |
 | source missing AND no matching destination | **skip + log** (anomaly; do not guess) |
 | source locked/unreadable | **skip + log** |
-| destination exists and is not the expected source | `unique_path()` if policy allows, else **skip + log**; never overwrite |
-| all clear | create dest dirs → `os.replace(src, dst)` → **append journal record (fsync) before next row** |
+| destination exists and is not the expected source | **skip + log** by default; never overwrite. `unique_path()` only if the signed binding explicitly authorizes uniquifying |
+| all clear | **append intent record (fsync)** → create dest dirs → `os.replace(src, dst)` → **append commit record (fsync)** before the next row |
 
 Apply orchestration: verify lock → verify manifest↔signed-GREEN binding (R2) → re-derive + confirm determinism (EB-353) → verify backup proof (R3) → for each row (manifest order) route by `action` and run the move primitive → write `apply-report.md`. Undo: read `journal.jsonl`, reverse-replay `dst→src` through the same fail-closed primitive, verify restored layout by re-hash. Finalize: end the undo window (purge/close journal); never deletes.
 
@@ -236,7 +236,7 @@ Apply orchestration: verify lock → verify manifest↔signed-GREEN binding (R2)
 - Test: `tests/test_book_filer_journal.py`
 
 **Approach:**
-- `append(record)` writes one JSON line and `fsync`s before returning (so the move that follows is always preceded by a durable record). `read(path)` parses records and **ignores a torn final line** (crash mid-write). `already_applied(row)` = source absent AND dest present w/ matching sha. Resume filters the manifest against the journal + idempotency key.
+- `append(record)` writes one JSON line and `fsync`s before returning, so each move is bracketed by a durable **intent** record (before `os.replace`) and a **commit** record (after). `read(path)` parses records and **ignores a torn final line** (crash mid-write). `already_applied(row)` = source absent AND dest present w/ matching sha; an intent without a matching commit triggers reconciliation against actual FS state. Resume filters the manifest against the journal + idempotency key.
 
 **Execution note:** Test-first; simulate a torn final line by truncating the file.
 
@@ -263,7 +263,7 @@ Apply orchestration: verify lock → verify manifest↔signed-GREEN binding (R2)
 - Test: `tests/test_book_filer_actuate.py`
 
 **Approach:**
-- CLI: `--manifest <plan-*.json>`, `--verdict <signed-verdict.json>`, `--backup-proof <json>`, `--mode dry-run|apply` (default dry-run), `--run-dir`, `--lock`. Order: acquire lock → `verify_binding` (R2) → re-derive projection + confirm determinism (EB-353) → `verify_backup_proof` (R3) → resume-filter (Unit 4) → per row, route by `action` to a target path and run the move primitive (Unit 3), appending the journal (Unit 4) → write `apply-report.md`. Dry-run runs `plan_move` only (no side effects, R9) and writes a journal-preview. `PYTHONHASHSEED=0` guard mirrored from `scan.py`. `trash`→`_Trash_Pending`, never delete (R8).
+- CLI: `--manifest <plan-*.json>`, `--verdict <signed-verdict.json>`, `--backup-proof <json>`, `--mode dry-run|apply` (default dry-run), `--run-dir`, `--lock`. Order: acquire lock → `verify_binding` (R2) → re-derive projection + confirm determinism (EB-353) → `verify_backup_proof` (R3) → resume-filter (Unit 4) → per row, route by `action` to a target path and run the move primitive (Unit 3) with write-ahead journaling (intent→move→commit, Unit 4) → write `apply-report.md`. Dry-run runs `plan_move` only (no side effects, R9) and writes a journal-preview. `PYTHONHASHSEED=0` guard mirrored from `scan.py`. `trash`→`_Trash_Pending`, never delete (R8).
 
 **Execution note:** Test-first; subprocess `run_apply` harness mirroring `run_scan`; synthetic library under `tmp_path`.
 
@@ -351,7 +351,7 @@ Apply orchestration: verify lock → verify manifest↔signed-GREEN binding (R2)
 
 ## Documentation / Operational Notes
 
-- **ADR-0043** (ClaudeInfra ADR-00NN) records the four decisions + rationale (in-place + backup + journal-undo + finalize as one coherent safety story); author as a sibling task before the first real apply.
+- **ADR-0045** (ClaudeInfra, INFRA-552) records the four decisions + rationale (in-place + backup + journal-undo + finalize as one coherent safety story); authored 2026-06-04, before the first real apply. (Renumbered from the mis-cited "ADR-0043" = Hermes Tiered Autonomy.)
 - On a successful first real apply, compound a `docs/solutions/` entry (the actuator's crash-safety + idempotency design).
 - The **first real full apply** is a gated operational event: branch-current signed GREEN + verified external mirror + explicit approval; not part of this code plan.
 

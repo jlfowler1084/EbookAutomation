@@ -2,7 +2,7 @@
 
 **Epic:** EB-354 (F:\Books library reorganization + Hermes auto-filing enforcement).
 **Type:** new child Story (to be created). **Date:** 2026-06-04. **Status:** brainstorm → planning.
-**Decision record:** ADR-0043 (ClaudeInfra ADR-00NN series) to be authored from this doc.
+**Decision record:** ADR-0045 (ClaudeInfra, INFRA-552), authored from this doc. (Originally mis-cited as "ADR-0043"; that number is the unrelated Hermes Tiered Autonomy ADR / INFRA-491, so the actuator safety model took the next free slot, ADR-0045.)
 
 ---
 

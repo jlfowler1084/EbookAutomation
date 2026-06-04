@@ -67,5 +67,5 @@ passed unchanged and the gated re-run moved **exactly** three rows.
    floor or trash-safety; the signed artifact must include them explicitly or GREEN is under-specified.
 
 ## Scope boundary
-The file-moving **actuator** remains gated behind this GREEN + backup + approval + ADR-0043. The
+The file-moving **actuator** remains gated behind this GREEN + backup + approval + ADR-0045 (ClaudeInfra, INFRA-552). The
 LLM-assisted tail + auto-`review`-rate reduction (406/680) is deferred to **EB-366** (Relates EB-365).

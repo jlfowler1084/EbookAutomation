@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **GATED:** Begin only after Plan 3 (metadata + identity) is merged. **This plan performs NO filesystem mutation of `F:\Books`** — it produces manifests, dedup decisions, fragment verdicts, and calibration verdicts. The actuator that actually moves files is Plan 5 and is fenced behind backup + calibration + approval + ADR-0043 gates. Start from a clean worktree off the latest `master` (now `fdf3694`, EB-356 merged).
+> **GATED:** Begin only after Plan 3 (metadata + identity) is merged. **This plan performs NO filesystem mutation of `F:\Books`** — it produces manifests, dedup decisions, fragment verdicts, and calibration verdicts. The actuator that actually moves files is Plan 5 and is fenced behind backup + calibration + approval + ADR-0045 gates. Start from a clean worktree off the latest `master` (now `fdf3694`, EB-356 merged).
 
 **Goal:** Build the "migration brain" — the pure, testable decision-and-record layer: the manifest engine (schema + CSV/JSON/MD writer + deterministic projection + undo-script generator), duplicate planning (merge-formats + keep-best-of-exact), fragment attribution (review-only), and the calibration verdict (zero-wrong-shelf + determinism). None of it touches `F:\Books`.
 
@@ -595,7 +595,7 @@ Expected: PASS (Plan 1: 26 + Plans 2–3 once merged + Plan 4: 17 new = manifest
 - §6.3 fragment attribution, review-only → Task 3 ✅ (brainstorm decision)
 - Calibration gate: determinism + zero wrong-shelf + sign-off → Task 4 ✅ (brainstorm decision)
 
-**Explicitly NOT here (Plan 5 — the actuator, gated):** `Invoke-BookFileGuarded.ps1` (the `-WhatIf`/`--apply`-replays-approved-manifest copy engine with reparse/collision TOCTOU re-check, `calibredb add` on apply, fail-safe per item); the 9-phase migration driver (Phase 0 different-drive/fresh/count-verified backup, batched apply); the apply-gate preconditions enforcement (backup + green calibration + approval token + ADR-0043 grant). **No `F:\Books` move/rename/delete exists in code until Plan 5, and even then only behind those gates.**
+**Explicitly NOT here (Plan 5 — the actuator, gated):** `Invoke-BookFileGuarded.ps1` (the `--apply`-replays-approved-manifest **in-place atomic-rename mover** with reparse/collision TOCTOU re-check and **write-ahead journaling**, fail-safe per item); the migration driver (Phase 0 **external-mirror backup verified by count + sampled sha256**, batched apply); the apply-gate preconditions enforcement (backup + green calibration + approval token + ADR-0045 grant). **No `F:\Books` move/rename/delete exists in code until Plan 5, and even then only behind those gates.** (Per ADR-0045: in-place move, write-ahead journal, **no Calibre import**.)
 
 **Placeholder scan:** none — complete code + runnable tests; `stamp` and IDs are injected for reproducibility.
 
@@ -608,5 +608,5 @@ Expected: PASS (Plan 1: 26 + Plans 2–3 once merged + Plan 4: 17 new = manifest
 2. **Plan 2 — Classifier + Taxonomy** (merged): `books-taxonomy.json`, classifier.
 3. **Plan 3 — Metadata + Identity** (on master): embedded extraction, `planned_calibre_key`.
 4. **Plan 4 — Migration Core (Decide + Record)** (this plan): manifest, dedup, fragments, calibration. **No filesystem mutation.**
-5. **Plan 5 — Guarded Filer + 9-Phase Migration Driver (the Actuator):** `Invoke-BookFileGuarded.ps1` + the driver, fenced behind the backup/calibration/approval/ADR-0043 gates. **First and only code that touches `F:\Books`.**
+5. **Plan 5 — Guarded Filer + 9-Phase Migration Driver (the Actuator):** `Invoke-BookFileGuarded.ps1` + the driver, fenced behind the backup/calibration/approval/ADR-0045 gates. **First and only code that touches `F:\Books`.**
 6. **Plan 6 — Reconciliation + Rewire:** Calibre↔shelf reconciliation job + the 5-file automation rewire (built on EB-356's *committed* BookFinder) + the conversion-output completion hook.
