@@ -33,16 +33,19 @@ def detect_fragment_sets(paths: list[str]) -> list[FragmentVerdict]:
                                             "exploded-EPUB debris (OPF/NCX/XHTML/CSS in one folder)"))
             used.update(members)
 
-    # 2. Numbered-suffix sets: >= 3 files sharing a stem with consecutive-ish numbers.
-    by_stem: dict[str, list[str]] = defaultdict(list)
+    # 2. Numbered-suffix sets: >= 3 files sharing a stem with consecutive-ish
+    #    numbers IN THE SAME FOLDER. The grouping key includes the parent dir
+    #    (EB-359) so a shared stem across different real folders cannot merge
+    #    into one cross-folder set. This mirrors step 1's by_dir keying.
+    by_dir_stem: dict[tuple[str, str], list[str]] = defaultdict(list)
     for p in paths:
         if p in used:
             continue
-        name = PureWindowsPath(p).stem
-        m = _NUMBERED_RE.match(name)
+        pw = PureWindowsPath(p)
+        m = _NUMBERED_RE.match(pw.stem)
         if m:
-            by_stem[m.group("stem")].append(p)
-    for stem, members in by_stem.items():
+            by_dir_stem[(str(pw.parent), m.group("stem"))].append(p)
+    for (_dir, stem), members in by_dir_stem.items():
         if len(members) >= 3:
             verdicts.append(FragmentVerdict(tuple(sorted(members)), "review",
                                             f"numbered fragment set (stem '{stem}', {len(members)} parts)"))
