@@ -191,7 +191,7 @@ outside this subcategory; the gated A/B run (§7) is the authoritative floor mea
 3. Verify: determinism YES; `auto_shelf_count ≥ 224`; trash-safety 0 violations.
 4. Regenerate the spot-check sheet; **human signs off** `wrong_shelf == 0` on the **new** sample.
 5. GREEN → EB-365 done; open the separate actuator ticket (backup + clean GREEN + approval +
-   ADR-0043 gate it). If a *new* mis-shelf surfaces in the fresh sample → triage it as a new finding
+   ADR-0045 gate it). If a *new* mis-shelf surfaces in the fresh sample → triage it as a new finding
    (likely another format-class case or a genuinely new one); do not silently re-baseline.
 
 ---

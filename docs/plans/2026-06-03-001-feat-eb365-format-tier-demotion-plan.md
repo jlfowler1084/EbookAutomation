@@ -57,7 +57,7 @@ Chart Patterns*. (See origin: `docs/brainstorms/2026-06-03-eb365-format-tier-dem
 ### Deferred to Separate Tasks
 
 - LLM-assisted classification tail + auto-`review`-rate reduction (406/680): **EB-366** (Relates EB-365).
-- File-moving actuator: separate ce:plan after GREEN, behind backup + clean GREEN + approval + ADR-0043.
+- File-moving actuator: separate ce:plan after GREEN, behind backup + clean GREEN + approval + ADR-0045 (ClaudeInfra, INFRA-552).
 
 ## Context & Research
 
