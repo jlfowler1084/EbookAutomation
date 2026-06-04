@@ -129,6 +129,12 @@ if (Test-Path $OutputDir) {
 }
 Write-Log "Pre-existing KFX in output: $($preExisting.Count)"
 
+# Status accumulator — precedence 3 > 2 > 1 > 0 (mirrors compare_vqa_reports.py audit codes)
+$batchStatus = 0
+function Set-Status { param([int]$Code) if ($Code -gt $script:batchStatus) { $script:batchStatus = $Code } }
+# HB gate counters (safe defaults if Phase 2.5 is skipped)
+$hbInBatch = 0; $hbScanned = 0; $hbMissing = @(); $hbFlagged = @()
+
 # ---------- Phase 2: run pipeline ----------
 Write-Log "Phase 2: running Invoke-EbookPipeline"
 $pipelineStart = Get-Date
@@ -142,7 +148,70 @@ try {
 } catch {
   Write-Log "Pipeline FAILED: $($_.Exception.Message)" 'ERROR'
   Write-Log $_.ScriptStackTrace 'ERROR'
+  Set-Status 3
 }
+
+# ---------- Phase 2.5: header-bleed gate ----------
+Write-Log "Phase 2.5: scanning new KFX intermediates for header-bleed welds"
+$intermediatesDir = Join-Path $OutputDir '.intermediates'
+$hbReportDir      = Join-Path $ProjectRoot 'data\batch_reports\header_bleed'
+New-Item -ItemType Directory -Force -Path $hbReportDir | Out-Null
+
+# Resolve this run's new KFX (same snapshot-diff as Phase 3)
+$hbNewKfx = @()
+if (Test-Path $OutputDir) {
+  $hbNewKfx = Get-ChildItem $OutputDir -Filter *.kfx -File |
+              Where-Object { -not $preExisting.ContainsKey($_.Name) }
+}
+
+$hbInBatch    = $hbNewKfx.Count
+$hbScanned    = 0
+$hbMissing    = @()
+$hbFlagged    = @()
+
+if ($hbInBatch -eq 0) {
+  Write-Log "[HB] No new KFX this run — Phase 2.5 skipped"
+} else {
+  Write-Log "[HB] Books in batch: $hbInBatch"
+  foreach ($kfx in $hbNewKfx) {
+    $htmlName = "$($kfx.BaseName)_kindle.html"
+    $htmlPath = Join-Path $intermediatesDir $htmlName
+    if (-not (Test-Path -LiteralPath $htmlPath)) {
+      Write-Log "[HB] WARN: missing intermediate for $($kfx.Name) — coverage gap" 'WARN'
+      $hbMissing += $kfx.Name
+      continue
+    }
+    $hbScanned++
+    $hbReport = Join-Path $hbReportDir "batch-${timestamp}-$($kfx.BaseName).json"
+    $hbArgs   = @(
+      '-3.12',
+      (Join-Path $ProjectRoot 'tools\check_header_bleed.py'),
+      '--input', $htmlPath,
+      '--out',   $hbReport,
+      '--quiet'
+    )
+    & py @hbArgs *>&1 | ForEach-Object {
+      "$(Get-Date -Format 'HH:mm:ss') [HB] $_" |
+        Tee-Object -FilePath $LogFile -Append | Out-Host
+    }
+    $hbExit = $LASTEXITCODE
+    Set-Status $hbExit
+    if ($hbExit -eq 2) {
+      $hbFlagged += $kfx.Name
+      Write-Log "[HB] FLAGGED: $($kfx.Name) — see $(Split-Path $hbReport -Leaf)" 'WARN'
+    } elseif ($hbExit -eq 3) {
+      Write-Log "[HB] ERROR scanning $($kfx.Name)" 'ERROR'
+    }
+  }
+  Write-Log "[HB] Coverage: $hbInBatch in batch | $hbScanned scanned | $($hbMissing.Count) missing"
+  if ($hbMissing.Count -gt 0) {
+    Write-Log "[HB] Missing intermediates: $($hbMissing -join ', ')" 'WARN'
+  }
+  if ($hbFlagged.Count -gt 0) {
+    Write-Log "[HB] Flagged books: $($hbFlagged -join ', ')" 'WARN'
+  }
+}
+Write-Log "Phase 2.5 complete (batchStatus so far: $batchStatus)"
 
 # ---------- Phase 3: partial VQA on new KFX ----------
 Write-Log "Phase 3: running partial VQA (max-pages=$MaxPages)"
@@ -182,10 +251,12 @@ foreach ($kfx in $newKfx) {
     } else {
       $vqaFail++
       Write-Log "  VQA exit=$LASTEXITCODE for $($kfx.Name)" 'ERROR'
+      Set-Status 3
     }
   } catch {
     $vqaFail++
     Write-Log "  VQA EXCEPTION: $($_.Exception.Message)" 'ERROR'
+    Set-Status 3
   }
 }
 
@@ -193,7 +264,13 @@ foreach ($kfx in $newKfx) {
 Write-Log "=== Overnight batch complete ==="
 Write-Log "Books copied to inbox:   $copied"
 Write-Log "New KFX produced:        $($newKfx.Count)"
+Write-Log "HB in batch:             $hbInBatch"
+Write-Log "HB scanned:              $hbScanned"
+Write-Log "HB flagged:              $($hbFlagged.Count)"
+Write-Log "HB missing artifacts:    $($hbMissing.Count)"
 Write-Log "VQA successes:           $vqaSuccess"
 Write-Log "VQA failures:            $vqaFail"
 Write-Log "Log:                     $LogFile"
 Write-Log "VQA reports:             $VqaDir"
+Write-Log "Batch exit status:       $batchStatus"
+exit $batchStatus
