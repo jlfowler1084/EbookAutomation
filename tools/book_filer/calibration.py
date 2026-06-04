@@ -7,6 +7,7 @@ is NOT a failure — routing to review is always safe.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 
@@ -24,6 +25,17 @@ class CalibrationVerdict:
     spot_check_size: int
     signed_off_by: str | None
     green: bool
+    reason: str
+    # EB-373 (R2): binds this verdict to an exact manifest (sha256 of canonical_projection).
+    # Defaulting None keeps existing producers valid and makes an unbound verdict fail the
+    # actuator's binding check *closed*. `stamp` records the run the verdict was signed for.
+    manifest_digest: str | None = None
+    stamp: str | None = None
+
+
+@dataclass(frozen=True)
+class BindingResult:
+    ok: bool
     reason: str
 
 
@@ -55,3 +67,54 @@ def evaluate_calibration(
         reason = "RED: " + ", ".join(fails)
 
     return CalibrationVerdict(deterministic, wrong_shelf, len(spot_check), signed_off_by, green, reason)
+
+
+def digest_projection(projection: str) -> str:
+    """sha256 of a canonical manifest projection string — the manifest<->verdict binding anchor.
+
+    The signer hashes the approved projection and records it on the verdict; the actuator
+    re-derives the same digest from the manifest it is about to apply (see manifest.manifest_digest).
+    """
+    return hashlib.sha256(projection.encode("utf-8")).hexdigest()
+
+
+def _gate_passes(verdict: dict, name: str) -> bool:
+    """True iff `verdict["gates"][name]` is present AND records pass==True. Fail closed on any gap."""
+    gates = verdict.get("gates")
+    if not isinstance(gates, dict):
+        return False
+    gate = gates.get(name)
+    return isinstance(gate, dict) and gate.get("pass") is True
+
+
+def verify_binding(manifest_rows: list, verdict: dict) -> BindingResult:
+    """R2: a manifest may be applied only behind a *fresh, fully-gated signed-GREEN* verdict whose
+    recorded `manifest_digest` matches the manifest being applied.
+
+    Returns ok=True only when ALL hold; otherwise ok=False with a reason naming the first failure
+    (the actuator refuses + logs it). Asserts the floor and trash-safety machine gates rather than
+    trusting a bare verdict: `evaluate_calibration` cannot encode them, so a bare verdict that merely
+    says `green=True` (no `gates`) is rejected as gameable.
+    """
+    # Deferred sibling import avoids a manifest<->calibration cycle: manifest imports
+    # digest_projection from this module at load time; this import only runs at call time.
+    if __package__:
+        from .manifest import manifest_digest
+    else:  # imported with tools/ on sys.path but no package context (mirrors scan.py)
+        from book_filer.manifest import manifest_digest
+
+    if not isinstance(verdict, dict):
+        return BindingResult(False, "verdict is not a mapping (fail closed)")
+
+    recorded = verdict.get("manifest_digest")
+    if not isinstance(recorded, str) or not recorded:
+        return BindingResult(False, "verdict records no manifest_digest (unbound verdict, fail closed)")
+    if recorded != manifest_digest(manifest_rows):
+        return BindingResult(False, "manifest_digest mismatch: verdict does not bind this manifest")
+    if verdict.get("green") is not True:
+        return BindingResult(False, "verdict is not GREEN")
+    if not _gate_passes(verdict, "auto_shelf_floor"):
+        return BindingResult(False, "auto_shelf_floor gate missing or not passing")
+    if not _gate_passes(verdict, "trash_safety"):
+        return BindingResult(False, "trash_safety gate missing or not passing")
+    return BindingResult(True, "bound: digest matches a signed, fully-gated GREEN verdict")
