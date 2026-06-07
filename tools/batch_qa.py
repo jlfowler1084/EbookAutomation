@@ -834,6 +834,7 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
             "success": False,
             "kfx_size_bytes": 0,
             "duration_seconds": 0,
+            "output_path": None,
         },
         "visual_qa": {
             "attempted": False,
@@ -1164,6 +1165,10 @@ def collect_diagnostics(file_path, output_dir, run_id, quick=True, include_vqa=F
         kfx_ok, kfx_path, kfx_dur = run_kfx_conversion_for_book(file_path)
         diag["kindle_conversion"]["success"] = kfx_ok
         diag["kindle_conversion"]["duration_seconds"] = round(kfx_dur, 1)
+        # EB-377: persist the real KFX path. Convert-ToKindle names output from
+        # parsed Title/Author metadata, NOT the source stem, so provenance must
+        # join on this path (not on the source filename).
+        diag["kindle_conversion"]["output_path"] = kfx_path
         # Record size whenever the file exists so a 0-byte artifact shows up
         # in the diagnostic JSON (evidence the classifier and report render).
         if kfx_path and os.path.isfile(kfx_path):
