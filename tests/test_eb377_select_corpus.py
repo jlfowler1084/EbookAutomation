@@ -213,3 +213,21 @@ def test_keeps_distinct_series_volumes(tmp_path):
     vols = [n for n in [Path(f["path"]).name for f in result["fresh"]]
             if "Woodrow Wilson Volume" in n]
     assert len(vols) == 3
+
+
+def test_exclude_folder_runtime_flag(tmp_path):
+    """--exclude-folder drops a folder at manifest-review time (case-insensitive,
+    by path component) without hardcoding the folder name in the tool."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "Goblin_Tricks" / "fringe1.pdf", mb=1.0)
+    _touch(fresh / "Goblin_Tricks" / "fringe2.pdf", mb=1.0)
+    _touch(fresh / "Real" / "good.pdf", mb=1.0)
+    # lower-case flag value must still match the 'Goblin_Tricks' folder
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377,
+                               exclude_folders=["goblin_tricks"])
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert "fringe1.pdf" not in names
+    assert "fringe2.pdf" not in names
+    assert "good.pdf" in names
