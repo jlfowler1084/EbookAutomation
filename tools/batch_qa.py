@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -39,6 +40,10 @@ if sys.platform == 'win32':
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+
+# EB-377: serialize local-Qwen VQA so --parallel keeps extraction/KFX
+# concurrent while only one VQA request hits the R9700 at a time.
+_VQA_SEMAPHORE = threading.Semaphore(1)
 
 # Load settings.json for tool paths (tesseract, poppler, calibre)
 _SETTINGS = {}
@@ -716,21 +721,34 @@ def run_kfx_conversion_for_book(pdf_path):
 
 
 def run_visual_qa_for_book(kfx_path):
-    """Run visual QA scoring on a KFX file. Returns (score, category_scores, cost, duration)."""
+    """Run visual QA scoring on a KFX file. Returns (score, category_scores, cost, duration).
+
+    EB-377: calibrated full VQA (20pg/150dpi), local provider, Claude fallback
+    OFF (free run), serialized via _VQA_SEMAPHORE so concurrent batch workers do
+    not contend on the single R9700 GPU.
+    """
     qa_script = SCRIPT_DIR / "visual_qa.py"
     if not qa_script.exists():
         return None, {}, 0, 0
 
+    argv = [
+        sys.executable, str(qa_script),
+        "--input", str(kfx_path),
+        "--verbose",
+        "--full",                       # visual_qa.py: 20 pages @ 150 DPI
+        "--provider", "local",
+        "--fallback-enabled", "false",  # pass EXACTLY 'false' — keeps run $0
+    ]
+
     t0 = time.time()
     try:
-        result = subprocess.run(
-            [sys.executable, str(qa_script), "--input", str(kfx_path), "--verbose"],
-            capture_output=True, text=True,
-            encoding='utf-8', errors='replace', timeout=300
-        )
+        with _VQA_SEMAPHORE:            # only one VQA subprocess at a time
+            result = subprocess.run(
+                argv, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=900,  # 20pg two-pass
+            )
         duration = time.time() - t0
 
-        # Parse the JSON report that visual_qa.py produces
         report_path = str(kfx_path).rsplit('.', 1)[0] + '_visual_qa_report.json'
         if os.path.isfile(report_path):
             with open(report_path, 'r', encoding='utf-8') as f:
@@ -739,7 +757,6 @@ def run_visual_qa_for_book(kfx_path):
             categories = report.get('category_scores', {})
             cost = report.get('cost_usd', report.get('api_cost_usd', 0))
             return score, categories, cost, duration
-
         return None, {}, 0, duration
     except (subprocess.TimeoutExpired, Exception):
         return None, {}, 0, time.time() - t0
