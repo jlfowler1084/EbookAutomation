@@ -136,6 +136,40 @@ def _run_dir_conflict(run_dir: Path, library_root: Path) -> str | None:
     return None
 
 
+def _path_inside(path, root_parts: tuple) -> bool:
+    """True if `path` resolves to the library root or a descendant of it (case-insensitive,
+    mirroring _run_dir_conflict). Fail-closed: an unresolvable path is treated as NOT inside."""
+    try:
+        pp = tuple(p.lower() for p in Path(path).resolve().parts)
+    except OSError:
+        return False
+    return len(pp) >= len(root_parts) and pp[:len(root_parts)] == root_parts
+
+
+def _containment_violation(rows, library_root: Path, operational: dict) -> str | None:
+    """EB-378 fail-closed gate: every row's source AND resolved target must stay inside
+    --library-root. Returns a reason for the first escaping row, else None.
+
+    The actuator must never move a file out of -- or into from outside -- the library it was
+    pointed at, regardless of manifest provenance. route_target() returns the shelve
+    destination_path verbatim, so without this check a manifest built for a different
+    library_root (e.g. a copied-subset rehearsal whose shelve destinations still point at the
+    real F:\\Books) would silently write moves into that other tree. Both ends are checked:
+    operational rows (review/trash/quarantine) route via library_root and would always look
+    'inside' even when their source is foreign, so the source must be validated too."""
+    try:
+        root_parts = tuple(p.lower() for p in Path(library_root).resolve().parts)
+    except OSError as e:
+        return f"cannot resolve --library-root: {e}"
+    for seq, row in enumerate(rows):
+        if not _path_inside(row.original_path, root_parts):
+            return f"row {seq} source escapes --library-root: {row.original_path}"
+        target = route_target(row, library_root, operational)
+        if target is not None and not _path_inside(target, root_parts):
+            return f"row {seq} target escapes --library-root: {target}"
+    return None
+
+
 def apply_manifest(rows, verdict, backup_proof, library_root, run_dir, *,
                    mode: str = "dry-run", operational: dict | None = None,
                    stamp: str = "unstamped", lock: bool = True) -> ApplyResult:
@@ -180,6 +214,14 @@ def _run(rows, verdict, backup_proof, library_root, run_dir, journal_path,
     binding = verify_binding(rows, verdict)
     if not binding.ok:
         return refuse(f"manifest binding refused (R2): {binding.reason}")
+
+    # Containment gate (EB-378): refuse fail-closed if any source or resolved target escapes
+    # --library-root. route_target returns the shelve destination_path verbatim, so a manifest
+    # built for a different root could otherwise move files into another tree. Checked in BOTH
+    # dry-run and apply -- a manifest that escapes the library is invalid to plan or execute.
+    escape = _containment_violation(rows, library_root, operational)
+    if escape:
+        return refuse(f"containment refused (EB-378): {escape}")
 
     # Backup gate (R3): a FRESH apply only. dry-run mutates nothing; a resume already
     # verified the backup when the run began, and the corpus is now mid-migration so it

@@ -183,6 +183,71 @@ def test_refuses_on_backup_proof_failure_with_no_moves(tmp_path):
     assert _snapshot(lib) == before
 
 
+# --------------------------------------------------------------------------- #
+# Containment (EB-378) — fail closed when a path escapes --library-root
+# --------------------------------------------------------------------------- #
+
+def test_apply_refuses_shelve_target_outside_library_root(tmp_path):
+    """A bound manifest whose shelve destination_path escapes --library-root is refused
+    fail-closed -- the actuator never writes a move outside the library it was pointed at,
+    regardless of manifest provenance (EB-378)."""
+    lib, rows = _build_library(tmp_path)
+    outside = tmp_path / "Elsewhere" / "A - Good.epub"        # NOT under lib
+    rows[0] = _row(original_path=str(lib / "_Inbox" / "good.epub"),
+                   destination_path=str(outside), action="copy",
+                   section="01 History", review_required=False, sha256=_sha(b"good-content"))
+    run_dir = tmp_path / "run"
+    before = _snapshot(lib)
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
+                            lib, run_dir, mode="apply", stamp="S")
+    assert result.ok is False
+    assert "library-root" in (result.refused_reason or "").lower()
+    assert result.moved_count == 0
+    assert _snapshot(lib) == before                  # nothing moved
+    assert not outside.exists()                       # never wrote outside the library
+    assert not (run_dir / "journal.jsonl").exists()   # no moves journaled
+
+
+def test_apply_refuses_source_outside_library_root(tmp_path):
+    """A row whose original_path is outside --library-root is refused fail-closed (operational
+    rows route via library_root and would otherwise look 'inside' despite a foreign source)."""
+    lib, rows = _build_library(tmp_path)
+    stray = tmp_path / "Outside" / "stray.epub"
+    stray.parent.mkdir(parents=True, exist_ok=True)
+    stray.write_bytes(b"stray-content")
+    rows[1] = _row(original_path=str(stray), action="review", sha256=_sha(b"stray-content"))
+    before = _snapshot(lib)
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
+                            lib, tmp_path / "run", mode="apply", stamp="S")
+    assert result.ok is False
+    assert "library-root" in (result.refused_reason or "").lower()
+    assert result.moved_count == 0
+    assert _snapshot(lib) == before
+
+
+def test_dry_run_also_refuses_paths_outside_library_root(tmp_path):
+    """Containment is a manifest<->library-root sanity check, so dry-run refuses too (inert)."""
+    lib, rows = _build_library(tmp_path)
+    rows[0] = _row(original_path=str(lib / "_Inbox" / "good.epub"),
+                   destination_path=str(tmp_path / "Elsewhere" / "x.epub"), action="copy",
+                   section="01 History", review_required=False, sha256=_sha(b"good-content"))
+    run_dir = tmp_path / "run"
+    before = _snapshot(lib)
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
+                            lib, run_dir, mode="dry-run", stamp="S")
+    assert result.ok is False
+    assert "library-root" in (result.refused_reason or "").lower()
+    assert _snapshot(lib) == before
+
+
+def test_apply_allows_manifest_fully_inside_library_root(tmp_path):
+    """Regression: the all-inside production-shaped manifest passes containment and applies."""
+    lib, rows = _build_library(tmp_path)
+    result = apply_manifest(rows, _signed_verdict(rows), _backup_proof_from_mirror(lib, tmp_path),
+                            lib, tmp_path / "run", mode="apply", stamp="S")
+    assert result.ok and result.moved_count == 4
+
+
 def test_dry_run_refuses_run_dir_inside_library_and_stays_inert(tmp_path):
     """R9: a run-dir inside the library would write artifacts into F:\\Books -- refuse before
     creating anything, so dry-run truly mutates nothing."""
