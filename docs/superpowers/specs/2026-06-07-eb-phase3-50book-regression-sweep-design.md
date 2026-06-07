@@ -19,7 +19,7 @@ Run ~50 books through the full PDF→KFX pipeline with free local-Qwen Visual QA
 
 ## 2. Approach
 
-**Chosen — A:** `tools/batch_qa.py run` is the heavy orchestrator. It already chains extraction → KFX (`run_kfx_conversion_for_book`) → local VQA (`run_visual_qa_for_book`) → failure-clustering (`detect_failure_clusters`) → correlation observations (`detect_correlations`) → JSON/MD/HTML reports. That clustering engine *is* the new-pattern detector. Header-bleed is a cheap second scan of the `_kindle.html` intermediates `batch_qa` produces, via `tools/check_header_bleed.py`.
+**Chosen — A:** `tools/batch_qa.py run` is the heavy orchestrator. It already chains extraction → KFX (`run_kfx_conversion_for_book`) → local VQA (`run_visual_qa_for_book`) → failure-clustering (`analyze_patterns`, `batch_qa.py:1358`) → correlation observations (`detect_correlations`, `:1396`) → JSON/MD/HTML reports. That clustering engine *is* the new-pattern detector. Header-bleed is a cheap second scan of the `_kindle.html` intermediates `batch_qa` produces, via `tools/check_header_bleed.py`.
 
 **Rejected — B:** `tools/run_overnight_batch.ps1` as primary. It wires header-bleed (Phase 2.5) and VQA (Phase 3) natively, but Phase 2 runs `Invoke-EbookPipeline`, **not** `batch_qa.py`, so it never produces the clustering/observations engine — exactly the signal we want. Reattaching clustering means re-running extraction. Not worth it.
 
@@ -44,7 +44,8 @@ Run ~50 books through the full PDF→KFX pipeline with free local-Qwen Visual QA
 **39 fresh** from `F:\books` (464-file pool), selected by a script that:
 - Excludes non-books (tax/resume/boarding-pass, `*.mp3`, `*.txt`, stray scripts), duplicate redownloads (`(1)`, `(2)` suffixes), and exploded-EPUB folders.
 - Excludes non-`.pdf` (KFX/VQA is PDF-only — see §4).
-- Samples for variety across file size and subject folder.
+- Samples for variety across file size and subject folder, with a **soft bias toward header-prone genres** (history / philosophy / academic) to stress the EB-374 fix. **No hard genre quota** unless the resulting manifest looks skewed.
+- Uses a **fixed random seed** and records the **strata counts** (size buckets × subject folders) in `logs/batch-selection-2026-06-07.json`, so the 39 fresh picks are reproducible and explainable.
 
 **Sherlock Holmes EPUB is excluded** from this sweep. `batch_qa.py` guards KFX conversion to PDFs (`tools/batch_qa.py:1145`, `if not quick and ext == 'pdf':`), so an EPUB would extract but never get KFX or VQA. Run EPUB coverage separately if wanted.
 
@@ -57,6 +58,7 @@ Run ~50 books through the full PDF→KFX pipeline with free local-Qwen Visual QA
 - **`visual_qa.py` flags exist:** `--provider {claude,local,cloud}`, `--dpi`, `--max-pages`, `--full`, `--fallback-enabled` (`type=lambda x: x.lower() != "false"`).
 - **Config (`config/settings.json:78-100`):** `visual_qa.provider = "local"`, `local_base_url = "http://192.168.1.33:8080/v1"`, `fallback.enabled = true`.
 - **Intermediate HTML canonical path:** `output\kindle\.intermediates\<kfx-basename>_kindle.html` (`module/EbookAutomation.psm1:2364`; matches `run_overnight_batch.ps1:156`). The KFX path runs `Convert-ToKindle -NoCache`, so this is the current-pipeline artifact — scan this, **not** `batch_qa`'s preliminary HTML.
+- **`--max-pages` is a skip filter, not VQA sampling:** in `batch_qa.py`, `max_pages` skips any PDF whose page count exceeds N (`tools/batch_qa.py:852-860`). This run passes **no** `--max-pages` (default `0` = no skip) so large books are not silently dropped. VQA page depth is controlled independently by `visual_qa.py --full`.
 - **R9700 status:** green now — `/v1/models` → `Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf`.
 
 ## 5. Execution contract
@@ -68,7 +70,7 @@ Run ~50 books through the full PDF→KFX pipeline with free local-Qwen Visual QA
 | 3 | Calibrated VQA | `run_visual_qa_for_book` invokes `visual_qa.py --input <kfx> --verbose --full --provider local --fallback-enabled false`. 20 pages @ 150 DPI. |
 | 4 | Free / local-only | `--fallback-enabled false` passed **exactly** (lowercase). Claude fallback OFF; run is $0. The values that silently leave fallback ON are `0`, `no`, `off`, or omitting the flag. |
 | 5 | VQA timeout | Raise the `run_visual_qa_for_book` subprocess timeout 300s → **900s** (20-page two-pass on local Qwen is slower). |
-| 6 | Header-bleed scan | After the batch, scan `output\kindle\.intermediates\*_kindle.html` with `tools/check_header_bleed.py`, writing per-book `header_bleed_report/v1` JSON. |
+| 6 | Header-bleed scan | After the batch, scan **only the 50 KFX basenames recorded in the provenance index** (`output\kindle\.intermediates\<basename>_kindle.html`) with `tools/check_header_bleed.py` — **never a bare `*_kindle.html` glob**, which would pull stale intermediates from prior runs into EB-377. A missing intermediate is recorded as a **coverage gap**, not silently skipped. |
 
 ## 6. Preflight gates (fail-fast, before the overnight run)
 
@@ -86,7 +88,7 @@ All on a feature worktree branch (`feat/EB-377-phase3-sweep-harness`), merged vi
    - Add `visual_qa.py` args `--full --provider local --fallback-enabled false`.
    - Add a module-level `threading.Semaphore(1)` acquired around the subprocess call.
    - Raise the timeout 300 → 900.
-   - Thread the existing `collect_diagnostics(max_pages=…)` param through if a per-call override is later wanted (optional; `--full` covers this run).
+   - Do **not** reuse `max_pages` for VQA sampling — in `batch_qa.py` it already means "skip PDFs over N pages" (`:852`). A future per-call VQA-sampling override needs a separate `vqa_args` / `vqa_mode` param.
    - Unit test: assert the constructed argv contains the four flags and the semaphore serializes (mock subprocess).
 
 2. **`tools/select_batch_corpus.py` (new):** build the 11/39 manifest from `archive/` + `F:\books`, emit a reviewable `logs/batch-selection-2026-06-07.json`, and copy the 50 PDFs into `processing/batch-2026-06-07/`. Copy — never junction.
