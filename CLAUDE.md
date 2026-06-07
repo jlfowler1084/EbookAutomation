@@ -191,10 +191,31 @@ Dev/test dependencies: `py -3.12 -m pip install -r dev-requirements.txt`
 Microsoft Online voices ONLY — do not suggest cloud TTS services.
 
 ## Visual QA System
-KFX → PDF (via Calibre) → PNG (via Poppler) → Cloud VLM primary + Claude fallback (SCRUM-281).
+KFX → PDF (via Calibre) → PNG (via Poppler) → VLM grader (two-pass: detect, then score).
 Checks: heading hierarchy, TOC accuracy, footnote rendering, page breaks, image placement.
-Default provider: `cloud` (Qwen3-VL-A3B via OpenRouter). Requires `OPENROUTER_API_KEY` env var.
-Fallback: pages with known-fallback fingerprints re-evaluated by Claude (`ANTHROPIC_API_KEY`).
+**Default provider: `local`** (`config/settings.json` → `visual_qa.provider`) — a free, local
+OpenAI-compatible VLM endpoint, $0 per book. `cloud` (OpenRouter, `cloud_model`
+`qwen/qwen3-vl-30b-a3b-instruct`, needs `OPENROUTER_API_KEY`) and `claude` are alternate providers,
+not the default. (The old "cloud/OpenRouter primary, SCRUM-281" wording was stale — corrected under EB-390.)
+
+**Endpoint/model resolution — verify the *resolved* values, not just config (EB-390):** env vars
+override `config/settings.json` at runtime. `LOCAL_LLM_BASE_URL` overrides `visual_qa.local_base_url`;
+`LOCAL_LLM_VISION_MODEL` overrides `visual_qa.local_model` (`visual_qa.py` loads `.env` at import). As of
+the EB-377 sweep (2026-06-07): config *names* `http://192.168.1.33:8080/v1` + `Qwen3VL-30B-A3B-Q4_K_M`
+(the R9700), but `.env` *overrides* VQA to `http://localhost:8000/v1` + `qwen3.5-35b-a3b-fp8` — so that
+override is the actual runtime backend. The two are different servers (`localhost:8000` also serves
+`sb-chat`). Always confirm the live value (`os.environ.get('LOCAL_LLM_BASE_URL')` + a `/v1/models` probe)
+before trusting any doc. EB-390 tracks aligning config/`.env`/CLAUDE.md/QWEN.md and making VQA reports
+persist the resolved URL+model.
+
+**Determinism (EB-361):** the local VLM grader is non-deterministic under multi-slot serving
+(batch-dependent numerics — scores can flip across runs). Serve single-slot (vLLM `--max-num-seqs 1`) for
+trustworthy score deltas; validate with `tools/vqa_determinism_check.py --provider local --runs 2
+--tolerance 0` before treating VQA scores as findings (Calibration-Sessions discipline).
+
+**Claude fallback:** pages with known-fallback fingerprints are re-evaluated by Claude (`ANTHROPIC_API_KEY`)
+when `visual_qa.fallback.enabled` is true (default). For free/local-only runs pass `--fallback-enabled false`
+to `visual_qa.py` (the EB-377 batch policy — keeps runs $0).
 See `.env.example` for the full list of required env vars. Config: `config/settings.json` `visual_qa` block.
 Baselines in `data/vqa_baseline_post_274/` are standardized to KFX→Calibre source (SCRUM-282).
 `capture_pipeline` field in VQA baselines records the code branch that ran (`kfx-calibre` or `pdf-direct`); distinct from `source_format` in extraction-pipeline sidecars, which is extension-derived.
