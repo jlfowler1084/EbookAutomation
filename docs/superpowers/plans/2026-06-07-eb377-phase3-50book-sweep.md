@@ -890,8 +890,10 @@ Expected: per-book progress; final `data/batch_reports/batch_<ts>.{json,md,html}
 
 - [ ] **Step 1: Build the provenance index (this also writes the per-book header reports)**
 
-Run: `py -3.12 tools/build_batch_provenance.py --manifest logs/batch-selection-2026-06-07.json --staged-dir processing/batch-2026-06-07 --kfx-dir output\kindle --header-out data\batch_reports\header_bleed --out data\batch_reports\EB-377-provenance.json`
+Run: `py -3.12 tools/build_batch_provenance.py --manifest logs/batch-selection-2026-06-07.json --staged-dir processing/batch-2026-06-07 --batch-qa data\batch_reports\batch_<ts>.json --kfx-dir output\kindle --header-out data\batch_reports\header_bleed --out data\batch_reports\EB-377-provenance.json`
 Expected: `Provenance: {"total": 50, "complete": N, "coverage_gap": M, ...}`. Coverage gaps and KFX failures are expected data, not errors.
+
+> **`--batch-qa` is required, not optional.** `Convert-ToKindle` names KFX output from parsed Title/Author metadata, not the source stem (EbookAutomation.psm1). The provenance join reads the real `kindle_conversion.output_path` from the batch_qa report; without `--batch-qa` it falls back to source-stem paths and would misclassify every metadata-renamed success as `coverage_gap`/`kfx_failed`. Use the `<ts>` from Task 12.
 
 ### Task 14: Synthesize findings
 
