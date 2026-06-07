@@ -127,3 +127,89 @@ def test_caps_per_subject_folder(tmp_path):
     folders = Counter(Path(f["path"]).parent.name for f in result["fresh"])
     assert max(folders.values()) <= 6      # cap honored
     assert len(result["fresh"]) == 20      # still reaches the target
+
+
+# ── EB-377 selector hardening (preflight review found ~8-10 bad fresh picks) ──
+
+def test_excludes_undersized_stub(tmp_path):
+    """Zero-byte / broken downloads (a ~1000pg book at 0 bytes) must be dropped —
+    else they become kfx_failed noise, not pipeline signal."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "Real Book.pdf", mb=1.0)
+    (fresh / "Broken Stub.pdf").parent.mkdir(parents=True, exist_ok=True)
+    (fresh / "Broken Stub.pdf").write_bytes(b"0" * 2048)  # 2 KB stub
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert "Real Book.pdf" in names
+    assert "Broken Stub.pdf" not in names
+
+
+def test_excludes_quarantine_folder(tmp_path):
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "_Quarantine" / "Obfuscating_Code.pdf", mb=1.0)
+    _touch(fresh / "Good" / "real.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert "Obfuscating_Code.pdf" not in names
+    assert "real.pdf" in names
+
+
+def test_excludes_annas_archive_fragments(tmp_path):
+    """Split-facsimile fragments end '... Anna's Archive <n>' — drop them, but
+    keep whole Anna's Archive files (no trailing bare number)."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "First Folio (hash -- Anna’s Archive 57.pdf", mb=0.2)
+    _touch(fresh / "First Folio (hash -- Anna’s Archive 59.pdf", mb=0.2)
+    _touch(fresh / "Whole Book -- Anna’s Archive.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert not any("Archive 57" in n or "Archive 59" in n for n in names)
+    assert any("Whole Book" in n for n in names)
+
+
+def test_dedupes_same_title_different_filenames(tmp_path):
+    """Same book, different filenames (basename-dedup misses these)."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "Wilkinson, Barton - Reading Galaxies After Sunset.pdf", mb=1.0)
+    _touch(fresh / "Reading Galaxies After Sunset -- Barton Wilkinson Oxford.pdf", mb=1.0)
+    _touch(fresh / "An Entirely Separate Treatise.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert len([n for n in names if "Reading Galaxies After Sunset" in n]) == 1
+    assert any("Entirely Separate" in n for n in names)
+
+
+def test_drops_fresh_matching_an_anchor_title(tmp_path):
+    """A fresh pick that is the same book as a regression anchor must be dropped
+    (else the anchor is converted twice and double-counted)."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)  # includes 'Reading Genesis After Darwin.pdf'
+    _touch(fresh / "Wilkinson, Barton & David - Reading Genesis After Darwin.pdf", mb=1.0)
+    _touch(fresh / "An Unrelated Monograph.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    names = [Path(f["path"]).name for f in result["fresh"]]
+    assert not any("Reading Genesis After Darwin" in n for n in names)
+    assert any("Unrelated Monograph" in n for n in names)
+
+
+def test_keeps_distinct_series_volumes(tmp_path):
+    """Volume markers must survive title-dedup — Vol I/II/V are different books."""
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    _touch(fresh / "Arthur Link - Woodrow Wilson Volume I The Road.pdf", mb=1.0)
+    _touch(fresh / "Arthur Link - Woodrow Wilson Volume II The New Freedom.pdf", mb=1.0)
+    _touch(fresh / "Arthur Link - Woodrow Wilson Volume V Campaigns.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=39, seed=377)
+    vols = [n for n in [Path(f["path"]).name for f in result["fresh"]]
+            if "Woodrow Wilson Volume" in n]
+    assert len(vols) == 3
