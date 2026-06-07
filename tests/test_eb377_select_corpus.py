@@ -108,3 +108,22 @@ def test_excludes_spanish_and_amazon_junk(tmp_path):
     assert not any("pasabordo" in n.lower() for n in names)
     assert not any("amazon" in n.lower() for n in names)
     assert "A Real Book.pdf" in names
+
+
+def test_caps_per_subject_folder(tmp_path):
+    """No single subject folder may dominate the fresh picks — guards against the
+    real-pool skew where one un-filed folder supplied ~70% of the batch."""
+    from collections import Counter
+    arch = tmp_path / "archive"
+    fresh = tmp_path / "fresh"
+    _anchors(arch)
+    for i in range(30):  # one dominant folder
+        _touch(fresh / "Dominant" / f"d{i}.pdf", mb=1.0)
+    for folder in ("Alpha", "Beta", "Gamma", "Delta"):  # 4 small folders, 5 each
+        for i in range(5):
+            _touch(fresh / folder / f"{folder.lower()}{i}.pdf", mb=1.0)
+    result = sbc.select_corpus(str(arch), str(fresh), n_fresh=20, seed=377,
+                               max_per_folder=6)
+    folders = Counter(Path(f["path"]).parent.name for f in result["fresh"])
+    assert max(folders.values()) <= 6      # cap honored
+    assert len(result["fresh"]) == 20      # still reaches the target

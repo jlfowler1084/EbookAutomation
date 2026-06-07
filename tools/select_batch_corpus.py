@@ -76,7 +76,7 @@ def _resolve_anchors(archive_dir: Path) -> list[str]:
 
 
 def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
-                  seed: int = 377) -> dict:
+                  seed: int = 377, max_per_folder: int = 6) -> dict:
     archive_dir = Path(archive_dir)
     fresh_dir = Path(fresh_dir)
     anchors = _resolve_anchors(archive_dir)
@@ -98,8 +98,8 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
         stratum = f"{subject}|{_size_bucket(mb)}"
         weight = 2.0 if HEADER_PRONE_RE.search(str(p)) else 1.0
         candidates.append(
-            {"path": str(p), "size_mb": round(mb, 2),
-             "stratum": stratum, "_weight": weight}
+            {"path": str(p), "size_mb": round(mb, 2), "stratum": stratum,
+             "subject": subject, "_weight": weight}
         )
 
     rng = random.Random(seed)
@@ -120,12 +120,37 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
         u = rng.random()
         c["_key"] = u ** (1.0 / c["_weight"])
     candidates.sort(key=lambda c: c["_key"], reverse=True)
-    fresh = candidates[:n_fresh]
+
+    # EB-377 review: cap per subject folder so no single folder dominates the
+    # fresh set (the weighted sample is global by count, which let _Needs_Review
+    # take ~70%). Greedy over the key-sorted list preserves weighted preference.
+    fresh = []
+    per_folder: dict[str, int] = {}
+    for c in candidates:
+        if per_folder.get(c["subject"], 0) >= max_per_folder:
+            continue
+        fresh.append(c)
+        per_folder[c["subject"]] = per_folder.get(c["subject"], 0) + 1
+        if len(fresh) >= n_fresh:
+            break
+    # If the cap left us short, top up from the remaining key-ordered candidates,
+    # accepting cap overflow rather than an undersized batch.
+    if len(fresh) < n_fresh:
+        chosen = {c["path"] for c in fresh}
+        for c in candidates:
+            if c["path"] in chosen:
+                continue
+            fresh.append(c)
+            if len(fresh) >= n_fresh:
+                break
+        log.warning("per-folder cap %d under-filled; topped up to %d (cap "
+                    "overflow) — pool may lack folder diversity",
+                    max_per_folder, len(fresh))
 
     strata_counts: dict[str, int] = {}
     for c in fresh:
         strata_counts[c["stratum"]] = strata_counts.get(c["stratum"], 0) + 1
-        del c["_weight"], c["_key"]
+        del c["_weight"], c["_key"], c["subject"]
 
     if len(fresh) < n_fresh:
         log.warning("Only %d fresh candidates after filtering (< %d requested)",
@@ -155,12 +180,15 @@ def main(argv=None):
     ap.add_argument("--fresh", default=r"F:\books")
     ap.add_argument("--n-fresh", type=int, default=39)
     ap.add_argument("--seed", type=int, default=377)
+    ap.add_argument("--max-per-folder", type=int, default=6,
+                    help="Cap fresh picks per subject folder (variety guard).")
     ap.add_argument("--out", default="logs/batch-selection-2026-06-07.json")
     ap.add_argument("--stage", default=None,
                     help="If set, copy the 50 PDFs into this directory.")
     args = ap.parse_args(argv)
 
-    manifest = select_corpus(args.archive, args.fresh, args.n_fresh, args.seed)
+    manifest = select_corpus(args.archive, args.fresh, args.n_fresh, args.seed,
+                             args.max_per_folder)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
