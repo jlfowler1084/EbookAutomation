@@ -111,7 +111,7 @@ def _resolve_anchors(archive_dir: Path) -> list[str]:
 
 def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
                   seed: int = 377, max_per_folder: int = 6,
-                  min_size_kb: int = 30) -> dict:
+                  min_size_kb: int = 30, exclude_folders=None) -> dict:
     archive_dir = Path(archive_dir)
     fresh_dir = Path(fresh_dir)
     anchors = _resolve_anchors(archive_dir)
@@ -119,15 +119,19 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
 
     candidates = []
     min_size_bytes = max(0, min_size_kb) * 1024
+    excluded = {f.lower() for f in (exclude_folders or [])}
     for p in fresh_dir.rglob("*.pdf"):
         name = p.name
         if JUNK_RE.search(name) or DUPE_RE.search(name):
             continue
         if FRAGMENT_RE.search(p.stem):       # split-facsimile fragment, not a book
             continue
-        # EB-377 review: drop files living under trash / non-book folders.
+        # EB-377 review: drop files under trash / non-book folders, or under a
+        # folder the reviewer excluded at runtime (--exclude-folder).
         rel_dirs = p.relative_to(fresh_dir).parts[:-1]
         if any(EXCLUDE_DIR_RE.match(part) for part in rel_dirs):
+            continue
+        if excluded and any(part.lower() in excluded for part in rel_dirs):
             continue
         if p.stem.lower() in anchor_stems:
             continue
@@ -239,13 +243,18 @@ def main(argv=None):
                     help="Cap fresh picks per subject folder (variety guard).")
     ap.add_argument("--min-size-kb", type=int, default=30,
                     help="Drop fresh PDFs smaller than this (broken stubs).")
+    ap.add_argument("--exclude-folder", action="append", default=None,
+                    dest="exclude_folders", metavar="FOLDER",
+                    help="Drop fresh PDFs under this folder name (repeatable, "
+                         "case-insensitive). Manifest-review escape hatch.")
     ap.add_argument("--out", default="logs/batch-selection-2026-06-07.json")
     ap.add_argument("--stage", default=None,
                     help="If set, copy the 50 PDFs into this directory.")
     args = ap.parse_args(argv)
 
     manifest = select_corpus(args.archive, args.fresh, args.n_fresh, args.seed,
-                             args.max_per_folder, args.min_size_kb)
+                             args.max_per_folder, args.min_size_kb,
+                             args.exclude_folders)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
