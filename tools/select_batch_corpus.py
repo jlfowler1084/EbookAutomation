@@ -35,10 +35,18 @@ ANCHOR_PATTERNS = [
 ]
 
 JUNK_RE = re.compile(
-    r"(tax[_ ]?return|resume|cv|boarding[_ ]?pass|insurance|w-?2|1099|"
-    r"invoice|receipt|statement)", re.IGNORECASE,
+    r"(tax[_ ]?return|resume|cv|boarding[_ ]?pass|pasabordo|pasaporte|"
+    r"insurance|w-?2|1099|invoice|receipt|statement|itinerary|"
+    r"amazon[._ -]*(?:com|order)|\d{3}-\d{7}-\d{7})", re.IGNORECASE,
 )
 DUPE_RE = re.compile(r"\(\d+\)\.pdf$", re.IGNORECASE)
+# EB-377 review: exclude whole non-book / trash FOLDERS by path component —
+# filename-only JUNK_RE missed real-pool dirs like _Trash_Pending/ and Non_Books/.
+EXCLUDE_DIR_RE = re.compile(
+    r"^(?:_?trash(?:[_ ]?pending)?|non[_ ]?books?|_?junk|"
+    r"_?recycle(?:[_ ]?bin)?|_?archive[_ ]?junk|pending[_ ]?delete)$",
+    re.IGNORECASE,
+)
 HEADER_PRONE_RE = re.compile(
     r"(history|philosoph|theolog|classic|academ|ancient|empire|"
     r"princip|gods|religion|patristic)", re.IGNORECASE,
@@ -79,6 +87,10 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
         name = p.name
         if JUNK_RE.search(name) or DUPE_RE.search(name):
             continue
+        # EB-377 review: drop files living under trash / non-book folders.
+        rel_dirs = p.relative_to(fresh_dir).parts[:-1]
+        if any(EXCLUDE_DIR_RE.match(part) for part in rel_dirs):
+            continue
         if p.stem.lower() in anchor_stems:
             continue
         mb = p.stat().st_size / (1024 * 1024)
@@ -92,6 +104,18 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
 
     rng = random.Random(seed)
     candidates.sort(key=lambda c: c["path"])  # stable base order before keying
+    # EB-377 review: dedupe by basename BEFORE sampling. Task 3 joins artifacts
+    # by basename and stage() copies by basename, so two same-named PDFs would
+    # collide/overwrite. Keep the first in path-sorted (deterministic) order.
+    _seen_names: set[str] = set()
+    _deduped = []
+    for c in candidates:
+        nm = Path(c["path"]).name.lower()
+        if nm in _seen_names:
+            continue
+        _seen_names.add(nm)
+        _deduped.append(c)
+    candidates = _deduped
     for c in candidates:
         u = rng.random()
         c["_key"] = u ** (1.0 / c["_weight"])
