@@ -43,10 +43,14 @@ DUPE_RE = re.compile(r"\(\d+\)\.pdf$", re.IGNORECASE)
 # EB-377 review: exclude whole non-book / trash FOLDERS by path component —
 # filename-only JUNK_RE missed real-pool dirs like _Trash_Pending/ and Non_Books/.
 EXCLUDE_DIR_RE = re.compile(
-    r"^(?:_?trash(?:[_ ]?pending)?|non[_ ]?books?|_?junk|"
+    r"^(?:_?trash(?:[_ ]?pending)?|non[_ ]?books?|_?junk|_?quarantine|"
     r"_?recycle(?:[_ ]?bin)?|_?archive[_ ]?junk|pending[_ ]?delete)$",
     re.IGNORECASE,
 )
+# EB-377 review: split-facsimile fragments end with "Anna's Archive <n>" (e.g. a
+# First Folio fractured into pieces). Whole files end "...Anna's Archive" or
+# "...Anna's Archive_<timestamp>" — only a trailing bare number marks a fragment.
+FRAGMENT_RE = re.compile(r"anna.s\s+archive\s+\d+\s*$", re.IGNORECASE)
 HEADER_PRONE_RE = re.compile(
     r"(history|philosoph|theolog|classic|academ|ancient|empire|"
     r"princip|gods|religion|patristic)", re.IGNORECASE,
@@ -60,6 +64,36 @@ def _size_bucket(mb: float) -> str:
         if lo <= mb < hi:
             return f"{lo}-{hi}MB"
     return "huge"
+
+
+# EB-377 review: title-level dedup. Basename dedup misses the same book under
+# different filenames, and a fresh pick that duplicates a regression anchor.
+_VOL_RE = re.compile(
+    r"\b(?:vol(?:ume)?|part|book)\s*\.?\s*"
+    r"([ivxlcdm]+|\d+(?:\.[0-9ivxlcdm]+)?)\b", re.IGNORECASE)
+_TITLE_CRUFT_RE = re.compile(
+    r"libgen[.\s]?li|anna.{0,3}s\s+archive|z-lib|"
+    r"\b[0-9a-f]{16,}\b|\b(?:19|20)\d{2}\b|\b97[89]\d{10}\b", re.IGNORECASE)
+
+
+def _title_sig(stem: str) -> tuple:
+    """(significant-token frozenset, volume-marker or None) for title dedup."""
+    low = stem.lower()
+    mvol = _VOL_RE.search(low)
+    vol = "vol_" + mvol.group(1).replace(" ", "") if mvol else None
+    cleaned = re.sub(r"[^a-z0-9]+", " ", _TITLE_CRUFT_RE.sub(" ", low))
+    toks = frozenset(t for t in cleaned.split()
+                     if len(t) >= 4 and not t.isdigit())
+    return toks, vol
+
+
+def _same_title(a: tuple, b: tuple) -> bool:
+    toks_a, vol_a = a
+    toks_b, vol_b = b
+    if vol_a and vol_b and vol_a != vol_b:
+        return False                       # explicit different volumes survive
+    smaller = min(len(toks_a), len(toks_b))
+    return smaller >= 4 and len(toks_a & toks_b) / smaller >= 0.8
 
 
 def _resolve_anchors(archive_dir: Path) -> list[str]:
@@ -76,16 +110,20 @@ def _resolve_anchors(archive_dir: Path) -> list[str]:
 
 
 def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
-                  seed: int = 377, max_per_folder: int = 6) -> dict:
+                  seed: int = 377, max_per_folder: int = 6,
+                  min_size_kb: int = 30) -> dict:
     archive_dir = Path(archive_dir)
     fresh_dir = Path(fresh_dir)
     anchors = _resolve_anchors(archive_dir)
     anchor_stems = {Path(a).stem.lower() for a in anchors}
 
     candidates = []
+    min_size_bytes = max(0, min_size_kb) * 1024
     for p in fresh_dir.rglob("*.pdf"):
         name = p.name
         if JUNK_RE.search(name) or DUPE_RE.search(name):
+            continue
+        if FRAGMENT_RE.search(p.stem):       # split-facsimile fragment, not a book
             continue
         # EB-377 review: drop files living under trash / non-book folders.
         rel_dirs = p.relative_to(fresh_dir).parts[:-1]
@@ -93,7 +131,10 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
             continue
         if p.stem.lower() in anchor_stems:
             continue
-        mb = p.stat().st_size / (1024 * 1024)
+        size_bytes = p.stat().st_size
+        if size_bytes < min_size_bytes:      # 0-byte / broken download stub
+            continue
+        mb = size_bytes / (1024 * 1024)
         subject = p.parent.name if p.parent != fresh_dir else "_root"
         stratum = f"{subject}|{_size_bucket(mb)}"
         weight = 2.0 if HEADER_PRONE_RE.search(str(p)) else 1.0
@@ -116,6 +157,20 @@ def select_corpus(archive_dir: str, fresh_dir: str, n_fresh: int = 39,
         _seen_names.add(nm)
         _deduped.append(c)
     candidates = _deduped
+    # EB-377 review: title-level dedup — drop same-book-different-filename and
+    # any fresh pick that duplicates a regression anchor (volume markers kept).
+    anchor_sigs = [_title_sig(Path(a).stem) for a in anchors]
+    accepted_sigs: list = []
+    _title_deduped = []
+    for c in candidates:
+        sig = _title_sig(Path(c["path"]).stem)
+        if any(_same_title(sig, asig) for asig in anchor_sigs):
+            continue
+        if any(_same_title(sig, esig) for esig in accepted_sigs):
+            continue
+        accepted_sigs.append(sig)
+        _title_deduped.append(c)
+    candidates = _title_deduped
     for c in candidates:
         u = rng.random()
         c["_key"] = u ** (1.0 / c["_weight"])
@@ -182,13 +237,15 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=377)
     ap.add_argument("--max-per-folder", type=int, default=6,
                     help="Cap fresh picks per subject folder (variety guard).")
+    ap.add_argument("--min-size-kb", type=int, default=30,
+                    help="Drop fresh PDFs smaller than this (broken stubs).")
     ap.add_argument("--out", default="logs/batch-selection-2026-06-07.json")
     ap.add_argument("--stage", default=None,
                     help="If set, copy the 50 PDFs into this directory.")
     args = ap.parse_args(argv)
 
     manifest = select_corpus(args.archive, args.fresh, args.n_fresh, args.seed,
-                             args.max_per_folder)
+                             args.max_per_folder, args.min_size_kb)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
