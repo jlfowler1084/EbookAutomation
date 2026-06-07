@@ -1,0 +1,67 @@
+{
+  "run": "20260607-082401",
+  "branch": "master",
+  "ticket": "EB-375",
+  "green": true,
+  "manifest_digest": "ead5693a8c4283b228ff21ce6da38851792d4b099e8c5b7453514da9857e5542",
+  "stamp": "20260607-082401",
+  "gates": {
+    "determinism": {
+      "pass": true,
+      "run_a_len": 680,
+      "run_b_len": 680
+    },
+    "wrong_shelf": {
+      "pass": true,
+      "count": 0,
+      "shelf_rows_sampled": 16
+    },
+    "auto_shelf_floor": {
+      "pass": true,
+      "auto_shelf_count": 225,
+      "floor": 224
+    },
+    "trash_safety": {
+      "pass": true,
+      "trash_rows": 44,
+      "violations": 0
+    },
+    "human_sign_off": {
+      "pass": true,
+      "signed_off_by": "Joe Fowler (jlfowler1084)",
+      "spot_check_size": 50
+    }
+  },
+  "action_tally": {
+    "review": 409,
+    "copy": 225,
+    "trash": 44,
+    "quarantine": 2
+  },
+  "spot_check_notes": {
+    "borderline_accepted_as_shelved": [
+      {
+        "spot_index": 16,
+        "file": "The Protestant Establishment Revisited (Baltzell)",
+        "shelved": "03 Religion & Bible Study / Christianity (History & Denominations)",
+        "note": "Signer accepted as-shelved for this pass; arguably 04 Politics & Society. Hand-move post-apply if desired (reversible until finalize)."
+      },
+      {
+        "spot_index": 25,
+        "file": "The Culture of Critique (Kevin MacDonald)",
+        "shelved": "01 History / Modern & 20th-Century General",
+        "note": "Signer accepted as-shelved for this pass; arguably 07 Conspiracy/Fringe or 04 Politics. Hand-move post-apply if desired (reversible until finalize)."
+      }
+    ]
+  },
+  "evaluate_calibration": {
+    "deterministic": true,
+    "wrong_shelf_count": 0,
+    "spot_check_size": 50,
+    "signed_off_by": "Joe Fowler (jlfowler1084)",
+    "green": true,
+    "reason": "GREEN: deterministic, zero wrong-shelf, signed off."
+  },
+  "reason": "GREEN: determinism YES (680/680), wrong_shelf==0 (signed; #16/#25 accepted as-shelved), auto_shelf 225>=224, trash-safety 0 violations.",
+  "manifest": "data/batch_reports/book_filer_whatif/20260607-082401/run-a/plan-20260607-082401.json"
+}

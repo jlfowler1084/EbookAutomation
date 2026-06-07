@@ -1,0 +1,7 @@
+{
+  "note": "Run evaluate_calibration() with signed_off_by after human spot-check review.",
+  "deterministic": false,
+  "spot_check_size": 50,
+  "green": false,
+  "reason": "Pending human sign-off"
+}
