@@ -229,10 +229,21 @@ if (-not (Test-Path $ScanRoot -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# EB-380 U5: skip _-prefixed operational dirs and Audio_Books (TTS derivatives)
+$_tcExcluded = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+$_tcExcluded.Add('Audio_Books') | Out-Null
+
+$_tcScanDirs = @(Get-ChildItem -Path $ScanRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.Name.StartsWith('_') -and -not $_tcExcluded.Contains($_.Name) })
+
 $allPdfs = @(
-    Get-ChildItem -Path $ScanRoot -Filter '*.pdf' -Recurse -File -ErrorAction SilentlyContinue |
-    Sort-Object FullName
-)
+    if ($_tcScanDirs) {
+        $_tcScanDirs | ForEach-Object {
+            Get-ChildItem -Path $_.FullName -Filter '*.pdf' -Recurse -File -ErrorAction SilentlyContinue
+        }
+    }
+) | Sort-Object FullName
 $totalFound = $allPdfs.Count
 
 if ($totalFound -eq 0) {

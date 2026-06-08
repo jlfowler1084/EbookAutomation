@@ -33,9 +33,21 @@ if (-not (Test-Path $BooksRoot)) {
     exit 1
 }
 
-# -- Scan all files recursively --
-$allFiles = Get-ChildItem -Path $BooksRoot -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -and $_.Extension.Length -gt 1 }
+# -- Scan all files recursively (EB-380 U5: skip operational and non-library dirs) --
+# Skip any top-level folder that starts with '_' (operational: _Inbox, _Needs_Review, etc.)
+# or is in the explicit deny-list (Audio_Books — TTS outputs, not shelf books).
+$_excludedTopLevel = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+$_excludedTopLevel.Add('Audio_Books') | Out-Null
+
+$_scanDirs = @(Get-ChildItem -Path $BooksRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.Name.StartsWith('_') -and -not $_excludedTopLevel.Contains($_.Name) })
+
+$allFiles = if ($_scanDirs) {
+    $_scanDirs | ForEach-Object {
+        Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue
+    } | Where-Object { $_.Extension -and $_.Extension.Length -gt 1 }
+} else { @() }
 
 $byExt = @{}
 foreach ($f in $allFiles) {

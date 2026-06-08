@@ -7,7 +7,7 @@ interrupted downloads, exponential backoff retry, and format preference logic.
 
 Usage:
     python book_downloader.py download --ids 12345,67890 --format epub
-    python book_downloader.py download --ids 12345,67890 --format pdf --output-dir "F:\Books\BookFinder"
+    python book_downloader.py download --ids 12345,67890 --format pdf --output-dir "F:\Books\_Inbox\BookFinder"
     python book_downloader.py download --json results.json
     python book_downloader.py download --list          # show queue status
     python book_downloader.py download --resume        # resume failed downloads
@@ -39,7 +39,7 @@ if sys.platform == 'win32':
 # Config
 # ---------------------------------------------------------------------------
 
-DEFAULT_OUTPUT_ROOT = r"F:\Books\BookFinder"
+DEFAULT_OUTPUT_ROOT = r"F:\Books\_Inbox\BookFinder"
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_RETRY_DELAY = 30  # seconds between retries
 DEFAULT_MAX_RETRY_BACKOFF = 300  # max backoff (5 minutes)

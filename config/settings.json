@@ -186,7 +186,7 @@
   "archive_originals": true,
   "log_level": "INFO",
   "BookFinder": {
-    "output_root": "F:\\Books\\BookFinder",
+    "output_root": "F:\\Books\\_Inbox\\BookFinder",
     "default_format": "epub",
     "format_preference": ["epub", "pdf", "mobi", "azw3", "txt", "djvu"],
     "max_retries": 5,
