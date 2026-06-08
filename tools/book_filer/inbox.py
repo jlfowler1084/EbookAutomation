@@ -526,3 +526,55 @@ def _sweep_locked(
         queue_written=True,
         summary=f"swept {total} file(s): {summary}" if total else "swept 0 files",
     )
+
+
+# ── CLI entry point ───────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    from .config import load_library_config
+    from .taxonomy import load_taxonomy
+
+    parser = argparse.ArgumentParser(description="Inbox sweep driver (EB-380 U2)")
+    parser.add_argument("--library-root", required=True,
+                        help="Canonical library root (must match config)")
+    parser.add_argument("--run-dir", required=True,
+                        help="Run directory for queue and lock")
+    parser.add_argument("--settings-path", default=None,
+                        help="Path to settings.json (default: config/settings.json)")
+    parser.add_argument("--settle-seconds", type=int, default=30,
+                        help="Minimum file age in seconds before eligible (default: 30)")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+
+    try:
+        config = load_library_config(args.settings_path)
+        taxonomy = load_taxonomy()
+    except Exception as exc:
+        print(f"INBOX-SWEEP FATAL: config/taxonomy load failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    run_dir_path = Path(args.run_dir)
+    run_dir_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = sweep_inbox(
+            config,
+            run_dir_path,
+            taxonomy,
+            library_root_arg=Path(args.library_root),
+            settle_seconds=args.settle_seconds,
+        )
+    except Exception as exc:
+        print(f"INBOX-SWEEP FATAL: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if result.skipped_lock:
+        print("INBOX-SWEEP: skipped: lock held", file=sys.stderr)
+        sys.exit(3)
+
+    print(result.summary, flush=True)
+    sys.exit(0)
