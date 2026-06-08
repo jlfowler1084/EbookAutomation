@@ -6,6 +6,9 @@ from pathlib import Path
 from .config import LibraryConfig
 from .reparse import has_reparse_in_ancestry
 
+# Per-source intake subfolders staged inside _Inbox for the steady-state auto-filer (EB-380).
+_INBOX_SUBFOLDERS: tuple[str, ...] = ("BookFinder", "Manual", "Conversions", "Migration")
+
 
 class UnsafeLayoutError(RuntimeError):
     """A scaffold target is a reparse point or an existing non-directory."""
@@ -47,4 +50,23 @@ def ensure_operational_layout(config: LibraryConfig) -> list[Path]:
         if _ensure_safe_dir(folder):
             created.append(folder)
     _ensure_safe_dir(config.documents_root)
+    return created
+
+
+def ensure_inbox_subfolders(config: LibraryConfig) -> list[Path]:
+    """Create per-source intake subfolders inside _Inbox. Returns folders newly created.
+
+    Ensures _Inbox itself exists first (it is listed in operational_folders and created
+    by ensure_operational_layout, but this function is safe to call standalone). Each
+    subfolder is validated via _ensure_safe_dir, which raises UnsafeLayoutError if any
+    reparse point appears in the path or ancestry (SCRUM-301 junction-traversal defense).
+    A second call is a no-op and returns [].
+    """
+    inbox = config.library_root / "_Inbox"
+    _ensure_safe_dir(inbox)
+    created: list[Path] = []
+    for name in _INBOX_SUBFOLDERS:
+        subfolder = inbox / name
+        if _ensure_safe_dir(subfolder):
+            created.append(subfolder)
     return created
