@@ -37,8 +37,13 @@ IN_FLIGHT_EXTS: frozenset[str] = frozenset({
     ".crdownload", ".part", ".tmp", ".!qb",
 })
 
-# Confidence thresholds for tier routing.  Calibrated in U6; injectable for testing.
-_DEFAULT_THRESHOLDS: dict[str, float] = {"low": 0.3, "high": 0.6}
+# Confidence thresholds for tier routing.  Injectable for testing.
+# "low" routes review dispositions with a known section to "ambiguous" rather than "no_match".
+# U6 decision: "high" key dropped — propose is gated by cls.disposition=="shelf" (which
+# embeds taxonomy.confidence_threshold); a second inbox-level "high" gate creates a
+# [threshold, 0.6) deadband inconsistency.  Graduation path: raise confidence_threshold
+# in taxonomy JSON after >=150 live observations with per-section coverage.
+_DEFAULT_THRESHOLDS: dict[str, float] = {"low": 0.3}
 
 # Tiers that are safe to short-circuit when (path, size, mtime) unchanged.
 _STABLE_TIERS: frozenset[str] = frozenset({
@@ -390,7 +395,8 @@ def sweep_inbox(
     settle_seconds :
         Minimum file age in seconds before a file is eligible.
     tier_thresholds :
-        Confidence thresholds: ``"low"`` and ``"high"``.  None → module defaults.
+        Confidence thresholds: ``"low"`` routes review-disposition files with a known
+        section to "ambiguous" rather than "no_match".  None → module defaults.
     _shelf_oracle :
         Injection point.  ``_LIVE`` (default) = build from shelf; ``frozenset`` =
         use as-is; ``None`` = oracle unavailable → all files → review_oracle_missing.
