@@ -6890,7 +6890,7 @@ function Invoke-EbookBookDownload {
         Preferred download format: epub, pdf, mobi, azw3, txt, djvu.
 
     .PARAMETER OutputDir
-        Download root directory. Default: F:\Books\BookFinder.
+        Download root directory. Default: F:\Books\_Inbox\BookFinder.
 
     .PARAMETER MaxRetries
         Max download retries per book (default: 5).
@@ -6971,7 +6971,7 @@ function Invoke-EbookBookDownload {
         $defaultOutputDir = if ($bookFinderCfg.output_root) {
             $bookFinderCfg.output_root
         } else {
-            'F:\Books\BookFinder'
+            'F:\Books\_Inbox\BookFinder'
         }
         $queued = @()
     }
@@ -7074,7 +7074,7 @@ function Invoke-EbookBookDownloadFromList {
         Preferred format: epub, pdf, mobi, azw3, txt, djvu.
 
     .PARAMETER OutputDir
-        Download root directory. Default: F:\Books\BookFinder.
+        Download root directory. Default: F:\Books\_Inbox\BookFinder.
 
     .PARAMETER MaxRetries
         Max download retries per book (default: 5).
@@ -7111,7 +7111,7 @@ function Invoke-EbookBookDownloadFromList {
         $defaultOutputDir = if ($bookFinderCfg.output_root) {
             $bookFinderCfg.output_root
         } else {
-            'F:\Books\BookFinder'
+            'F:\Books\_Inbox\BookFinder'
         }
         $allTitles = @()
     }
