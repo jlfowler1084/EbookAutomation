@@ -1,0 +1,24 @@
+diff --git a/module/EbookAutomation.psm1 b/module/EbookAutomation.psm1
+index da88567..94283c6 100644
+--- a/module/EbookAutomation.psm1
++++ b/module/EbookAutomation.psm1
+@@ -2531,7 +2531,18 @@ function Invoke-EbookPipeline {
+         [switch]$ValidateVisual,
+         [switch]$NoCache,
+         [switch]$SendToKindle,
+-        [switch]$EmailToKindle
++        [switch]$EmailToKindle,
++
++        [ValidateSet('full','clean-read','text-only')]
++        [string]$Profile = 'full',
++
++        [switch]$NoFootnotes,
++        [switch]$NoIndex,
++        [switch]$NoHyperlinks,
++        [switch]$NoFrontMatter,
++        [switch]$NoBackMatter,
++        [switch]$NoImages,
++        [switch]$NoBlockQuotes
+     )
+ 
+     $pipelineStart  = Get-Date
