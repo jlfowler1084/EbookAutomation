@@ -3948,7 +3948,29 @@ function Invoke-EbookPipeline {
                 # NOTE: For multi-file merges (e.g. Obsidian notes), use Merge-ToKindle instead
                 $kindleStart = Get-Date
                 try {
-                    $kindleResult = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir -UseHtmlExtraction:$useHtml -UseClaudeChapters:$UseClaudeChapters -UseOCR:$useOcrAuto -ForceColumns:$ForceColumns -ValidateVisual:$ValidateVisual -NoCache:$NoCache -UseVision:$UseVision -VisionCostLimit $VisionCostLimit -UseGemini:$UseGemini -GeminiRemediate:$GeminiRemediate -GeminiCostLimit $GeminiCostLimit -ProduceEpub:$emailActive -ApplyAIFixes:$ApplyAIFixes
+                    $kindleResult = Convert-ToKindle -InputFile $workCopy -OutputDir $kindleDir `
+                        -UseHtmlExtraction:$useHtml `
+                        -UseClaudeChapters:$UseClaudeChapters `
+                        -UseOCR:$useOcrAuto `
+                        -ForceColumns:$ForceColumns `
+                        -ValidateVisual:$ValidateVisual `
+                        -NoCache:$NoCache `
+                        -UseVision:$UseVision `
+                        -VisionCostLimit $VisionCostLimit `
+                        -UseGemini:$UseGemini `
+                        -GeminiRemediate:$GeminiRemediate `
+                        -GeminiCostLimit $GeminiCostLimit `
+                        -ProduceEpub:$emailActive `
+                        -ApplyAIFixes:$ApplyAIFixes `
+                        -Profile $Profile `
+                        -NoFootnotes:$NoFootnotes `
+                        -NoIndex:$NoIndex `
+                        -NoBibliography:$NoBibliography `
+                        -NoHyperlinks:$NoHyperlinks `
+                        -NoFrontMatter:$NoFrontMatter `
+                        -NoBackMatter:$NoBackMatter `
+                        -NoImages:$NoImages `
+                        -NoBlockQuotes:$NoBlockQuotes
                     $kindleDuration = (Get-Date) - $kindleStart
                     $kindleOk = $kindleResult -and $kindleResult.Success
 
