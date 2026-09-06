@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -80,6 +81,12 @@ class DeterminismVerdict:
     ``tolerance`` AND no page is missing in either run. Issue-category drift is
     reported via ``n_issue_drift_pages`` but never flips ``deterministic`` on its
     own (EB-361 gates on per-page score, per the approved decision).
+
+    EB-392 Unit 2: ``provider_resolved_runs`` / ``could_not_assess`` /
+    ``could_not_assess_reason`` are additive provenance fields. A verdict built
+    by the pure ``compare_reports`` comparator (no provider context) leaves
+    them at their defaults; ``run_determinism_check`` fills them in when it can
+    see the runner's per-run reports.
     """
 
     deterministic: bool
@@ -94,6 +101,9 @@ class DeterminismVerdict:
     missing_pages: list[int]
     page_deltas: list[PageDelta] = field(default_factory=list)
     note: str = ""
+    provider_resolved_runs: list[dict] = field(default_factory=list)
+    could_not_assess: bool = False
+    could_not_assess_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +299,42 @@ def _merge_verdicts(verdicts: list[DeterminismVerdict], *, tolerance: int) -> De
 
 
 # ---------------------------------------------------------------------------
+# EB-392 Unit 2: provider/server drift detection between runs
+# ---------------------------------------------------------------------------
+
+# Always compared: a change in any of these means the runs graded under
+# genuinely different server conditions and per-page scores cannot be
+# meaningfully compared for determinism.
+_DRIFT_FIELDS_ALWAYS = ("base_url", "n_ctx", "total_slots")
+# Compared only when BOTH runs report a non-null value: many servers (e.g.
+# llama.cpp with no reachable /props, or any provider without describe())
+# never expose model_path, and a None-vs-None pair carries no information
+# about whether the underlying weights actually changed.
+_DRIFT_FIELDS_WHEN_BOTH_PRESENT = ("model_path",)
+
+
+def _detect_provider_drift(provider_resolved_runs: list[dict]) -> str | None:
+    """Return a reason string naming the first field that differs across
+    runs, or None if the resolved provider identity is consistent throughout.
+    """
+    if len(provider_resolved_runs) < 2:
+        return None
+    base = provider_resolved_runs[0]
+    for other in provider_resolved_runs[1:]:
+        for field_name in _DRIFT_FIELDS_ALWAYS:
+            if base.get(field_name) != other.get(field_name):
+                return (
+                    f"{field_name} differs between runs: "
+                    f"{base.get(field_name)!r} vs {other.get(field_name)!r}"
+                )
+        for field_name in _DRIFT_FIELDS_WHEN_BOTH_PRESENT:
+            a_val, b_val = base.get(field_name), other.get(field_name)
+            if a_val is not None and b_val is not None and a_val != b_val:
+                return f"{field_name} differs between runs: {a_val!r} vs {b_val!r}"
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -305,6 +351,18 @@ def run_determinism_check(
     two measurement passes never interleave on the node with each other; whether
     *other* clients interleave is what the check is designed to detect.
 
+    EB-392 Unit 2: before comparing scores, checks whether the reports'
+    ``provider_resolved`` blocks (base_url / n_ctx / total_slots / model_path)
+    agree across runs. A server that changed identity mid-check (a different
+    endpoint, a different served context window, a different total_slots, or
+    -- when both runs expose it -- different weights) makes any score
+    comparison meaningless, so this short-circuits to a ``could_not_assess``
+    verdict (exit 2) naming the drifted field, rather than reporting a
+    misleadingly clean or dirty score-determinism result. ``provider_resolved``
+    is missing (older/legacy reports, or a runner not yet emitting it) is not
+    an error -- drift detection degrades to "nothing to compare" and score
+    comparison proceeds normally.
+
     Args:
         runner: callable returning a report dict for run index i.
         runs: number of runs (>= 2).
@@ -317,15 +375,49 @@ def run_determinism_check(
         raise ValueError(f"runs must be >= 2 to assess determinism (got {runs})")
 
     reports = [runner(i) for i in range(runs)]
+    provider_resolved_runs = [r.get("provider_resolved") or {} for r in reports]
+
+    drift_reason = _detect_provider_drift(provider_resolved_runs)
+    if drift_reason is not None:
+        logger.error(
+            "EB-392: provider/server identity drifted between determinism "
+            "runs -- %s. Scores cannot be compared.", drift_reason,
+        )
+        return DeterminismVerdict(
+            deterministic=False,
+            tolerance=tolerance,
+            pages_compared=0,
+            n_score_diffs=0,
+            max_abs_delta=None,
+            overall_score_a=reports[0].get("overall_score"),
+            overall_score_b=reports[1].get("overall_score") if len(reports) > 1 else None,
+            overall_abs_delta=None,
+            n_issue_drift_pages=0,
+            missing_pages=[],
+            page_deltas=[],
+            note=f"could not assess: provider drift between runs ({drift_reason})",
+            provider_resolved_runs=provider_resolved_runs,
+            could_not_assess=True,
+            could_not_assess_reason=drift_reason,
+        )
+
     verdicts = [
         compare_reports(reports[0], reports[i], tolerance=tolerance)
         for i in range(1, runs)
     ]
-    return verdicts[0] if len(verdicts) == 1 else _merge_verdicts(verdicts, tolerance=tolerance)
+    verdict = verdicts[0] if len(verdicts) == 1 else _merge_verdicts(verdicts, tolerance=tolerance)
+    verdict.provider_resolved_runs = provider_resolved_runs
+    return verdict
 
 
 def verdict_to_exit_code(verdict: DeterminismVerdict) -> int:
-    """0 when deterministic, 1 otherwise (infra errors map to 2 in main)."""
+    """0 deterministic, 1 non-deterministic, 2 could not be assessed.
+
+    EB-392: ``could_not_assess`` (provider/server drift between runs) also
+    maps to 2, alongside the pre-existing infra-error-in-main() exit 2 path.
+    """
+    if verdict.could_not_assess:
+        return 2
     return 0 if verdict.deterministic else 1
 
 
@@ -342,8 +434,15 @@ def render_json(verdict: DeterminismVerdict) -> dict:
 
 def render_markdown(verdict: DeterminismVerdict) -> str:
     lines = ["# VQA grader determinism self-check (EB-361)", ""]
-    status = "DETERMINISTIC ✓" if verdict.deterministic else "NON-DETERMINISTIC ✗"
+    if verdict.could_not_assess:
+        status = "COULD NOT ASSESS ⚠"
+    elif verdict.deterministic:
+        status = "DETERMINISTIC ✓"
+    else:
+        status = "NON-DETERMINISTIC ✗"
     lines.append(f"- Verdict: **{status}**")
+    if verdict.could_not_assess_reason:
+        lines.append(f"- Could-not-assess reason: {verdict.could_not_assess_reason}")
     lines.append(f"- Tolerance (per-page |Δ|): {verdict.tolerance}")
     lines.append(f"- Pages compared: {verdict.pages_compared}")
     lines.append(f"- Pages with score delta > tolerance: {verdict.n_score_diffs}")
@@ -383,6 +482,7 @@ def build_vqa_runner(
     dpi: int = 150,
     max_pages: int = 50,
     batch_size: int = 8,
+    n_ctx: int | None = None,
     calibre_path: str | None = None,
     poppler_path: str | None = None,
     rubric_path: str | None = None,
@@ -398,8 +498,20 @@ def build_vqa_runner(
     provider (matches the EB-340 sweep's ``--fallback-enabled false``).
     ``user_supplied_dpi/max_pages`` are True so the large-file auto-reduction
     never silently changes coverage during a measurement run.
+
+    EB-392 Unit 2:
+      - Provider target resolution (base_url/model) for ``provider_name ==
+        "local"`` goes through ``visual_qa.resolve_local_vqa_target()`` --
+        the same shared cli > env > config resolver ``visual_qa.py`` uses, so
+        the two tools can never disagree about which server/model a run
+        actually asked for. The old duplicated ``localhost:8000`` /
+        ``qwen3.5-35b-a3b-fp8`` inline fallbacks are gone.
+      - A FRESH provider instance is constructed inside the returned
+        ``runner()`` closure on every call (not once, reused across both
+        runs, as before Unit 2). This makes the probe genuinely re-execute
+        per run, which is what lets ``run_determinism_check`` detect a
+        server identity change between run 0 and run i.
     """
-    import os
     import shutil
 
     import visual_qa as vqa
@@ -420,37 +532,54 @@ def build_vqa_runner(
 
     # Provider factory (mirrors visual_qa.main).
     if provider_name == "local":
-        base_url = (
-            os.environ.get("LOCAL_LLM_BASE_URL")
-            or vqa_settings.get("local_base_url", "http://localhost:8000/v1")
+        target = vqa.resolve_local_vqa_target(
+            cli_base_url=None,
+            cli_model=model,
+            settings=settings,
+            env=os.environ,
         )
-        provider = LocalVisionProvider(base_url=base_url)
-        resolved_model = model or (
-            os.environ.get("LOCAL_LLM_VISION_MODEL")
-            or vqa_settings.get("local_model", "qwen3.5-35b-a3b-fp8")
+        resolved_model = target["model"]
+        logger.info(
+            "resolved provider: local %s (%s) model=%s (%s)",
+            target["base_url"], target["base_url_source"],
+            resolved_model or "-", target["model_source"],
         )
+
+        def make_provider():
+            return LocalVisionProvider(
+                base_url=target["base_url"], model=resolved_model, n_ctx=n_ctx,
+            )
+
     elif provider_name == "cloud":
         host = vqa_settings.get("cloud_host", "openrouter")
         api_key = os.environ.get(f"{host.upper()}_API_KEY")
         if not api_key:
             raise RuntimeError(f"No API key for cloud host '{host}' ({host.upper()}_API_KEY).")
-        provider = CloudVLProvider(host=host, api_key=api_key)
         resolved_model = model or (
             os.environ.get("CLOUD_VL_MODEL")
             or vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
         )
+
+        def make_provider():
+            return CloudVLProvider(host=host, api_key=api_key)
+
     elif provider_name == "claude":
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             raise RuntimeError("No ANTHROPIC_API_KEY set for --provider claude.")
-        provider = ClaudeVisionProvider(api_key=api_key)
         resolved_model = model or settings.get("api_models", {}).get(
             "sonnet_latest", "claude-sonnet-4-6"
         )
+
+        def make_provider():
+            return ClaudeVisionProvider(api_key=api_key)
+
     else:
         raise ValueError(f"Unknown provider: {provider_name!r}")
 
     def runner(run_index: int) -> dict:
+        # EB-392 Unit 2: fresh provider per run -- see docstring.
+        provider = make_provider()
         run_out = str(Path(out_dir) / f"run{run_index + 1}") if out_dir else None
         logger.info("Determinism run %d/%s via %s provider (model=%s)...",
                     run_index + 1, "N", provider_name, resolved_model)
@@ -477,6 +606,25 @@ def build_vqa_runner(
 # CLI
 # ---------------------------------------------------------------------------
 
+def _default_n_ctx_from_env() -> int | None:
+    """LOCAL_LLM_N_CTX env default for --n-ctx (mirrors visual_qa.py's CLI so
+    both tools read the same override the same way). An unparseable value is
+    ignored (falls through to the provider's own probe) rather than crashing
+    argument parsing.
+    """
+    raw = os.environ.get("LOCAL_LLM_N_CTX")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "LOCAL_LLM_N_CTX=%r is not an integer -- ignoring, provider will probe",
+            raw,
+        )
+        return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="EB-361 VQA grader determinism self-check: run the same input "
@@ -494,6 +642,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="Pages to sample (default: 50 — EB-361 canary)")
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Pages per provider batch (default: 8)")
+    parser.add_argument(
+        "--n-ctx", type=int, default=_default_n_ctx_from_env(),
+        help="Explicit server context window for --provider local (default: "
+             "LOCAL_LLM_N_CTX env var if set, otherwise the provider probes "
+             "/v1/models and /props). Wins over the probe (EB-392); the probe "
+             "still runs for describe() metadata."
+    )
     parser.add_argument("--runs", type=int, default=2,
                         help="Number of identical runs to compare (default: 2)")
     parser.add_argument("--tolerance", type=int, default=0,
@@ -524,6 +679,7 @@ def main(argv: list[str] | None = None) -> int:
             dpi=args.dpi,
             max_pages=args.max_pages,
             batch_size=args.batch_size,
+            n_ctx=args.n_ctx,
             calibre_path=args.calibre,
             poppler_path=args.poppler,
             out_dir=args.out_dir,

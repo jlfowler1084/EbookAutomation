@@ -198,20 +198,49 @@ OpenAI-compatible VLM endpoint, $0 per book. `cloud` (OpenRouter, `cloud_model`
 `qwen/qwen3-vl-30b-a3b-instruct`, needs `OPENROUTER_API_KEY`) and `claude` are alternate providers,
 not the default. (The old "cloud/OpenRouter primary, SCRUM-281" wording was stale — corrected under EB-390.)
 
-**Endpoint/model resolution — verify the *resolved* values, not just config (EB-390):** env vars
-override `config/settings.json` at runtime. `LOCAL_LLM_BASE_URL` overrides `visual_qa.local_base_url`;
-`LOCAL_LLM_VISION_MODEL` overrides `visual_qa.local_model` (`visual_qa.py` loads `.env` at import). As of
-the EB-377 sweep (2026-06-07): config *names* `http://192.168.1.33:8080/v1` + `Qwen3VL-30B-A3B-Q4_K_M`
-(the R9700), but `.env` *overrides* VQA to `http://localhost:8000/v1` + `qwen3.5-35b-a3b-fp8` — so that
-override is the actual runtime backend. The two are different servers (`localhost:8000` also serves
-`sb-chat`). Always confirm the live value (`os.environ.get('LOCAL_LLM_BASE_URL')` + a `/v1/models` probe)
-before trusting any doc. EB-390 tracks aligning config/`.env`/CLAUDE.md/QWEN.md and making VQA reports
-persist the resolved URL+model.
+**Endpoint/model resolution — verify the *resolved* values, not just config (EB-390, EB-392):** one
+shared resolver, `resolve_local_vqa_target()` in `tools/visual_qa.py` (used by `visual_qa.py`,
+`tools/vqa_determinism_check.py`, and Phase-0's `tools/scan_bench.py`), decides the local base
+URL/model with precedence cli > env > config > default — there is no hardcoded fallback anywhere in
+this code path any more. `LOCAL_LLM_BASE_URL` overrides `visual_qa.local_base_url`;
+`LOCAL_LLM_VISION_MODEL` overrides `visual_qa.local_model` (`visual_qa.py` loads `.env` at import via
+`load_dotenv(..., override=False)` — a value already present in the process env, even an empty
+string, wins over `.env`; an empty-string env value is otherwise treated as unset and falls through
+to config). A missing `visual_qa.local_base_url` with no CLI/env override either is a hard error
+(`VqaTargetError`, exit 3), not a silent fallback. Live state as of EB-392 (2026-09-05): the served
+alias is `sb-vision` at `http://192.168.1.33:8080/v1` (config `visual_qa.local_model` /
+`local_base_url`); `http://localhost:8000/v1` is the Flash **text** gateway (`sb-chat` lives there
+too) — it answers `/v1/models` but 500s on a vision request, so pointing VQA at it is exactly the
+EB-377 failure mode this resolver exists to prevent. Always confirm the *resolved* value — every VQA
+report now carries a `provider_resolved` block (`base_url`, `model_requested`, `model_served`,
+`n_ctx` + `n_ctx_source`, `n_ctx_train`, `total_slots`, `model_path`, `build_info`, `probe_ok`,
+`batch_size_effective`, `max_tokens_effective`), and `visual_qa.py --provider local` logs the
+resolved target and the probed server identity at startup — rather than trusting config or `.env` in
+isolation.
 
-**Determinism (EB-361):** the local VLM grader is non-deterministic under multi-slot serving
+**Adaptive context budget (EB-350/EB-392):** `sb-vision` currently serves `n_ctx` 8192 (SB-231 will
+raise it to 32768); `LocalVisionProvider` probes `/v1/models` (`data[].meta.n_ctx`) and `/props`
+(`total_slots`, `model_path`, `build_info`) and sizes batch size / output budget to fit whatever
+window it finds, so an 8192 server degrades to smaller batches instead of silently overflowing into
+`api_failure`. An explicit `--n-ctx` (or `LOCAL_LLM_N_CTX` env var) always wins over the probe —
+`n_ctx_source: "cli"` — and the harness always sets it from its own preflight probe. When the probe
+genuinely cannot determine a window, the provider assumes the smaller, safer 8192 rather than the old
+silent 32768 default, and flags the report `coverage_reason: probe_failed_conservative_window` /
+`evaluation_status: evaluated_degraded` so callers that never read `provider_resolved` still see the
+degraded regime.
+
+**Determinism (EB-361, EB-392):** the local VLM grader is non-deterministic under multi-slot serving
 (batch-dependent numerics — scores can flip across runs). Serve single-slot (vLLM `--max-num-seqs 1`) for
 trustworthy score deltas; validate with `tools/vqa_determinism_check.py --provider local --runs 2
---tolerance 0` before treating VQA scores as findings (Calibration-Sessions discipline).
+--tolerance 0` before treating VQA scores as findings (Calibration-Sessions discipline). The check also
+compares each run's resolved `provider_resolved` (a fresh provider is constructed per run, so the probe
+genuinely re-executes each time) and reports `could_not_assess` (exit 2) naming the field if `base_url`,
+`n_ctx`, `total_slots`, or (when both runs expose it) `model_path` drifted mid-check — a server change
+between the two runs is a reason scores can't be compared, not a determinism finding.
+
+**`-ValidateVisual` (`EbookAutomation.psm1`):** still passes no provider/fallback flags to
+`visual_qa.py` — it runs whatever `--provider`/`--fallback-enabled` `config/settings.json` currently
+defaults to. It does not pin the resolver's inputs itself.
 
 **Claude fallback:** pages with known-fallback fingerprints are re-evaluated by Claude (`ANTHROPIC_API_KEY`)
 when `visual_qa.fallback.enabled` is true (default). For free/local-only runs pass `--fallback-enabled false`

@@ -170,6 +170,109 @@ def load_settings_json():
 
 
 # ---------------------------------------------------------------------------
+# EB-392 Unit 2: shared local-VQA target resolver
+# ---------------------------------------------------------------------------
+
+class VqaTargetError(RuntimeError):
+    """Raised when the local VQA provider target (base_url) cannot be resolved.
+
+    EB-392 Unit 2: there is no literal fallback for base_url anywhere in this
+    module -- the old, dead ``http://localhost:8000/v1`` default (a text-only
+    gateway that 500s on vision requests) is exactly the bug this ticket
+    exists to remove. When cli/env/config all fail to supply a base_url, this
+    is raised naming the missing config key so callers can surface a clear,
+    actionable error instead of silently talking to a server that can never
+    answer a vision request.
+    """
+
+
+def resolve_local_vqa_target(
+    cli_base_url: str | None = None,
+    cli_model: str | None = None,
+    settings: dict | None = None,
+    env: dict | None = None,
+) -> dict:
+    """Resolve the local vision-provider target and record where each value
+    came from. Shared by visual_qa.py, vqa_determinism_check.py, and (Unit 3)
+    scan_bench.py so exactly one place ever decides base_url/model precedence.
+
+    Precedence for both fields is cli > env > config > default:
+      - base_url: --base-url-style CLI value > LOCAL_LLM_BASE_URL env >
+        config/settings.json ``visual_qa.local_base_url``. No default --
+        a value must be supplied at one of these three levels, or this
+        raises VqaTargetError naming the missing config key.
+      - model: --model CLI value > LOCAL_LLM_VISION_MODEL env >
+        config/settings.json ``visual_qa.local_model`` > None (source
+        "default"). A None model is not an error: llama.cpp ignores the
+        request payload's ``model`` field, and ``LocalVisionProvider.describe()``
+        falls back to the single ``/v1/models`` entry when only one is listed.
+
+    An EMPTY-STRING env value (``LOCAL_LLM_BASE_URL=""`` /
+    ``LOCAL_LLM_VISION_MODEL=""``) counts as UNSET for resolution purposes --
+    it falls through to config/default exactly like an absent env var -- but
+    is reported back via the ``env_*_present_but_empty`` flags so callers can
+    tell "nothing was set" apart from "something deliberately blanked this"
+    (the scan_bench cloud-off harness sets empty-string env vars on purpose to
+    block ``.env`` repopulation under ``load_dotenv(..., override=False)``).
+
+    Args:
+        cli_base_url: an explicit CLI-supplied base_url, or None. visual_qa.py
+            has no ``--base-url`` flag today (this parameter exists for other
+            callers / tests), so main() always passes None here.
+        cli_model: an explicit CLI-supplied model (``--model``), or None.
+        settings: parsed config/settings.json dict, or None (treated as {}).
+        env: an os.environ-like mapping, or None (defaults to os.environ).
+
+    Returns:
+        {"base_url", "model", "base_url_source", "model_source",
+         "env_base_url_present_but_empty", "env_model_present_but_empty"}
+        where each *_source is one of "cli" | "env" | "config" | "default".
+    """
+    if settings is None:
+        settings = {}
+    if env is None:
+        env = os.environ
+
+    vqa_settings = settings.get("visual_qa", {}) or {}
+
+    env_base_url = env.get("LOCAL_LLM_BASE_URL")
+    env_base_url_present_but_empty = env_base_url == ""
+    env_model = env.get("LOCAL_LLM_VISION_MODEL")
+    env_model_present_but_empty = env_model == ""
+
+    if cli_base_url:
+        base_url, base_url_source = cli_base_url, "cli"
+    elif env_base_url:
+        base_url, base_url_source = env_base_url, "env"
+    elif vqa_settings.get("local_base_url"):
+        base_url, base_url_source = vqa_settings["local_base_url"], "config"
+    else:
+        raise VqaTargetError(
+            "No local VQA base_url could be resolved: set LOCAL_LLM_BASE_URL "
+            "or config/settings.json visual_qa.local_base_url (there is no "
+            "hardcoded fallback -- EB-392)."
+        )
+
+    if cli_model:
+        model, model_source = cli_model, "cli"
+    elif env_model:
+        model, model_source = env_model, "env"
+    elif vqa_settings.get("local_model"):
+        model, model_source = vqa_settings["local_model"], "config"
+    else:
+        model, model_source = None, "default"
+
+    return {
+        "base_url": base_url,
+        "model": model,
+        "base_url_source": base_url_source,
+        "model_source": model_source,
+        "env_base_url_present_but_empty": env_base_url_present_but_empty,
+        "env_model_present_but_empty": env_model_present_but_empty,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Step 1: Convert to PDF via Calibre
 # ---------------------------------------------------------------------------
 
@@ -694,7 +797,8 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  fallback_cost_usd=None, fallback_model=None,
                  capture_pipeline=None, truncation_events=None,
                  pages_requested=None, requested_dpi=None, effective_dpi=None,
-                 coverage_reason=None, degraded_context_window=False):
+                 coverage_reason=None, degraded_context_window=False,
+                 provider_resolved=None):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -731,6 +835,17 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
             still see that the score came from an unverified server regime.
             The score itself is preserved (not blanked to None) -- the model
             did respond, only the window it responded under is unconfirmed.
+
+    EB-392 Unit 2 (resolved provider provenance):
+        provider_resolved -- additive dict recording which server, weights,
+            and context window actually graded this report (base_url, the
+            requested vs. server-reported model id, n_ctx / its source,
+            total_slots, model_path, probe_ok, batch_size_effective,
+            max_tokens_effective; see run_visual_qa for the exact shape per
+            provider type). Mirrors capture_pipeline: omitted entirely when
+            None (legacy callers / callers that never resolved provenance),
+            present verbatim otherwise -- existing readers that don't know
+            about the key are unaffected.
     """
     if requested_dpi is None:
         requested_dpi = dpi
@@ -821,6 +936,12 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     # that ran cannot be determined (e.g. reports produced before SCRUM-282).
     if capture_pipeline is not None:
         report["capture_pipeline"] = capture_pipeline
+
+    # EB-392 Unit 2: additive provenance field — omitted on legacy baselines
+    # and on any call site that never resolved a provider (mirrors
+    # capture_pipeline's omit-when-None convention exactly).
+    if provider_resolved is not None:
+        report["provider_resolved"] = provider_resolved
 
     # Append fallback token/cost fields when the hybrid routing fired
     if fallback_tokens is not None:
@@ -1341,6 +1462,47 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
             "top_issues": [],
         }
 
+    # --- EB-392 Unit 2: provider_resolved provenance block ---
+    # Built after the batch loop so batch_size_effective / max_tokens_effective
+    # (set on the provider instance earlier in this function) are populated.
+    # Every provider gets this key -- for providers that expose describe()
+    # (LocalVisionProvider), that record IS the block; for providers with no
+    # server metadata (Claude, cloud), a smaller all-fields-present block with
+    # None where there is no equivalent, per the EB-392 plan decisions.
+    # isinstance-guarded rather than a bare hasattr check: a MagicMock in an
+    # older test that never configured .describe() would otherwise return a
+    # Mock object here, which is not JSON-serializable and would crash the
+    # report write below for callers that don't (and shouldn't have to) know
+    # about this field.
+    provider_resolved = None
+    if hasattr(provider, "describe"):
+        try:
+            _describe_result = provider.describe()
+        except Exception:
+            _describe_result = None
+        if isinstance(_describe_result, dict):
+            provider_resolved = _describe_result
+    if provider_resolved is None:
+        # str-guarded (not a bare getattr(..., None)): a MagicMock without an
+        # explicitly configured "_base_url" auto-creates a child Mock rather
+        # than raising AttributeError, so getattr's default never fires --
+        # the isinstance check is what actually keeps this JSON-serializable.
+        _raw_base_url = getattr(provider, "_base_url", None)
+        _raw_name = getattr(provider, "name", None)
+        provider_resolved = {
+            "provider": _raw_name if isinstance(_raw_name, str) else None,
+            "base_url": _raw_base_url if isinstance(_raw_base_url, str) else None,
+            "model_requested": model,
+            "model_served": None,
+            "n_ctx": None,
+            "n_ctx_source": None,
+            "total_slots": None,
+            "model_path": None,
+            "probe_ok": None,
+            "batch_size_effective": effective_batch,
+            "max_tokens_effective": None,
+        }
+
     # --- Build report ---
     report = build_report(
         str(input_path), qa_data, total_pages, len(page_images),
@@ -1356,6 +1518,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         effective_dpi=effective_dpi,
         coverage_reason=coverage_reason,
         degraded_context_window=degraded_context_window,
+        provider_resolved=provider_resolved,
     )
 
     # --- Write report ---
@@ -1426,8 +1589,10 @@ def main():
     default_threshold = vqa_settings.get("pass_threshold", 70)
     # Provider: from settings.json visual_qa.provider, falling back to "claude"
     default_provider = vqa_settings.get("provider", "claude")
-    default_local_base_url = vqa_settings.get("local_base_url", "http://localhost:8000/v1")
-    default_local_model = vqa_settings.get("local_model", "qwen3.5-35b-a3b-fp8")
+    # EB-392 Unit 2: local base_url/model defaults are no longer hardcoded here
+    # -- resolve_local_vqa_target() (cli > env > config, no literal fallback)
+    # resolves them in the provider-factory section below, once args.model is
+    # known.
     # EB-392 Unit 1: explicit n_ctx wins over LocalVisionProvider's probe.
     # LOCAL_LLM_N_CTX env var read here (before --n-ctx is parsed) so the CLI
     # flag can still override it; an unparseable env value is ignored (falls
@@ -1555,16 +1720,17 @@ def main():
 
     args = parser.parse_args()
 
-    # Resolve model default based on provider
-    if args.model is None:
+    # Resolve model default based on provider.
+    # EB-392 Unit 2: "local" is intentionally excluded here -- it is resolved
+    # later, in the provider-factory section, via
+    # resolve_local_vqa_target(cli_model=args.model, ...), which is the same
+    # cli > env > config precedence this block used to hardcode inline. Since
+    # args.model is still None on that path, resolve_local_vqa_target sees a
+    # genuine "no CLI override" and falls through to env/config/default
+    # exactly as before.
+    if args.model is None and args.provider != "local":
         settings_reload = load_settings_json()
-        if args.provider == "local":
-            # Env var takes priority, then settings.json, then hardcoded default
-            args.model = (
-                os.environ.get("LOCAL_LLM_VISION_MODEL")
-                or settings_reload.get("visual_qa", {}).get("local_model", default_local_model)
-            )
-        elif args.provider == "cloud":
+        if args.provider == "cloud":
             args.model = (
                 os.environ.get("CLOUD_VL_MODEL")
                 or settings_reload.get("visual_qa", {}).get("cloud_model", default_cloud_model)
@@ -1600,14 +1766,40 @@ def main():
 
     # --- Provider factory ---
     if args.provider == "local":
-        local_base_url = (
-            os.environ.get("LOCAL_LLM_BASE_URL")
-            or vqa_settings.get("local_base_url", default_local_base_url)
+        # EB-392 Unit 2: resolve_local_vqa_target() is the single shared
+        # resolver (cli > env > config, no literal fallback) -- also used by
+        # vqa_determinism_check.py and (Unit 3) scan_bench.py. A missing
+        # visual_qa.local_base_url config key (with no CLI/env override
+        # either) is an error, not a silent localhost:8000 default.
+        try:
+            resolved_target = resolve_local_vqa_target(
+                cli_base_url=None,
+                cli_model=args.model,
+                settings=settings,
+                env=os.environ,
+            )
+        except VqaTargetError as exc:
+            logger.error("%s", exc)
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(3)
+        args.model = resolved_target["model"]
+        provider = LocalVisionProvider(
+            base_url=resolved_target["base_url"], model=args.model, n_ctx=args.n_ctx,
         )
-        provider = LocalVisionProvider(base_url=local_base_url, model=args.model, n_ctx=args.n_ctx)
         logger.info(
-            "Using local vision provider at %s (model: %s, n_ctx: %s)",
-            local_base_url, args.model, args.n_ctx if args.n_ctx is not None else "probed",
+            "resolved provider: local %s (%s) model=%s (%s)",
+            resolved_target["base_url"], resolved_target["base_url_source"],
+            args.model or "-", resolved_target["model_source"],
+        )
+        # Eagerly probe now (rather than waiting for run_visual_qa's internal
+        # describe() call) so the resolved server identity is visible at
+        # startup; describe()'s per-instance cache means run_visual_qa's later
+        # call is free.
+        _server_info = provider.describe()
+        logger.info(
+            "server: model_served=%s n_ctx=%s (%s) total_slots=%s",
+            _server_info.get("model_served"), _server_info.get("n_ctx"),
+            _server_info.get("n_ctx_source"), _server_info.get("total_slots"),
         )
     elif args.provider == "cloud":
         env_var = f"{args.cloud_host.upper()}_API_KEY"
@@ -1658,6 +1850,9 @@ def main():
 
         # Print summary to stdout
         _tu = report["token_usage"]
+        # EB-392 Unit 2: base_url/model_served surface the resolved provider
+        # in the stdout summary too, not just the JSON report on disk.
+        _pr = report.get("provider_resolved") or {}
         print(json.dumps({
             "book": report["book"],
             "overall_score": report["overall_score"],
@@ -1666,6 +1861,8 @@ def main():
             "pages_total": report["pages_total"],
             "summary": report["summary"],
             "estimated_cost_usd": _tu.get("total_estimated_cost_usd", _tu.get("estimated_cost_usd", 0)),
+            "base_url": _pr.get("base_url"),
+            "model_served": _pr.get("model_served"),
         }, indent=2))
 
         sys.exit(0 if report["overall_pass"] else 1)

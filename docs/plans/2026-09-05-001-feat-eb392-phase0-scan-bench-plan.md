@@ -461,7 +461,7 @@ status with stage timings and error text; the run never aborts on a book.
 
 ## Implementation Units
 
-- [ ] **Unit 1: Land the adaptive context budget (PR #184) with small-window fixes and `describe()`**
+- [x] **Unit 1: Land the adaptive context budget (PR #184) with small-window fixes and `describe()`** — done 2026-09-06 (`de9861c`)
 
 **Goal:** `LocalVisionProvider` fits batch size and output budget to the probed or explicitly
 supplied `n_ctx`, works on 8192 today, is unchanged on 32768, never fails because of the probe,
@@ -602,7 +602,7 @@ dead `localhost:8000` vision path.
 - A live run of `visual_qa.py --input <small kfx> --provider local --fallback-enabled false --dpi 100
   --max-pages 2` writes a report whose `provider_resolved.model_served == "sb-vision"`.
 
-- [ ] **Unit 3: Benchmark manifest, README, `.gitignore` entry, and `scan_bench preflight`**
+- [x] **Unit 3: Benchmark manifest, README, `.gitignore` entry, and `scan_bench preflight`** — done 2026-09-06 (`50d1ef8`, `83b84a0`); junction check scoped to data dirs in Unit 4 because `tools/poppler` is a legitimate junction in the main tree
 
 **Goal:** A reviewed, tracked manifest for the 13 books, a gitignored raw-run area, and a preflight
 that refuses to start a run whose results could not be trusted.

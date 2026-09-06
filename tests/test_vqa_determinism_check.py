@@ -35,6 +35,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 import vqa_determinism_check as dc  # noqa: E402
+from llm_providers.local_provider import LocalVisionProvider  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +254,124 @@ class TestVerdictToExitCode(unittest.TestCase):
         a = _report([_page(1, 100)])
         b = _report([_page(1, 70)])
         self.assertEqual(dc.verdict_to_exit_code(dc.compare_reports(a, b)), 1)
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 2: provider/server drift detection between runs
+# ---------------------------------------------------------------------------
+
+class TestProviderDriftDetection(unittest.TestCase):
+    """run_determinism_check must surface each run's provider_resolved block
+    and refuse to compare scores (could_not_assess, exit 2) when the resolved
+    server identity changed between runs -- a server change mid-check makes
+    any score delta meaningless, not a determinism finding.
+    """
+
+    def test_provider_resolved_surfaced_for_each_run(self):
+        pr = {
+            "provider": "local", "base_url": "http://x.test/v1", "n_ctx": 32768,
+            "n_ctx_source": "models", "total_slots": 1, "model_path": None,
+            "probe_ok": True,
+        }
+        reports = [
+            {**_report([_page(1, 100)], overall=100), "provider_resolved": dict(pr)},
+            {**_report([_page(1, 100)], overall=100), "provider_resolved": dict(pr)},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertEqual(v.provider_resolved_runs, [pr, pr])
+        self.assertFalse(v.could_not_assess)
+        self.assertIsNone(v.could_not_assess_reason)
+        self.assertTrue(v.deterministic)
+        self.assertEqual(dc.verdict_to_exit_code(v), 0)
+
+    def test_missing_provider_resolved_does_not_break_score_comparison(self):
+        """Older/legacy reports (or a runner not yet emitting provider_resolved)
+        must not be treated as drift -- an absent block on both sides means
+        "nothing to compare", not "different"."""
+        reports = [
+            _report([_page(1, 100)], overall=100),
+            _report([_page(1, 100)], overall=100),
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertEqual(v.provider_resolved_runs, [{}, {}])
+        self.assertFalse(v.could_not_assess)
+        self.assertTrue(v.deterministic)
+
+    def test_n_ctx_drift_between_runs_yields_could_not_assess_exit_2(self):
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 8192,
+                                    "total_slots": 1, "model_path": None}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertTrue(v.could_not_assess)
+        self.assertIn("n_ctx", v.could_not_assess_reason)
+        self.assertEqual(dc.verdict_to_exit_code(v), 2)
+
+    def test_base_url_drift_between_runs_yields_could_not_assess_exit_2(self):
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://a.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://b.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertTrue(v.could_not_assess)
+        self.assertIn("base_url", v.could_not_assess_reason)
+        self.assertEqual(dc.verdict_to_exit_code(v), 2)
+
+    def test_model_path_drift_ignored_when_either_run_is_null(self):
+        """model_path is compared only when BOTH runs expose a non-null
+        value -- a server without a reachable /props must not be flagged as
+        drifted just because one run happens to know the path and the other
+        doesn't."""
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": "/models/a.gguf"}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertFalse(v.could_not_assess)
+        self.assertTrue(v.deterministic)
+
+    def test_probe_n_ctx_drift_between_fresh_constructions_yields_could_not_assess(self):
+        """A probe stub returning n_ctx=32768 on the first LocalVisionProvider
+        construction and n_ctx=8192 on the second -- mirroring
+        build_vqa_runner's Unit 2 fresh-provider-per-run contract (each
+        construction re-triggers the probe) -- must surface as
+        could_not_assess, naming n_ctx, exit 2.
+        """
+        n_ctx_values = iter([32768, 8192])
+
+        def flaky_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+            return {
+                "n_ctx": next(n_ctx_values), "n_ctx_source": "models",
+                "n_ctx_train": None, "model_served": "sb-vision",
+                "models_listed": ["sb-vision"], "server_type": "llamacpp",
+                "total_slots": 1, "model_path": None, "build_info": None,
+                "probe_ok": True,
+            }
+
+        def runner(i: int) -> dict:
+            # Fresh construction per call -- exactly what build_vqa_runner's
+            # runner() closure does for provider_name == "local" since Unit 2.
+            provider = LocalVisionProvider(base_url="http://x.test/v1", probe=flaky_probe)
+            report = _report([_page(1, 100)], overall=100)
+            report["provider_resolved"] = provider.describe()
+            return report
+
+        v = dc.run_determinism_check(runner, runs=2)
+        self.assertTrue(v.could_not_assess)
+        self.assertIn("n_ctx", v.could_not_assess_reason)
+        self.assertEqual(dc.verdict_to_exit_code(v), 2)
 
 
 if __name__ == "__main__":
