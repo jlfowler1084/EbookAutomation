@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -25,7 +26,13 @@ sys.path.insert(0, str(ROOT / "tools"))
 from llm_providers import LocalVisionProvider  # noqa: E402
 from llm_providers.base import VisionResponse  # noqa: E402
 from llm_providers.local_provider import (  # noqa: E402
+    ABSOLUTE_MIN_OUTPUT_BUDGET,
+    CONSERVATIVE_UNKNOWN_N_CTX,
+    CONTEXT_SAFETY_MARGIN,
     GRADING_MAX_OUTPUT_TOKENS,
+    MIN_OUTPUT_BUDGET,
+    PER_IMAGE_TOKEN_ESTIMATE,
+    RUBRIC_TOKEN_RESERVE,
     _build_page_extraction_schema,
 )
 
@@ -35,9 +42,39 @@ RUBRIC_FIXTURE = "RUBRIC TEXT GOES HERE"
 MODEL_FIXTURE = "qwen3.5-35b-a3b-fp8"
 
 
+def _stub_probe_32768(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+    """Default network-free probe stub for the shared `provider` fixture.
+
+    EB-392: on Joe's machine http://localhost:8000/v1/models is live (it now
+    answers as the text-only Flash gateway, listing several models with no
+    n_ctx match) and http://192.168.1.33:8080/v1/models (sb-vision) is also
+    live reporting n_ctx=8192 -- every test in this file must be independent
+    of whichever server happens to be reachable. This stub is injected as the
+    `provider` fixture's default `probe` callable so ordinary payload/budget
+    tests never touch urllib at all.
+
+    Tests that exercise the REAL HTTP probe chain (get_context_window's
+    models/props/vllm/unknown behavior) construct their own un-stubbed
+    LocalVisionProvider instance (probe=None -> the real _probe_local_server)
+    and patch urllib.request.urlopen directly instead of using this fixture.
+    """
+    return {
+        "n_ctx": 32768,
+        "n_ctx_source": "models",
+        "n_ctx_train": 262144,
+        "model_served": model or "stub-model",
+        "models_listed": [model or "stub-model"],
+        "server_type": "llamacpp",
+        "total_slots": 1,
+        "model_path": None,
+        "build_info": None,
+        "probe_ok": True,
+    }
+
+
 @pytest.fixture
 def provider() -> LocalVisionProvider:
-    return LocalVisionProvider(base_url="http://localhost:8000/v1")
+    return LocalVisionProvider(base_url="http://localhost:8000/v1", probe=_stub_probe_32768)
 
 
 # ---------------------------------------------------------------------------
@@ -1432,3 +1469,989 @@ def test_visual_qa_routes_to_two_pass_when_provider_has_attribute() -> None:
     assert len(two_pass_called) == 1, (
         "two_pass_call was not invoked — duck-typing routing is broken"
     )
+
+
+# ---------------------------------------------------------------------------
+# EB-350: Adaptive context-budget manager
+# ---------------------------------------------------------------------------
+
+# Helper: minimal /models JSON response as bytes.
+def _models_response(n_ctx: int) -> bytes:
+    payload = {
+        "data": [{"id": "test-model", "meta": {"n_ctx": n_ctx}}],
+        "object": "list",
+    }
+    return json.dumps(payload).encode("utf-8")
+
+
+class _FakeHTTPResponse:
+    """Minimal stand-in for urllib.request.urlopen context manager."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#1: get_context_window — parse, cache, fallback
+# ---------------------------------------------------------------------------
+
+
+def _raw_provider() -> LocalVisionProvider:
+    """A LocalVisionProvider with the REAL probe (probe=None), for tests that
+    exercise the HTTP probe chain itself via a patched urllib.request.urlopen.
+    Must NOT use the shared `provider` fixture -- its injected stub bypasses
+    urllib entirely and would make any urlopen patch inert (EB-392).
+    """
+    return LocalVisionProvider(base_url="http://localhost:8000/v1")
+
+
+def test_get_context_window_parses_n_ctx() -> None:
+    """get_context_window() returns data[0].meta.n_ctx from /models response."""
+    provider = _raw_provider()
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(49152)),
+    ):
+        result = provider.get_context_window()
+    assert result == 49152
+
+
+def test_get_context_window_caches_result() -> None:
+    """Second call must NOT make any additional network requests (cached)."""
+    provider = _raw_provider()
+    call_count = []
+
+    def fake_urlopen(url, timeout=None):
+        call_count.append(1)
+        return _FakeHTTPResponse(_models_response(32768))
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        first = provider.get_context_window()
+        calls_after_first_probe = len(call_count)
+        second = provider.get_context_window()
+
+    assert first == second == 32768
+    assert calls_after_first_probe > 0, "First probe must have made at least one HTTP call"
+    assert len(call_count) == calls_after_first_probe, (
+        f"urlopen called {len(call_count)} times total (vs {calls_after_first_probe} "
+        "after the first probe) — the second get_context_window() call must not "
+        "issue any additional network requests"
+    )
+
+
+def test_get_context_window_returns_conservative_unknown_on_network_error() -> None:
+    """On total network failure, get_context_window() returns CONSERVATIVE_UNKNOWN_N_CTX.
+
+    EB-392: the EB-350 branch silently fell back to DEFAULT_CONTEXT_WINDOW
+    (32768) here — exactly the assumption that causes context overflow on a
+    server that is actually smaller (sb-vision's real 8192). That silent
+    fallback is removed; an unreachable server now resolves to the smaller,
+    safer CONSERVATIVE_UNKNOWN_N_CTX (8192) instead.
+    """
+    import urllib.error
+
+    provider = _raw_provider()
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urllib.error.URLError("connection refused"),
+    ):
+        result = provider.get_context_window()
+
+    assert result == CONSERVATIVE_UNKNOWN_N_CTX
+
+
+def test_get_context_window_returns_conservative_unknown_on_missing_field() -> None:
+    """If /models response is missing meta.n_ctx (and /props has none either),
+    return CONSERVATIVE_UNKNOWN_N_CTX (EB-392 -- not the old 32768 default)."""
+    provider = _raw_provider()
+    bad_response = json.dumps({"data": [{"id": "test", "meta": {}}], "object": "list"}).encode()
+    with patch("urllib.request.urlopen", return_value=_FakeHTTPResponse(bad_response)):
+        result = provider.get_context_window()
+    assert result == CONSERVATIVE_UNKNOWN_N_CTX
+
+
+def test_get_context_window_returns_conservative_unknown_on_malformed_json() -> None:
+    """If /models response is malformed JSON, return CONSERVATIVE_UNKNOWN_N_CTX
+    (EB-392 -- not the old 32768 default)."""
+    provider = _raw_provider()
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(b"not json {{{"),
+    ):
+        result = provider.get_context_window()
+    assert result == CONSERVATIVE_UNKNOWN_N_CTX
+
+
+def test_get_context_window_unknown_fallback_is_also_cached() -> None:
+    """Even the conservative-unknown result is cached — no repeated probe
+    attempts on every call once the server has been found unreachable."""
+    provider = _raw_provider()
+    call_count = []
+
+    def fake_urlopen(url, timeout=None):
+        call_count.append(1)
+        raise ConnectionError("host unreachable")
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        r1 = provider.get_context_window()
+        calls_after_first_probe = len(call_count)
+        r2 = provider.get_context_window()
+
+    assert r1 == r2 == CONSERVATIVE_UNKNOWN_N_CTX
+    assert calls_after_first_probe > 0, "First probe must have made at least one HTTP call"
+    assert len(call_count) == calls_after_first_probe, (
+        "Probe must not be retried after the unknown result is cached"
+    )
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#2: output_budget_for — single page, large batch, clamps
+# ---------------------------------------------------------------------------
+
+
+def test_output_budget_for_single_page_returns_ceiling_at_32768(
+    provider: LocalVisionProvider,
+) -> None:
+    """Single-image batch at n_ctx=32768 must resolve to GRADING_MAX_OUTPUT_TOKENS (24576)."""
+    budget = provider.output_budget_for(num_images=1, n_ctx=32768)
+    assert budget == GRADING_MAX_OUTPUT_TOKENS, (
+        f"Single-page budget at n_ctx=32768 must be {GRADING_MAX_OUTPUT_TOKENS}, got {budget}"
+    )
+
+
+def test_output_budget_for_large_batch_is_reduced(
+    provider: LocalVisionProvider,
+) -> None:
+    """A large batch must produce a budget smaller than GRADING_MAX_OUTPUT_TOKENS."""
+    budget_8 = provider.output_budget_for(num_images=8, n_ctx=32768)
+    assert budget_8 < GRADING_MAX_OUTPUT_TOKENS, (
+        f"8-image batch budget ({budget_8}) should be below the 24576 ceiling at n_ctx=32768"
+    )
+    assert budget_8 >= MIN_OUTPUT_BUDGET, (
+        f"8-image batch budget ({budget_8}) must not drop below MIN_OUTPUT_BUDGET={MIN_OUTPUT_BUDGET}"
+    )
+
+
+def test_output_budget_for_never_below_absolute_minimum(
+    provider: LocalVisionProvider,
+) -> None:
+    """A pathologically large batch must clamp to ABSOLUTE_MIN_OUTPUT_BUDGET.
+
+    EB-392: the EB-350 branch floored EVERY batch at MIN_OUTPUT_BUDGET (8192)
+    regardless of how little room the batch left -- for a batch this large the
+    raw budget is deeply negative, so flooring it at 8192 would ask the server
+    for far more output tokens than the entire window has room for. The fixed
+    floor scales down with the batch and only stops at the smaller
+    ABSOLUTE_MIN_OUTPUT_BUDGET (1024), logging an ERROR rather than silently
+    requesting an impossible amount.
+    """
+    # 100 images at n_ctx=32768 would give a huge negative raw value.
+    budget = provider.output_budget_for(num_images=100, n_ctx=32768)
+    assert budget == ABSOLUTE_MIN_OUTPUT_BUDGET
+
+
+def test_output_budget_for_tiny_n_ctx_logs_error_and_uses_absolute_minimum(
+    provider: LocalVisionProvider,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Edge case: n_ctx so small even one image does not fit.
+
+    Must log an ERROR naming the server n_ctx, return
+    ABSOLUTE_MIN_OUTPUT_BUDGET, and never raise before the first call.
+    """
+    with caplog.at_level("ERROR", logger="visual_qa.local_provider"):
+        budget = provider.output_budget_for(num_images=1, n_ctx=1000)
+    assert budget == ABSOLUTE_MIN_OUTPUT_BUDGET
+    error_records = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(error_records) == 1
+    assert "1000" in error_records[0].getMessage(), (
+        "ERROR log must name the server n_ctx that triggered the absolute minimum"
+    )
+
+
+def test_output_budget_for_never_above_grading_max(
+    provider: LocalVisionProvider,
+) -> None:
+    """Even num_images=0 (edge case) must not exceed GRADING_MAX_OUTPUT_TOKENS."""
+    budget = provider.output_budget_for(num_images=0, n_ctx=32768)
+    assert budget <= GRADING_MAX_OUTPUT_TOKENS
+
+
+def test_output_budget_for_math_correctness(
+    provider: LocalVisionProvider,
+) -> None:
+    """Verify the formula at a mid-range batch size (not clamped)."""
+    n_ctx = 32768
+    num_images = 8
+    available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+    expected_raw = available - num_images * PER_IMAGE_TOKEN_ESTIMATE
+    expected = max(MIN_OUTPUT_BUDGET, min(GRADING_MAX_OUTPUT_TOKENS, expected_raw))
+    assert provider.output_budget_for(num_images=num_images, n_ctx=n_ctx) == expected
+
+
+def test_output_budget_for_uses_probe_when_n_ctx_not_supplied(
+    provider: LocalVisionProvider,
+) -> None:
+    """When n_ctx is not passed, output_budget_for calls get_context_window()."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        budget = provider.output_budget_for(num_images=1)
+    assert budget == GRADING_MAX_OUTPUT_TOKENS
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#3: max_batch_size — computed value at n_ctx=32768
+# ---------------------------------------------------------------------------
+
+
+def test_max_batch_size_at_32768(provider: LocalVisionProvider) -> None:
+    """max_batch_size at n_ctx=32768 with chosen constants must be 10.
+
+    available = 32768 - 1024 - 1500 = 30244
+    N = floor((30244 - 8192) / 2200) = floor(22052 / 2200) = 10
+    """
+    result = provider.max_batch_size(n_ctx=32768)
+    assert result == 10, (
+        f"max_batch_size at n_ctx=32768 expected 10, got {result}. "
+        "If constants changed, re-verify the math and update this assertion."
+    )
+
+
+def test_max_batch_size_at_least_one(provider: LocalVisionProvider) -> None:
+    """max_batch_size is always at least 1, even for a tiny n_ctx."""
+    result = provider.max_batch_size(n_ctx=4096)
+    assert result >= 1
+
+
+def test_max_batch_size_uses_probe_when_n_ctx_not_supplied(
+    provider: LocalVisionProvider,
+) -> None:
+    """When n_ctx is not passed, max_batch_size calls get_context_window()."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        result = provider.max_batch_size()
+    assert result == 10
+
+
+# ---------------------------------------------------------------------------
+# EB-350 AC#4: build_request / build_detection_request carry adaptive budget
+# ---------------------------------------------------------------------------
+
+
+def test_build_request_falls_back_to_conservative_window_on_probe_failure() -> None:
+    """build_request for 1 image with a fully unreachable server uses the
+    EB-392 conservative-unknown budget, NOT the old silent 32768 fallback
+    (removed -- see CONSERVATIVE_UNKNOWN_N_CTX).
+
+    Uses a fresh un-stubbed provider (not the shared fixture) so the forced
+    urlopen failure actually exercises the real probe chain.
+    """
+    fresh = _raw_provider()
+    with patch("urllib.request.urlopen", side_effect=ConnectionError("no server")):
+        payload = fresh.build_request(
+            page_images=[(1, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert fresh.get_context_window() == CONSERVATIVE_UNKNOWN_N_CTX
+    expected = fresh.output_budget_for(1, n_ctx=CONSERVATIVE_UNKNOWN_N_CTX)
+    assert payload["max_tokens"] == expected
+    assert payload["max_tokens"] != GRADING_MAX_OUTPUT_TOKENS, (
+        "A fully unreachable server must NOT silently produce the 32768-window "
+        "budget (EB-350's removed silent fallback)"
+    )
+
+
+def test_build_request_carries_adaptive_budget_mocked_small_n_ctx() -> None:
+    """build_request reflects the server n_ctx when the probe succeeds.
+
+    Uses a fresh un-stubbed provider (not the shared fixture) so the mocked
+    /models response actually drives get_context_window().
+    """
+    fresh = _raw_provider()
+    small_n_ctx = 16384
+    # available = 16384 - 1024 - 1500 = 13860
+    # raw = 13860 - 1*2200 = 11660; floor = min(8192, 11660) = 8192
+    # budget = max(8192, min(24576, 11660)) = 11660
+    expected = 11660
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(small_n_ctx)),
+    ):
+        payload = fresh.build_request(
+            page_images=[(1, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert payload["max_tokens"] == expected
+
+
+def test_build_detection_request_carries_adaptive_budget(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_detection_request carries the same adaptive budget as build_request."""
+    with patch(
+        "urllib.request.urlopen",
+        return_value=_FakeHTTPResponse(_models_response(32768)),
+    ):
+        det_payload = provider.build_detection_request(
+            page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+        req_payload = provider.build_request(
+            page_images=[(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+            rubric_text=RUBRIC_FIXTURE,
+            model=MODEL_FIXTURE,
+        )
+    assert det_payload["max_tokens"] == req_payload["max_tokens"], (
+        "Detection and extraction requests for the same image count must "
+        "carry the same adaptive budget"
+    )
+
+
+def test_build_request_adaptive_budget_large_batch_below_ceiling(
+    provider: LocalVisionProvider,
+) -> None:
+    """A large batch (>10 images) at n_ctx=32768 produces a budget below 24576.
+
+    EB-392: 11 images at n_ctx=32768 leaves less room than MIN_OUTPUT_BUDGET
+    (8192) -- available=30244, raw=30244-11*2200=6044 -- so the fixed floor
+    scales down to 6044 rather than clamping up to 8192 (which would ask for
+    more output than the window has room for). Only the ABSOLUTE_MIN_OUTPUT_BUDGET
+    floor is a hard guarantee.
+    """
+    # `provider` fixture stubs the probe at n_ctx=32768 (EB-392) -- no network call.
+    payload = provider.build_request(
+        page_images=[(i, PNG_FIXTURE) for i in range(1, 12)],  # 11 images
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] < GRADING_MAX_OUTPUT_TOKENS, (
+        "11-image batch budget must be below the 24576 ceiling at n_ctx=32768"
+    )
+    assert payload["max_tokens"] >= ABSOLUTE_MIN_OUTPUT_BUDGET
+
+
+def test_build_scoring_request_unchanged_at_1024(
+    provider: LocalVisionProvider,
+) -> None:
+    """build_scoring_request (Pass 2, text-only) must stay at max_tokens=1024.
+
+    EB-350 hard constraint: text-only pass budget is NOT adaptive.
+    """
+    detected_pages = [{"page_number": 1, "page_type": "body", "issues": []}]
+    payload = provider.build_scoring_request(
+        detected_pages=detected_pages,
+        rubric_text=RUBRIC_FIXTURE,
+        model=MODEL_FIXTURE,
+    )
+    assert payload["max_tokens"] == 1024, (
+        "build_scoring_request must stay at 1024 (text-only pass, EB-350 hard constraint)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: explicit n_ctx (--n-ctx / LOCAL_LLM_N_CTX) wins over probing
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_n_ctx_wins_over_probe_source_is_cli() -> None:
+    """Constructor n_ctx always wins over probing; n_ctx_source == 'cli'.
+
+    The probe still runs (lazily, for describe() metadata) even though its
+    answer is never used for n_ctx itself.
+    """
+    probe_calls: list[int] = []
+
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        probe_calls.append(1)
+        return {
+            "n_ctx": 8192,  # would be used if the explicit override didn't win
+            "n_ctx_source": "models",
+            "n_ctx_train": None,
+            "model_served": "sb-vision",
+            "models_listed": ["sb-vision"],
+            "server_type": "llamacpp",
+            "total_slots": 1,
+            "model_path": None,
+            "build_info": None,
+            "probe_ok": True,
+        }
+
+    fresh = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    assert fresh.get_context_window() == 32768, "explicit n_ctx must not require a probe call"
+    assert len(probe_calls) == 0
+
+    info = fresh.describe()
+    assert info["n_ctx"] == 32768
+    assert info["n_ctx_source"] == "cli"
+    assert info["model_served"] == "sb-vision", "probe metadata still surfaces via describe()"
+    assert len(probe_calls) == 1, "describe() must still run the probe for other metadata"
+
+
+def test_describe_warns_once_when_explicit_n_ctx_disagrees_with_probe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Adversarial review: an explicit --n-ctx that disagrees with the real
+    probed window silently defeated the adaptive context-budget safety net
+    (it always wins, with zero cross-validation). describe() must log ONE
+    WARNING naming both values."""
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return {
+            "n_ctx": 8192, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        }
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+        provider.describe(refresh=True)  # second call must NOT log a second warning
+
+    matches = [r for r in caplog.records if "disagrees with" in r.getMessage()]
+    assert len(matches) == 1
+    assert "32768" in matches[0].getMessage()
+    assert "8192" in matches[0].getMessage()
+
+
+def test_describe_no_warning_when_explicit_n_ctx_matches_probe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return {
+            "n_ctx": 32768, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        }
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+
+    assert not any("disagrees with" in r.getMessage() for r in caplog.records)
+
+
+def test_describe_no_warning_when_probe_failed(caplog: pytest.LogCaptureFixture) -> None:
+    """A total probe failure (probe_ok False) must not be treated as a
+    disagreement -- there is no trustworthy probed value to compare against."""
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return None
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+
+    assert not any("disagrees with" in r.getMessage() for r in caplog.records)
+
+
+def test_max_batch_size_and_output_budget_use_explicit_n_ctx_too() -> None:
+    """Explicit n_ctx flows through to the batch-size/output-budget math as well."""
+    fresh = LocalVisionProvider(
+        base_url="http://x/v1", n_ctx=8192,
+        probe=lambda base_url, model, timeout=5.0: (_ for _ in ()).throw(
+            AssertionError("probe must not be called when computing budgets from an explicit n_ctx")
+        ),
+    )
+    assert fresh.max_batch_size() == 1
+    budget = fresh.output_budget_for(1)
+    assert budget == fresh.output_budget_for(1, n_ctx=8192)
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: probe caching + describe(refresh=True)
+# ---------------------------------------------------------------------------
+
+
+def test_describe_refresh_true_reprobes_and_can_return_different_n_ctx() -> None:
+    """Probe is cached after the first call; describe(refresh=True) forces a
+    new probe call and can surface a changed server n_ctx.
+    """
+    responses = iter([
+        {
+            "n_ctx": 8192, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        },
+        {
+            "n_ctx": 32768, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        },
+    ])
+    call_count: list[int] = []
+
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        call_count.append(1)
+        return next(responses)
+
+    fresh = LocalVisionProvider(base_url="http://x/v1", probe=fake_probe)
+
+    first = fresh.describe()
+    assert first["n_ctx"] == 8192
+    assert len(call_count) == 1
+
+    second = fresh.describe()  # cached -- no new probe call
+    assert second["n_ctx"] == 8192
+    assert len(call_count) == 1
+
+    third = fresh.describe(refresh=True)
+    assert third["n_ctx"] == 32768
+    assert len(call_count) == 2
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: real HTTP probe chain (models -> props -> vllm -> unknown)
+# ---------------------------------------------------------------------------
+
+
+def _make_dual_urlopen(
+    models_data: dict | None = None,
+    models_raise: Exception | None = None,
+    props_data: dict | None = None,
+    props_raise: Exception | None = None,
+):
+    """Return a urlopen stand-in that answers differently for /models vs /props,
+    so probe-chain tests can control each endpoint independently.
+    """
+
+    def fake_urlopen(url: str, timeout: float | None = None):
+        if url.rstrip("/").endswith("/props"):
+            if props_raise is not None:
+                raise props_raise
+            return _FakeHTTPResponse(json.dumps(props_data or {}).encode("utf-8"))
+        if models_raise is not None:
+            raise models_raise
+        return _FakeHTTPResponse(json.dumps(models_data or {}).encode("utf-8"))
+
+    return fake_urlopen
+
+
+def test_probe_chain_models_lacks_n_ctx_but_props_supplies_it() -> None:
+    """models entry has no meta.n_ctx; /props.default_generation_settings.n_ctx
+    fills it in -- n_ctx_source == 'props'."""
+    fresh = _raw_provider()
+    models_response = {"data": [{"id": "test-model", "meta": {}}], "object": "list"}
+    props_response = {"default_generation_settings": {"n_ctx": 9000}, "total_slots": 1}
+    fake = _make_dual_urlopen(models_data=models_response, props_data=props_response)
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()
+    assert result["n_ctx"] == 9000
+    assert result["n_ctx_source"] == "props"
+    assert result["probe_ok"] is True
+
+
+def test_probe_chain_vllm_max_model_len_fallback() -> None:
+    """Neither models.meta.n_ctx nor /props supply a window, but the matched
+    models entry has a vLLM-style max_model_len -- n_ctx_source == 'vllm_max_model_len'.
+    """
+    fresh = _raw_provider()
+    models_response = {
+        "data": [{"id": "test-model", "meta": {}, "max_model_len": 40000}],
+        "object": "list",
+    }
+    fake = _make_dual_urlopen(models_data=models_response, props_raise=ConnectionError("no props"))
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()
+    assert result["n_ctx"] == 40000
+    assert result["n_ctx_source"] == "vllm_max_model_len"
+    assert result["probe_ok"] is True
+
+
+def test_probe_chain_all_endpoints_fail_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """models AND props both unreachable -> unknown/8192/probe_ok False, one WARNING."""
+    fresh = _raw_provider()
+
+    def fake_urlopen(url: str, timeout: float | None = None):
+        raise ConnectionError("down")
+
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = fresh.describe()
+
+    assert result["n_ctx"] == CONSERVATIVE_UNKNOWN_N_CTX
+    assert result["n_ctx_source"] == "unknown"
+    assert result["probe_ok"] is False
+    warning_messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("unable to determine server n_ctx" in m for m in warning_messages), (
+        "Probe failure must log a WARNING naming the reason"
+    )
+
+
+def test_probe_non_integer_n_ctx_treated_as_unknown_no_exception() -> None:
+    """A non-integer meta.n_ctx value must not crash the probe -- treated as unknown."""
+    fresh = _raw_provider()
+    models_response = {"data": [{"id": "test-model", "meta": {"n_ctx": "not-a-number"}}], "object": "list"}
+    fake = _make_dual_urlopen(models_data=models_response, props_data={})
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.get_context_window()  # must not raise
+    assert result == CONSERVATIVE_UNKNOWN_N_CTX
+
+
+def test_probe_multi_model_listing_matches_requested_id() -> None:
+    """/v1/models lists two entries; the one matching the requested id is used."""
+    fresh = LocalVisionProvider(base_url="http://x/v1", model="sb-vision")
+    models_response = {
+        "data": [
+            {"id": "sb-chat", "meta": {"n_ctx": 32768}},
+            {"id": "sb-vision", "meta": {"n_ctx": 8192}},
+        ],
+        "object": "list",
+    }
+    fake = _make_dual_urlopen(models_data=models_response, props_data={})
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()
+    assert result["model_served"] == "sb-vision"
+    assert result["n_ctx"] == 8192
+    assert set(result["models_listed"]) == {"sb-chat", "sb-vision"}
+
+
+def test_probe_multi_model_listing_requested_id_absent_probe_ok_true() -> None:
+    """Requested id is not among the listed models -> model_served None, but
+    probe_ok stays True when /props still supplies a usable n_ctx.
+    """
+    fresh = LocalVisionProvider(base_url="http://x/v1", model="sb-vision-v2")
+    models_response = {
+        "data": [
+            {"id": "sb-chat", "meta": {"n_ctx": 32768}},
+            {"id": "sb-vision", "meta": {"n_ctx": 8192}},
+        ],
+        "object": "list",
+    }
+    props_response = {"default_generation_settings": {"n_ctx": 8192}, "total_slots": 1}
+    fake = _make_dual_urlopen(models_data=models_response, props_data=props_response)
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()
+    assert result["model_served"] is None
+    assert result["probe_ok"] is True
+    assert result["n_ctx"] == 8192
+    assert result["n_ctx_source"] == "props"
+
+
+def test_probe_props_present_records_total_slots_model_path_build_info() -> None:
+    fresh = _raw_provider()
+    models_response = {"data": [{"id": "test-model", "meta": {"n_ctx": 8192}}], "object": "list"}
+    props_response = {
+        "default_generation_settings": {"n_ctx": 8192},
+        "total_slots": 1,
+        "model_path": "/models/sb-vision.gguf",
+        "build_info": "b9384-abc123",
+    }
+    fake = _make_dual_urlopen(models_data=models_response, props_data=props_response)
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()
+    assert result["total_slots"] == 1
+    assert result["model_path"] == "/models/sb-vision.gguf"
+    assert result["build_info"] == "b9384-abc123"
+
+
+def test_probe_props_unreachable_leaves_fields_none_no_exception() -> None:
+    """/props 404 (or any failure) leaves total_slots/model_path/build_info None
+    without raising, and does not disturb an n_ctx already found via /models.
+    """
+    fresh = _raw_provider()
+    models_response = {"data": [{"id": "test-model", "meta": {"n_ctx": 32768}}], "object": "list"}
+    fake = _make_dual_urlopen(models_data=models_response, props_raise=Exception("404 Not Found"))
+    with patch("urllib.request.urlopen", side_effect=fake):
+        result = fresh.describe()  # must not raise
+    assert result["n_ctx"] == 32768
+    assert result["n_ctx_source"] == "models"
+    assert result["total_slots"] is None
+    assert result["model_path"] is None
+    assert result["build_info"] is None
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: describe() dict shape
+# ---------------------------------------------------------------------------
+
+_DESCRIBE_KEYS = {
+    "provider", "base_url", "model_requested", "model_served", "models_listed",
+    "n_ctx", "n_ctx_source", "n_ctx_train", "total_slots", "model_path",
+    "build_info", "server_type", "probe_ok", "batch_size_effective",
+    "max_tokens_effective",
+}
+
+
+def test_describe_happy_path_shape_and_values() -> None:
+    fresh = LocalVisionProvider(
+        base_url="http://localhost:8000/v1", model="sb-vision", probe=_stub_probe_32768,
+    )
+    info = fresh.describe()
+    assert set(info.keys()) == _DESCRIBE_KEYS
+    assert info["provider"] == "local"
+    assert info["base_url"] == "http://localhost:8000/v1"
+    assert info["model_requested"] == "sb-vision"
+    assert info["n_ctx"] == 32768
+    assert info["n_ctx_source"] == "models"
+    assert info["probe_ok"] is True
+    assert info["batch_size_effective"] is None
+    assert info["max_tokens_effective"] is None
+
+
+def test_describe_on_total_probe_failure_all_other_fields_are_empty() -> None:
+    """On total probe failure: base_url/model_requested set, n_ctx/n_ctx_source/
+    probe_ok reflect the unknown path, everything else None/empty/False.
+    """
+
+    def failing_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        raise ConnectionError("down")
+
+    fresh = LocalVisionProvider(base_url="http://x/v1", model="m", probe=failing_probe)
+    info = fresh.describe()
+    assert info["base_url"] == "http://x/v1"
+    assert info["model_requested"] == "m"
+    assert info["n_ctx"] == CONSERVATIVE_UNKNOWN_N_CTX
+    assert info["n_ctx_source"] == "unknown"
+    assert info["probe_ok"] is False
+    assert info["model_served"] is None
+    assert info["models_listed"] == []
+    assert info["n_ctx_train"] is None
+    assert info["total_slots"] is None
+    assert info["model_path"] is None
+    assert info["build_info"] is None
+    assert info["server_type"] is None
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: per-image token diagnostic (call())
+# ---------------------------------------------------------------------------
+
+
+def test_call_logs_per_image_token_warning_once_when_actual_exceeds_estimate(
+    provider: LocalVisionProvider,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A response implying ~3000 tokens/image (over PER_IMAGE_TOKEN_ESTIMATE=2200)
+    logs one WARNING; a second call on the same instance does not repeat it.
+    Diagnostic only -- no re-batching, no exception.
+    """
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)], rubric_text=RUBRIC_FIXTURE, model=MODEL_FIXTURE,
+    )
+    fake_content = json.dumps({
+        "pages": [{"page_number": 1, "page_type": "body", "score": 90, "pass": True, "issues": []}],
+    })
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        fake_content, prompt_tokens=3000, completion_tokens=50,
+    )
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider.call(payload)
+            provider.call(payload)
+
+    matches = [
+        r for r in caplog.records
+        if r.levelname == "WARNING" and "per-image token cost" in r.getMessage()
+    ]
+    assert len(matches) == 1, (
+        f"Expected exactly one per-image diagnostic WARNING, got {len(matches)}"
+    )
+
+
+def test_call_does_not_log_per_image_warning_when_within_estimate(
+    provider: LocalVisionProvider,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A response within PER_IMAGE_TOKEN_ESTIMATE must not log the diagnostic."""
+    payload = provider.build_request(
+        page_images=[(1, PNG_FIXTURE)], rubric_text=RUBRIC_FIXTURE, model=MODEL_FIXTURE,
+    )
+    fake_content = json.dumps({
+        "pages": [{"page_number": 1, "page_type": "body", "score": 90, "pass": True, "issues": []}],
+    })
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = _make_fake_completion(
+        fake_content, prompt_tokens=2000, completion_tokens=50,
+    )
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        with patch("openai.OpenAI", return_value=mock_client):
+            provider.call(payload)
+
+    matches = [r for r in caplog.records if "per-image token cost" in r.getMessage()]
+    assert matches == []
+
+
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: run_visual_qa integration
+# ---------------------------------------------------------------------------
+
+
+def _make_report_page(page_number: int, score: int = 90) -> dict:
+    return {
+        "page_number": page_number,
+        "page_type": "body",
+        "score": score,
+        "pass": score >= 70,
+        "issues": [],
+    }
+
+
+def _run_vqa_integration(tmp_path: Path, provider, page_images: list, **extra_kwargs) -> dict:
+    """Run run_visual_qa with all heavy I/O mocked; returns the report dict.
+
+    Mirrors tests/test_visual_qa_hybrid_routing.py's _run_vqa helper -- kept
+    local to this file to avoid a cross-test-file import dependency.
+    """
+    import contextlib
+    import visual_qa
+
+    input_file = tmp_path / "book.pdf"
+    input_file.write_bytes(b"%PDF-1.4")
+
+    patches = [
+        patch("visual_qa.convert_to_pdf", return_value=str(input_file)),
+        patch("visual_qa.get_pdf_page_count", return_value=200),
+        patch("visual_qa.get_pdf_bookmarks", return_value=[]),
+        patch("visual_qa.select_sample_pages", return_value=[pn for pn, _ in page_images]),
+        patch("visual_qa.find_poppler_path", return_value=""),
+        patch("visual_qa.render_pages_to_png", return_value=page_images),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=True),
+    ]
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        report = visual_qa.run_visual_qa(
+            input_path=str(input_file),
+            provider=provider,
+            calibre_path="calibre",
+            poppler_path=None,
+            output_dir=str(tmp_path),
+            dpi=100,
+            max_pages=8,
+            model="test-model",
+            rubric_path="",
+            pass_threshold=70,
+            fallback_enabled=False,
+            **extra_kwargs,
+        )
+    return report
+
+
+def test_run_visual_qa_integration_max_batch_size_one_splits_into_three_batches(
+    tmp_path: Path,
+) -> None:
+    """A provider whose max_batch_size() returns 1 with 3 page images issues
+    3 separate batches (EB-350/EB-392 integration)."""
+    provider = MagicMock(spec=["name", "build_request", "call", "estimate_cost", "max_batch_size"])
+    provider.name = "local"
+    provider.build_request.return_value = {
+        "model": "test-model", "messages": [{"role": "user", "content": []}],
+    }
+    provider.estimate_cost.return_value = 0.0
+    provider.max_batch_size.return_value = 1
+    provider.call.side_effect = [
+        VisionResponse(raw_text=json.dumps({"pages": [_make_report_page(1)]}), input_tokens=100, output_tokens=50),
+        VisionResponse(raw_text=json.dumps({"pages": [_make_report_page(2)]}), input_tokens=100, output_tokens=50),
+        VisionResponse(raw_text=json.dumps({"pages": [_make_report_page(3)]}), input_tokens=100, output_tokens=50),
+    ]
+
+    page_images = [(1, PNG_FIXTURE), (2, PNG_FIXTURE), (3, PNG_FIXTURE)]
+    report = _run_vqa_integration(tmp_path, provider, page_images, batch_size=8)
+
+    assert provider.call.call_count == 3
+    assert report["pages_evaluated"] == 3
+
+
+def test_run_visual_qa_integration_provider_without_max_batch_size_untouched(
+    tmp_path: Path,
+) -> None:
+    """A provider with no max_batch_size (Claude/cloud) is not batch-capped --
+    3 pages at configured batch_size=8 stay in a single batch."""
+    provider = MagicMock(spec=["name", "build_request", "call", "estimate_cost"])
+    provider.name = "cloud"
+    provider.build_request.return_value = {
+        "model": "m", "messages": [{"role": "user", "content": []}],
+    }
+    provider.estimate_cost.return_value = 0.0
+    provider.call.return_value = VisionResponse(
+        raw_text=json.dumps({"pages": [_make_report_page(n) for n in (1, 2, 3)]}),
+        input_tokens=300, output_tokens=100,
+    )
+    assert not hasattr(provider, "max_batch_size"), "Precondition: no max_batch_size attribute"
+
+    page_images = [(1, PNG_FIXTURE), (2, PNG_FIXTURE), (3, PNG_FIXTURE)]
+    report = _run_vqa_integration(tmp_path, provider, page_images, batch_size=8)
+
+    assert provider.call.call_count == 1, "Uncapped provider must not be split into extra batches"
+    assert report["pages_evaluated"] == 3
+
+
+def test_run_visual_qa_integration_unknown_probe_sets_coverage_reason_and_degrades_status(
+    tmp_path: Path,
+) -> None:
+    """A provider reporting n_ctx_source == 'unknown' via describe() yields a
+    report with coverage_reason == 'probe_failed_conservative_window' and a
+    degraded evaluation_status -- while still preserving the score.
+    """
+    provider = MagicMock(spec=["name", "build_request", "call", "estimate_cost", "describe"])
+    provider.name = "local"
+    provider.build_request.return_value = {
+        "model": "m", "messages": [{"role": "user", "content": []}],
+    }
+    provider.estimate_cost.return_value = 0.0
+    provider.call.return_value = VisionResponse(
+        raw_text=json.dumps({"pages": [_make_report_page(1)]}), input_tokens=100, output_tokens=50,
+    )
+    provider.describe.return_value = {
+        "provider": "local", "base_url": "http://x/v1", "model_requested": "m",
+        "model_served": None, "models_listed": [], "n_ctx": CONSERVATIVE_UNKNOWN_N_CTX,
+        "n_ctx_source": "unknown", "n_ctx_train": None, "total_slots": None,
+        "model_path": None, "build_info": None, "server_type": None,
+        "probe_ok": False, "batch_size_effective": None, "max_tokens_effective": None,
+    }
+
+    page_images = [(1, PNG_FIXTURE)]
+    report = _run_vqa_integration(tmp_path, provider, page_images, batch_size=8)
+
+    assert report["coverage_reason"] == "probe_failed_conservative_window"
+    assert report["evaluation_status"] == "evaluated_degraded"
+    assert report["overall_score"] is not None, (
+        "The score must be preserved (not blanked to None) -- the model did respond, "
+        "only the window it responded under is unconfirmed"
+    )
+
+
+def test_run_visual_qa_integration_known_window_does_not_set_degraded_reason(
+    tmp_path: Path,
+) -> None:
+    """Sanity check: a provider whose describe() reports a confirmed n_ctx_source
+    (not 'unknown') must NOT trigger the degraded coverage_reason."""
+    provider = MagicMock(spec=["name", "build_request", "call", "estimate_cost", "describe"])
+    provider.name = "local"
+    provider.build_request.return_value = {
+        "model": "m", "messages": [{"role": "user", "content": []}],
+    }
+    provider.estimate_cost.return_value = 0.0
+    provider.call.return_value = VisionResponse(
+        raw_text=json.dumps({"pages": [_make_report_page(1)]}), input_tokens=100, output_tokens=50,
+    )
+    provider.describe.return_value = {
+        "provider": "local", "base_url": "http://x/v1", "model_requested": "m",
+        "model_served": "m", "models_listed": ["m"], "n_ctx": 32768,
+        "n_ctx_source": "models", "n_ctx_train": None, "total_slots": 1,
+        "model_path": None, "build_info": None, "server_type": "llamacpp",
+        "probe_ok": True, "batch_size_effective": None, "max_tokens_effective": None,
+    }
+
+    page_images = [(1, PNG_FIXTURE)]
+    report = _run_vqa_integration(tmp_path, provider, page_images, batch_size=8)
+
+    assert report["coverage_reason"] is None
+    assert report["evaluation_status"] == "evaluated"

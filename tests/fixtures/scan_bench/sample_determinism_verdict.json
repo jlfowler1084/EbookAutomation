@@ -1,0 +1,57 @@
+{
+  "deterministic": true,
+  "tolerance": 0,
+  "pages_compared": 19,
+  "n_score_diffs": 0,
+  "max_abs_delta": 0,
+  "overall_score_a": 87,
+  "overall_score_b": 87,
+  "overall_abs_delta": 0,
+  "n_issue_drift_pages": 0,
+  "missing_pages": [],
+  "page_deltas": [],
+  "note": "bit-deterministic across the compared runs",
+  "provider_resolved_runs": [
+    {
+      "provider": "local",
+      "base_url": "http://192.168.1.33:8080/v1",
+      "model_requested": "sb-vision",
+      "model_served": "sb-vision",
+      "models_listed": [
+        "sb-vision"
+      ],
+      "n_ctx": 32768,
+      "n_ctx_source": "models",
+      "n_ctx_train": 262144,
+      "total_slots": 1,
+      "model_path": "/models/sb-vision.gguf",
+      "build_info": "b1234",
+      "server_type": "llamacpp",
+      "probe_ok": true,
+      "batch_size_effective": 8,
+      "max_tokens_effective": 24576
+    },
+    {
+      "provider": "local",
+      "base_url": "http://192.168.1.33:8080/v1",
+      "model_requested": "sb-vision",
+      "model_served": "sb-vision",
+      "models_listed": [
+        "sb-vision"
+      ],
+      "n_ctx": 32768,
+      "n_ctx_source": "models",
+      "n_ctx_train": 262144,
+      "total_slots": 1,
+      "model_path": "/models/sb-vision.gguf",
+      "build_info": "b1234",
+      "server_type": "llamacpp",
+      "probe_ok": true,
+      "batch_size_effective": 8,
+      "max_tokens_effective": 24576
+    }
+  ],
+  "could_not_assess": false,
+  "could_not_assess_reason": null,
+  "exit_code": 0
+}

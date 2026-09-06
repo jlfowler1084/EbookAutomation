@@ -19,6 +19,9 @@ import json
 import logging
 import sys
 import time
+import urllib.request
+import urllib.error
+from typing import Any, Callable
 
 import openai
 
@@ -45,6 +48,67 @@ logger = logging.getLogger("visual_qa.local_provider")
 # constant must be revisited.  Do NOT raise above 32768 - (minimum input
 # overhead) without re-verifying the server n_ctx.
 GRADING_MAX_OUTPUT_TOKENS: int = 24576
+
+# EB-350: Adaptive context-budget constants.
+#
+# The probe (get_context_window) is the source of truth for n_ctx; these
+# constants are used to size the output budget and batch limit to fit within
+# whatever n_ctx the server reports.
+#
+# EB-392 Unit 1: the EB-350 branch's silent fallback to a hardcoded 32768 on
+# any /models probe failure is REMOVED (maintainability review: that removed
+# constant, DEFAULT_CONTEXT_WINDOW, was kept importable for a while as a
+# historical note despite being read by no code path here -- a foot-gun for a
+# future contributor who greps for "the default context window" and
+# reintroduces it without realizing CONSERVATIVE_UNKNOWN_N_CTX below now owns
+# that role; it has been deleted outright). A server that never answers (or
+# answers with sb-vision's real 8192) is not confirmably 32768, and assuming
+# it is caused exactly the context overflow this module exists to prevent.
+# Probe failure now resolves to CONSERVATIVE_UNKNOWN_N_CTX (below) with an
+# explicit, visible n_ctx_source="unknown" instead.
+
+# CONSERVATIVE_UNKNOWN_N_CTX: EB-392 Unit 1 replacement for the silent-32768
+# fallback above. When the probe chain (models -> props -> vLLM
+# max_model_len) cannot determine a served n_ctx, assuming the SMALLER known
+# window (sb-vision's 8192) is the safe direction to be wrong in: it costs
+# batch size / output budget, not a context-overflow 400 mid-run. Paired with
+# n_ctx_source="unknown" and probe_ok=False so describe() / run_visual_qa can
+# surface the degraded regime to callers that never read provenance.
+CONSERVATIVE_UNKNOWN_N_CTX: int = 8192
+
+# ABSOLUTE_MIN_OUTPUT_BUDGET: last-resort output budget when even a single
+# image does not leave room for MIN_OUTPUT_BUDGET tokens of output (e.g. a
+# server n_ctx far below 8192). output_budget_for logs an ERROR naming the
+# server n_ctx whenever this floor is the one that actually applied, and the
+# caller continues with batch size 1 and this minimum rather than raising
+# before the first call.
+ABSOLUTE_MIN_OUTPUT_BUDGET: int = 1024
+
+# PROBE_TIMEOUT_SECONDS: per-HTTP-call timeout used by the default probe
+# (models, props). Each call gets one retry on failure before that probe step
+# is treated as unreachable.
+PROBE_TIMEOUT_SECONDS: float = 5.0
+
+# PER_IMAGE_TOKEN_ESTIMATE: approximate input-token cost of one PNG page image
+# at the default 150 DPI rendering resolution.  Measured at ~2198 tokens/image
+# in the EB-350 sweep.  Rounded to 2200 for a small headroom buffer.
+# NOTE: this estimate is calibrated for 150 DPI.  Higher DPI under-estimates
+# input tokens (known v1 limitation; a DPI-aware estimate is a future refinement).
+PER_IMAGE_TOKEN_ESTIMATE: int = 2200
+
+# RUBRIC_TOKEN_RESERVE: estimated token cost of the system (rubric) message and
+# the trailing instruction text block.  A generous 1500-token reserve keeps the
+# budget math valid even for long rubrics.
+RUBRIC_TOKEN_RESERVE: int = 1500
+
+# CONTEXT_SAFETY_MARGIN: headroom subtracted from n_ctx before any calculation
+# to account for tokenizer variance, KV-cache bookkeeping, and rounding.
+CONTEXT_SAFETY_MARGIN: int = 1024
+
+# MIN_OUTPUT_BUDGET: floor for the computed output budget.  8192 tokens is
+# sufficient for a single-page grading report with multiple issues and ensures
+# the model always has a meaningful generation budget even on small n_ctx nodes.
+MIN_OUTPUT_BUDGET: int = 8192
 
 
 def _build_page_extraction_schema(page_count: int) -> dict:
@@ -394,6 +458,161 @@ class ContextWindowOverflowError(RuntimeError):
         )
 
 
+# ---------------------------------------------------------------------------
+# EB-392 Unit 1: probe chain (models -> props -> vLLM max_model_len -> unknown)
+#
+# Kept as module-level functions (not methods) so LocalVisionProvider can take
+# an arbitrary probe *callable* in its constructor -- tests inject a stub here
+# instead of patching urllib, and production code gets this real
+# implementation by default. Signature: probe(base_url, model, timeout) ->
+# dict. Never raises; every HTTP step is independently best-effort.
+# ---------------------------------------------------------------------------
+
+_PROBE_RESULT_KEYS = (
+    "n_ctx",
+    "n_ctx_source",
+    "n_ctx_train",
+    "model_served",
+    "models_listed",
+    "server_type",
+    "total_slots",
+    "model_path",
+    "build_info",
+    "probe_ok",
+)
+
+
+def _is_positive_int(value: Any) -> bool:
+    """True for real positive ints -- excludes bool (a bool is an int subclass)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _unknown_probe_result() -> dict:
+    """The conservative result used whenever the probe cannot determine n_ctx."""
+    return {
+        "n_ctx": CONSERVATIVE_UNKNOWN_N_CTX,
+        "n_ctx_source": "unknown",
+        "n_ctx_train": None,
+        "model_served": None,
+        "models_listed": [],
+        "server_type": None,
+        "total_slots": None,
+        "model_path": None,
+        "build_info": None,
+        "probe_ok": False,
+    }
+
+
+def _normalize_probe_result(result: dict | None) -> dict:
+    """Fill in any missing keys and validate n_ctx so a malformed/partial dict
+    from a custom injected probe callable can never crash the caller.
+    """
+    if not isinstance(result, dict):
+        return _unknown_probe_result()
+    normalized = _unknown_probe_result()
+    normalized.update({k: result[k] for k in _PROBE_RESULT_KEYS if k in result})
+    if not _is_positive_int(normalized.get("n_ctx")):
+        logger.warning(
+            "EB-392: probe result has a non-positive/non-integer n_ctx=%r -- "
+            "treating server window as unknown",
+            normalized.get("n_ctx"),
+        )
+        salvage_keys = (
+            "model_served", "models_listed", "server_type",
+            "total_slots", "model_path", "build_info",
+        )
+        salvaged = _unknown_probe_result()
+        salvaged.update({k: normalized[k] for k in salvage_keys if normalized.get(k)})
+        return salvaged
+    normalized["probe_ok"] = normalized["n_ctx_source"] != "unknown"
+    return normalized
+
+
+def _fetch_json_with_retry(url: str, timeout: float) -> dict | None:
+    """GET url and parse JSON, with one retry on any failure. Never raises."""
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            logger.debug(
+                "EB-392: probe GET %s failed (attempt %d/2): %s: %s",
+                url, attempt + 1, type(exc).__name__, exc,
+            )
+    return None
+
+
+def _probe_local_server(base_url: str, model: str | None, timeout: float = PROBE_TIMEOUT_SECONDS) -> dict:
+    """Real HTTP probe chain: models -> props -> vLLM max_model_len -> unknown.
+
+    (a) GET {base_url}/models -- find the data[] entry whose id == the
+        requested model (fallback: data[0] only when exactly one entry).
+        meta.n_ctx is the served window; meta.n_ctx_train is recorded
+        separately as weights provenance and is NEVER used as the window.
+    (b) GET {host}/props (base_url with a trailing /v1 stripped) -- always
+        attempted when reachable, independent of whether (a) already found
+        n_ctx, because it is the only source for total_slots / model_path /
+        build_info. default_generation_settings.n_ctx fills n_ctx when (a)
+        did not.
+    (c) vLLM fallback: the matched /v1/models entry's own max_model_len field.
+    (d) Unknown: none of the above yielded a positive integer n_ctx.
+
+    Never raises. Each HTTP step gets one retry (see _fetch_json_with_retry).
+    """
+    result = _unknown_probe_result()
+    base_url_clean = base_url.rstrip("/")
+
+    models_data = _fetch_json_with_retry(f"{base_url_clean}/models", timeout)
+    max_model_len = None
+    if isinstance(models_data, dict):
+        entries = [e for e in (models_data.get("data") or []) if isinstance(e, dict)]
+        result["models_listed"] = [e.get("id") for e in entries if e.get("id")]
+        matched = None
+        if model is not None:
+            matched = next((e for e in entries if e.get("id") == model), None)
+        if matched is None and len(entries) == 1:
+            matched = entries[0]
+        if matched is not None:
+            result["model_served"] = matched.get("id")
+            if matched.get("owned_by"):
+                result["server_type"] = matched.get("owned_by")
+            meta = matched.get("meta") or {}
+            result["n_ctx_train"] = meta.get("n_ctx_train")
+            n_ctx = meta.get("n_ctx")
+            if _is_positive_int(n_ctx):
+                result["n_ctx"] = n_ctx
+                result["n_ctx_source"] = "models"
+            max_model_len = matched.get("max_model_len")
+        elif entries and entries[0].get("owned_by"):
+            result["server_type"] = entries[0].get("owned_by")
+
+    host = base_url_clean[: -len("/v1")] if base_url_clean.endswith("/v1") else base_url_clean
+    props_data = _fetch_json_with_retry(f"{host}/props", timeout)
+    if isinstance(props_data, dict):
+        result["total_slots"] = props_data.get("total_slots")
+        result["model_path"] = props_data.get("model_path")
+        result["build_info"] = props_data.get("build_info")
+        if result["n_ctx_source"] == "unknown":
+            dgs = props_data.get("default_generation_settings") or {}
+            n_ctx = dgs.get("n_ctx")
+            if _is_positive_int(n_ctx):
+                result["n_ctx"] = n_ctx
+                result["n_ctx_source"] = "props"
+
+    if result["n_ctx_source"] == "unknown" and _is_positive_int(max_model_len):
+        result["n_ctx"] = max_model_len
+        result["n_ctx_source"] = "vllm_max_model_len"
+
+    result["probe_ok"] = result["n_ctx_source"] != "unknown"
+    if not result["probe_ok"]:
+        logger.warning(
+            "EB-392: unable to determine server n_ctx for %s (model=%s) via "
+            "models/props/vllm probe -- using conservative n_ctx=%d",
+            base_url, model, CONSERVATIVE_UNKNOWN_N_CTX,
+        )
+    return result
+
+
 class LocalVisionProvider:
     """Vision provider backed by a local OpenAI-compatible endpoint.
 
@@ -403,7 +622,13 @@ class LocalVisionProvider:
 
     name = "local"
 
-    def __init__(self, base_url: str = "http://localhost:8000/v1"):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000/v1",
+        model: str | None = None,
+        n_ctx: int | None = None,
+        probe: Callable[..., dict] | None = None,
+    ):
         # EB-210 / EB-339: the local VQA endpoint lives on a LAN node (the
         # R9700 Qwen3-VL box, DESKTOP-488UQB2) reachable from the primary
         # desktop. The Hetzner VM (Linux) is off-LAN and cannot reach it, so
@@ -418,6 +643,204 @@ class LocalVisionProvider:
                 "cloud_model='qwen/qwen3-vl-30b-a3b-instruct') and set OPENROUTER_API_KEY."
             )
         self._base_url = base_url
+        # EB-392 Unit 1: the id of the model this caller asked for (used to
+        # pick the matching /v1/models entry during the probe; visual_qa.py
+        # passes this once the model is known). None is valid -- the probe
+        # falls back to the single-entry case.
+        self._model_requested = model
+        # EB-392 Unit 1: an explicit n_ctx (--n-ctx / LOCAL_LLM_N_CTX) always
+        # wins over probing -- source "cli" in describe(). The probe still
+        # runs (lazily, on first describe()/get_context_window() call that
+        # needs it) so metadata like models_listed/total_slots is available.
+        self._explicit_n_ctx = n_ctx
+        self._probe_fn: Callable[..., dict] = probe if probe is not None else _probe_local_server
+        self._probe_result: dict | None = None
+        # EB-392 Unit 1: fires at most once per instance -- diagnostic only.
+        self._per_image_warning_logged = False
+        # EB-392 review: fires at most once per instance -- see describe().
+        self._n_ctx_mismatch_warning_logged = False
+        # EB-392 Unit 1: slots for the caller (run_visual_qa) to record what it
+        # actually used for this run, so describe() can surface them for
+        # Unit 2's provider_resolved report block. None until set.
+        self.batch_size_effective: int | None = None
+        self.max_tokens_effective: int | None = None
+
+    # ------------------------------------------------------------------
+    # Adaptive context-budget API (EB-350 / EB-392)
+    # ------------------------------------------------------------------
+
+    def _ensure_probed(self, refresh: bool = False) -> dict:
+        """Run the probe chain at most once per instance, cache the result.
+
+        EB-392 Unit 1: refresh=True forces a new probe call (describe()'s
+        refresh parameter). getattr defaults throughout are deliberate: a
+        LocalVisionProvider built via __new__() (bypassing __init__, as some
+        older tests do) must still behave safely.
+        """
+        cached = getattr(self, "_probe_result", None)
+        if cached is not None and not refresh:
+            return cached
+
+        probe_fn = getattr(self, "_probe_fn", None) or _probe_local_server
+        base_url = getattr(self, "_base_url", "")
+        model_requested = getattr(self, "_model_requested", None)
+        try:
+            raw = probe_fn(base_url, model_requested, timeout=PROBE_TIMEOUT_SECONDS)
+        except Exception as exc:
+            logger.warning(
+                "EB-392: probe callable raised %s: %s -- treating server window as unknown",
+                type(exc).__name__, exc,
+            )
+            raw = None
+        result = _normalize_probe_result(raw)
+        self._probe_result = result
+        return result
+
+    def get_context_window(self) -> int:
+        """Return the effective n_ctx: an explicit constructor value always
+        wins; otherwise the probed value (probing at most once per instance).
+
+        EB-392 Unit 1: on total probe failure this returns
+        CONSERVATIVE_UNKNOWN_N_CTX (8192), NOT a silently assumed 32768 --
+        see the constants above for why.
+        """
+        explicit = getattr(self, "_explicit_n_ctx", None)
+        if explicit is not None:
+            return explicit
+        return self._ensure_probed()["n_ctx"]
+
+    def describe(self, refresh: bool = False) -> dict:
+        """Return a provenance record for this provider instance.
+
+        EB-392 Unit 1: the source of truth for Unit 2's provider_resolved
+        report block. refresh=True forces a new probe call even if one is
+        already cached. On total probe failure (and no explicit --n-ctx),
+        every field except base_url/model_requested/n_ctx/n_ctx_source/
+        probe_ok is None/empty and n_ctx falls back to
+        CONSERVATIVE_UNKNOWN_N_CTX with n_ctx_source="unknown".
+        """
+        probe = self._ensure_probed(refresh=refresh)
+        explicit_n_ctx = getattr(self, "_explicit_n_ctx", None)
+        if explicit_n_ctx is not None:
+            n_ctx = explicit_n_ctx
+            n_ctx_source = "cli"
+            # Adversarial review: an explicit --n-ctx/LOCAL_LLM_N_CTX always
+            # wins over the probe with zero cross-validation, even though the
+            # probe still ran and its answer is right here. If the override
+            # is stale (e.g. copied from a different server) and overshoots
+            # the real window, every batch is sized for the wrong (larger)
+            # window and overflows -- including the single-page retry
+            # fallback, which recomputes its budget from this same wrong
+            # value and has no further fallback. Surface the mismatch before
+            # the first overflowing request rather than only after one.
+            probed_n_ctx = probe.get("n_ctx") if probe.get("probe_ok") else None
+            if (
+                probed_n_ctx is not None
+                and probed_n_ctx != explicit_n_ctx
+                and not getattr(self, "_n_ctx_mismatch_warning_logged", False)
+            ):
+                logger.warning(
+                    "EB-392: explicit n_ctx (%d, source=cli) disagrees with the "
+                    "server's probed n_ctx (%d) -- batches/output budget are "
+                    "sized for the explicit value, which always wins; if it "
+                    "overshoots the real window, requests can overflow with no "
+                    "further fallback. Confirm this override is still correct "
+                    "for this server.",
+                    explicit_n_ctx, probed_n_ctx,
+                )
+                self._n_ctx_mismatch_warning_logged = True
+        else:
+            n_ctx = probe["n_ctx"]
+            n_ctx_source = probe["n_ctx_source"]
+        return {
+            "provider": "local",
+            "base_url": getattr(self, "_base_url", None),
+            "model_requested": getattr(self, "_model_requested", None),
+            "model_served": probe.get("model_served"),
+            "models_listed": probe.get("models_listed") or [],
+            "n_ctx": n_ctx,
+            "n_ctx_source": n_ctx_source,
+            "n_ctx_train": probe.get("n_ctx_train"),
+            "total_slots": probe.get("total_slots"),
+            "model_path": probe.get("model_path"),
+            "build_info": probe.get("build_info"),
+            "server_type": probe.get("server_type"),
+            "probe_ok": probe.get("probe_ok", False),
+            "batch_size_effective": getattr(self, "batch_size_effective", None),
+            "max_tokens_effective": getattr(self, "max_tokens_effective", None),
+        }
+
+    def output_budget_for(self, num_images: int, n_ctx: int | None = None) -> int:
+        """Compute the max_tokens output budget for a batch of num_images images.
+
+        Formula (EB-392 Unit 1 fix):
+            available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+            raw       = available - num_images * PER_IMAGE_TOKEN_ESTIMATE
+            floor     = min(MIN_OUTPUT_BUDGET, raw)
+            budget    = clamp(raw, floor, GRADING_MAX_OUTPUT_TOKENS)
+
+        The EB-350 branch floored every batch at MIN_OUTPUT_BUDGET (8192)
+        regardless of how much room the batch actually left -- on a server
+        with n_ctx=8192 this asked for MORE output tokens than the entire
+        window, guaranteeing an overflow. The floor above scales DOWN with
+        the batch instead: a single image at n_ctx=8192 lands around 3468
+        (well under the window), not a doomed 8192.
+
+        If floor itself would fall below ABSOLUTE_MIN_OUTPUT_BUDGET (i.e. even
+        one image does not leave room for a useful response), this logs an
+        ERROR naming the server n_ctx and returns ABSOLUTE_MIN_OUTPUT_BUDGET
+        instead of raising -- the caller proceeds with batch size 1 and this
+        minimum; results on such a server are unreliable but the pipeline
+        does not crash before the first request is even sent.
+
+        A single-image batch at n_ctx=32768 resolves to 24576 (ceiling),
+        unchanged from before.
+
+        Args:
+            num_images: number of page images in the batch.
+            n_ctx: server context window; if None, calls get_context_window().
+        """
+        if n_ctx is None:
+            n_ctx = self.get_context_window()
+        available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+        raw = available - num_images * PER_IMAGE_TOKEN_ESTIMATE
+        floor = min(MIN_OUTPUT_BUDGET, raw)
+        if floor < ABSOLUTE_MIN_OUTPUT_BUDGET:
+            logger.error(
+                "EB-392: server n_ctx=%d leaves less than the absolute minimum "
+                "output budget (%d) for a %d-image batch (available=%d, raw=%d) "
+                "-- continuing with batch size 1 and the absolute minimum "
+                "budget; results on this server are unreliable until its "
+                "context window is raised",
+                n_ctx, ABSOLUTE_MIN_OUTPUT_BUDGET, num_images, available, raw,
+            )
+            floor = ABSOLUTE_MIN_OUTPUT_BUDGET
+        return max(floor, min(GRADING_MAX_OUTPUT_TOKENS, raw))
+
+    def max_batch_size(self, n_ctx: int | None = None) -> int:
+        """Return the largest batch N that keeps input + MIN_OUTPUT within n_ctx.
+
+        Formula (solved for N):
+            N = floor((available - MIN_OUTPUT_BUDGET) / PER_IMAGE_TOKEN_ESTIMATE)
+        where available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE.
+        Result is at minimum 1.
+
+        At n_ctx=32768 with the chosen constants:
+            available = 32768 - 1024 - 1500 = 30244
+            N = floor((30244 - 8192) / 2200) = floor(22052 / 2200) = 10
+
+        At n_ctx=8192 (EB-392 Unit 1 -- sb-vision's real served window):
+            available = 8192 - 1024 - 1500 = 5668
+            N = floor((5668 - 8192) / 2200) = floor(negative) -> clamped to 1
+
+        Args:
+            n_ctx: server context window; if None, calls get_context_window().
+        """
+        if n_ctx is None:
+            n_ctx = self.get_context_window()
+        available = n_ctx - CONTEXT_SAFETY_MARGIN - RUBRIC_TOKEN_RESERVE
+        n = (available - MIN_OUTPUT_BUDGET) // PER_IMAGE_TOKEN_ESTIMATE
+        return max(1, n)
 
     # ------------------------------------------------------------------
     # Request construction
@@ -470,6 +893,12 @@ class LocalVisionProvider:
             ),
         })
 
+        # EB-350: adaptive output budget — sized to fit within the server's n_ctx.
+        # Single-page batches resolve to GRADING_MAX_OUTPUT_TOKENS (ceiling) at
+        # n_ctx=32768; larger batches receive a proportionally smaller budget so
+        # that total (input + output) tokens stay within the server window.
+        adaptive_budget = self.output_budget_for(len(page_images))
+
         return {
             "model": model,
             "messages": [
@@ -478,7 +907,8 @@ class LocalVisionProvider:
             ],
             # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS to prevent
             # dense-batch output truncation (finish_reason='length' → dropped pages).
-            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
+            # EB-350: now adaptive — sized by output_budget_for() to fit n_ctx.
+            "max_tokens": adaptive_budget,
             "temperature": 0,
             "seed": 42,
             # NOTE: frequency_penalty intentionally absent. At 0.3 it penalizes
@@ -543,6 +973,10 @@ class LocalVisionProvider:
 
         page_count = len(page_images)
         schema = _build_detection_schema(page_count)
+        # EB-350: adaptive output budget — same logic as build_request.
+        # Pass-1 detection enumerates issues verbosely and benefits from the
+        # same context-aware sizing so it doesn't overflow the server window.
+        adaptive_budget = self.output_budget_for(page_count)
         return {
             "model": model,
             "messages": [
@@ -552,7 +986,8 @@ class LocalVisionProvider:
             # EB-358: raised from 16384 → GRADING_MAX_OUTPUT_TOKENS (same as
             # build_request).  Pass-1 detection enumerates issues verbosely and
             # can itself hit the 16K cap on dense/scan pages.
-            "max_tokens": GRADING_MAX_OUTPUT_TOKENS,
+            # EB-350: now adaptive — sized by output_budget_for() to fit n_ctx.
+            "max_tokens": adaptive_budget,
             "temperature": 0,
             "seed": 42,
             "response_format": {
@@ -766,6 +1201,22 @@ class LocalVisionProvider:
             input_tokens,
             output_tokens,
         )
+
+        # EB-392 Unit 1: per-image token diagnostic. PER_IMAGE_TOKEN_ESTIMATE
+        # (2200) was measured on vLLM at 150 DPI; if the actual per-image cost
+        # on this server/DPI combination runs higher, output_budget_for's
+        # headroom shrinks silently. Diagnostic only -- logs once per instance,
+        # never re-batches or retries.
+        if image_count > 0 and not getattr(self, "_per_image_warning_logged", False):
+            actual_per_image = input_tokens / image_count
+            if actual_per_image > PER_IMAGE_TOKEN_ESTIMATE:
+                logger.warning(
+                    "EB-392: actual per-image token cost (%.1f) exceeds "
+                    "PER_IMAGE_TOKEN_ESTIMATE (%d) -- input_tokens=%d for %d "
+                    "images; diagnostic only, no re-batching",
+                    actual_per_image, PER_IMAGE_TOKEN_ESTIMATE, input_tokens, image_count,
+                )
+                self._per_image_warning_logged = True
 
         # Truncation guard — fires BEFORE json.loads / PageCountMismatchError.
         # Under guided_json, the decoder is forced toward the schema's closing

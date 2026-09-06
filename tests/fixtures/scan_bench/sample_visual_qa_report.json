@@ -1,0 +1,186 @@
+{
+  "book": "sample_book.kfx",
+  "timestamp": "2026-09-06T00:00:00+00:00",
+  "model": "sb-vision",
+  "pages_sampled": 20,
+  "pages_requested": 20,
+  "pages_evaluated": 20,
+  "coverage_status": "complete",
+  "coverage_reason": null,
+  "truncation_events": [],
+  "pages_total": 406,
+  "dpi": 150,
+  "requested_dpi": 150,
+  "effective_dpi": 150,
+  "evaluation_status": "evaluated",
+  "overall_score": 87,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "typography": 88,
+    "layout": 85,
+    "images": 90
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "score": 90,
+      "page_type": "cover",
+      "issues": []
+    },
+    {
+      "page_number": 2,
+      "score": 90,
+      "page_type": "front_matter",
+      "issues": []
+    },
+    {
+      "page_number": 3,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 4,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 5,
+      "score": 40,
+      "page_type": "body",
+      "issues": [
+        {
+          "category": "garbled_text",
+          "severity": "high",
+          "description": "OCR garbling detected on this page"
+        }
+      ]
+    },
+    {
+      "page_number": 6,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 7,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 8,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 9,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 10,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 11,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 12,
+      "score": 40,
+      "page_type": "body",
+      "issues": [
+        {
+          "category": "layout",
+          "severity": "medium",
+          "description": "minor layout issue, unrelated to text corruption"
+        }
+      ]
+    },
+    {
+      "page_number": 13,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 14,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 15,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 16,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 17,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 18,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 19,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    },
+    {
+      "page_number": 20,
+      "score": 90,
+      "page_type": "body",
+      "issues": []
+    }
+  ],
+  "summary": "Sample fixture VQA report for EB-392 scan_bench tests.",
+  "top_issues": [],
+  "token_usage": {
+    "input_tokens": 12000,
+    "output_tokens": 3000,
+    "estimated_cost_usd": 0.0,
+    "total_estimated_cost_usd": 0.0
+  },
+  "capture_pipeline": "kfx-calibre",
+  "provider_resolved": {
+    "provider": "local",
+    "base_url": "http://192.168.1.33:8080/v1",
+    "model_requested": "sb-vision",
+    "model_served": "sb-vision",
+    "models_listed": [
+      "sb-vision"
+    ],
+    "n_ctx": 32768,
+    "n_ctx_source": "models",
+    "n_ctx_train": 262144,
+    "total_slots": 1,
+    "model_path": "/models/sb-vision.gguf",
+    "build_info": "b1234",
+    "server_type": "llamacpp",
+    "probe_ok": true,
+    "batch_size_effective": 8,
+    "max_tokens_effective": 24576
+  }
+}

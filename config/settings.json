@@ -85,7 +85,7 @@
     "provider": "local",
     "cloud_host": "openrouter",
     "cloud_model": "qwen/qwen3-vl-30b-a3b-instruct",
-    "local_model": "Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf",
+    "local_model": "sb-vision",
     "local_base_url": "http://192.168.1.33:8080/v1",
     "fallback": {
       "enabled": true,

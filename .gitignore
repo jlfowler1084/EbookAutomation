@@ -77,6 +77,10 @@ data/scrum*_6book/
 # Broader SCRUM-28x evidence-data catch-all (keeps top-level *.json summaries trackable)
 data/scrum28?_*/
 
+# EB-392 scan-bench: raw benchmark runs stay local; promoted baselines under
+# data/scan_bench/baselines/ (via `scan_bench promote`) are tracked
+data/scan_bench/runs/**
+
 # Local Claude settings (user-specific permissions)
 .claude/settings.local.json
 .claude/preflight.md

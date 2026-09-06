@@ -62,7 +62,7 @@ $SettingsJson   = Join-Path $RepoRoot 'config\settings.json'
 # --- Local R9700 Qwen3-VL endpoint (zero-cost Lane A provider) ---
 $BaseUrl  = 'http://192.168.1.33:8080/v1'
 $BaseHost = 'http://192.168.1.33:8080'
-$VisionModel  = 'Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf'
+$VisionModel  = 'sb-vision'
 $RequiredNCtx = 32768
 $env:LOCAL_LLM_BASE_URL     = $BaseUrl
 $env:LOCAL_LLM_VISION_MODEL = $VisionModel

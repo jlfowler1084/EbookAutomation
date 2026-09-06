@@ -1,0 +1,35 @@
+<html>
+<head><title>Sample Book</title></head>
+<body>
+<a id="page_1"></a>
+<h1>Front Matter</h1>
+<p>This is the opening paragraph of the sample book used only to exercise the scan_bench metrics extractor in tests. It contains more than one hundred ordinary English words so that the text layer quality scorer has enough material to run its common word and word length checks without raising an error about insufficient input length for scoring purposes here.</p>
+<a id="page_2"></a>
+<h1>Chapter One</h1>
+<p>The first chapter opens with a short introduction that describes the setting, the characters, and the general mood of the narrative that follows across the rest of this fixture document, which exists purely to give the harness something realistic to parse during automated testing runs.</p>
+<a id="page_3"></a>
+<p>A second paragraph continues the chapter with additional plain prose, giving the word counter and the heading counter more content to work with while keeping the markup itself extremely simple and easy to reason about in a unit test fixture file.</p>
+<a id="page_4"></a>
+<h2>Section One</h2>
+<p>This subsection begins a shorter passage that references a footnote for testing the linked footnote counter.<sup><a id="noteref_1" href="#note_1">1</a></sup> The paragraph then continues normally after the footnote marker with a bit more filler text.</p>
+<a id="page_5"></a>
+<p>Another paragraph appears here with an unlinked footnote marker for testing the unlinked footnote counter.<sup>2</sup> The text keeps going a little further to pad out the word count for this fixture.</p>
+<a id="page_6"></a>
+<h2>Section Two</h2>
+<p>This is the beginning of the second named section, again with ordinary prose describing nothing in particular, just enough words to be realistic and to give the extractor plenty to chew on during the test run.</p>
+<a id="page_7"></a>
+<p>The double  space  test relies  on  this  paragraph  having  a  few  visibly  doubled  spaces  scattered  through  it  so  the  detector  has  something  real  to  count  in  the  fixture.</p>
+<a id="page_8"></a>
+<h1>Chapter Two</h1>
+<p>The second chapter begins here with more filler prose, continuing the pattern established earlier in the document so that the fixture reads as a plausible, if extremely dull, piece of extracted book text for automated testing.</p>
+<a id="page_9"></a>
+<p>109</p>
+<a id="page_10"></a>
+<p>A closing paragraph for this chapter wraps up the narrative thread with a final sentence or two, bringing the total word count for the fixture comfortably above the one hundred word threshold used by the scorer.</p>
+<a id="page_11"></a>
+<h2>Appendix</h2>
+<p>The appendix section exists mainly to add one more heading and a little more prose so the chapter and heading counters have realistic, non-trivial values to check against in the test assertions that use this fixture file.</p>
+<a id="page_12"></a>
+<p>This final paragraph closes out the fixture document with a last handful of ordinary words, completing twelve numbered page anchors in total for the page-anchor-ratio test scenario described in the EB-392 plan.</p>
+</body>
+</html>

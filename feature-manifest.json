@@ -186,7 +186,7 @@
     {
       "script": "tools/visual_qa.py",
       "mode": "direct",
-      "flags": ["--input", "--provider", "--cloud-host", "--api-key", "--calibre", "--poppler", "--output-dir", "--dpi", "--max-pages", "--full", "--model", "--rubric", "--pass-threshold", "--fallback-enabled", "--fallback-claude-model", "--fallback-corpus-path", "--verbose"],
+      "flags": ["--input", "--provider", "--cloud-host", "--api-key", "--calibre", "--poppler", "--output-dir", "--dpi", "--max-pages", "--n-ctx", "--batch-size", "--full", "--model", "--rubric", "--pass-threshold", "--fallback-enabled", "--fallback-claude-model", "--fallback-corpus-path", "--verbose"],
       "description": "Automated visual quality assurance"
     },
     {
@@ -199,7 +199,7 @@
     {
       "script": "tools/vqa_determinism_check.py",
       "mode": "direct",
-      "flags": ["--input", "--provider", "--model", "--dpi", "--max-pages", "--batch-size", "--runs", "--tolerance", "--out-dir", "--calibre", "--poppler", "--json", "--verbose"],
+      "flags": ["--input", "--provider", "--model", "--dpi", "--max-pages", "--n-ctx", "--batch-size", "--runs", "--tolerance", "--out-dir", "--calibre", "--poppler", "--json", "--verbose"],
       "description": "EB-361 VQA grader determinism self-check (run-twice guard)"
     },
     {
@@ -219,6 +219,12 @@
       "mode": "direct",
       "flags": ["--input", "--glob", "--out", "--min-distinct-pages", "--min-density", "--len-min", "--len-max", "--quiet", "--verbose"],
       "description": "EB-370: Detect welded ALL-CAPS running headers in _kindle.html intermediate artifacts"
+    },
+    {
+      "script": "tools/scan_bench.py",
+      "mode": "preflight|run|compare|report|promote",
+      "flags": ["--manifest", "--label", "--run-label", "--strict", "--skip-vqa", "--allow-degraded-batch", "--allow-dirty", "--write-sha", "--determinism-verdict", "--json", "--run-id", "--only", "--resume", "--retry", "--dry-run", "--vqa-only", "--cloud-as-configured", "--grade-untrusted", "--convert-timeout", "--vqa-stage-timeout", "--runs-root", "--search-root", "--md", "--allow-batch-mismatch", "--dest", "--force"],
+      "description": "EB-392: 13-book scan-bench harness -- preflight gates, two-stage convert/VQA run with determinism gate, compare/report/promote baselines"
     }
   ],
 
@@ -234,6 +240,7 @@
     {"path": "tools/vqa_determinism_check.py", "type": "python_script", "min_lines": 300},
     {"path": "tools/test_pipeline.py", "type": "test_harness", "min_lines": 1320},
     {"path": "tools/check_header_bleed.py", "type": "python_script", "min_lines": 299},
+    {"path": "tools/scan_bench.py", "type": "python_script", "min_lines": 1000},
     {"path": "tools/classify_source.py", "type": "python_script", "min_lines": 391},
     {"path": "tools/detect_headings_font.py", "type": "python_script", "min_lines": 916},
     {"path": "config/settings.json", "type": "config", "min_lines": 99},
