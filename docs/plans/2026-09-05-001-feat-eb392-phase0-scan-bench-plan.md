@@ -677,7 +677,7 @@ that refuses to start a run whose results could not be trusted.
   PR merges, prints 13 file checks, the tiny-image result, `n_ctx`, `total_slots`, and the resolved
   provider line.
 
-- [ ] **Unit 4: `scan_bench run` (two-stage), per-book metrics, `compare`, `report`, and `promote`**
+- [x] **Unit 4: `scan_bench run` (two-stage), per-book metrics, `compare`, `report`, and `promote`** — done 2026-09-06; live tree-kill verified (nested pwsh→python killed in ~5 s); dry-run derives `-UseOCR` from the manifest's `expected_class` snapshot so it spawns nothing
 
 **Goal:** One command converts and grades all 13 books, recording every metric in R4 with
 failures, timeouts, and drift as rows, resumable by run id; `compare` produces deltas with parity
