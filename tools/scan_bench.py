@@ -3034,15 +3034,7 @@ def _finalize_and_report(
         key = str(status) if status is not None else "null"
         status_counts[key] = status_counts.get(key, 0) + 1
 
-    trust_values = {row.get("vqa_trusted") for row in summary.values() if row}
-    if not trust_values:
-        vqa_trusted: bool | None = None
-    elif False in trust_values:
-        vqa_trusted = False
-    elif trust_values == {True}:
-        vqa_trusted = True
-    else:
-        vqa_trusted = None
+    vqa_trusted = _aggregate_vqa_trust(summary)
 
     print(json.dumps({
         "event": "run_finished", "run_id": run_id, "exit_code": exit_code,
@@ -3068,10 +3060,16 @@ def resolve_run_or_baseline_dir(
     id, a run *label*, or a promoted baseline label, interchangeably):
       1. a literal path that already looks like a run/baseline dir;
       2. an exact run dir under ``runs_root`` (a full generated run id);
-      3. the newest run dir under ``runs_root`` whose name ends with
-         ``-<name_or_path>`` (a bare ``--label`` value, e.g. ``row0-convert``
-         resolves to the most recent run captured under that label);
-      4. ``<baselines_root>/<name_or_path>`` (a promoted baseline label).
+      3. ``<baselines_root>/<name_or_path>`` (a promoted baseline label) --
+         a promoted baseline is the durable, git-tracked, canonical target
+         once it exists, so it wins over an ephemeral run that happened to be
+         captured under the same ``--label`` (the README's ``row0-cloud``
+         recipe uses one name for both);
+      4. the newest run dir under ``runs_root`` whose name ends with
+         ``-<name_or_path>`` (a bare ``--label`` value, e.g. ``row0`` resolves
+         to the most recent run captured under that label).
+    When both a baseline and a run match the same name, the baseline is
+    returned and a WARNING names the shadowed run dir.
     Both run and baseline directory shapes carry ``run-summary.json`` --
     ``promote``'s allowlist guarantees that.
     """
@@ -3081,13 +3079,38 @@ def resolve_run_or_baseline_dir(
     candidate = runs_root / name_or_path
     if candidate.is_dir():
         return candidate
+    baseline_dir = baselines_root / name_or_path
     label_dir = resolve_run_label_to_dir(name_or_path, runs_root)
+    if baseline_dir.is_dir():
+        if label_dir is not None:
+            logger.warning(
+                "scan_bench: '%s' matches both promoted baseline %s and run dir %s "
+                "-- using the baseline (pass the full run id to target the run)",
+                name_or_path, baseline_dir, label_dir,
+            )
+        return baseline_dir
     if label_dir is not None:
         return label_dir
-    candidate = baselines_root / name_or_path
-    if candidate.is_dir():
-        return candidate
     return None
+
+
+def _aggregate_vqa_trust(summary: dict) -> bool | None:
+    """Run-level ``vqa_trusted`` for the ``run_finished`` envelope.
+
+    Rows that never reached Stage 2 (convert failures, ``--skip-vqa``,
+    ``source_missing``) carry ``vqa_trusted`` None and are ignored: a run with
+    one failed conversion and twelve graded-and-trusted books is trusted.
+    False anywhere wins; None only when no row was graded at all.
+    """
+    trust_values = {
+        row.get("vqa_trusted") for row in summary.values()
+        if row and row.get("vqa_trusted") is not None
+    }
+    if not trust_values:
+        return None
+    if False in trust_values:
+        return False
+    return True
 
 
 def load_run_bundle(dir_path: Path) -> tuple[dict, dict]:

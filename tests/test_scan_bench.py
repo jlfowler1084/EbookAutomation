@@ -30,6 +30,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import shutil
 
 TESTS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = TESTS_DIR.parent
@@ -2910,6 +2911,51 @@ def test_resolve_run_label_to_dir_no_match_returns_none(tmp_path):
     runs_root.mkdir()
     assert scan_bench.resolve_run_label_to_dir("nosuchlabel", runs_root) is None
     assert scan_bench.resolve_run_label_to_dir("nosuchlabel", tmp_path / "does-not-exist") is None
+
+
+def test_resolve_run_or_baseline_dir_prefers_promoted_baseline_over_run_with_same_label(tmp_path, caplog):
+    """README's row0-cloud recipe uses one name as both the run --label and the
+    promote --label: report/compare must read the durable, tracked baseline,
+    not the ephemeral gitignored run dir, and must say which one it shadowed."""
+    runs_root = tmp_path / "runs"
+    baselines_root = tmp_path / "baselines"
+    run_dir = runs_root / "20260906-120000-abc1234-row0-cloud"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run-summary.json").write_text("{}", encoding="utf-8")
+    baseline_dir = baselines_root / "row0-cloud"
+    baseline_dir.mkdir(parents=True)
+    (baseline_dir / "run-summary.json").write_text("{}", encoding="utf-8")
+
+    import logging
+    with caplog.at_level(logging.WARNING, logger="scan_bench"):
+        resolved = scan_bench.resolve_run_or_baseline_dir("row0-cloud", runs_root, baselines_root)
+    assert resolved == baseline_dir
+    assert any("matches both" in rec.getMessage() for rec in caplog.records)
+
+    # No baseline -> the newest run for the label still resolves (no warning).
+    caplog.clear()
+    shutil.rmtree(baseline_dir)
+    with caplog.at_level(logging.WARNING, logger="scan_bench"):
+        assert scan_bench.resolve_run_or_baseline_dir("row0-cloud", runs_root, baselines_root) == run_dir
+    assert not [rec for rec in caplog.records if "matches both" in rec.getMessage()]
+    # A full run id always targets the run dir, even when a baseline shares the label.
+    baseline_dir.mkdir(parents=True)
+    assert scan_bench.resolve_run_or_baseline_dir(run_dir.name, runs_root, baselines_root) == run_dir
+
+
+@pytest.mark.parametrize(
+    "trust_by_row, expected",
+    [
+        ({"A1": None, "B1": True, "B2": True}, True),      # Stage-1 failure + trusted graded rows
+        ({"A1": None, "B1": True, "B2": False}, False),    # any False wins
+        ({"A1": None, "A2": None}, None),                  # nothing graded (e.g. --skip-vqa)
+        ({}, None),
+        ({"B1": True}, True),
+    ],
+)
+def test_aggregate_vqa_trust_ignores_rows_that_never_reached_stage2(trust_by_row, expected):
+    summary = {bid: {"id": bid, "status": "x", "vqa_trusted": t} for bid, t in trust_by_row.items()}
+    assert scan_bench._aggregate_vqa_trust(summary) is expected
 
 
 def test_cmd_run_resume_by_run_label_resolves_to_newest_run(run_orch, monkeypatch, tmp_path):
