@@ -694,7 +694,7 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
                  fallback_cost_usd=None, fallback_model=None,
                  capture_pipeline=None, truncation_events=None,
                  pages_requested=None, requested_dpi=None, effective_dpi=None,
-                 coverage_reason=None):
+                 coverage_reason=None, degraded_context_window=False):
     """Assemble the final QA report JSON.
 
     Cost estimation is delegated to provider.estimate_cost when a provider
@@ -719,6 +719,18 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
         coverage_reason -- non-null only when coverage was silently shrunk
             (e.g. "large_file_default_reduction"). When set, coverage_status is
             forced to "partial" so a reduced report can never read "complete".
+
+    EB-392 Unit 1 (adaptive context budget):
+        degraded_context_window -- True when the local provider's n_ctx probe
+            failed (n_ctx_source == "unknown", CONSERVATIVE_UNKNOWN_N_CTX was
+            assumed). When True and the run did produce a score
+            (evaluation_status == "evaluated"), the report's evaluation_status
+            is overridden to "evaluated_degraded" so callers that only check
+            for the exact string "evaluated" (Test-ConversionQuality, the
+            converge loop, batch_qa -- none of which read provider_resolved)
+            still see that the score came from an unverified server regime.
+            The score itself is preserved (not blanked to None) -- the model
+            did respond, only the window it responded under is unconfirmed.
     """
     if requested_dpi is None:
         requested_dpi = dpi
@@ -757,6 +769,13 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     else:
         overall_score = None
         overall_pass = None
+
+    # EB-392 Unit 1: applied AFTER the score computation above so a real score
+    # is never blanked to None -- only the status string changes, so callers
+    # that check evaluation_status == "evaluated" exactly (Test-ConversionQuality,
+    # the converge loop, batch_qa) see the degraded regime.
+    if degraded_context_window and evaluation_status == "evaluated":
+        evaluation_status = "evaluated_degraded"
 
     # EB-149: coverage accounting — pages_evaluated is the count of pages that
     # returned valid results; pages_sampled is what was requested. Any gap
@@ -942,6 +961,30 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         coverage_reason = "large_file_default_reduction"
     pages_requested = min(requested_max_pages, total_pages)
 
+    # EB-392 Unit 1: an unknown-window probe means this run graded every batch
+    # under the conservative CONSERVATIVE_UNKNOWN_N_CTX fallback rather than a
+    # confirmed server value -- surface that as a degraded regime for callers
+    # that only read evaluation_status / coverage_reason (Test-ConversionQuality,
+    # the converge loop, batch_qa -- none of which read the provider_resolved
+    # block Unit 2 adds). hasattr guards describe() being absent (Claude/cloud
+    # providers); describe() itself never raises, but the call is wrapped
+    # defensively anyway since this must never block a run.
+    degraded_context_window = False
+    if hasattr(provider, "describe"):
+        try:
+            provider_info = provider.describe()
+        except Exception:
+            provider_info = None
+        if isinstance(provider_info, dict) and provider_info.get("n_ctx_source") == "unknown":
+            degraded_context_window = True
+            if coverage_reason is None:
+                coverage_reason = "probe_failed_conservative_window"
+            logger.warning(
+                "EB-392: local provider probe failed (n_ctx_source=unknown) -- "
+                "this run used the conservative n_ctx fallback; report will be "
+                "marked degraded"
+            )
+
     # --- Select and render pages ---
     sample_pages = select_sample_pages(total_pages, max_pages, bookmark_pages)
     logger.info("Sampling %d pages: %s", len(sample_pages), sample_pages)
@@ -977,6 +1020,18 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                 provider_max, batch_size, provider_max,
             )
             effective_batch = provider_max
+
+    # EB-392 Unit 1: record what this run actually used on the provider itself
+    # (when it exposes the slots) so describe() surfaces them for Unit 2's
+    # provider_resolved report block. hasattr guards Claude/cloud providers,
+    # which do not declare these attributes and are left untouched.
+    if hasattr(provider, "batch_size_effective"):
+        provider.batch_size_effective = effective_batch
+    if hasattr(provider, "max_tokens_effective") and hasattr(provider, "output_budget_for"):
+        try:
+            provider.max_tokens_effective = provider.output_budget_for(effective_batch)
+        except Exception:
+            pass
 
     batches = []
     for i in range(0, len(page_images), effective_batch):
@@ -1300,6 +1355,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
         requested_dpi=requested_dpi,
         effective_dpi=effective_dpi,
         coverage_reason=coverage_reason,
+        degraded_context_window=degraded_context_window,
     )
 
     # --- Write report ---
@@ -1372,6 +1428,20 @@ def main():
     default_provider = vqa_settings.get("provider", "claude")
     default_local_base_url = vqa_settings.get("local_base_url", "http://localhost:8000/v1")
     default_local_model = vqa_settings.get("local_model", "qwen3.5-35b-a3b-fp8")
+    # EB-392 Unit 1: explicit n_ctx wins over LocalVisionProvider's probe.
+    # LOCAL_LLM_N_CTX env var read here (before --n-ctx is parsed) so the CLI
+    # flag can still override it; an unparseable env value is ignored (falls
+    # through to the provider's own probe) rather than crashing argument parsing.
+    default_n_ctx = None
+    _env_n_ctx = os.environ.get("LOCAL_LLM_N_CTX")
+    if _env_n_ctx:
+        try:
+            default_n_ctx = int(_env_n_ctx)
+        except ValueError:
+            logging.getLogger("visual_qa").warning(
+                "LOCAL_LLM_N_CTX=%r is not an integer -- ignoring, provider will probe",
+                _env_n_ctx,
+            )
     # SCRUM-283: cloud-hosted VLM via OpenAI-compatible endpoints (OpenRouter/Fireworks/Together).
     default_cloud_host = vqa_settings.get("cloud_host", "openrouter")
     default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
@@ -1435,6 +1505,13 @@ def main():
     parser.add_argument(
         "--max-pages", type=int, default=default_max_pages,
         help=f"Maximum pages to sample (default: {default_max_pages})"
+    )
+    parser.add_argument(
+        "--n-ctx", type=int, default=default_n_ctx,
+        help="Explicit server context window for --provider local (default: "
+             "LOCAL_LLM_N_CTX env var if set, otherwise the provider probes "
+             "/v1/models and /props). Skips the probe and wins over it "
+             "(EB-392); the probe still runs for describe() metadata."
     )
     parser.add_argument(
         "--batch-size", type=int, default=default_batch_size,
@@ -1527,8 +1604,11 @@ def main():
             os.environ.get("LOCAL_LLM_BASE_URL")
             or vqa_settings.get("local_base_url", default_local_base_url)
         )
-        provider = LocalVisionProvider(base_url=local_base_url)
-        logger.info("Using local vision provider at %s (model: %s)", local_base_url, args.model)
+        provider = LocalVisionProvider(base_url=local_base_url, model=args.model, n_ctx=args.n_ctx)
+        logger.info(
+            "Using local vision provider at %s (model: %s, n_ctx: %s)",
+            local_base_url, args.model, args.n_ctx if args.n_ctx is not None else "probed",
+        )
     elif args.provider == "cloud":
         env_var = f"{args.cloud_host.upper()}_API_KEY"
         api_key = os.environ.get(env_var)
