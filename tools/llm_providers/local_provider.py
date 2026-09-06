@@ -55,18 +55,17 @@ GRADING_MAX_OUTPUT_TOKENS: int = 24576
 # constants are used to size the output budget and batch limit to fit within
 # whatever n_ctx the server reports.
 #
-# DEFAULT_CONTEXT_WINDOW: historical constant from the EB-350 branch. It was
-# the *silent* fallback returned whenever the /models probe failed, chosen
-# because it matched the then-confirmed R9700 Qwen3-VL-30B-A3B value.
-#
-# EB-392 Unit 1: that silent-32768-on-failure behavior is REMOVED. A server
-# that never answers (or answers with sb-vision's real 8192) is not
-# confirmably 32768, and assuming it is caused exactly the context overflow
-# this module exists to prevent. Probe failure now resolves to
-# CONSERVATIVE_UNKNOWN_N_CTX (below) with an explicit, visible
-# n_ctx_source="unknown" instead. DEFAULT_CONTEXT_WINDOW is kept only because
-# older tests/callers import it; it is no longer read by any code path here.
-DEFAULT_CONTEXT_WINDOW: int = 32768
+# EB-392 Unit 1: the EB-350 branch's silent fallback to a hardcoded 32768 on
+# any /models probe failure is REMOVED (maintainability review: that removed
+# constant, DEFAULT_CONTEXT_WINDOW, was kept importable for a while as a
+# historical note despite being read by no code path here -- a foot-gun for a
+# future contributor who greps for "the default context window" and
+# reintroduces it without realizing CONSERVATIVE_UNKNOWN_N_CTX below now owns
+# that role; it has been deleted outright). A server that never answers (or
+# answers with sb-vision's real 8192) is not confirmably 32768, and assuming
+# it is caused exactly the context overflow this module exists to prevent.
+# Probe failure now resolves to CONSERVATIVE_UNKNOWN_N_CTX (below) with an
+# explicit, visible n_ctx_source="unknown" instead.
 
 # CONSERVATIVE_UNKNOWN_N_CTX: EB-392 Unit 1 replacement for the silent-32768
 # fallback above. When the probe chain (models -> props -> vLLM
@@ -658,6 +657,8 @@ class LocalVisionProvider:
         self._probe_result: dict | None = None
         # EB-392 Unit 1: fires at most once per instance -- diagnostic only.
         self._per_image_warning_logged = False
+        # EB-392 review: fires at most once per instance -- see describe().
+        self._n_ctx_mismatch_warning_logged = False
         # EB-392 Unit 1: slots for the caller (run_visual_qa) to record what it
         # actually used for this run, so describe() can surface them for
         # Unit 2's provider_resolved report block. None until set.
@@ -700,8 +701,8 @@ class LocalVisionProvider:
         wins; otherwise the probed value (probing at most once per instance).
 
         EB-392 Unit 1: on total probe failure this returns
-        CONSERVATIVE_UNKNOWN_N_CTX (8192), NOT the old silent
-        DEFAULT_CONTEXT_WINDOW (32768) -- see the constants above for why.
+        CONSERVATIVE_UNKNOWN_N_CTX (8192), NOT a silently assumed 32768 --
+        see the constants above for why.
         """
         explicit = getattr(self, "_explicit_n_ctx", None)
         if explicit is not None:
@@ -723,6 +724,31 @@ class LocalVisionProvider:
         if explicit_n_ctx is not None:
             n_ctx = explicit_n_ctx
             n_ctx_source = "cli"
+            # Adversarial review: an explicit --n-ctx/LOCAL_LLM_N_CTX always
+            # wins over the probe with zero cross-validation, even though the
+            # probe still ran and its answer is right here. If the override
+            # is stale (e.g. copied from a different server) and overshoots
+            # the real window, every batch is sized for the wrong (larger)
+            # window and overflows -- including the single-page retry
+            # fallback, which recomputes its budget from this same wrong
+            # value and has no further fallback. Surface the mismatch before
+            # the first overflowing request rather than only after one.
+            probed_n_ctx = probe.get("n_ctx") if probe.get("probe_ok") else None
+            if (
+                probed_n_ctx is not None
+                and probed_n_ctx != explicit_n_ctx
+                and not getattr(self, "_n_ctx_mismatch_warning_logged", False)
+            ):
+                logger.warning(
+                    "EB-392: explicit n_ctx (%d, source=cli) disagrees with the "
+                    "server's probed n_ctx (%d) -- batches/output budget are "
+                    "sized for the explicit value, which always wins; if it "
+                    "overshoots the real window, requests can overflow with no "
+                    "further fallback. Confirm this override is still correct "
+                    "for this server.",
+                    explicit_n_ctx, probed_n_ctx,
+                )
+                self._n_ctx_mismatch_warning_logged = True
         else:
             n_ctx = probe["n_ctx"]
             n_ctx_source = probe["n_ctx_source"]

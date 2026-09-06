@@ -199,10 +199,15 @@ OpenAI-compatible VLM endpoint, $0 per book. `cloud` (OpenRouter, `cloud_model`
 not the default. (The old "cloud/OpenRouter primary, SCRUM-281" wording was stale — corrected under EB-390.)
 
 **Endpoint/model resolution — verify the *resolved* values, not just config (EB-390, EB-392):** one
-shared resolver, `resolve_local_vqa_target()` in `tools/visual_qa.py` (used by `visual_qa.py`,
-`tools/vqa_determinism_check.py`, and Phase-0's `tools/scan_bench.py`), decides the local base
-URL/model with precedence cli > env > config > default — there is no hardcoded fallback anywhere in
-this code path any more. `LOCAL_LLM_BASE_URL` overrides `visual_qa.local_base_url`;
+shared resolver, `resolve_local_vqa_target()` in `tools/visual_qa.py` (used by `visual_qa.py` and
+`tools/vqa_determinism_check.py`), decides the local base URL/model with precedence
+cli > env > config > default — there is no hardcoded fallback anywhere in this code path any more.
+`tools/scan_bench.py` does **not** call this resolver: it pins `provider.base_url`/`provider.model`
+directly from `data/scan_bench/manifest.json`'s `provider` block (a fixed target for the whole
+13-book corpus, by design — see `data/scan_bench/README.md`), then re-probes that same pinned
+target per book via `LocalVisionProvider.describe()`/`probe_endpoint()` to detect drift; it never
+reads `LOCAL_LLM_BASE_URL`/`LOCAL_LLM_VISION_MODEL` for target selection (`child_env()` only *sets*
+those vars for child processes, from the manifest). `LOCAL_LLM_BASE_URL` overrides `visual_qa.local_base_url`;
 `LOCAL_LLM_VISION_MODEL` overrides `visual_qa.local_model` (`visual_qa.py` loads `.env` at import via
 `load_dotenv(..., override=False)` — a value already present in the process env, even an empty
 string, wins over `.env`; an empty-string env value is otherwise treated as unset and falls through
@@ -235,8 +240,11 @@ trustworthy score deltas; validate with `tools/vqa_determinism_check.py --provid
 --tolerance 0` before treating VQA scores as findings (Calibration-Sessions discipline). The check also
 compares each run's resolved `provider_resolved` (a fresh provider is constructed per run, so the probe
 genuinely re-executes each time) and reports `could_not_assess` (exit 2) naming the field if `base_url`,
-`n_ctx`, `total_slots`, or (when both runs expose it) `model_path` drifted mid-check — a server change
-between the two runs is a reason scores can't be compared, not a determinism finding.
+`n_ctx`, `total_slots`, or (when both runs expose it) `model_path`/`model_served` drifted mid-check — a
+server change between the two runs is a reason scores can't be compared, not a determinism finding. A
+report with `evaluation_status: evaluated_degraded` (real pages/scores, but the local provider's n_ctx
+probe failed for that run) is evaluable for determinism, not rejected — the verdict carries a `degraded`
+flag instead.
 
 **`-ValidateVisual` (`EbookAutomation.psm1`):** still passes no provider/fallback flags to
 `visual_qa.py` — it runs whatever `--provider`/`--fallback-enabled` `config/settings.json` currently
@@ -250,6 +258,43 @@ Baselines in `data/vqa_baseline_post_274/` are standardized to KFX→Calibre sou
 `capture_pipeline` field in VQA baselines records the code branch that ran (`kfx-calibre` or `pdf-direct`); distinct from `source_format` in extraction-pipeline sidecars, which is extension-derived.
 Use `compare_vqa_reports.py audit` to verify baseline page-sample parity against the current KFX corpus.
 Audit exit codes (SCRUM-287): `0` all parity, `1` only `no_matching_kfx` skips, `2` real sampled-page drift, `3` infrastructure/data error (`conversion_error`, `schema_error`, or `load_error`) — investigate before triggering a Claude re-capture. Skip reasons surface per-row in the markdown table and summary.
+
+## Scan-Bench Harness (EB-392)
+A fixed 13-book scan-quality benchmark corpus (`data/scan_bench/manifest.json`) that mirrors the
+production PDF-to-KFX conversion path plus local-only VQA, so every later EB-391 phase is measured
+against the same books the same way. Full operator runbook, manifest schema, and interpretation
+guardrails: `data/scan_bench/README.md`. Five subcommands in `tools/scan_bench.py`: `preflight`
+(refuses to start a run whose results could not be trusted), `run` (two-stage convert+grade
+orchestration, resumable), `compare` (diff two runs/baselines), `report` (render a run's/baseline's
+`report.md`), `promote` (copy an allowlisted run into `data/scan_bench/baselines/<label>/`).
+
+Exit-code convention (eb370 0/1/2/3): 0 = all-success, 1 = WARN (expected partial for row 0), 2 =
+FAIL (a guardrail — e.g. 100% failure in a stage, or `promote`'s validation gate refusing an
+incomplete/interrupted run), 3 = infra/argparse error (`ArgumentParser.error()` is overridden to
+exit 3, not argparse's default 2, which this tool reserves for FAIL).
+
+Real captures must run from the main working tree (`F:\Projects\EbookAutomation\`), **never** a
+worktree: `archive/`, `test-corpus/a2-pilot/`, `inbox/`, `processing/`, and `output/` are gitignored
+data directories that only exist in the main tree, and junctioning them into a worktree has
+previously destroyed the main tree's data on worktree cleanup (see the Project-Specific Mistakes
+junction-hazard note above). Code lands via PR before the run.
+
+Every real (non-`--dry-run`) `run` invocation prints a one-line JSON envelope to stdout at start
+(`{"event": "run_started", "run_id": ..., "run_dir": ..., "label": ...}`) and finish
+(`{"event": "run_finished", "run_id": ..., "exit_code": ..., "status_counts": {...}, "vqa_trusted":
+...}`); a long run (a full 13-book pass, especially with VQA) should be launched in the background
+and polled via `<run_dir>/run-summary.json` rather than waited on synchronously. `--run-label
+<label>` (on `run --resume` and `promote`) or a bare label positional (on `compare`/`report`)
+resolves to the newest run dir under `runs/` whose name ends with `-<label>`, so a single `--label`
+from the original `run` invocation is enough to drive every later step without capturing the
+generated run id by hand.
+
+Raw runs (`data/scan_bench/runs/**`) are gitignored — everything a run produces (`kfx/`, `logs/`,
+`vqa/`, `determinism/`, `run-meta.json`, `run-summary.json`) stays local. `promote` is the only path
+from `runs/` into `data/scan_bench/baselines/<label>/`, which IS a tracked, PR-landed allowlist
+(`run-meta.json`, `run-summary.json`, `report.md`, `manifest.snapshot.json`, VQA/determinism
+report JSON — no `.kfx`, no `.intermediates/`) — see the Worktree Policy section above:
+`data/scan_bench/baselines/**` is not exempt from worktree enforcement.
 
 ## Chapter Alignment Verification
 Cross-references detected chapters against source PDF TOC/bookmarks.

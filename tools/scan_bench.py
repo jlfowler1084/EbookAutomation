@@ -8,21 +8,31 @@ EB-391 phase is measured against the same books the same way. See
 ``docs/plans/2026-09-05-001-feat-eb392-phase0-scan-bench-plan.md`` for the
 full design.
 
-This module implements Unit 3 (the ``preflight`` subcommand, which refuses to
-start a run whose results could not be trusted) and the shared skeleton Unit 4
-extends (``run`` / ``compare`` / ``report`` / ``promote``, stubbed here).
+This module implements all five subcommands: ``preflight`` (refuses to
+start a run whose results could not be trusted), ``run`` (two-stage
+convert+grade orchestration, resumable), ``compare`` (diff two runs/
+baselines), ``report`` (render a run's/baseline's report.md), and
+``promote`` (copy an allowlisted run into ``data/scan_bench/baselines/``).
 
-Exit codes (``preflight``, computed by ``compute_exit_code``):
-    0 — all checks PASS (INFO entries do not affect this)
-    1 — at least one WARN, no FAIL
-    2 — at least one FAIL
-    3 — infra / argparse error (``ArgumentParser.error()`` is overridden to
-        exit 3 rather than argparse's default 2, which this tool reserves for
-        "blocking FAIL" — the eb370 convention)
+Exit codes -- one consolidated table for all five subcommands (the eb370
+0/1/2/3 convention; 3 is always ``ArgumentParser.error()``/an unhandled
+exception, never a subcommand's own logic):
+
+    | code | preflight              | run                                | compare / report | promote            |
+    | ---- | ---------------------- | ----------------------------------- | ----------------- | ------------------- |
+    | 0    | all checks PASS         | all rows terminal-success           | resolved OK        | promoted OK          |
+    | 1    | >=1 WARN, no FAIL       | some rows failed/partial/skipped (expected for row 0) | n/a (compare/report have no WARN tier) | n/a |
+    | 2    | >=1 FAIL                | guardrail failure (100% failure in a stage, forced WARN/FAIL, e.g. untrusted-grader or gate-down) | n/a | validation refused (see ``validate_promotion``) |
+    | 3    | infra / argparse error  | infra / argparse error              | could not resolve a run/baseline dir, or argparse error | run dir missing, or argparse error |
 
 Usage:
     python tools/scan_bench.py preflight --skip-vqa --allow-dirty
     python tools/scan_bench.py preflight --label row0-vqa --json
+    python tools/scan_bench.py run --label row0-convert --skip-vqa
+    python tools/scan_bench.py run --label row0-vqa --vqa-only --resume --run-label row0-convert
+    python tools/scan_bench.py compare row0-convert row0-cloud --md
+    python tools/scan_bench.py report row0-vqa --json
+    python tools/scan_bench.py promote --run-label row0 --label row0-convert
 """
 
 from __future__ import annotations
@@ -37,6 +47,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +64,8 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 # regardless of the caller's cwd (mirrors tools/visual_qa.py, tools/batch_qa.py).
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from llm_providers.local_provider import CONSERVATIVE_UNKNOWN_N_CTX  # noqa: E402
+
 logger = logging.getLogger("scan_bench")
 
 
@@ -64,11 +77,11 @@ logger = logging.getLogger("scan_bench")
 # (mirrors the "download stub threshold" language in the plan).
 STUB_MIN_BYTES: int = 200_000
 
-# Conservative fallback n_ctx used only when a probe totally fails and no
-# result dict is available at all (mirrors local_provider.py's own
-# CONSERVATIVE_UNKNOWN_N_CTX so preflight's degraded-path math agrees with
-# the provider's).
-CONSERVATIVE_UNKNOWN_N_CTX: int = 8192
+# NOTE: the conservative fallback n_ctx used when a probe totally fails is
+# CONSERVATIVE_UNKNOWN_N_CTX, imported above from llm_providers.local_provider
+# (the canonical definition) so preflight's degraded-path math can never
+# silently drift from the provider's own fallback value (previously this was
+# a second, independently-maintained literal ``8192`` here).
 
 # A minimal, valid 8x8 solid-white RGB PNG, hardcoded as base64 so the
 # tiny-image preflight check never depends on PIL/Pillow being installed.
@@ -284,6 +297,7 @@ def check_sources(manifest: dict, write_sha: bool) -> tuple[list[CheckResult], b
         if not source_path or not Path(source_path).is_file():
             results.append(CheckResult(
                 name, "FAIL", f"source missing for book {bid}: {source_path!r}",
+                details={"id": bid, "source_path": source_path, "exists": False},
             ))
             continue
 
@@ -291,6 +305,7 @@ def check_sources(manifest: dict, write_sha: bool) -> tuple[list[CheckResult], b
         if p.suffix.lower() != ".pdf":
             results.append(CheckResult(
                 name, "FAIL", f"{bid}: source is not a .pdf (suffix {p.suffix!r}): {source_path}",
+                details={"id": bid, "source_path": source_path, "suffix": p.suffix},
             ))
             continue
 
@@ -300,35 +315,49 @@ def check_sources(manifest: dict, write_sha: bool) -> tuple[list[CheckResult], b
                 name, "FAIL",
                 f"{bid}: file size {actual_size} bytes <= stub threshold "
                 f"{STUB_MIN_BYTES} bytes (likely a download stub): {source_path}",
+                details={"id": bid, "source_path": source_path, "actual_size": actual_size,
+                         "stub_min_bytes": STUB_MIN_BYTES},
             ))
             continue
 
         status = "PASS"
         notes: list[str] = []
+        detail: dict[str, Any] = {"id": bid, "source_path": source_path, "actual_size": actual_size}
 
         expected_size = book.get("size_bytes")
+        detail["expected_size"] = expected_size
         if isinstance(expected_size, int) and expected_size != actual_size:
             status = "WARN"
             notes.append(f"size_bytes mismatch (manifest {expected_size}, actual {actual_size})")
 
         sha = book.get("sha256")
+        detail["sha256_manifest"] = sha
+        sha_status: str
         if not sha:
             if write_sha:
                 computed = sha256_file(p)
                 book["sha256"] = computed
                 changed = True
                 notes.append(f"sha256 computed and written: {computed}")
+                sha_status = "written"
+                detail["sha256_computed"] = computed
             else:
                 status = "WARN" if status != "FAIL" else status
                 notes.append("sha unset")
+                sha_status = "unset"
         else:
             computed = sha256_file(p)
+            detail["sha256_computed"] = computed
             if computed != sha:
                 status = "FAIL"
                 notes.append(f"sha256 mismatch (manifest {sha}, computed {computed})")
+                sha_status = "mismatch"
+            else:
+                sha_status = "match"
+        detail["sha_status"] = sha_status
 
         message = f"{bid}: " + ("; ".join(notes) if notes else "ok")
-        results.append(CheckResult(name, status, message))
+        results.append(CheckResult(name, status, message, details=detail))
 
     return results, changed
 
@@ -418,13 +447,20 @@ def _check_endpoint_probe(base_url: str | None, model: str | None) -> tuple[dict
         f"n_ctx={probe.get('n_ctx')} ({probe.get('n_ctx_source')}) "
         f"total_slots={probe.get('total_slots')} model_path={probe.get('model_path')}"
     )
+    # Agent-native JSON (project-standards/kieran-python review): the full
+    # probe dict (n_ctx/model_served/total_slots/model_path/probe_ok/etc.) is
+    # already in scope here -- surface it structurally instead of only in the
+    # prose message string, so a caller of preflight --json does not have to
+    # regex the message to recover e.g. n_ctx.
     if not probe_ok or model_served != model:
         return probe, CheckResult(
             "endpoint_probe", "FAIL",
             f"probe_ok={probe_ok} model_served={model_served!r} (manifest model {model!r}); {detail}",
+            details=dict(probe),
         )
     return probe, CheckResult(
         "endpoint_probe", "PASS", f"model_served={model_served!r}; {detail}",
+        details=dict(probe),
     )
 
 
@@ -441,11 +477,13 @@ def _check_endpoint_tiny_image(base_url: str | None, model: str | None) -> Check
         return CheckResult(
             "endpoint_tiny_image", "PASS",
             f"tiny-image request succeeded: {result.get('content')!r}",
+            details=dict(result),
         )
     return CheckResult(
         "endpoint_tiny_image", "FAIL",
         f"tiny-image request failed ({result.get('error')}) -- a text-only backend "
         f"that answers /v1/models but has no vision route will fail here",
+        details=dict(result),
     )
 
 
@@ -490,11 +528,15 @@ def _check_regime(
             )
         else:
             msg = f"n_ctx {n_ctx} >= expected_min_n_ctx {expected_min_n_ctx}"
-        results.append(CheckResult("regime_min_n_ctx", severity(violated), msg))
+        results.append(CheckResult(
+            "regime_min_n_ctx", severity(violated), msg,
+            details={"n_ctx": n_ctx, "expected_min_n_ctx": expected_min_n_ctx, "violated": violated},
+        ))
     else:
         results.append(CheckResult(
             "regime_min_n_ctx", "WARN",
             f"n_ctx ({n_ctx}) or provider.expected_min_n_ctx ({expected_min_n_ctx}) unknown; cannot evaluate",
+            details={"n_ctx": n_ctx, "expected_min_n_ctx": expected_min_n_ctx},
         ))
 
     if isinstance(expected_total_slots, int) and isinstance(total_slots, int):
@@ -503,12 +545,16 @@ def _check_regime(
             f"total_slots {total_slots} != expected_total_slots {expected_total_slots}" if violated
             else f"total_slots {total_slots} == expected_total_slots {expected_total_slots}"
         )
-        results.append(CheckResult("regime_total_slots", severity(violated), msg))
+        results.append(CheckResult(
+            "regime_total_slots", severity(violated), msg,
+            details={"total_slots": total_slots, "expected_total_slots": expected_total_slots, "violated": violated},
+        ))
     else:
         results.append(CheckResult(
             "regime_total_slots", "WARN",
             f"total_slots ({total_slots}) or provider.expected_total_slots "
             f"({expected_total_slots}) unknown; cannot evaluate",
+            details={"total_slots": total_slots, "expected_total_slots": expected_total_slots},
         ))
 
     if isinstance(expected_batch_size, int) and isinstance(n_ctx, int) and base_url:
@@ -517,6 +563,7 @@ def _check_regime(
         except Exception as exc:  # noqa: BLE001
             results.append(CheckResult(
                 "regime_batch_size", "WARN", f"could not compute max_batch_size: {exc}",
+                details={"n_ctx": n_ctx, "expected_batch_size": expected_batch_size, "error": str(exc)},
             ))
         else:
             violated = max_batch < expected_batch_size
@@ -525,11 +572,16 @@ def _check_regime(
                 if violated else
                 f"max_batch_size(n_ctx={n_ctx}) = {max_batch} >= required vqa.batch_size {expected_batch_size}"
             )
-            results.append(CheckResult("regime_batch_size", severity(violated), msg))
+            results.append(CheckResult(
+                "regime_batch_size", severity(violated), msg,
+                details={"n_ctx": n_ctx, "max_batch_size": max_batch,
+                         "expected_batch_size": expected_batch_size, "violated": violated},
+            ))
     else:
         results.append(CheckResult(
             "regime_batch_size", "WARN",
             "vqa.batch_size, n_ctx, or provider.base_url unknown; cannot evaluate",
+            details={"n_ctx": n_ctx, "expected_batch_size": expected_batch_size},
         ))
 
     return results
@@ -548,12 +600,15 @@ def _check_env_local_llm(manifest_base_url: str | None, manifest_model: str | No
     if env_model and env_model != manifest_model:
         mismatches.append(f"LOCAL_LLM_VISION_MODEL env={env_model!r} manifest={manifest_model!r}")
 
+    detail = {"env_base_url": env_base, "env_model": env_model,
+              "manifest_base_url": manifest_base_url, "manifest_model": manifest_model}
     if mismatches:
         return CheckResult(
             "env_local_llm", "WARN",
             "; ".join(mismatches) + " -- the harness pins its own child environment",
+            details=detail,
         )
-    return CheckResult("env_local_llm", "PASS", "process env matches manifest (or is unset)")
+    return CheckResult("env_local_llm", "PASS", "process env matches manifest (or is unset)", details=detail)
 
 
 def _check_env_cloud_keys() -> CheckResult:
@@ -564,8 +619,12 @@ def _check_env_cloud_keys() -> CheckResult:
             "env_cloud_keys", "INFO",
             f"{', '.join(present)} present in process env -- will be blanked for "
             f"children (cloud_policy off)",
+            details={"present": present},
         )
-    return CheckResult("env_cloud_keys", "PASS", "no cloud API keys present in process env")
+    return CheckResult(
+        "env_cloud_keys", "PASS", "no cloud API keys present in process env",
+        details={"present": []},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -722,9 +781,9 @@ def _check_tools() -> list[CheckResult]:
 
     pwsh_path = shutil.which("pwsh")
     if pwsh_path:
-        results.append(CheckResult("tool_pwsh", "PASS", f"pwsh found: {pwsh_path}"))
+        results.append(CheckResult("tool_pwsh", "PASS", f"pwsh found: {pwsh_path}", details={"path": pwsh_path}))
     else:
-        results.append(CheckResult("tool_pwsh", "FAIL", "pwsh (PowerShell 7) not found on PATH"))
+        results.append(CheckResult("tool_pwsh", "FAIL", "pwsh (PowerShell 7) not found on PATH", details={"path": None}))
 
     settings = load_settings_json()
     paths_cfg = settings.get("paths", {}) if isinstance(settings, dict) else {}
@@ -733,14 +792,21 @@ def _check_tools() -> list[CheckResult]:
     ):
         raw = paths_cfg.get(key)
         if not raw:
-            results.append(CheckResult(check_name, "FAIL", f"config/settings.json paths.{key} is not set"))
+            results.append(CheckResult(
+                check_name, "FAIL", f"config/settings.json paths.{key} is not set",
+                details={"configured_path": None, "resolved_path": None},
+            ))
             continue
         resolved = _resolve_config_path(raw)
         if resolved.exists():
-            results.append(CheckResult(check_name, "PASS", f"{key} found: {resolved}"))
+            results.append(CheckResult(
+                check_name, "PASS", f"{key} found: {resolved}",
+                details={"configured_path": raw, "resolved_path": str(resolved)},
+            ))
         else:
             results.append(CheckResult(
                 check_name, "FAIL", f"{key} not found at {resolved} (paths.{key}={raw!r})",
+                details={"configured_path": raw, "resolved_path": str(resolved)},
             ))
 
     return results
@@ -807,13 +873,20 @@ def _check_determinism_verdict(path: Path, provider_cfg: dict) -> CheckResult:
             )
     else:
         note = (
-            " (verdict has no provider_resolved data -- cannot confirm target match; "
-            "re-run vqa_determinism_check.py after EB-390 lands)"
+            " (verdict has no provider_resolved data -- cannot confirm target "
+            "match; this is expected for a legacy/pre-EB-392 verdict schema "
+            "or a runner that never resolved provenance)"
         )
 
+    detail = {
+        "path": str(path), "is_deterministic": is_deterministic,
+        "could_not_assess": bool(verdict.get("could_not_assess")),
+        "could_not_assess_reason": verdict.get("could_not_assess_reason"),
+        "provider_resolved": provider_resolved,
+    }
     if reasons:
-        return CheckResult("determinism_verdict", "FAIL", "; ".join(reasons))
-    return CheckResult("determinism_verdict", "PASS", f"verdict deterministic{note}")
+        return CheckResult("determinism_verdict", "FAIL", "; ".join(reasons), details=detail)
+    return CheckResult("determinism_verdict", "PASS", f"verdict deterministic{note}", details=detail)
 
 
 # ---------------------------------------------------------------------------
@@ -909,6 +982,33 @@ def child_env(
     return env
 
 
+def _clear_tmp_dir(tmp_dir: Path) -> None:
+    """Clear the contents of the per-run TEMP dir (``paths.tmp_dir``, which
+    ``child_env`` points every child's TEMP/TMP at) after each book.
+
+    Reliability review: the plan commits to deleting the per-run TEMP
+    contents after each row as the mitigation for a known, separately
+    documented bug where ``visual_qa.py`` never removes its
+    ``tempfile.mkdtemp`` render directories. Without this, each book's VQA
+    subprocess renders up to ``--max-pages`` PNGs into this TEMP tree and
+    none of it is ever reclaimed within the run -- an unbounded, easily
+    preventable path to disk exhaustion on a long/large-corpus run. Best
+    effort: any entry that cannot be removed (locked file, permission error)
+    is left in place and logged at debug, never raised -- a cleanup failure
+    must not turn into a failed row.
+    """
+    if not tmp_dir.is_dir():
+        return
+    for child in tmp_dir.iterdir():
+        try:
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink()
+        except OSError as exc:
+            logger.debug("_clear_tmp_dir: could not remove %s: %s", child, exc)
+
+
 # ---------------------------------------------------------------------------
 # Preflight orchestration
 # ---------------------------------------------------------------------------
@@ -930,20 +1030,30 @@ def run_preflight_checks(
     # 1. manifest tracked
     tracked = git_ls_files_tracked(manifest_path)
     if tracked:
-        results.append(CheckResult("manifest_tracked", "PASS", f"{manifest_path} is tracked in git"))
+        results.append(CheckResult(
+            "manifest_tracked", "PASS", f"{manifest_path} is tracked in git",
+            details={"manifest_path": str(manifest_path), "tracked": True},
+        ))
     else:
         results.append(CheckResult(
             "manifest_tracked", "FAIL",
             f"{manifest_path} is NOT tracked in git (git ls-files --error-unmatch failed)",
+            details={"manifest_path": str(manifest_path), "tracked": False},
         ))
 
     # 2. manifest schema
     schema_errors = validate_manifest_schema(manifest)
     if schema_errors:
-        results.append(CheckResult("manifest_schema", "FAIL", "; ".join(schema_errors)))
+        results.append(CheckResult(
+            "manifest_schema", "FAIL", "; ".join(schema_errors),
+            details={"errors": schema_errors},
+        ))
     else:
         n_books = len(manifest.get("books", []))
-        results.append(CheckResult("manifest_schema", "PASS", f"schema OK ({n_books} books)"))
+        results.append(CheckResult(
+            "manifest_schema", "PASS", f"schema OK ({n_books} books)",
+            details={"n_books": n_books},
+        ))
 
     # 3. sources (one CheckResult per book)
     source_results, manifest_changed = check_sources(manifest, write_sha=bool(args.write_sha))
@@ -990,6 +1100,7 @@ def run_preflight_checks(
     head = git_head_short()
     results.append(CheckResult(
         "git_head", "PASS" if head != "unknown" else "WARN", f"HEAD {head}",
+        details={"git_head": head},
     ))
     dirty = git_dirty_pipeline_files()
     if dirty:
@@ -997,9 +1108,13 @@ def run_preflight_checks(
         results.append(CheckResult(
             "git_dirty", status,
             f"{len(dirty)} modified tracked pipeline file(s): {', '.join(dirty)}",
+            details={"dirty_files": dirty},
         ))
     else:
-        results.append(CheckResult("git_dirty", "PASS", "tools/, module/, config/settings.json clean"))
+        results.append(CheckResult(
+            "git_dirty", "PASS", "tools/, module/, config/settings.json clean",
+            details={"dirty_files": []},
+        ))
 
     # 8. junctions
     junctions = find_junctions(PROJECT_ROOT)
@@ -1008,9 +1123,13 @@ def run_preflight_checks(
             "junctions", "FAIL",
             f"{len(junctions)} junction/symlink director{'y' if len(junctions) == 1 else 'ies'} "
             f"found: {', '.join(str(j) for j in junctions)}",
+            details={"junctions": [str(j) for j in junctions]},
         ))
     else:
-        results.append(CheckResult("junctions", "PASS", "no junction/symlink directories found"))
+        results.append(CheckResult(
+            "junctions", "PASS", "no junction/symlink directories found",
+            details={"junctions": []},
+        ))
 
     # 9. tools
     results.extend(_check_tools())
@@ -1019,6 +1138,21 @@ def run_preflight_checks(
     if args.determinism_verdict:
         results.append(_check_determinism_verdict(Path(args.determinism_verdict), provider_cfg))
 
+    # Agent-native JSON (project-standards/kieran-python review):
+    # resolved_provider used to be just the manifest's config pair
+    # (base_url/model) even though the full probe result (n_ctx/
+    # n_ctx_source/total_slots/model_path/model_served/probe_ok/...) was
+    # already computed above -- callers of preflight --json had no way to
+    # read the resolved regime without re-probing themselves. Carry the full
+    # probe dict when the probe succeeded; fall back to the config pair
+    # (with probe_ok explicitly False) only when it failed entirely.
+    if probe_result:
+        resolved_provider: dict[str, Any] = dict(probe_result)
+        resolved_provider.setdefault("base_url", base_url)
+        resolved_provider.setdefault("model", model)
+    else:
+        resolved_provider = {"base_url": base_url, "model": model, "probe_ok": False}
+
     extra: dict[str, Any] = {
         "manifest_path": str(manifest_path),
         "git_head": head,
@@ -1026,7 +1160,7 @@ def run_preflight_checks(
         "allow_degraded_batch": bool(args.allow_degraded_batch),
         "n_ctx": n_ctx,
         "total_slots": total_slots,
-        "resolved_provider": {"base_url": base_url, "model": model},
+        "resolved_provider": resolved_provider,
     }
     return results, extra
 
@@ -1204,6 +1338,27 @@ def extract_ocr_gate_classes(psm1_text: str) -> set[str]:
     return set(re.findall(r"'([^']*)'", literal_list))
 
 
+def _ps_quote(value: str | os.PathLike) -> str:
+    """Wrap ``value`` in a PowerShell *single*-quoted string literal.
+
+    PowerShell single-quoted strings do no interpolation at all: no
+    ``$var``/``$(...)`` command-substitution expansion, and no backtick
+    escape processing -- the sole special character is the quote delimiter
+    itself, escaped by doubling (``'`` -> ``''``). Using this for every path
+    embedded in a ``-Command`` string (instead of a double-quoted string,
+    which DOES interpolate ``$`` and honours backtick escapes) neutralises a
+    double quote, a backtick, and a ``$(...)`` subexpression embedded in a
+    path -- exactly the character classes this corpus's third-party-sourced
+    filenames are known to contain (brackets, curly apostrophes; see
+    ``resolve_source_path`` / ``check_sources`` docstrings). A raw double
+    quote or ``$(`` inside the payload still appears literally inside the
+    quoted string, but PowerShell's single-quoted parser never treats it as
+    syntactically significant there -- it cannot end the string early or
+    trigger substitution.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def build_convert_command(
     module_psd1: str | os.PathLike,
     pdf_path: str | os.PathLike,
@@ -1214,11 +1369,18 @@ def build_convert_command(
 
     Every parameter name used here must be in MIRROR_SWITCHES (and therefore
     in CONVERT_TOKINDLE_CALL_PARAMS) -- see the contract test.
+
+    Every embedded path is a PowerShell single-quoted literal (``_ps_quote``),
+    not a double-quoted one -- see its docstring. This corpus's filenames are
+    pulled verbatim from third-party download sources and are never globbed/
+    sanitized (``resolve_source_path``), so a double quote, backtick, or
+    ``$(...)`` subexpression in a path must never be able to break out of the
+    string it is embedded in and inject a second PowerShell statement.
     """
     ps_cmd = (
-        f'Import-Module "{module_psd1}" -Force; '
-        f'Convert-ToKindle -InputFile "{pdf_path}" -OutputDir "{out_dir}" '
-        f'-UseHtmlExtraction -NoCache'
+        f"Import-Module {_ps_quote(module_psd1)} -Force; "
+        f"Convert-ToKindle -InputFile {_ps_quote(pdf_path)} -OutputDir {_ps_quote(out_dir)} "
+        f"-UseHtmlExtraction -NoCache"
     )
     if use_ocr:
         ps_cmd += " -UseOCR"
@@ -1326,6 +1488,14 @@ def _kill_process_tree(pid: int) -> None:
     never leaves a live root PID to tree-kill. ``psutil`` (children,
     recursive) is used when importable; ``taskkill /F /T /PID`` otherwise --
     no new hard dependency (plan: "No new Python dependencies").
+
+    Every ``child.kill()``/``parent.kill()`` call is wrapped in a broad
+    ``except Exception`` (not just ``psutil.NoSuchProcess``): a different
+    failure (``psutil.AccessDenied``, or anything else surfaced during a
+    kill) must never abort the loop early and skip the remaining
+    children/the parent/the caller's own ``proc.kill()`` fallback -- a
+    reliability finding from the EB-392 review (an early raise here left
+    later descendants, and the root, running as orphans).
     """
     try:
         import psutil
@@ -1339,17 +1509,18 @@ def _kill_process_tree(pid: int) -> None:
             return
         try:
             children = parent.children(recursive=True)
-        except psutil.NoSuchProcess:
+        except Exception as exc:  # noqa: BLE001 - never abort the kill sequence
+            logger.debug("_kill_process_tree: could not enumerate children of %s: %s", pid, exc)
             children = []
         for child in children:
             try:
                 child.kill()
-            except psutil.NoSuchProcess:
-                pass
+            except Exception as exc:  # noqa: BLE001 - one failure must not skip the rest
+                logger.debug("_kill_process_tree: could not kill child %s: %s", getattr(child, "pid", "?"), exc)
         try:
             parent.kill()
-        except psutil.NoSuchProcess:
-            pass
+        except Exception as exc:  # noqa: BLE001 - fall through; caller's proc.kill() still runs
+            logger.debug("_kill_process_tree: could not kill parent %s: %s", pid, exc)
         return
 
     try:
@@ -1359,6 +1530,16 @@ def _kill_process_tree(pid: int) -> None:
         )
     except OSError as exc:
         logger.warning("taskkill /T /PID %s failed: %s", pid, exc)
+
+
+# Post-tree-kill drain bound (item 2, reliability review): the first
+# communicate(timeout=timeout) call's TimeoutExpired handler kills the whole
+# process tree and then must drain the (now presumably closing) pipes to
+# recover any already-buffered output -- but an unbounded second
+# communicate() reproduces the exact indefinite-hang bug this function exists
+# to avoid if the tree-kill was incomplete (an unenumerated grandchild, a
+# psutil race, an AV-held handle). Bounded here instead.
+DRAIN_TIMEOUT_S: int = 30
 
 
 def run_with_tree_kill(
@@ -1373,8 +1554,11 @@ def run_with_tree_kill(
     Deliberately not ``subprocess.run(timeout=...)`` -- see ``_kill_process_tree``
     and the plan's Key Technical Decisions. On ``TimeoutExpired`` the tree is
     killed *before* ``proc.kill()`` (root still alive at that point), then the
-    pipes are drained via a second ``communicate()`` so the child's already-
-    buffered stdout/stderr is not lost.
+    pipes are drained via a second, bounded ``communicate(timeout=DRAIN_TIMEOUT_S)``
+    so the child's already-buffered stdout/stderr is not lost. If THAT also
+    times out (the tree-kill did not fully succeed), this logs an ERROR and
+    returns whatever partial output is available rather than hanging the
+    whole scan_bench run indefinitely one level down.
     """
     t0 = time.monotonic()
     proc = subprocess.Popen(
@@ -1392,8 +1576,22 @@ def run_with_tree_kill(
             proc.kill()
         except OSError:
             pass
-        stdout, stderr = proc.communicate()
+        try:
+            stdout, stderr = proc.communicate(timeout=DRAIN_TIMEOUT_S)
+        except subprocess.TimeoutExpired as drain_exc:
+            logger.error(
+                "run_with_tree_kill: pid %s did not release its stdout/stderr "
+                "pipes within %ss of the tree-kill (an unkilled descendant may "
+                "still hold a handle) -- returning partial output rather than "
+                "hanging the whole scan_bench run",
+                proc.pid, DRAIN_TIMEOUT_S,
+            )
+            stdout = getattr(drain_exc, "stdout", None) or ""
+            stderr = getattr(drain_exc, "stderr", None) or ""
     elapsed = time.monotonic() - t0
+
+    stdout = _redact_secrets(stdout)
+    stderr = _redact_secrets(stderr)
 
     if log_path is not None:
         try:
@@ -1785,6 +1983,32 @@ def make_run_id(label: str | None, git_sha: str, now: datetime | None = None) ->
     return run_id
 
 
+def resolve_run_label_to_dir(label: str, runs_root: Path) -> Path | None:
+    """The newest run dir under ``runs_root`` whose name ends with ``-<label>``.
+
+    CLI readiness review: ``run``'s generated run id
+    (``<yyyymmdd-HHMMSS>-<sha7>[-label]``, from ``make_run_id``) is never
+    ``<label>`` alone, so a bare ``--label row0-convert`` cannot be threaded
+    into ``--resume``/``report``/``compare``/``promote`` without an agent
+    separately capturing and passing the exact generated run id. This gives
+    every one of those commands a ``--run-label``-based (or, for
+    ``report``/``compare``, positional-arg) path that resolves a label to a
+    run directory without that capture step: because a run id's timestamp
+    prefix sorts lexicographically in chronological order, the
+    lexicographically largest matching directory name is also the newest one
+    -- "latest run with this label" needs no separate pointer file or mtime
+    comparison.
+    """
+    if not runs_root.is_dir():
+        return None
+    suffix = f"-{label}"
+    candidates = sorted(
+        (p for p in runs_root.iterdir() if p.is_dir() and p.name.endswith(suffix)),
+        key=lambda p: p.name,
+    )
+    return candidates[-1] if candidates else None
+
+
 @dataclass
 class RunPaths:
     """Everything one ``run --run-id`` produces, laid out under ``runs_root``.
@@ -1845,11 +2069,25 @@ def _read_json(path: str | os.PathLike) -> dict | None:
 
 
 def _write_json(path: str | os.PathLike, data: dict) -> None:
+    """Write ``data`` as JSON atomically: a ``.tmp`` file in the same
+    directory (so ``os.replace`` stays on one filesystem), then an atomic
+    rename onto ``path``. ``run-summary.json``/``run-meta.json`` are
+    rewritten after every book specifically so a killed run resumes cleanly
+    (reliability review) -- a direct in-place write left the file truncated
+    if the process was killed mid-write (Ctrl-C, taskkill, this file's own
+    tree-kill, OOM, power loss), and ``_read_json`` silently treats a
+    truncated/corrupt file as absent, which would quietly reset resume
+    progress to zero rather than resuming cleanly. ``os.replace`` is atomic
+    on both POSIX and Windows, so a reader never observes a partially
+    written file: it sees either the previous complete file or the new one.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
+    tmp_path = path.with_name(path.name + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, default=str)
         f.write("\n")
+    os.replace(tmp_path, path)
 
 
 def load_run_summary(path: str | os.PathLike) -> dict:
@@ -1880,8 +2118,32 @@ def _pwsh_version() -> str:
     return (result.stdout or "").strip() or "unknown"
 
 
+# Key-shaped secret patterns scrubbed from persisted subprocess stdout/stderr
+# (security review, EB-392): a ``run --cloud-as-configured`` (row0-cloud)
+# restores real ANTHROPIC_API_KEY/GEMINI_API_KEY/OPENROUTER_API_KEY into the
+# child env (child_env), and this harness's *.convert.log/*.vqa.log files and
+# a row's ``error`` tail are both persisted into run-summary.json, which
+# ``promote`` copies verbatim into a git-tracked, PR-landed baseline
+# directory. Redaction is applied to the raw text before it is ever written
+# to disk, not only at display time.
+_SECRET_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"sk-or-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"AIza[0-9A-Za-z_\-]{20,}"),
+    re.compile(r"(?i)(api[_-]?key|token|secret)=\S+"),
+)
+
+
+def _redact_secrets(text: str | None) -> str:
+    """Scrub key-shaped secrets from subprocess output before persistence."""
+    redacted = text or ""
+    for pattern in _SECRET_PATTERNS:
+        redacted = pattern.sub("<redacted>", redacted)
+    return redacted
+
+
 def _tail(text: str | None, limit: int = 4000) -> str:
-    return (text or "")[-limit:]
+    return _redact_secrets(text)[-limit:]
 
 
 def build_run_meta(
@@ -1962,9 +2224,17 @@ _VQA_TERMINAL: frozenset[str] = frozenset({
     "evaluated", "evaluated_partial", "vqa_skipped_by_flag", "vqa_skipped_empty",
 })
 # Statuses counted as an outright failure for the run-level guardrail.
+# ``vqa_skipped_provider_down`` (the gate-level "provider unreachable for the
+# whole run" outcome) and ``vqa_skipped_gate_could_not_assess`` (the
+# gate-level could-not-assess outcome) are gate-wide statuses, not per-book
+# ones, but a 100%-provider-down VQA stage must still exit FAIL(2), not
+# WARN(1) -- a correctness review finding: a run where Stage 1 succeeded for
+# every book but the VQA server was completely unreachable for all of Stage 2
+# used to exit WARN, identical to an expected row-0 partial run.
 _FAILURE_STATUSES: frozenset[str] = frozenset({
     "source_missing", "convert_failed", "convert_crashed", "convert_timeout",
     "vqa_provider_down", "vqa_render_failed", "vqa_api_failure", "vqa_no_report", "vqa_timeout",
+    "vqa_skipped_provider_down", "vqa_skipped_gate_could_not_assess",
 })
 
 
@@ -2128,7 +2398,17 @@ def process_stage1_book(
     row["metrics_done"] = "metrics_error" not in metrics
 
 
-_DRIFT_FIELDS: tuple[str, ...] = ("model_served", "n_ctx", "total_slots", "model_path")
+# Always compared: a per-book re-probe reporting a different value here means
+# the book was graded under genuinely different server conditions than the
+# run's baseline probe.
+_DRIFT_FIELDS_ALWAYS: tuple[str, ...] = ("model_served", "n_ctx", "total_slots")
+# Compared only when BOTH sides report a non-null value (mirrors
+# vqa_determinism_check.py's _DRIFT_FIELDS_WHEN_BOTH_PRESENT): many servers
+# never expose model_path via /props, and a transient /props miss on a single
+# per-book re-probe (baseline had a real value, this probe returns None) is
+# not evidence the underlying weights actually changed -- it would otherwise
+# spuriously mark the row (and every later row) provider_drift/untrusted.
+_DRIFT_FIELDS_WHEN_BOTH_PRESENT: tuple[str, ...] = ("model_path",)
 
 
 def detect_provider_drift(baseline_provider: dict, probe: dict) -> str | None:
@@ -2139,8 +2419,12 @@ def detect_provider_drift(baseline_provider: dict, probe: dict) -> str | None:
         return "probe_failed"
     diffs = [
         f"{f}: {baseline_provider.get(f)!r} -> {probe.get(f)!r}"
-        for f in _DRIFT_FIELDS if baseline_provider.get(f) != probe.get(f)
+        for f in _DRIFT_FIELDS_ALWAYS if baseline_provider.get(f) != probe.get(f)
     ]
+    for f in _DRIFT_FIELDS_WHEN_BOTH_PRESENT:
+        a_val, b_val = baseline_provider.get(f), probe.get(f)
+        if a_val is not None and b_val is not None and a_val != b_val:
+            diffs.append(f"{f}: {a_val!r} -> {b_val!r}")
     return "; ".join(diffs) if diffs else None
 
 
@@ -2277,16 +2561,20 @@ def run_determinism_gate(
     env: dict[str, str],
     timeout: int,
     log_path: Path,
-) -> tuple[int, dict | None, dict | None]:
+) -> tuple[int, dict | None, dict | None, str]:
     """Runs ``vqa_determinism_check.py`` against the gate subject.
 
-    Returns ``(exit_code, verdict_json_or_None, run1_report_or_None)``.
-    ``run1_report`` is loaded from ``<out_dir>/run1/<stem>_visual_qa_report.json``
+    Returns ``(exit_code, verdict_json_or_None, run1_report_or_None,
+    stderr_tail)``. ``run1_report`` is loaded from
+    ``<out_dir>/run1/<stem>_visual_qa_report.json``
     (``vqa_determinism_check.build_vqa_runner``'s own per-run output layout)
     so it can be reused as the gate subject's graded VQA row without a second
     ``visual_qa.py`` invocation. A timeout or a Popen-level exception is
-    treated as exit 2 (provider-down-equivalent) -- the gate is not trusted
-    either way.
+    treated as exit 2 with no verdict -- the caller (``cmd_run``) falls back
+    to a generic "provider unreachable" classification in that case; when a
+    verdict IS present and parseable, its own ``could_not_assess``/
+    ``could_not_assess_reason`` fields (drift, degraded-context, etc.) take
+    precedence over that generic fallback.
     """
     vqa_cfg = manifest.get("vqa", {}) if isinstance(manifest.get("vqa"), dict) else {}
     cmd = build_determinism_gate_command(python_exe, gate_subject_output, vqa_cfg, n_ctx, out_dir)
@@ -2294,11 +2582,11 @@ def run_determinism_gate(
         result = run_with_tree_kill(cmd, timeout=timeout, env=env, log_path=log_path)
     except Exception as exc:  # noqa: BLE001
         logger.error("determinism gate raised %s: %s", type(exc).__name__, exc)
-        return ExitCode.FAIL, None, None
+        return ExitCode.FAIL, None, None, f"{type(exc).__name__}: {exc}"
 
     if result.timed_out:
         logger.error("determinism gate timed out after %ss", timeout)
-        return ExitCode.FAIL, None, None
+        return ExitCode.FAIL, None, None, _tail(result.stderr)
 
     verdict = None
     try:
@@ -2312,7 +2600,7 @@ def run_determinism_gate(
     run1_path = Path(out_dir) / "run1" / f"{Path(gate_subject_output).stem}_visual_qa_report.json"
     run1_report = _read_json(run1_path)
 
-    return exit_code, verdict, run1_report
+    return exit_code, verdict, run1_report, _tail(result.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -2382,13 +2670,28 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
         logger.error("run: manifest schema invalid: %s", "; ".join(schema_errors))
         return ExitCode.ERROR
 
-    if (args.resume or args.retry) and not args.run_id:
-        logger.error("run: --resume/--retry require an explicit --run-id naming the run to resume")
+    run_label_arg = getattr(args, "run_label", None)
+    if args.retry and not args.run_id:
+        logger.error("run: --retry requires an explicit --run-id naming the run to retry within")
+        return ExitCode.ERROR
+    if args.resume and not args.run_id and not run_label_arg:
+        logger.error("run: --resume requires an explicit --run-id or --run-label naming the run to resume")
         return ExitCode.ERROR
 
     git_sha = git_head_short()
-    run_id = args.run_id or make_run_id(args.label, git_sha)
     runs_root = Path(args.runs_root) if args.runs_root else runs_root_default()
+
+    resolved_run_id = args.run_id
+    if args.resume and not resolved_run_id and run_label_arg:
+        label_dir = resolve_run_label_to_dir(run_label_arg, runs_root)
+        if label_dir is None:
+            logger.error(
+                "run: --run-label %r matched no existing run dir under %s", run_label_arg, runs_root,
+            )
+            return ExitCode.ERROR
+        resolved_run_id = label_dir.name
+
+    run_id = resolved_run_id or make_run_id(args.label, git_sha)
     paths = RunPaths.for_run(runs_root, run_id)
 
     run_exists = paths.run_dir.is_dir()
@@ -2410,6 +2713,15 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
 
     if not args.dry_run:
         paths.ensure()
+        # CLI readiness review: every real run must print its run_id/run_dir
+        # somewhere an agent/script can read it WITHOUT --dry-run -- an
+        # auto-generated run_id (make_run_id) is not just <label>, so without
+        # this line there was no programmatic way to learn it, and --resume/
+        # report/compare/promote had no bridge back to a bare --label run.
+        print(json.dumps({
+            "event": "run_started", "run_id": run_id, "run_dir": str(paths.run_dir),
+            "label": args.label,
+        }))
 
     provider_cfg = manifest.get("provider", {}) if isinstance(manifest.get("provider"), dict) else {}
     base_url = provider_cfg.get("base_url")
@@ -2463,13 +2775,16 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
                 if not args.resume or not _stage1_needs_processing(existing):
                     continue
             row = _default_row(book) if (existing is None or force) else existing
+            logger.info("run: [Stage 1] %s starting", bid)
             process_stage1_book(
                 book, row, manifest=manifest, paths=paths, env=env,
                 module_psd1=module_psd1, search_root=args.search_root,
                 convert_timeout_cap=args.convert_timeout,
             )
+            logger.info("run: [Stage 1] %s finished (status=%s)", bid, row.get("status"))
             summary[bid] = row
             write_run_summary(paths.run_summary_path, summary)
+            _clear_tmp_dir(paths.tmp_dir)
 
     if args.skip_vqa:
         for book in selected_books:
@@ -2479,7 +2794,7 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
             ):
                 row["status"] = row["vqa_status"] = "vqa_skipped_by_flag"
         write_run_summary(paths.run_summary_path, summary)
-        return _finalize_run(paths, summary, run_meta, manifest, books)
+        return _finalize_and_report(paths, summary, run_meta, manifest, books, run_id)
 
     # === Stage 2: determinism gate ===
     gate_subject = run_meta.get("gate_subject")
@@ -2505,7 +2820,7 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
             run_meta["gate_subject"] = None
             write_run_summary(paths.run_summary_path, summary)
             _write_json(paths.run_meta_path, run_meta)
-            return _finalize_run(paths, summary, run_meta, manifest, books)
+            return _finalize_and_report(paths, summary, run_meta, manifest, books, run_id)
         gate_subject = subject
         run_meta["gate_subject"] = gate_subject
         _write_json(paths.run_meta_path, run_meta)
@@ -2513,7 +2828,7 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
     gate_timeout = args.vqa_stage_timeout or (
         scaled_vqa_timeout(0, max((b.get("pages") or 0) for b in books) if books else 0, timeouts_cfg) * 3
     )
-    gate_exit, gate_verdict, gate_run1_report = run_determinism_gate(
+    gate_exit, gate_verdict, gate_run1_report, gate_stderr = run_determinism_gate(
         gate_subject["output_path"], manifest, n_ctx, paths.determinism_pre,
         python_exe, env, gate_timeout, paths.logs_dir / "determinism_gate.log",
     )
@@ -2539,16 +2854,43 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
                 row["status"] = row["vqa_status"] = "vqa_skipped_untrusted_grader"
                 row["vqa_trusted"] = False
         write_run_summary(paths.run_summary_path, summary)
-        return _finalize_run(paths, summary, run_meta, manifest, books, force_exit=ExitCode.WARN)
+        return _finalize_and_report(paths, summary, run_meta, manifest, books, run_id, force_exit=ExitCode.WARN)
 
     if gate_exit == ExitCode.FAIL:
-        logger.error("run: determinism gate could not reach the provider (exit 2) -- VQA skipped for every row")
+        # EB-392 review (correctness/cli-readiness/adversarial findings): a
+        # parseable verdict with could_not_assess=True (server/model identity
+        # drift between the gate's two internal runs, OR -- since the
+        # vqa_determinism_check.py fix above -- a report rejected before that
+        # characterization could even run) is a DIFFERENT, resumable failure
+        # mode than a genuinely unreachable provider. Collapsing both into
+        # "provider down" misdiagnoses the cause and (pre-fix) could blank an
+        # entire run's VQA grading over a single transient probe hiccup.
+        # Classify from the verdict when present; only fall back to the
+        # generic provider-down status when the verdict itself is missing/
+        # unparseable (a genuine transport failure, timeout, or Popen error).
+        if isinstance(gate_verdict, dict) and gate_verdict.get("could_not_assess"):
+            reason = gate_verdict.get("could_not_assess_reason") or "unspecified"
+            status = "vqa_skipped_gate_could_not_assess"
+            message = (
+                f"run: determinism gate could not assess (exit 2) -- {reason}. "
+                "VQA skipped for every row this run; this is resumable once "
+                "the underlying cause (drift, degraded context window, etc.) "
+                "is resolved."
+            )
+        else:
+            status = "vqa_skipped_provider_down"
+            message = (
+                "run: determinism gate could not reach the provider (exit 2) -- "
+                f"VQA skipped for every row{f' ({gate_stderr})' if gate_stderr else ''}"
+            )
+        logger.error(message)
         for book in selected_books:
             row = summary.get(book["id"])
             if row and row.get("convert_status") in ("converted", "converted_empty"):
-                row["status"] = row["vqa_status"] = "vqa_skipped_provider_down"
+                row["status"] = row["vqa_status"] = status
+                row["error"] = message
         write_run_summary(paths.run_summary_path, summary)
-        return _finalize_run(paths, summary, run_meta, manifest, books)
+        return _finalize_and_report(paths, summary, run_meta, manifest, books, run_id)
 
     if gate_exit == ExitCode.WARN and grade_untrusted:
         vqa_trusted_overall = False
@@ -2569,15 +2911,18 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
             continue
 
         reused_report = gate_run1_report if bid == gate_subject["id"] else None
+        logger.info("run: [Stage 2] %s starting", bid)
         process_stage2_book(
             book, row, manifest=manifest, paths=paths, env=env, python_exe=python_exe,
             run_meta=run_meta, vqa_stage_timeout_cap=args.vqa_stage_timeout,
             reused_report=reused_report,
         )
+        logger.info("run: [Stage 2] %s finished (status=%s)", bid, row.get("status"))
         if not vqa_trusted_overall:
             row["vqa_trusted"] = False
         summary[bid] = row
         write_run_summary(paths.run_summary_path, summary)
+        _clear_tmp_dir(paths.tmp_dir)
 
     # === Post-run canary ===
     try:
@@ -2625,7 +2970,7 @@ def cmd_run(args: argparse.Namespace) -> int:  # noqa: C901 - orchestration, kep
     _write_json(paths.run_meta_path, run_meta)
     write_run_summary(paths.run_summary_path, summary)
 
-    return _finalize_run(paths, summary, run_meta, manifest, books)
+    return _finalize_and_report(paths, summary, run_meta, manifest, books, run_id)
 
 
 def _finalize_run(
@@ -2667,6 +3012,45 @@ def _finalize_run(
     return ExitCode.WARN
 
 
+def _finalize_and_report(
+    paths: RunPaths, summary: dict, run_meta: dict, manifest: dict,
+    books: list[dict], run_id: str, force_exit: int | None = None,
+) -> int:
+    """``_finalize_run`` plus the ``run_finished`` stdout envelope (CLI
+    readiness review): every real run prints a final one-line JSON summary
+    -- ``run_id``, the process exit code, a per-status row count, and an
+    aggregate ``vqa_trusted`` (``True`` if every graded row trusted VQA,
+    ``False`` if any row was explicitly marked untrusted, ``None`` if no row
+    carries the field at all, e.g. a ``--skip-vqa`` run) -- so an agent
+    polling a backgrounded run's ``run-summary.json`` has an unambiguous,
+    parseable finish marker instead of having to infer completion from the
+    process's exit alone.
+    """
+    exit_code = _finalize_run(paths, summary, run_meta, manifest, books, force_exit=force_exit)
+
+    status_counts: dict[str, int] = {}
+    for row in summary.values():
+        status = row.get("status") if row else None
+        key = str(status) if status is not None else "null"
+        status_counts[key] = status_counts.get(key, 0) + 1
+
+    trust_values = {row.get("vqa_trusted") for row in summary.values() if row}
+    if not trust_values:
+        vqa_trusted: bool | None = None
+    elif False in trust_values:
+        vqa_trusted = False
+    elif trust_values == {True}:
+        vqa_trusted = True
+    else:
+        vqa_trusted = None
+
+    print(json.dumps({
+        "event": "run_finished", "run_id": run_id, "exit_code": exit_code,
+        "status_counts": status_counts, "vqa_trusted": vqa_trusted,
+    }))
+    return exit_code
+
+
 # ---------------------------------------------------------------------------
 # Unit 4: compare
 # ---------------------------------------------------------------------------
@@ -2678,11 +3062,18 @@ def baselines_root_default() -> Path:
 def resolve_run_or_baseline_dir(
     name_or_path: str, runs_root: Path, baselines_root: Path,
 ) -> Path | None:
-    """A literal path (if it looks like a run/baseline dir), else ``<runs_root>/
-    <name>``, else ``<baselines_root>/<name>``. ``compare``/``report`` accept
-    either a run id or a promoted baseline label interchangeably (both
-    directory shapes carry ``run-summary.json`` -- promote's allowlist
-    guarantees that).
+    """Resolve ``compare``/``report``'s positional argument to a directory.
+
+    Resolution order (CLI readiness review -- ``name_or_path`` may be a run
+    id, a run *label*, or a promoted baseline label, interchangeably):
+      1. a literal path that already looks like a run/baseline dir;
+      2. an exact run dir under ``runs_root`` (a full generated run id);
+      3. the newest run dir under ``runs_root`` whose name ends with
+         ``-<name_or_path>`` (a bare ``--label`` value, e.g. ``row0-convert``
+         resolves to the most recent run captured under that label);
+      4. ``<baselines_root>/<name_or_path>`` (a promoted baseline label).
+    Both run and baseline directory shapes carry ``run-summary.json`` --
+    ``promote``'s allowlist guarantees that.
     """
     p = Path(name_or_path)
     if p.is_dir() and (p / "run-summary.json").is_file():
@@ -2690,6 +3081,9 @@ def resolve_run_or_baseline_dir(
     candidate = runs_root / name_or_path
     if candidate.is_dir():
         return candidate
+    label_dir = resolve_run_label_to_dir(name_or_path, runs_root)
+    if label_dir is not None:
+        return label_dir
     candidate = baselines_root / name_or_path
     if candidate.is_dir():
         return candidate
@@ -2744,6 +3138,8 @@ def compare_row(
     allow_batch_mismatch: bool,
     label_a: str,
     label_b: str,
+    manifest_book_a: dict | None = None,
+    manifest_book_b: dict | None = None,
 ) -> dict:
     """One book's classification (``ok`` | ``not_comparable`` | ``untrusted``
     | ``unreliable`` | ``missing_on_a`` | ``missing_on_b``) plus per-metric
@@ -2801,7 +3197,24 @@ def compare_row(
     if (row_a.get("vqa") or {}).get("degenerate_grader") or (row_b.get("vqa") or {}).get("degenerate_grader"):
         flags.append("degenerate_grader")
 
-    vqa_blocked = classification in ("not_comparable", "untrusted")
+    # Adversarial review: compare never checked that both sides measured the
+    # SAME book -- if the manifest's sha256/source_path/expected_class for
+    # this book id changed between the two runs (a manifest edit, not a
+    # pipeline change), a resulting delta can look like a regression/
+    # improvement that is actually just a change in the measurement's own
+    # ground truth. Flag it; keep the deltas (conversion-side metrics are
+    # still worth showing) but mark the VQA delta unreliable too.
+    manifest_mismatch_reasons: list[str] = []
+    if manifest_book_a and manifest_book_b:
+        for f in ("sha256", "source_path", "expected_class"):
+            va_m, vb_m = manifest_book_a.get(f), manifest_book_b.get(f)
+            if va_m != vb_m:
+                manifest_mismatch_reasons.append(f"manifest.{f}: {va_m!r} != {vb_m!r}")
+    if manifest_mismatch_reasons:
+        flags.append("manifest_mismatch")
+        not_comparable_reasons.extend(manifest_mismatch_reasons)
+
+    vqa_blocked = classification in ("not_comparable", "untrusted") or bool(manifest_mismatch_reasons)
     deltas: dict[str, dict] = {}
     for name, path in _NUMERIC_METRIC_PATHS:
         va, vb = _get_path(row_a, path), _get_path(row_b, path)
@@ -2824,17 +3237,30 @@ def compare_row(
     }
 
 
+def _load_manifest_books_by_id(dir_path: Path) -> dict[str, dict]:
+    """``{book_id: book_dict}`` from ``<dir_path>/manifest.snapshot.json``, or
+    ``{}`` if absent/unparseable/malformed (older runs, or a literal dir with
+    no snapshot) -- absence degrades to "nothing to compare", never an error.
+    """
+    manifest = _read_json(dir_path / "manifest.snapshot.json") or {}
+    books = manifest.get("books") if isinstance(manifest.get("books"), list) else []
+    return {b["id"]: b for b in books if isinstance(b, dict) and b.get("id")}
+
+
 def compare_runs(dir_a: Path, dir_b: Path, *, allow_batch_mismatch: bool = False) -> dict:
     summary_a, meta_a = load_run_bundle(dir_a)
     summary_b, meta_b = load_run_bundle(dir_b)
     label_a = meta_a.get("label") or dir_a.name
     label_b = meta_b.get("label") or dir_b.name
+    manifest_books_a = _load_manifest_books_by_id(dir_a)
+    manifest_books_b = _load_manifest_books_by_id(dir_b)
 
     all_ids = list(dict.fromkeys([*summary_a.keys(), *summary_b.keys()]))
     rows = [
         compare_row(
             bid, summary_a.get(bid), summary_b.get(bid),
             allow_batch_mismatch=allow_batch_mismatch, label_a=label_a, label_b=label_b,
+            manifest_book_a=manifest_books_a.get(bid), manifest_book_b=manifest_books_b.get(bid),
         )
         for bid in all_ids
     ]
@@ -2963,11 +3389,32 @@ def cmd_report(args: argparse.Namespace) -> int:
         except (OSError, json.JSONDecodeError):
             manifest = {"books": []}
 
+    # cli-readiness review: report is a read/bulk-summary command; --json
+    # gives an agent/script a structured alternative to parsing the markdown
+    # table (fragile column positions, a "-" placeholder ambiguous with a
+    # real value).
+    if getattr(args, "json", False):
+        payload = {"run_dir": str(run_dir), "run_meta": run_meta, "rows": summary}
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return ExitCode.OK
+
     markdown = render_report_markdown(manifest, summary, run_meta)
+    # A promoted baseline dir (data/scan_bench/baselines/<label>) is a
+    # read-only, PR-landed allowlist -- `report` must never write into it
+    # (project-standards review). Only a `runs/` dir gets its report.md
+    # (re)written.
+    is_baseline_dir = False
     try:
-        (run_dir / "report.md").write_text(markdown, encoding="utf-8", newline="\n")
-    except OSError as exc:
-        logger.warning("report: could not write %s: %s", run_dir / "report.md", exc)
+        is_baseline_dir = run_dir.resolve().is_relative_to(baselines_root.resolve())
+    except OSError:
+        is_baseline_dir = False
+    if is_baseline_dir:
+        logger.info("report: %s is a promoted baseline (read-only) -- printing only", run_dir)
+    else:
+        try:
+            (run_dir / "report.md").write_text(markdown, encoding="utf-8", newline="\n")
+        except OSError as exc:
+            logger.warning("report: could not write %s: %s", run_dir / "report.md", exc)
     print(markdown)
     return ExitCode.OK
 
@@ -2982,7 +3429,7 @@ _PROMOTE_ALLOWLIST_TOP: tuple[str, ...] = (
 )
 
 
-def _iter_promote_files(run_dir: Path):
+def _iter_promote_files(run_dir: Path) -> Iterator[tuple[Path, Path]]:
     """Yields ``(relative_path, absolute_path)`` for exactly the promote
     allowlist -- no ``.kfx``, no ``.intermediates/*.html``, no rendered PNGs.
     """
@@ -3002,7 +3449,19 @@ def _iter_promote_files(run_dir: Path):
             yield f.relative_to(run_dir), f
 
 
-_NON_TERMINAL_ROW_STATUSES: frozenset[str | None] = frozenset({None, "pending", "converting"})
+# "converted"/"converted_empty" (item 8, correctness review): these are the
+# bare Stage-1-only status left on a row until Stage 2 (VQA) processes it.
+# Only a deliberate --skip-vqa run rewrites this to the real terminal marker
+# vqa_skipped_by_flag before the run ends -- an operator interrupting a full
+# run between Stage 1 completion and Stage 2/the gate leaves every row at
+# bare "converted", which (before this fix) validate_promotion did not flag
+# as non-terminal, AND whose vqa field being None silently excluded it from
+# every graded-row check (cost_zero_verified/provider-parity/vqa_trusted/B1
+# canary), so an interrupted run promoted indistinguishably from a legitimate
+# row0-convert baseline that was never meant to carry a VQA claim.
+_NON_TERMINAL_ROW_STATUSES: frozenset[str | None] = frozenset({
+    None, "pending", "converting", "converted", "converted_empty",
+})
 
 
 def validate_promotion(summary: dict, cloud_as_configured: bool) -> list[str]:
@@ -3049,17 +3508,39 @@ def validate_promotion(summary: dict, cloud_as_configured: bool) -> list[str]:
     return reasons
 
 
+def _resolve_promote_source_run_id(args: argparse.Namespace, runs_root: Path) -> str | None:
+    """``promote``'s source selector: ``--run-id`` (exact) or ``--run-label``
+    (resolves to the newest run dir ending with ``-<label>``). ``--label``
+    remains the destination baseline name and is never used to select the
+    source run.
+    """
+    if getattr(args, "run_id", None):
+        return args.run_id
+    run_label = getattr(args, "run_label", None)
+    if run_label:
+        label_dir = resolve_run_label_to_dir(run_label, runs_root)
+        return label_dir.name if label_dir is not None else None
+    return None
+
+
 def cmd_promote(args: argparse.Namespace) -> int:
     runs_root = Path(args.runs_root) if args.runs_root else runs_root_default()
-    run_dir = runs_root / args.run_id
+    run_id = _resolve_promote_source_run_id(args, runs_root)
+    if run_id is None:
+        logger.error(
+            "promote: could not resolve a source run from --run-id=%r / --run-label=%r under %s",
+            getattr(args, "run_id", None), getattr(args, "run_label", None), runs_root,
+        )
+        return ExitCode.ERROR
+    run_dir = runs_root / run_id
     if not run_dir.is_dir():
         logger.error("promote: run dir does not exist: %s", run_dir)
         return ExitCode.ERROR
 
     dest_root = Path(args.dest) if args.dest else PROJECT_ROOT
-    dest_dir = dest_root / "data" / "scan_bench" / "baselines" / args.label
-    if dest_dir.is_dir() and not args.force:
-        logger.error("promote: label %r already exists at %s -- pass --force to overwrite", args.label, dest_dir)
+    label_dir = dest_root / "data" / "scan_bench" / "baselines" / args.label
+    if label_dir.is_dir() and not args.force:
+        logger.error("promote: label %r already exists at %s -- pass --force to overwrite", args.label, label_dir)
         return ExitCode.ERROR
 
     summary = load_run_summary(run_dir / "run-summary.json")
@@ -3071,17 +3552,45 @@ def cmd_promote(args: argparse.Namespace) -> int:
         logger.error("promote: refused (%d validation failure(s)):", len(reasons))
         for reason in reasons:
             logger.error("  - %s", reason)
+        # Machine-readable refusal, in addition to the log lines above, so an
+        # agent/script driving this CLI does not have to scrape stderr.
+        print(json.dumps({"error": "validation_failed", "reasons": reasons}, indent=2))
         return ExitCode.FAIL
 
-    copied = 0
-    for rel, abs_path in _iter_promote_files(run_dir):
-        target = dest_dir / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(abs_path, target)
-        copied += 1
+    # Atomic copy (reliability review): copy into a staging dir first, and
+    # only replace the destination label dir once every allowlisted file has
+    # copied successfully. This makes promotion either a clean, complete
+    # replace of the label, or -- on any failure -- a no-op that leaves a
+    # pre-existing label untouched, never a partially-populated baseline that
+    # a later reader (compare/report/the regression gate) cannot distinguish
+    # from a complete one.
+    staging_dir = label_dir.parent / f".promote-tmp-{args.label}"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("promote: copied %d file(s) into %s", copied, dest_dir)
-    print(json.dumps({"label": args.label, "dest": str(dest_dir), "files_copied": copied}, indent=2))
+    copied = 0
+    try:
+        for rel, abs_path in _iter_promote_files(run_dir):
+            target = staging_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(abs_path, target)
+            copied += 1
+    except OSError as exc:
+        logger.error("promote: copy failed (%s) -- removing staging dir, %s left untouched", exc, label_dir)
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        return ExitCode.ERROR
+
+    # Clean replace, not a merge: remove any pre-existing label dir (only
+    # reachable here under --force, per the refusal check above) BEFORE the
+    # staging rename, so a stale file from an earlier promotion of this same
+    # label can never survive alongside the new run's files.
+    if label_dir.is_dir():
+        shutil.rmtree(label_dir)
+    staging_dir.replace(label_dir)
+
+    logger.info("promote: copied %d file(s) into %s", copied, label_dir)
+    print(json.dumps({"label": args.label, "dest": str(label_dir), "files_copied": copied}, indent=2))
     return ExitCode.OK
 
 
@@ -3099,10 +3608,31 @@ class _ExitCodeParser(argparse.ArgumentParser):
         self.exit(3, f"{self.prog}: error: {message}\n")
 
 
+_PARSER_EPILOG = """\
+Examples (mirrors data/scan_bench/README.md's run recipe):
+  python tools/scan_bench.py preflight --write-sha
+  python tools/scan_bench.py run --label row0-convert --skip-vqa
+  python tools/scan_bench.py run --resume --run-label row0-convert --vqa-only
+  python tools/scan_bench.py promote --run-label row0-convert --label row0-convert
+  python tools/scan_bench.py compare row0-convert row0-cloud --md
+
+Every real ``run`` invocation prints a one-line JSON envelope to stdout at
+start ({"event": "run_started", "run_id": ..., "run_dir": ..., "label": ...})
+and at finish ({"event": "run_finished", "run_id": ..., "exit_code": ...,
+"status_counts": {...}, "vqa_trusted": ...}) -- capture the first line to
+learn the generated run id, or use --label/--run-label everywhere instead
+(resolves to the newest run dir ending with "-<label>"). Long runs should be
+launched in the background and polled via <run_dir>/run-summary.json rather
+than waited on synchronously.
+"""
+
+
 def build_parser() -> _ExitCodeParser:
     parser = _ExitCodeParser(
         prog="scan_bench",
         description="EB-392 Phase 0 scan-bench harness: preflight, run, compare, report, promote.",
+        epilog=_PARSER_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True, parser_class=_ExitCodeParser)
 
@@ -3120,8 +3650,9 @@ def build_parser() -> _ExitCodeParser:
 
     rn = subparsers.add_parser("run", help="Convert + grade manifest books (two-stage, resumable).")
     rn.add_argument("--manifest", default=None, help="Path to manifest.json (default: data/scan_bench/manifest.json)")
-    rn.add_argument("--run-id", default=None, help="Run id (default: <yyyymmdd-HHMMSS>-<sha7>[-label]); required with --resume/--retry")
+    rn.add_argument("--run-id", default=None, help="Run id (default: <yyyymmdd-HHMMSS>-<sha7>[-label]); an explicit --run-id or --run-label is required with --resume/--retry")
     rn.add_argument("--label", default=None, help="Run label (row0* selects the row-0 canary/validation bar at promote time)")
+    rn.add_argument("--run-label", default=None, help="Resolve --resume's target run to the newest run dir ending with -<label> (alternative to --run-id; only meaningful with --resume)")
     rn.add_argument("--only", default=None, help="Comma-separated book ids to restrict this run to (e.g. A1,B1)")
     rn.add_argument("--resume", action="store_true", help="Re-attempt non-terminal/timeout/provider-down rows in an existing run")
     rn.add_argument("--retry", default=None, help="Force a clean re-attempt of exactly one book id (requires --run-id)")
@@ -3137,19 +3668,21 @@ def build_parser() -> _ExitCodeParser:
     rn.set_defaults(func=cmd_run)
 
     cp = subparsers.add_parser("compare", help="Diff two runs/baselines (numeric deltas + parity/trust checks).")
-    cp.add_argument("a", help="Run id or baseline label (or a literal run/baseline dir path)")
-    cp.add_argument("b", help="Run id or baseline label (or a literal run/baseline dir path)")
+    cp.add_argument("a", help="Run id, run label, or baseline label (or a literal run/baseline dir path)")
+    cp.add_argument("b", help="Run id, run label, or baseline label (or a literal run/baseline dir path)")
     cp.add_argument("--md", action="store_true", help="Render a markdown table instead of JSON")
     cp.add_argument("--allow-batch-mismatch", action="store_true", help="Downgrade a batch_size_effective mismatch to a flag (never for two row0* labels)")
     cp.set_defaults(func=cmd_compare)
 
     rp = subparsers.add_parser("report", help="Render/print report.md for a run or promoted baseline.")
-    rp.add_argument("run_or_label", help="Run id or baseline label (or a literal run/baseline dir path)")
+    rp.add_argument("run_or_label", help="Run id, run label, or baseline label (or a literal run/baseline dir path)")
+    rp.add_argument("--json", action="store_true", help="Emit the rows + artifacts as JSON instead of markdown")
     rp.set_defaults(func=cmd_report)
 
     pr = subparsers.add_parser("promote", help="Copy an allowlisted run into data/scan_bench/baselines/<label>/.")
-    pr.add_argument("--run-id", required=True, help="Run id under --runs-root to promote")
-    pr.add_argument("--label", required=True, help="Destination baseline label")
+    pr.add_argument("--run-id", default=None, help="Run id under --runs-root to promote (source selector; alternative to --run-label)")
+    pr.add_argument("--run-label", default=None, help="Resolve the source run to the newest run dir ending with -<label> (alternative to --run-id)")
+    pr.add_argument("--label", required=True, help="Destination baseline label (never used to select the source run)")
     pr.add_argument("--dest", default=None, help="Destination repo root (default: this checkout) -- point at a worktree for the data PR")
     pr.add_argument("--runs-root", default=None, help="Root dir the run lives under (default: data/scan_bench/runs)")
     pr.add_argument("--force", action="store_true", help="Overwrite an existing baseline label")

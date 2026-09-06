@@ -247,6 +247,31 @@ def test_resolver_defaults_settings_and_env_to_empty_when_none():
 
 
 # ---------------------------------------------------------------------------
+# default_n_ctx_from_env (maintainability review: single shared helper,
+# no longer duplicated in vqa_determinism_check.py)
+# ---------------------------------------------------------------------------
+
+def test_default_n_ctx_from_env_unset_returns_none():
+    assert vqa.default_n_ctx_from_env(env={}) is None
+
+
+def test_default_n_ctx_from_env_parses_int():
+    assert vqa.default_n_ctx_from_env(env={"LOCAL_LLM_N_CTX": "32768"}) == 32768
+
+
+def test_default_n_ctx_from_env_unparseable_logs_warning_and_returns_none(caplog):
+    with caplog.at_level("WARNING", logger="visual_qa"):
+        result = vqa.default_n_ctx_from_env(env={"LOCAL_LLM_N_CTX": "not-a-number"})
+    assert result is None
+    assert any("not an integer" in r.getMessage() for r in caplog.records)
+
+
+def test_default_n_ctx_from_env_defaults_to_os_environ(monkeypatch):
+    monkeypatch.setenv("LOCAL_LLM_N_CTX", "8192")
+    assert vqa.default_n_ctx_from_env() == 8192
+
+
+# ---------------------------------------------------------------------------
 # config/settings.json -- sb-vision alias, resolver reads it correctly
 # ---------------------------------------------------------------------------
 

@@ -186,6 +186,38 @@ class VqaTargetError(RuntimeError):
     """
 
 
+def default_n_ctx_from_env(env: dict | None = None) -> int | None:
+    """``LOCAL_LLM_N_CTX`` env default for ``--n-ctx``.
+
+    Maintainability review: this precedence/logging logic previously existed
+    as two independently-maintained copies (this module's ``main()``, inline,
+    and ``vqa_determinism_check.py``'s own ``_default_n_ctx_from_env()``) --
+    exactly the class of duplication ``resolve_local_vqa_target`` above was
+    introduced to prevent for base_url/model. Both callers now share this one
+    function. An unparseable value is ignored (falls through to the
+    provider's own probe) rather than crashing argument parsing.
+
+    Args:
+        env: an os.environ-like mapping, or None (defaults to os.environ).
+
+    Returns:
+        The parsed int, or None if unset/empty/unparseable.
+    """
+    if env is None:
+        env = os.environ
+    raw = env.get("LOCAL_LLM_N_CTX")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "LOCAL_LLM_N_CTX=%r is not an integer -- ignoring, provider will probe",
+            raw,
+        )
+        return None
+
+
 def resolve_local_vqa_target(
     cli_base_url: str | None = None,
     cli_model: str | None = None,
@@ -1094,7 +1126,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     if hasattr(provider, "describe"):
         try:
             provider_info = provider.describe()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - describe() never raises; defensive only
+            logger.debug("run_visual_qa: provider.describe() raised %s: %s", type(exc).__name__, exc)
             provider_info = None
         if isinstance(provider_info, dict) and provider_info.get("n_ctx_source") == "unknown":
             degraded_context_window = True
@@ -1151,8 +1184,11 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     if hasattr(provider, "max_tokens_effective") and hasattr(provider, "output_budget_for"):
         try:
             provider.max_tokens_effective = provider.output_budget_for(effective_batch)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - diagnostic only, must never block a run
+            logger.debug(
+                "run_visual_qa: provider.output_budget_for(%d) raised %s: %s",
+                effective_batch, type(exc).__name__, exc,
+            )
 
     batches = []
     for i in range(0, len(page_images), effective_batch):
@@ -1478,7 +1514,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
     if hasattr(provider, "describe"):
         try:
             _describe_result = provider.describe()
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - describe() never raises; defensive only
+            logger.debug("run_visual_qa: provider.describe() raised %s: %s", type(exc).__name__, exc)
             _describe_result = None
         if isinstance(_describe_result, dict):
             provider_resolved = _describe_result
@@ -1595,18 +1632,10 @@ def main():
     # known.
     # EB-392 Unit 1: explicit n_ctx wins over LocalVisionProvider's probe.
     # LOCAL_LLM_N_CTX env var read here (before --n-ctx is parsed) so the CLI
-    # flag can still override it; an unparseable env value is ignored (falls
-    # through to the provider's own probe) rather than crashing argument parsing.
-    default_n_ctx = None
-    _env_n_ctx = os.environ.get("LOCAL_LLM_N_CTX")
-    if _env_n_ctx:
-        try:
-            default_n_ctx = int(_env_n_ctx)
-        except ValueError:
-            logging.getLogger("visual_qa").warning(
-                "LOCAL_LLM_N_CTX=%r is not an integer -- ignoring, provider will probe",
-                _env_n_ctx,
-            )
+    # flag can still override it -- via the shared default_n_ctx_from_env()
+    # helper (maintainability review) so this module and
+    # vqa_determinism_check.py can never disagree on precedence/logging.
+    default_n_ctx = default_n_ctx_from_env()
     # SCRUM-283: cloud-hosted VLM via OpenAI-compatible endpoints (OpenRouter/Fireworks/Together).
     default_cloud_host = vqa_settings.get("cloud_host", "openrouter")
     default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")

@@ -1,221 +1,142 @@
 """EB-350: Tests for adaptive batch-size cap in visual_qa.py.
 
-Verifies that:
-- The local provider's max_batch_size() is respected when it is smaller than
-  the configured batch_size.
-- The cloud/Claude provider path is completely unaffected (no max_batch_size
-  attribute, no cap applied).
+EB-392 review (testing): this file previously re-implemented the EB-350
+batch-cap block (``_compute_effective_batch``/``_build_batches``) as local
+test helpers and asserted against that COPY, not the real code in
+``visual_qa.py`` -- the old docstring admitted as much ("a verbatim copy of
+the block added to visual_qa.py"). If the production block diverged from the
+copy (an off-by-one, an inverted comparison, a broken ``hasattr`` guard),
+those tests would keep passing while the real cap silently broke -- the exact
+anti-pattern of asserting against re-implemented logic instead of the real
+code path.
 
-All tests are offline — no live server required.
+Rewritten to call ``visual_qa.run_visual_qa`` directly (all heavy I/O mocked,
+same pattern as ``tests/test_local_provider_phase2.py``'s own real-path
+integration tests) with fake providers. Those integration tests already cover
+``max_batch_size() == 1`` (N single-page batches) and "no ``max_batch_size``
+attribute at all" (cloud/Claude providers, untouched); this file covers the
+remaining, distinct scenarios: a cap strictly between 1 and the configured
+batch size, and a cap equal to / larger than the configured batch size
+(both no-ops).
+
+All tests are offline -- no live server required.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 from llm_providers.base import VisionResponse  # noqa: E402
 
-
 PNG_FIXTURE = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
-RUBRIC_FIXTURE = "RUBRIC TEXT"
-MODEL_FIXTURE = "test-model"
 
 
-def _make_page_response(page_nums: list[int]) -> VisionResponse:
-    """Build a VisionResponse whose raw_text has exactly the given page_numbers."""
-    pages = [
-        {"page_number": pn, "page_type": "body", "score": 90, "pass": True, "issues": []}
-        for pn in page_nums
+def _report_page(page_number: int) -> dict:
+    return {"page_number": page_number, "page_type": "body", "score": 90, "pass": True, "issues": []}
+
+
+def _run_vqa(tmp_path: Path, provider, page_images: list, **extra_kwargs) -> dict:
+    """Run run_visual_qa with all heavy I/O mocked; returns the report dict.
+
+    Mirrors tests/test_local_provider_phase2.py's own ``_run_vqa_integration``
+    helper -- kept local to this file to avoid a cross-test-file import
+    dependency.
+    """
+    import visual_qa
+
+    input_file = tmp_path / "book.pdf"
+    input_file.write_bytes(b"%PDF-1.4")
+
+    patches = [
+        patch("visual_qa.convert_to_pdf", return_value=str(input_file)),
+        patch("visual_qa.get_pdf_page_count", return_value=200),
+        patch("visual_qa.get_pdf_bookmarks", return_value=[]),
+        patch("visual_qa.select_sample_pages", return_value=[pn for pn, _ in page_images]),
+        patch("visual_qa.find_poppler_path", return_value=""),
+        patch("visual_qa.render_pages_to_png", return_value=page_images),
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": ""}, clear=True),
     ]
-    return VisionResponse(
-        raw_text=json.dumps({"pages": pages}),
-        input_tokens=100 * len(page_nums),
-        output_tokens=50 * len(page_nums),
-    )
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        return visual_qa.run_visual_qa(
+            input_path=str(input_file),
+            provider=provider,
+            calibre_path="calibre",
+            poppler_path=None,
+            output_dir=str(tmp_path),
+            dpi=100,
+            max_pages=8,
+            model="test-model",
+            rubric_path="",
+            pass_threshold=70,
+            fallback_enabled=False,
+            **extra_kwargs,
+        )
 
 
-def _compute_effective_batch(provider: Any, batch_size: int) -> int:
-    """Replicate the EB-350 batch-cap logic from visual_qa.py for isolated testing.
-
-    This directly tests the cap computation without invoking the full
-    run_visual_qa pipeline (which requires filesystem, PDF tools, etc.).
-    The logic is a verbatim copy of the block added to visual_qa.py.
+def _fake_local_provider(max_batch_size_value: int, per_call_page_groups: list[list[int]]) -> MagicMock:
+    """A MagicMock local provider whose ``call()`` returns one response per
+    batch (grouped by ``per_call_page_groups``) and whose ``max_batch_size()``
+    returns a fixed value -- a real-path stand-in for
+    ``LocalVisionProvider.max_batch_size()``.
     """
-    effective_batch = batch_size
-    if hasattr(provider, "max_batch_size"):
-        provider_max = provider.max_batch_size()
-        if isinstance(provider_max, int) and provider_max < batch_size:
-            effective_batch = provider_max
-    return effective_batch
+    provider = MagicMock(spec=["name", "build_request", "call", "estimate_cost", "max_batch_size"])
+    provider.name = "local"
+    provider.build_request.return_value = {
+        "model": "test-model", "messages": [{"role": "user", "content": []}],
+    }
+    provider.estimate_cost.return_value = 0.0
+    provider.max_batch_size.return_value = max_batch_size_value
+    provider.call.side_effect = [
+        VisionResponse(
+            raw_text=json.dumps({"pages": [_report_page(pn) for pn in group]}),
+            input_tokens=100 * len(group), output_tokens=50 * len(group),
+        )
+        for group in per_call_page_groups
+    ]
+    return provider
 
 
-def _build_batches(
-    provider: Any,
-    page_images: list[tuple[int, bytes]],
-    batch_size: int,
-) -> list[list[int]]:
-    """Build batches using the EB-350 cap logic and return list-of-page-num-lists."""
-    effective_batch = _compute_effective_batch(provider, batch_size)
-    result = []
-    for i in range(0, len(page_images), effective_batch):
-        chunk = page_images[i:i + effective_batch]
-        result.append([pn for pn, _ in chunk])
-    return result
-
-
-# ---------------------------------------------------------------------------
-# EB-350 AC#5: batch-size cap — local provider
-#
-# The cap logic is isolated in _build_batches() above, which replicates the
-# exact 10-line block added to visual_qa.py.  This makes the tests fast,
-# dependency-free, and easy to reason about without mocking the full
-# run_visual_qa pipeline (PDF rendering, Calibre, etc.).
-# ---------------------------------------------------------------------------
-
-
-def test_visual_qa_caps_batch_size_when_provider_max_is_smaller() -> None:
-    """When provider.max_batch_size() < configured batch_size, effective_batch is reduced.
-
-    Scenario: 6 pages, batch_size=8, provider.max_batch_size()=3.
-    Expected: 2 batches of 3 pages each.
+def test_run_visual_qa_caps_batch_size_when_provider_max_is_smaller(tmp_path: Path) -> None:
+    """6 pages, batch_size=8, provider.max_batch_size()=3 -> 2 batches of 3
+    (a cap strictly between 1 and the configured batch size -- not covered by
+    test_local_provider_phase2.py's max_batch_size()==1 integration test).
     """
+    page_images = [(i, PNG_FIXTURE) for i in range(1, 7)]
+    provider = _fake_local_provider(3, [[1, 2, 3], [4, 5, 6]])
 
-    class FakeLocalProvider:
-        name = "local"
+    report = _run_vqa(tmp_path, provider, page_images, batch_size=8)
 
-        def max_batch_size(self) -> int:
-            return 3  # smaller than configured batch_size=8
-
-    provider = FakeLocalProvider()
-    page_images = [(i, PNG_FIXTURE) for i in range(1, 7)]  # 6 pages
-
-    batches = _build_batches(provider, page_images, batch_size=8)
-
-    assert len(batches) == 2, (
-        f"Expected 2 batches (6 pages capped to 3 each), got {len(batches)}: {batches}"
-    )
-    assert batches[0] == [1, 2, 3]
-    assert batches[1] == [4, 5, 6]
+    assert provider.call.call_count == 2
+    assert report["pages_evaluated"] == 6
 
 
-def test_visual_qa_does_not_cap_when_provider_max_larger_than_batch_size() -> None:
-    """When provider.max_batch_size() >= batch_size, no cap is applied.
+def test_run_visual_qa_does_not_cap_when_provider_max_equals_batch_size(tmp_path: Path) -> None:
+    """5 pages, batch_size=5, provider.max_batch_size()=5 -> 1 batch of 5 (no cap)."""
+    page_images = [(i, PNG_FIXTURE) for i in range(1, 6)]
+    provider = _fake_local_provider(5, [[1, 2, 3, 4, 5]])
 
-    Scenario: 4 pages, batch_size=4, provider.max_batch_size()=10.
-    Expected: 1 batch of 4 pages.
-    """
+    report = _run_vqa(tmp_path, provider, page_images, batch_size=5)
 
-    class FakeLocalProvider:
-        name = "local"
-
-        def max_batch_size(self) -> int:
-            return 10  # larger than configured batch_size=4
-
-    provider = FakeLocalProvider()
-    page_images = [(i, PNG_FIXTURE) for i in range(1, 5)]  # 4 pages
-
-    batches = _build_batches(provider, page_images, batch_size=4)
-
-    assert len(batches) == 1, (
-        f"Expected 1 batch (no cap), got {len(batches)}: {batches}"
-    )
-    assert batches[0] == [1, 2, 3, 4]
+    assert provider.call.call_count == 1
+    assert report["pages_evaluated"] == 5
 
 
-def test_visual_qa_does_not_cap_when_provider_max_equals_batch_size() -> None:
-    """When provider.max_batch_size() == batch_size, no cap is applied."""
+def test_run_visual_qa_does_not_cap_when_provider_max_larger_than_batch_size(tmp_path: Path) -> None:
+    """4 pages, batch_size=4, provider.max_batch_size()=10 -> 1 batch of 4 (no cap)."""
+    page_images = [(i, PNG_FIXTURE) for i in range(1, 5)]
+    provider = _fake_local_provider(10, [[1, 2, 3, 4]])
 
-    class FakeLocalProvider:
-        name = "local"
+    report = _run_vqa(tmp_path, provider, page_images, batch_size=4)
 
-        def max_batch_size(self) -> int:
-            return 5
-
-    provider = FakeLocalProvider()
-    page_images = [(i, PNG_FIXTURE) for i in range(1, 6)]  # 5 pages
-
-    batches = _build_batches(provider, page_images, batch_size=5)
-
-    assert len(batches) == 1
-    assert batches[0] == [1, 2, 3, 4, 5]
-
-
-def test_visual_qa_cloud_provider_unaffected_by_batch_cap() -> None:
-    """Cloud provider has no max_batch_size attribute — batch_size must be unchanged.
-
-    The hasattr guard in visual_qa.py ensures the cap is ONLY applied when
-    the provider exposes max_batch_size.
-    """
-
-    class FakeCloudProvider:
-        name = "cloud"
-        # Intentionally NO max_batch_size attribute
-
-    provider = FakeCloudProvider()
-    page_images = [(i, PNG_FIXTURE) for i in range(1, 5)]  # 4 pages
-
-    # Verify: no max_batch_size on provider (precondition)
-    assert not hasattr(provider, "max_batch_size"), (
-        "Precondition: cloud provider must not have max_batch_size"
-    )
-
-    batches = _build_batches(provider, page_images, batch_size=4)
-
-    assert len(batches) == 1, (
-        "Cloud provider must not be affected by the local-provider batch cap"
-    )
-    assert batches[0] == [1, 2, 3, 4]
-
-
-def test_visual_qa_effective_batch_cap_is_1_minimum() -> None:
-    """max_batch_size of 1 is honored — each page becomes its own batch."""
-
-    class FakeLocalProvider:
-        name = "local"
-
-        def max_batch_size(self) -> int:
-            return 1
-
-    provider = FakeLocalProvider()
-    page_images = [(i, PNG_FIXTURE) for i in range(1, 4)]  # 3 pages
-
-    batches = _build_batches(provider, page_images, batch_size=8)
-
-    assert len(batches) == 3
-    assert batches[0] == [1]
-    assert batches[1] == [2]
-    assert batches[2] == [3]
-
-
-def test_effective_batch_is_provider_max_not_configured() -> None:
-    """Verify _compute_effective_batch returns provider_max when it is smaller."""
-
-    class FakeLocalProvider:
-        name = "local"
-
-        def max_batch_size(self) -> int:
-            return 4
-
-    provider = FakeLocalProvider()
-    effective = _compute_effective_batch(provider, batch_size=10)
-    assert effective == 4
-
-
-def test_effective_batch_is_configured_when_no_max_batch_size_attr() -> None:
-    """Verify _compute_effective_batch returns configured batch_size for cloud providers."""
-
-    class FakeCloudProvider:
-        name = "cloud"
-
-    provider = FakeCloudProvider()
-    effective = _compute_effective_batch(provider, batch_size=8)
-    assert effective == 8
+    assert provider.call.call_count == 1
+    assert report["pages_evaluated"] == 4

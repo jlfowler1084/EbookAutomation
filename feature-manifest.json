@@ -223,7 +223,7 @@
     {
       "script": "tools/scan_bench.py",
       "mode": "preflight|run|compare|report|promote",
-      "flags": ["--manifest", "--label", "--strict", "--skip-vqa", "--allow-degraded-batch", "--allow-dirty", "--write-sha", "--determinism-verdict", "--json", "--run-id", "--only", "--resume", "--retry", "--dry-run", "--vqa-only", "--cloud-as-configured", "--grade-untrusted", "--convert-timeout", "--vqa-stage-timeout", "--md", "--allow-batch-mismatch", "--dest", "--force"],
+      "flags": ["--manifest", "--label", "--run-label", "--strict", "--skip-vqa", "--allow-degraded-batch", "--allow-dirty", "--write-sha", "--determinism-verdict", "--json", "--run-id", "--only", "--resume", "--retry", "--dry-run", "--vqa-only", "--cloud-as-configured", "--grade-untrusted", "--convert-timeout", "--vqa-stage-timeout", "--runs-root", "--search-root", "--md", "--allow-batch-mismatch", "--dest", "--force"],
       "description": "EB-392: 13-book scan-bench harness -- preflight gates, two-stage convert/VQA run with determinism gate, compare/report/promote baselines"
     }
   ],

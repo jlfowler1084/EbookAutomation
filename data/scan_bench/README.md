@@ -51,18 +51,32 @@ timeout or output-dir control).
 
 ```
 preflight --write-sha
-run --label row0-convert --skip-vqa
+run --label row0 --skip-vqa
+promote --run-label row0 --label row0-convert --dest <worktree-checkout>
 # --- after SB-231 raises sb-vision to n_ctx >= 32768 with --parallel 1 ---
 preflight --label row0-vqa
-run --label row0-vqa --vqa-only --resume
+run --resume --run-label row0 --vqa-only
+promote --run-label row0 --label row0-vqa --dest <worktree-checkout>
 run --label row0-cloud --cloud-as-configured
+promote --run-label row0-cloud --label row0-cloud --dest <worktree-checkout>
 report row0-convert
 report row0-vqa
 report row0-cloud
-promote --run-id <id> --label row0-convert --dest <worktree-checkout>
-promote --run-id <id> --label row0-vqa     --dest <worktree-checkout>
-promote --run-id <id> --label row0-cloud   --dest <worktree-checkout>
 ```
+
+`row0-convert` and `row0-vqa` are the SAME underlying run (label `row0`), promoted twice under
+two different baseline names as it progresses: `--skip-vqa` captures conversion metrics first,
+then `--resume --run-label row0 --vqa-only` grades the outputs that run already produced once
+the row-0 VQA regime is met. `row0-cloud` is a separate run.
+
+Every real (non-`--dry-run`) `run` invocation prints its `run_id`/`run_dir` to stdout as a
+one-line JSON envelope at start (`{"event": "run_started", ...}`) and finish
+(`{"event": "run_finished", ...}`) — capture the first line to learn the generated run id, or
+skip that entirely and pass `--run-label <label>` everywhere instead (`--resume`, `report`,
+`compare`, `promote`): it resolves to the newest run dir under `runs/` whose name ends with
+`-<label>`, so a bare `--label` from the original `run` invocation is enough to drive every
+later step. Long runs (a full 13-book pass, especially with VQA) should be launched in the
+background and polled via `<run_dir>/run-summary.json` rather than waited on synchronously.
 
 Never run capture from a worktree: `archive/`, `test-corpus/a2-pilot/`, `inbox/`, `processing/`,
 and `output/` are gitignored data directories that only exist in the main tree, and junctioning
@@ -95,12 +109,16 @@ Kings) output — or the first successfully converted book of any track if B1 fa
 - **1** — grading is skipped for every row (`vqa_skipped_untrusted_grader`); the harness prints
   the single-slot remediation and exits 1. `--grade-untrusted` is the explicit opt-in for
   exploratory (non-`row0*`) runs only — it grades anyway and marks `vqa_trusted: false`.
-- **2** — provider unreachable; every row `vqa_skipped_provider_down`.
+- **2** — two distinct, resumable causes, distinguished by whether the gate produced a parseable
+  verdict: a genuinely unreachable provider (no verdict, connection-type stderr) marks every row
+  `vqa_skipped_provider_down`; a parseable verdict with `could_not_assess: true` (server/model
+  identity drifted between the gate's two internal runs, or a report the check could not
+  characterize) marks every row `vqa_skipped_gate_could_not_assess`, naming the reason.
 
 A per-book re-probe (`/v1/models` + `/props`) precedes every VQA call; a mismatch against
-`run-meta.json` (served id, `n_ctx`, `total_slots`, `model_path`) marks that row and all later
-rows `provider_drift` with `vqa_trusted: false`. A post-run canary re-run and re-probe on the gate
-subject closes the stage.
+`run-meta.json` (served id, `n_ctx`, `total_slots`, `model_path` — compared only when both sides
+report a value) marks that row and all later rows `provider_drift` with `vqa_trusted: false`. A
+post-run canary re-run and re-probe on the gate subject closes the stage.
 
 ## Directory layout
 
@@ -117,9 +135,11 @@ data/scan_bench/
 
 Raw runs stay local so a `git pull` after a baseline-data PR merges never collides with
 in-progress run output, and so `Convert-ToKindle`'s `.intermediates/*.html` and `images/*.png`
-never reach a PR by accident. `scan_bench promote --run-id <id> --label <label> [--dest <dir>]`
-is the only path from `runs/` into `baselines/`, and it copies the allowlist above — nothing
-else, including no `.kfx` or `.intermediates/` files.
+never reach a PR by accident. `scan_bench promote (--run-id <id> | --run-label <label>) --label
+<dest-label> [--dest <dir>]` is the only path from `runs/` into `baselines/`, and it copies the
+allowlist above — nothing else, including no `.kfx` or `.intermediates/` files. `--run-label`
+resolves to the newest run dir under `runs/` ending with `-<label>`; `--label` is always the
+destination baseline name, never the source selector.
 
 ## Disk expectations
 

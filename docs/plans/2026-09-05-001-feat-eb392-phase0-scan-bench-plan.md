@@ -863,16 +863,25 @@ for `row0-vqa` only); Joe's `.env` edit (for ad-hoc runs; not required by the ha
 - Modify: `data/scan_bench/manifest.json` (sha256 values written by `--write-sha`)
 
 **Approach:**
-- From the main working tree (never a worktree; no junctions), pipeline files clean:
-  1. `preflight --write-sha`, then `run --label row0-convert --skip-vqa` (any server regime).
-  2. After SB-231: `preflight --label row0-vqa` must pass the row-0 rules (≥ 32768, one slot,
-     batch 8 fits); then `run --label row0-vqa --vqa-only --resume` on the row0-convert run (grading
-     the outputs that run produced); gate exit 1 halts — quiesce the node, file the verdict against
-     EB-364, `--resume`.
-  3. `run --label row0-cloud --cloud-as-configured` (conversion and VQA as configured, same commit),
-     ideally back-to-back with step 2 so both share the server regime; record the observed cost.
-- `promote` each into `data/scan_bench/baselines/<label>/` with `--dest` pointing at a worktree
-  branch; `promote`'s validation is the promotion gate (all rows terminal, canary ≥ 85 with zero
+- From the main working tree (never a worktree; no junctions), pipeline files clean, following
+  the coherent CLI-readiness-review recipe (`data/scan_bench/README.md`'s Run recipe section):
+  1. `preflight --write-sha`, then `run --label row0 --skip-vqa` (any server regime). `run` prints
+     a `run_started`/`run_finished` JSON envelope to stdout naming the generated run id; a long
+     run should be launched in the background and polled via `<run_dir>/run-summary.json` rather
+     than waited on synchronously.
+  2. `promote --run-label row0 --label row0-convert --dest <worktree-checkout>` (source selected
+     by label — resolves to the newest run dir ending `-row0` — destination baseline name
+     `row0-convert`).
+  3. After SB-231: `preflight --label row0-vqa` must pass the row-0 rules (≥ 32768, one slot,
+     batch 8 fits); then `run --resume --run-label row0 --vqa-only` (grading the outputs the SAME
+     `row0` run already produced in step 1); gate exit 1 halts — quiesce the node, file the
+     verdict against EB-364, re-run with `--resume --run-label row0`.
+  4. `promote --run-label row0 --label row0-vqa --dest <worktree-checkout>` (same underlying run,
+     now promoted a second time under the `row0-vqa` baseline name once VQA data is present).
+  5. `run --label row0-cloud --cloud-as-configured` (conversion and VQA as configured, a separate
+     run, same commit), ideally back-to-back with step 3 so both share the server regime; record
+     the observed cost; `promote --run-label row0-cloud --label row0-cloud --dest <worktree-checkout>`.
+- `promote`'s validation is the promotion gate (all rows terminal, canary ≥ 85 with zero
   garble findings, `cost_zero_verified` on every cloud-off graded row, identical `provider_resolved`,
   `vqa_trusted` true). Open one PR per baseline, or one PR for all three if captured together.
 - `report` each label; `compare row0-convert row0-cloud` (conversion-side deltas show what the

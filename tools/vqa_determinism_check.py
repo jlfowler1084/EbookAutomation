@@ -87,6 +87,17 @@ class DeterminismVerdict:
     by the pure ``compare_reports`` comparator (no provider context) leaves
     them at their defaults; ``run_determinism_check`` fills them in when it can
     see the runner's per-run reports.
+
+    ``degraded`` (EB-392 review): True when either compared report's
+    ``evaluation_status`` was ``"evaluated_degraded"`` (the local provider's
+    n_ctx probe failed for that run but the model still produced real
+    pages/scores under the conservative fallback window -- see
+    ``visual_qa.build_report``). Such a report IS evaluable (``_require_evaluable``
+    accepts it) and its score-determinism gate still applies normally; this
+    flag is carried through purely as a provenance note so a caller can
+    distinguish "deterministic, but graded under an unconfirmed context
+    window" from a fully-confirmed regime, without that distinction ever
+    forcing a could-not-assess/exit-2 result on its own.
     """
 
     deterministic: bool
@@ -104,6 +115,7 @@ class DeterminismVerdict:
     provider_resolved_runs: list[dict] = field(default_factory=list)
     could_not_assess: bool = False
     could_not_assess_reason: str | None = None
+    degraded: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -134,14 +146,28 @@ def _issue_categories(page: dict) -> list[str]:
     return sorted(cats)
 
 
+# EB-392 review: "evaluated_degraded" (visual_qa.build_report -- the local
+# provider's n_ctx probe failed for that run but the model still produced a
+# real score under the conservative fallback window) has real pages/scores
+# and IS evaluable. Rejecting it here (the pre-EB-392 behavior) makes
+# compare_reports raise ValueError before Unit 2's own could_not_assess/drift
+# characterization ever gets a chance to run, so main() returns exit 2 with
+# NO JSON on stdout -- indistinguishable, downstream, from a genuine
+# provider-unreachable failure (a cascade an adversarial review flagged: a
+# single transient probe hiccup would silently blank an entire benchmark
+# run's VQA grading under a misleading "provider down" diagnosis).
+_EVALUABLE_STATUSES: frozenset[str] = frozenset({"evaluated", "evaluated_degraded"})
+
+
 def _require_evaluable(report: dict, label: str) -> None:
     status = report.get("evaluation_status", "evaluated")
     pages = report.get("pages") or []
-    if status != "evaluated" or not pages:
+    if status not in _EVALUABLE_STATUSES or not pages:
         raise ValueError(
             f"Cannot assess determinism: report {label!r} is not a successful "
             f"evaluation (evaluation_status={status!r}, pages={len(pages)}). "
-            f"Re-run until both runs produce evaluated reports with pages."
+            f"Re-run until both runs produce evaluated (or evaluated_degraded) "
+            f"reports with pages."
         )
 
 
@@ -168,6 +194,11 @@ def compare_reports(
     """
     _require_evaluable(report_a, "a")
     _require_evaluable(report_b, "b")
+
+    degraded = (
+        report_a.get("evaluation_status") == "evaluated_degraded"
+        or report_b.get("evaluation_status") == "evaluated_degraded"
+    )
 
     pa = _index_pages(report_a)
     pb = _index_pages(report_b)
@@ -251,6 +282,7 @@ def compare_reports(
         missing_pages=missing_pages,
         page_deltas=page_deltas,
         note=note,
+        degraded=degraded,
     )
 
 
@@ -295,6 +327,7 @@ def _merge_verdicts(verdicts: list[DeterminismVerdict], *, tolerance: int) -> De
         missing_pages=missing,
         page_deltas=merged,
         note=note,
+        degraded=any(v.degraded for v in verdicts),
     )
 
 
@@ -309,8 +342,15 @@ _DRIFT_FIELDS_ALWAYS = ("base_url", "n_ctx", "total_slots")
 # Compared only when BOTH runs report a non-null value: many servers (e.g.
 # llama.cpp with no reachable /props, or any provider without describe())
 # never expose model_path, and a None-vs-None pair carries no information
-# about whether the underlying weights actually changed.
-_DRIFT_FIELDS_WHEN_BOTH_PRESENT = ("model_path",)
+# about whether the underlying weights actually changed. model_served (EB-392
+# review) joins this set for the same reason a hot-swap to a different model
+# id while base_url/n_ctx/total_slots stay identical -- plausible on a node
+# fronting multiple GGUFs with identical serving flags -- would otherwise
+# silently pass this gate even though run 0 and run i were graded by
+# genuinely different weights; scan_bench.py's own compare_row provider-parity
+# check already treats model_served the same way, so this keeps the two
+# mechanisms in agreement.
+_DRIFT_FIELDS_WHEN_BOTH_PRESENT = ("model_path", "model_served")
 
 
 def _detect_provider_drift(provider_resolved_runs: list[dict]) -> str | None:
@@ -606,26 +646,15 @@ def build_vqa_runner(
 # CLI
 # ---------------------------------------------------------------------------
 
-def _default_n_ctx_from_env() -> int | None:
-    """LOCAL_LLM_N_CTX env default for --n-ctx (mirrors visual_qa.py's CLI so
-    both tools read the same override the same way). An unparseable value is
-    ignored (falls through to the provider's own probe) rather than crashing
-    argument parsing.
-    """
-    raw = os.environ.get("LOCAL_LLM_N_CTX")
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning(
-            "LOCAL_LLM_N_CTX=%r is not an integer -- ignoring, provider will probe",
-            raw,
-        )
-        return None
-
-
 def main(argv: list[str] | None = None) -> int:
+    # Deferred, like the rest of this module's heavy imports (see the module
+    # docstring) -- so the pure comparator stays importable/unit-testable
+    # without visual_qa's own dependency chain. Maintainability review:
+    # default_n_ctx_from_env() used to be a second, independently-maintained
+    # copy of visual_qa.py's own inline LOCAL_LLM_N_CTX parsing; both callers
+    # now share the one function in visual_qa.py.
+    import visual_qa as vqa
+
     parser = argparse.ArgumentParser(
         description="EB-361 VQA grader determinism self-check: run the same input "
                     "twice and refuse to trust the scores unless the runs agree.",
@@ -643,7 +672,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Pages per provider batch (default: 8)")
     parser.add_argument(
-        "--n-ctx", type=int, default=_default_n_ctx_from_env(),
+        "--n-ctx", type=int, default=vqa.default_n_ctx_from_env(),
         help="Explicit server context window for --provider local (default: "
              "LOCAL_LLM_N_CTX env var if set, otherwise the provider probes "
              "/v1/models and /props). Wins over the probe (EB-392); the probe "
@@ -701,7 +730,21 @@ def main(argv: list[str] | None = None) -> int:
         print(render_markdown(verdict))
 
     code = verdict_to_exit_code(verdict)
-    if code != 0:
+    if code == 2 and verdict.could_not_assess:
+        # EB-392 review: exit 2 for could_not_assess (provider/server identity
+        # drift between the two runs) is a DIFFERENT failure mode than genuine
+        # score non-determinism (exit 1) -- quiescing the node fixes neither a
+        # changed model nor a changed context window mid-check. Name the
+        # actual drifted field/reason instead of the single-slot advice.
+        logger.warning(
+            "VQA grader determinism COULD NOT BE ASSESSED for this input — %s. "
+            "This is a server/provider identity change between the two "
+            "internal runs, not score non-determinism: quiescing the node "
+            "will not fix it. Confirm the server config/model did not change "
+            "mid-check and re-run.",
+            verdict.could_not_assess_reason or "provider identity drifted between runs",
+        )
+    elif code != 0:
         logger.warning(
             "VQA grader is NON-DETERMINISTIC for this input — scores are UNRELIABLE "
             "for fine-grained comparison (converge gating, EB-348/EB-340 deltas). "

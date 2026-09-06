@@ -947,6 +947,73 @@ def test_child_env_no_temp_dir_leaves_temp_unset_by_this_function(monkeypatch, t
 
 
 # ---------------------------------------------------------------------------
+# _clear_tmp_dir (per-row TEMP cleanup, reliability review)
+# ---------------------------------------------------------------------------
+
+def test_clear_tmp_dir_removes_files_and_subdirs(tmp_path):
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    (tmp_dir / "leftover.png").write_bytes(b"x")
+    (tmp_dir / "render_subdir").mkdir()
+    (tmp_dir / "render_subdir" / "page1.png").write_bytes(b"x")
+
+    scan_bench._clear_tmp_dir(tmp_dir)
+
+    assert tmp_dir.is_dir(), "the tmp dir itself must survive -- only its contents are cleared"
+    assert list(tmp_dir.iterdir()) == []
+
+
+def test_clear_tmp_dir_missing_dir_is_a_no_op(tmp_path):
+    scan_bench._clear_tmp_dir(tmp_path / "does-not-exist")  # must not raise
+
+
+def test_clear_tmp_dir_unremovable_entry_logged_not_raised(tmp_path, monkeypatch, caplog):
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    (tmp_dir / "locked.png").write_bytes(b"x")
+
+    def _boom(self):
+        raise OSError("simulated: file in use")
+
+    monkeypatch.setattr(scan_bench.Path, "unlink", _boom)
+
+    with caplog.at_level("DEBUG", logger="scan_bench"):
+        scan_bench._clear_tmp_dir(tmp_dir)  # must not raise
+
+    assert any("could not remove" in r.getMessage() for r in caplog.records)
+
+
+def test_cmd_run_clears_tmp_dir_contents_between_rows(run_orch, monkeypatch, tmp_path):
+    """A file planted in the run's TEMP dir must be gone after a row (Stage 1
+    or Stage 2) completes."""
+    tmp_path, runs_root = run_orch
+    book = make_book(tmp_path, "B1", expected_class="digital_native")
+    manifest, manifest_path = _write_run_manifest(tmp_path, [book])
+
+    paths_holder = {}
+    real_process_stage1 = scan_bench.process_stage1_book
+
+    def _tracked_stage1(book, row, **kwargs):
+        real_process_stage1(book, row, **kwargs)
+        paths_holder["tmp_dir"] = kwargs["paths"].tmp_dir
+        # Plant a stray file mimicking an unreclaimed visual_qa.py render dir.
+        kwargs["paths"].tmp_dir.mkdir(parents=True, exist_ok=True)
+        (kwargs["paths"].tmp_dir / "stray_render.png").write_bytes(b"x")
+
+    monkeypatch.setattr(scan_bench, "process_stage1_book", _tracked_stage1)
+    runner = FakeProcRunner()
+    monkeypatch.setattr(scan_bench, "run_with_tree_kill", runner)
+    monkeypatch.setattr(scan_bench, "classify_source", make_fake_classify(manifest))
+
+    args = default_run_args(manifest=str(manifest_path), run_id="tmpcleanup", runs_root=str(runs_root))
+    scan_bench.cmd_run(args)
+
+    tmp_dir = paths_holder["tmp_dir"]
+    assert tmp_dir.is_dir()
+    assert not (tmp_dir / "stray_render.png").exists()
+
+
+# ---------------------------------------------------------------------------
 # sha256_file / git_head_short / git_dirty_pipeline_files
 # ---------------------------------------------------------------------------
 
@@ -1058,6 +1125,62 @@ def test_main_preflight_missing_manifest_file_exits_3(tmp_path, capsys):
     assert code == 3
 
 
+def test_preflight_json_endpoint_probe_details_and_resolved_provider(hermetic, tmp_path, capsys):
+    """Agent-native JSON (project-standards/kieran-python review): the
+    endpoint_probe check's details must carry the structured probe values
+    (not just the prose message), and the top-level resolved_provider must
+    carry the full probe result, not just the manifest's config pair."""
+    manifest = make_manifest([make_book(tmp_path, "A1")])
+    manifest_path = tmp_path / "manifest.json"
+    write_manifest_file(manifest_path, manifest)
+
+    code = scan_bench.main(["preflight", "--manifest", str(manifest_path), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    checks_by_name = {c["name"]: c for c in payload["checks"]}
+    endpoint_probe = checks_by_name["endpoint_probe"]
+    assert "n_ctx" in endpoint_probe["details"]
+    assert "model_served" in endpoint_probe["details"]
+
+    assert "n_ctx_source" in payload["resolved_provider"]
+    assert payload["resolved_provider"]["probe_ok"] is True
+
+
+def test_preflight_json_resolved_provider_falls_back_to_config_pair_on_probe_failure(monkeypatch, tmp_path, capsys):
+    """When the probe fails entirely, resolved_provider falls back to the
+    manifest's base_url/model pair, explicitly marked probe_ok: False."""
+    install_git_fake(monkeypatch)
+    monkeypatch.setattr(scan_bench, "_pwsh_version", lambda: "7.4.0")
+    monkeypatch.setattr(scan_bench, "probe_endpoint", lambda base_url, model: (_ for _ in ()).throw(RuntimeError("down")))
+    monkeypatch.setattr(scan_bench, "tiny_image_check", lambda base_url, model: {"ok": False, "error": "down"})
+
+    manifest = make_manifest([make_book(tmp_path, "A1")])
+    manifest_path = tmp_path / "manifest.json"
+    write_manifest_file(manifest_path, manifest)
+
+    scan_bench.main(["preflight", "--manifest", str(manifest_path), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["resolved_provider"]["probe_ok"] is False
+    assert payload["resolved_provider"]["base_url"] == manifest["provider"]["base_url"]
+    assert payload["resolved_provider"]["model"] == manifest["provider"]["model"]
+
+
+def test_preflight_json_git_dirty_and_junctions_details_populated(hermetic, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(scan_bench, "git_dirty_pipeline_files", lambda cwd=None: ["tools/scan_bench.py"])
+    manifest = make_manifest([make_book(tmp_path, "A1")])
+    manifest_path = tmp_path / "manifest.json"
+    write_manifest_file(manifest_path, manifest)
+
+    scan_bench.main(["preflight", "--manifest", str(manifest_path), "--json", "--allow-dirty"])
+    payload = json.loads(capsys.readouterr().out)
+    checks_by_name = {c["name"]: c for c in payload["checks"]}
+
+    assert checks_by_name["git_dirty"]["details"]["dirty_files"] == ["tools/scan_bench.py"]
+    assert checks_by_name["junctions"]["details"]["junctions"] == []
+
+
 # ---------------------------------------------------------------------------
 # Manifest loading
 # ---------------------------------------------------------------------------
@@ -1146,9 +1269,9 @@ def test_build_convert_command_without_ocr():
     assert cmd[0] == "pwsh"
     assert "-NoProfile" in cmd
     ps_cmd = cmd[-1]
-    assert 'Import-Module "C:\\mod\\EbookAutomation.psd1" -Force' in ps_cmd
-    assert '-InputFile "F:\\book.pdf"' in ps_cmd
-    assert '-OutputDir "F:\\out\\A1"' in ps_cmd
+    assert "Import-Module 'C:\\mod\\EbookAutomation.psd1' -Force" in ps_cmd
+    assert "-InputFile 'F:\\book.pdf'" in ps_cmd
+    assert "-OutputDir 'F:\\out\\A1'" in ps_cmd
     assert "-UseHtmlExtraction" in ps_cmd
     assert "-NoCache" in ps_cmd
     assert "-UseOCR" not in ps_cmd
@@ -1157,6 +1280,89 @@ def test_build_convert_command_without_ocr():
 def test_build_convert_command_with_ocr():
     cmd = scan_bench.build_convert_command(r"C:\mod\EbookAutomation.psd1", r"F:\book.pdf", r"F:\out\A1", True)
     assert "-UseOCR" in cmd[-1]
+
+
+# ---------------------------------------------------------------------------
+# _ps_quote / PowerShell injection resistance (security review, EB-392)
+# ---------------------------------------------------------------------------
+
+def test_ps_quote_wraps_in_single_quotes_and_doubles_embedded_quotes():
+    assert scan_bench._ps_quote("plain") == "'plain'"
+    assert scan_bench._ps_quote("it's") == "'it''s'"
+    assert scan_bench._ps_quote("a 'b' c") == "'a ''b'' c'"
+    # double quotes, backticks, and $( are all inert inside a single-quoted
+    # PowerShell string -- _ps_quote passes them through unchanged.
+    assert scan_bench._ps_quote('a "quoted" value') == "'a \"quoted\" value'"
+    assert scan_bench._ps_quote("$(Get-Date)") == "'$(Get-Date)'"
+    assert scan_bench._ps_quote("back`tick") == "'back`tick'"
+
+
+def _text_outside_single_quoted_strings(ps_cmd: str) -> str:
+    """Everything in ``ps_cmd`` that is NOT inside a PowerShell single-quoted
+    string literal, using PowerShell's own single-quote escaping rule (a
+    doubled ``''`` is a literal quote, not a string terminator). Used to
+    assert a metacharacter embedded in a build_convert_command payload never
+    escapes the quoting context _ps_quote placed it in -- i.e. never becomes
+    "unescaped" PowerShell syntax capable of ending the string early or
+    triggering command substitution/a second statement.
+    """
+    out = []
+    i, n, in_string = 0, len(ps_cmd), False
+    while i < n:
+        ch = ps_cmd[i]
+        if in_string:
+            if ch == "'":
+                if i + 1 < n and ps_cmd[i + 1] == "'":
+                    i += 2
+                    continue
+                in_string = False
+            i += 1
+            continue
+        if ch == "'":
+            in_string = True
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+@pytest.mark.parametrize("payload", [
+    r'F:\books\A "quoted" title.pdf',
+    "F:\\books\\A `backtick` title.pdf",
+    "F:\\books\\A $(Get-Date) title.pdf",
+    "F:\\books\\A6 It's a book.pdf",  # ASCII apostrophe (A6 in the real manifest)
+    "F:\\books\\A\u2019 curly apostrophe title.pdf",
+    "F:\\books\\A [bracketed] title.pdf",
+])
+def test_build_convert_command_neutralizes_powershell_metacharacters(payload):
+    cmd = scan_bench.build_convert_command(r"C:\mod\EbookAutomation.psd1", payload, r"F:\out\A1", False)
+    ps_cmd = cmd[-1]
+
+    # The literal round-trips: the exact _ps_quote(payload) encoding appears
+    # verbatim in the constructed command.
+    assert scan_bench._ps_quote(payload) in ps_cmd
+
+    # No payload-sourced double quote or "$(" ever appears OUTSIDE a
+    # single-quoted string -- i.e. it can never break out of the literal it
+    # was embedded in and inject a second statement or trigger substitution.
+    outside = _text_outside_single_quoted_strings(ps_cmd)
+    assert '"' not in outside
+    assert "$(" not in outside
+    assert "`" not in outside
+
+
+def test_contract_tests_still_pass_after_ps_quote_change():
+    """The PowerShell-quoting fix only touches build_convert_command's own
+    string assembly -- the psm1-parsing contract (extract_convert_tokindle_call
+    et al.) is untouched. Re-asserted here as a direct regression guard next
+    to the injection-fix tests, not just via the existing contract tests
+    elsewhere in this file.
+    """
+    assert scan_bench.extract_convert_tokindle_call_params(PSM1_TEXT) == list(
+        scan_bench.CONVERT_TOKINDLE_CALL_PARAMS
+    )
+    assert scan_bench.extract_ocr_gate_classes(PSM1_TEXT) == set(scan_bench.OCR_GATE_CLASSES)
 
 
 def test_build_classify_command_shape():
@@ -1193,20 +1399,25 @@ def test_build_determinism_gate_command_shape():
 # ---------------------------------------------------------------------------
 
 class _FakeCompletedProc:
-    """A minimal stand-in for subprocess.Popen used by run_with_tree_kill tests."""
+    """A minimal stand-in for subprocess.Popen used by run_with_tree_kill tests.
 
-    def __init__(self, pid, stdout="", stderr="", returncode=0, hang_first_call=False):
+    ``hang_calls`` (preferred) makes ``communicate()`` raise TimeoutExpired on
+    the first N calls before returning normally; ``hang_first_call=True`` is
+    shorthand for ``hang_calls=1`` (kept for the existing single-hang tests).
+    """
+
+    def __init__(self, pid, stdout="", stderr="", returncode=0, hang_first_call=False, hang_calls=None):
         self.pid = pid
         self._stdout = stdout
         self._stderr = stderr
         self.returncode = returncode
-        self._hang_first_call = hang_first_call
+        self._hang_calls = hang_calls if hang_calls is not None else (1 if hang_first_call else 0)
         self._communicate_calls = 0
         self.killed = False
 
     def communicate(self, timeout=None):
         self._communicate_calls += 1
-        if self._hang_first_call and self._communicate_calls == 1:
+        if self._communicate_calls <= self._hang_calls:
             import subprocess as _subprocess
             raise _subprocess.TimeoutExpired(cmd="fake", timeout=timeout)
         return self._stdout, self._stderr
@@ -1249,6 +1460,47 @@ def test_run_with_tree_kill_timeout_kills_tree_before_proc_kill_then_drains(monk
     assert result.stderr == "drained-stderr"
     # Tree-kill must be invoked with the still-live root PID BEFORE proc.kill().
     assert call_order == [("tree_kill", 4321), ("proc_kill", 4321)]
+
+
+def test_run_with_tree_kill_drain_timeout_logs_error_and_returns_partial(monkeypatch, caplog):
+    """Reliability review: the post-tree-kill drain communicate() must itself
+    be bounded. If it ALSO times out (the tree-kill did not fully succeed),
+    run_with_tree_kill must log an ERROR and return partial/empty output
+    rather than hanging the whole scan_bench run one level down.
+    """
+    fake = _FakeCompletedProc(
+        pid=99, stdout="never-returned-if-drain-hangs", stderr="never-returned-if-drain-hangs",
+        hang_calls=2,
+    )
+    monkeypatch.setattr(scan_bench.subprocess, "Popen", lambda *a, **k: fake)
+    monkeypatch.setattr(scan_bench, "_kill_process_tree", lambda pid: None)
+
+    with caplog.at_level("ERROR", logger="scan_bench"):
+        result = scan_bench.run_with_tree_kill(["sleep", "60"], timeout=5)
+
+    assert result.timed_out is True
+    assert result.returncode is None
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert fake._communicate_calls == 2
+    assert any("did not release" in r.getMessage() for r in caplog.records)
+
+
+def test_run_with_tree_kill_redacts_secrets_in_stdout_and_stderr(monkeypatch):
+    fake = _FakeCompletedProc(
+        pid=1,
+        stdout="key leaked: sk-ant-abcdefgh12345",
+        stderr="OPENROUTER_API_KEY=sk-or-zzzz11112222 and AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ1234 and api_key=verysecretvalue",
+    )
+    monkeypatch.setattr(scan_bench.subprocess, "Popen", lambda *a, **k: fake)
+
+    result = scan_bench.run_with_tree_kill(["cmd"], timeout=5)
+
+    assert "sk-ant-" not in result.stdout
+    assert "<redacted>" in result.stdout
+    assert "sk-or-" not in result.stderr
+    assert "AIzaSy" not in result.stderr
+    assert "verysecretvalue" not in result.stderr
 
 
 def test_run_with_tree_kill_writes_log(tmp_path, monkeypatch):
@@ -1295,6 +1547,138 @@ def test_run_with_tree_kill_live_kills_nested_python():
     assert not new_survivors, (
         f"new python.exe PID(s) spawned by this test survived the tree-kill: {sorted(new_survivors)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# _kill_process_tree (hermetic -- fake psutil module, no real subprocesses)
+# ---------------------------------------------------------------------------
+
+class _FakePsutilProcess:
+    def __init__(self, pid, children=None, kill_exc=None):
+        self.pid = pid
+        self._children = children or []
+        self._kill_exc = kill_exc
+        self.killed = False
+
+    def children(self, recursive=False):
+        return self._children
+
+    def kill(self):
+        if self._kill_exc is not None:
+            raise self._kill_exc
+        self.killed = True
+
+
+def _fake_psutil_module():
+    import types
+
+    mod = types.ModuleType("psutil")
+
+    class NoSuchProcess(Exception):
+        pass
+
+    class AccessDenied(Exception):
+        pass
+
+    mod.NoSuchProcess = NoSuchProcess
+    mod.AccessDenied = AccessDenied
+    return mod
+
+
+def test_kill_process_tree_psutil_happy_path_kills_all_children_and_parent(monkeypatch):
+    fake_psutil = _fake_psutil_module()
+    child1 = _FakePsutilProcess(pid=2)
+    child2 = _FakePsutilProcess(pid=3)
+    parent = _FakePsutilProcess(pid=1, children=[child1, child2])
+    fake_psutil.Process = lambda pid: parent
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    scan_bench._kill_process_tree(1)
+
+    assert child1.killed is True
+    assert child2.killed is True
+    assert parent.killed is True
+
+
+def test_kill_process_tree_psutil_nosuchprocess_mid_loop_continues(monkeypatch):
+    fake_psutil = _fake_psutil_module()
+    child1 = _FakePsutilProcess(pid=2, kill_exc=fake_psutil.NoSuchProcess("gone"))
+    child2 = _FakePsutilProcess(pid=3)
+    parent = _FakePsutilProcess(pid=1, children=[child1, child2])
+    fake_psutil.Process = lambda pid: parent
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    scan_bench._kill_process_tree(1)  # must not raise
+
+    assert child2.killed is True, "one child's NoSuchProcess must not abort the loop"
+    assert parent.killed is True
+
+
+def test_kill_process_tree_psutil_generic_error_mid_loop_continues(monkeypatch):
+    """A non-NoSuchProcess error (e.g. AccessDenied) killing one child must
+    not abort the loop before the remaining children/parent are reached --
+    the old except clause only caught psutil.NoSuchProcess (reliability
+    review finding).
+    """
+    fake_psutil = _fake_psutil_module()
+    child1 = _FakePsutilProcess(pid=2, kill_exc=fake_psutil.AccessDenied("denied"))
+    child2 = _FakePsutilProcess(pid=3)
+    parent = _FakePsutilProcess(pid=1, children=[child1, child2], kill_exc=fake_psutil.AccessDenied("denied"))
+    fake_psutil.Process = lambda pid: parent
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    scan_bench._kill_process_tree(1)  # must not raise despite child AND parent kill failures
+
+    assert child2.killed is True
+
+
+def test_kill_process_tree_psutil_children_enumeration_error_still_kills_parent(monkeypatch):
+    fake_psutil = _fake_psutil_module()
+    parent = _FakePsutilProcess(pid=1)
+
+    def _raise_children(recursive=False):
+        raise RuntimeError("boom")
+    parent.children = _raise_children
+    fake_psutil.Process = lambda pid: parent
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    scan_bench._kill_process_tree(1)
+
+    assert parent.killed is True
+
+
+def test_kill_process_tree_no_psutil_falls_back_to_taskkill(monkeypatch):
+    monkeypatch.setitem(sys.modules, "psutil", None)  # forces ImportError on `import psutil`
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+
+        class _R:
+            returncode = 0
+        return _R()
+
+    monkeypatch.setattr(scan_bench.subprocess, "run", fake_run)
+
+    scan_bench._kill_process_tree(4242)
+
+    assert len(calls) == 1
+    assert calls[0][:4] == ["taskkill", "/F", "/T", "/PID"]
+    assert calls[0][4] == "4242"
+
+
+def test_kill_process_tree_no_psutil_taskkill_oserror_logged_not_raised(monkeypatch, caplog):
+    monkeypatch.setitem(sys.modules, "psutil", None)
+
+    def fake_run(cmd, **kwargs):
+        raise OSError("taskkill not found")
+
+    monkeypatch.setattr(scan_bench.subprocess, "run", fake_run)
+
+    with caplog.at_level("WARNING", logger="scan_bench"):
+        scan_bench._kill_process_tree(4242)  # must not raise
+
+    assert any("taskkill" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -1561,6 +1945,79 @@ def test_compute_vqa_row_metrics_from_fixture():
 
 
 # ---------------------------------------------------------------------------
+# _write_json: atomic writes (reliability review, EB-392)
+# ---------------------------------------------------------------------------
+
+def test_write_json_atomic_failure_mid_write_leaves_previous_file_intact(tmp_path, monkeypatch):
+    path = tmp_path / "run-summary.json"
+    path.write_text('{"before": true}', encoding="utf-8", newline="\n")
+
+    def _boom(*a, **k):
+        raise RuntimeError("simulated write failure")
+
+    monkeypatch.setattr(scan_bench.json, "dump", _boom)
+
+    with pytest.raises(RuntimeError):
+        scan_bench._write_json(path, {"after": True})
+
+    assert path.read_text(encoding="utf-8") == '{"before": true}'
+
+
+def test_write_json_writes_via_tmp_then_replaces(tmp_path):
+    path = tmp_path / "run-meta.json"
+    scan_bench._write_json(path, {"a": 1})
+    assert not (tmp_path / "run-meta.json.tmp").exists()
+    assert scan_bench._read_json(path) == {"a": 1}
+
+    scan_bench._write_json(path, {"a": 2})
+    assert not (tmp_path / "run-meta.json.tmp").exists()
+    assert scan_bench._read_json(path) == {"a": 2}
+
+
+# ---------------------------------------------------------------------------
+# detect_provider_drift (maintainability review: model_path both-present guard)
+# ---------------------------------------------------------------------------
+
+_BASE_PROVIDER = {
+    "model_served": "sb-vision", "n_ctx": 32768, "total_slots": 1,
+    "model_path": "/models/sb-vision.gguf",
+}
+
+
+def test_detect_provider_drift_no_drift_returns_none():
+    probe = {**_BASE_PROVIDER, "probe_ok": True}
+    assert scan_bench.detect_provider_drift(_BASE_PROVIDER, probe) is None
+
+
+def test_detect_provider_drift_probe_failed():
+    probe = {"probe_ok": False}
+    assert scan_bench.detect_provider_drift(_BASE_PROVIDER, probe) == "probe_failed"
+
+
+def test_detect_provider_drift_model_path_value_to_none_is_not_drift():
+    """A transient /props miss on a single per-book re-probe (real baseline
+    value -> None) must not be flagged as drift -- model_path is only
+    compared when BOTH sides report a non-null value.
+    """
+    probe = {**_BASE_PROVIDER, "model_path": None, "probe_ok": True}
+    assert scan_bench.detect_provider_drift(_BASE_PROVIDER, probe) is None
+
+
+def test_detect_provider_drift_model_path_value_to_different_value_is_drift():
+    probe = {**_BASE_PROVIDER, "model_path": "/models/other.gguf", "probe_ok": True}
+    reason = scan_bench.detect_provider_drift(_BASE_PROVIDER, probe)
+    assert reason is not None
+    assert "model_path" in reason
+
+
+def test_detect_provider_drift_model_served_always_compared_even_to_none():
+    probe = {**_BASE_PROVIDER, "model_served": None, "probe_ok": True}
+    reason = scan_bench.detect_provider_drift(_BASE_PROVIDER, probe)
+    assert reason is not None
+    assert "model_served" in reason
+
+
+# ---------------------------------------------------------------------------
 # Orchestration harness: FakeProcRunner
 # ---------------------------------------------------------------------------
 
@@ -1576,11 +2033,24 @@ def _is_gate_cmd(cmd: list) -> bool:
     return any(str(c).endswith("vqa_determinism_check.py") for c in cmd)
 
 
+def _ps_unquote(quoted: str) -> str:
+    """Inverse of scan_bench._ps_quote -- strip the outer single quotes and
+    undouble any embedded '' -> '. Test fixtures never embed real single
+    quotes in a path, so this is intentionally simple.
+    """
+    assert quoted.startswith("'") and quoted.endswith("'")
+    return quoted[1:-1].replace("''", "'")
+
+
 def _parse_convert_cmd(cmd: list) -> tuple[str, str, bool]:
     ps_cmd = cmd[3]
-    m_in = re.search(r'-InputFile "([^"]+)"', ps_cmd)
-    m_out = re.search(r'-OutputDir "([^"]+)"', ps_cmd)
-    return m_in.group(1), m_out.group(1), "-UseOCR" in ps_cmd
+    m_in = re.search(r"-InputFile '((?:[^']|'')*)'", ps_cmd)
+    m_out = re.search(r"-OutputDir '((?:[^']|'')*)'", ps_cmd)
+    return (
+        _ps_unquote(f"'{m_in.group(1)}'"),
+        _ps_unquote(f"'{m_out.group(1)}'"),
+        "-UseOCR" in ps_cmd,
+    )
 
 
 def _clean_report_copy(stem: str) -> dict:
@@ -1741,6 +2211,17 @@ class FakeProcRunner:
         if self.gate_behavior == "timeout":
             return scan_bench.ProcResult(returncode=None, stdout="", stderr="", elapsed=float(timeout), timed_out=True)
         if self.gate_behavior == "provider_down":
+            # Genuine transport failure: no parseable verdict JSON at all,
+            # stderr carries a connection-type marker -- EB-392 review split:
+            # only THIS case (missing/unparseable verdict) should map to
+            # vqa_skipped_provider_down; a parseable could_not_assess verdict
+            # (see "could_not_assess" below) is a different, resumable cause.
+            return scan_bench.ProcResult(
+                returncode=2, stdout="",
+                stderr="ConnectionError: Local provider unreachable after 3 retries: refused",
+                elapsed=1.0, timed_out=False,
+            )
+        if self.gate_behavior == "could_not_assess":
             verdict = {"could_not_assess": True, "could_not_assess_reason": "provider drift", "exit_code": 2}
             return scan_bench.ProcResult(returncode=2, stdout=json.dumps(verdict), stderr="", elapsed=1.0, timed_out=False)
         if self.gate_behavior == "nondeterministic":
@@ -2127,6 +2608,8 @@ def test_cmd_run_gate_nondeterministic_grade_untrusted_grades_anyway(run_orch, m
 
 
 def test_cmd_run_gate_provider_down(run_orch, monkeypatch, tmp_path):
+    """Genuine transport failure (no parseable verdict, connection-type
+    stderr) -- the ONLY case that should map to vqa_skipped_provider_down."""
     tmp_path, runs_root = run_orch
     book = make_book(tmp_path, "B1", expected_class="digital_native")
     manifest, manifest_path = _write_run_manifest(tmp_path, [book])
@@ -2136,10 +2619,35 @@ def test_cmd_run_gate_provider_down(run_orch, monkeypatch, tmp_path):
     monkeypatch.setattr(scan_bench, "classify_source", make_fake_classify(manifest))
 
     args = default_run_args(manifest=str(manifest_path), run_id="gatedown", runs_root=str(runs_root))
-    scan_bench.cmd_run(args)
+    code = scan_bench.cmd_run(args)
 
     summary = scan_bench.load_run_summary(runs_root / "gatedown" / "run-summary.json")
     assert summary["B1"]["status"] == "vqa_skipped_provider_down"
+    # item 7: a 100%-provider-down VQA stage must exit FAIL(2), not WARN(1).
+    assert code == scan_bench.ExitCode.FAIL
+
+
+def test_cmd_run_gate_could_not_assess_marks_resumable_status_not_provider_down(run_orch, monkeypatch, tmp_path):
+    """A parseable could_not_assess verdict (server/model drift between the
+    gate's two internal runs, or an evaluated_degraded report rejected before
+    Unit 2 could characterize it) must NOT be blanked to the generic
+    "provider down" status -- it is a different, resumable failure with its
+    own reason (correctness/adversarial review findings)."""
+    tmp_path, runs_root = run_orch
+    book = make_book(tmp_path, "B1", expected_class="digital_native")
+    manifest, manifest_path = _write_run_manifest(tmp_path, [book])
+
+    runner = FakeProcRunner(gate_behavior="could_not_assess")
+    monkeypatch.setattr(scan_bench, "run_with_tree_kill", runner)
+    monkeypatch.setattr(scan_bench, "classify_source", make_fake_classify(manifest))
+
+    args = default_run_args(manifest=str(manifest_path), run_id="gatecna", runs_root=str(runs_root))
+    code = scan_bench.cmd_run(args)
+
+    summary = scan_bench.load_run_summary(runs_root / "gatecna" / "run-summary.json")
+    assert summary["B1"]["status"] == "vqa_skipped_gate_could_not_assess"
+    assert "provider drift" in (summary["B1"].get("error") or "")
+    assert code == scan_bench.ExitCode.FAIL
 
 
 def test_cmd_run_gate_fallback_subject_when_b1_fails(run_orch, monkeypatch, tmp_path):
@@ -2367,6 +2875,105 @@ def test_cmd_run_resume_without_run_id_errors(run_orch, monkeypatch, tmp_path):
     assert scan_bench.cmd_run(args) == scan_bench.ExitCode.ERROR
 
 
+def test_cmd_run_retry_without_run_id_errors(run_orch, monkeypatch, tmp_path):
+    tmp_path, runs_root = run_orch
+    book = make_book(tmp_path, "B1")
+    manifest, manifest_path = _write_run_manifest(tmp_path, [book])
+    args = default_run_args(manifest=str(manifest_path), runs_root=str(runs_root), retry="B1")
+    assert scan_bench.cmd_run(args) == scan_bench.ExitCode.ERROR
+
+
+def test_cmd_run_resume_by_run_label_matching_no_run_errors(run_orch, monkeypatch, tmp_path):
+    tmp_path, runs_root = run_orch
+    book = make_book(tmp_path, "B1")
+    manifest, manifest_path = _write_run_manifest(tmp_path, [book])
+    args = default_run_args(
+        manifest=str(manifest_path), runs_root=str(runs_root), resume=True, run_label="nosuchlabel",
+    )
+    assert scan_bench.cmd_run(args) == scan_bench.ExitCode.ERROR
+
+
+def test_resolve_run_label_to_dir_newest_wins(tmp_path):
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    (runs_root / "20260101-100000-abc0000-row0").mkdir()
+    (runs_root / "20260901-100000-def1111-row0").mkdir()  # newest -- must win
+    (runs_root / "20260601-100000-aaa2222-row0-convert").mkdir()  # different label -- must not match
+
+    resolved = scan_bench.resolve_run_label_to_dir("row0", runs_root)
+    assert resolved is not None
+    assert resolved.name == "20260901-100000-def1111-row0"
+
+
+def test_resolve_run_label_to_dir_no_match_returns_none(tmp_path):
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    assert scan_bench.resolve_run_label_to_dir("nosuchlabel", runs_root) is None
+    assert scan_bench.resolve_run_label_to_dir("nosuchlabel", tmp_path / "does-not-exist") is None
+
+
+def test_cmd_run_resume_by_run_label_resolves_to_newest_run(run_orch, monkeypatch, tmp_path):
+    """--resume --run-label <label> (no --run-id) must resolve to the newest
+    run dir ending with -<label> and resume it in place."""
+    tmp_path, runs_root = run_orch
+    books = [make_book(tmp_path, bid, expected_class="digital_native") for bid in ("A1", "A2")]
+    manifest, manifest_path = _write_run_manifest(tmp_path, books)
+
+    older_run_id = "20260101-100000-abc0000-row0"
+    newer_run_id = "20260901-100000-def1111-row0"
+    for run_id in (older_run_id, newer_run_id):
+        paths = scan_bench.RunPaths.for_run(runs_root, run_id)
+        paths.ensure()
+        scan_bench.write_run_summary(paths.run_summary_path, {
+            "A1": {**scan_bench._default_row({"id": "A1"}), "status": "pending"},
+            "A2": {**scan_bench._default_row({"id": "A2"}), "status": "pending"},
+        })
+        scan_bench._write_json(paths.run_meta_path, scan_bench.build_run_meta(
+            manifest, manifest_path, "abc1234", good_probe()("x", "y"), default_run_args(),
+        ))
+
+    runner = FakeProcRunner()
+    monkeypatch.setattr(scan_bench, "run_with_tree_kill", runner)
+    monkeypatch.setattr(scan_bench, "classify_source", make_fake_classify(manifest))
+
+    args = default_run_args(manifest=str(manifest_path), runs_root=str(runs_root), resume=True, run_label="row0")
+    code = scan_bench.cmd_run(args)
+
+    assert code in (scan_bench.ExitCode.OK, scan_bench.ExitCode.WARN)
+    # The NEWER run dir must be the one that was actually resumed/mutated.
+    newer_summary = scan_bench.load_run_summary(runs_root / newer_run_id / "run-summary.json")
+    assert newer_summary["A1"]["status"] not in (None, "pending")
+    older_summary = scan_bench.load_run_summary(runs_root / older_run_id / "run-summary.json")
+    assert older_summary["A1"]["status"] == "pending", "the older run dir must be left untouched"
+
+
+def test_cmd_run_prints_run_started_and_run_finished_envelopes(run_orch, monkeypatch, tmp_path, capsys):
+    tmp_path, runs_root = run_orch
+    book = make_book(tmp_path, "B1", expected_class="digital_native")
+    manifest, manifest_path = _write_run_manifest(tmp_path, [book])
+
+    runner = FakeProcRunner()
+    monkeypatch.setattr(scan_bench, "run_with_tree_kill", runner)
+    monkeypatch.setattr(scan_bench, "classify_source", make_fake_classify(manifest))
+
+    args = default_run_args(manifest=str(manifest_path), run_id="envelopetest", runs_root=str(runs_root), label="smoke")
+    code = scan_bench.cmd_run(args)
+
+    out_lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    assert len(out_lines) >= 2
+    started = json.loads(out_lines[0])
+    assert started == {
+        "event": "run_started", "run_id": "envelopetest",
+        "run_dir": str(runs_root / "envelopetest"), "label": "smoke",
+    }
+    finished = json.loads(out_lines[-1])
+    assert finished["event"] == "run_finished"
+    assert finished["run_id"] == "envelopetest"
+    assert finished["exit_code"] == code
+    assert finished["status_counts"]["evaluated"] == 1
+    assert finished["vqa_trusted"] is True
+
+
 def test_cmd_run_vqa_only_resume_grades_skip_vqa_run(run_orch, monkeypatch, tmp_path):
     tmp_path, runs_root = run_orch
     book = make_book(tmp_path, "B1", expected_class="digital_native")
@@ -2564,6 +3171,55 @@ def test_compare_degenerate_grader_flag_carried(tmp_path):
     assert "degenerate_grader" in result["rows"][0]["flags"]
 
 
+def test_compare_flags_manifest_mismatch_between_sides(tmp_path):
+    """Adversarial review: compare must catch a manifest edit (different
+    sha256/source_path/expected_class for the same book id) between the two
+    runs -- otherwise a resulting delta can look like a pipeline regression/
+    improvement that is actually just a changed ground truth."""
+    dir_a = _bundle(tmp_path, "run_a", {"B1": _row(vqa={"overall_score": 80})})
+    dir_b = _bundle(tmp_path, "run_b", {"B1": _row(vqa={"overall_score": 95})})
+    scan_bench._write_json(dir_a / "manifest.snapshot.json", {
+        "books": [{"id": "B1", "sha256": "aaa", "source_path": r"F:\books\old.pdf", "expected_class": "digital_native"}],
+    })
+    scan_bench._write_json(dir_b / "manifest.snapshot.json", {
+        "books": [{"id": "B1", "sha256": "bbb", "source_path": r"F:\books\new.pdf", "expected_class": "digital_native"}],
+    })
+
+    result = scan_bench.compare_runs(dir_a, dir_b)
+    row = result["rows"][0]
+    assert "manifest_mismatch" in row["flags"]
+    assert any("sha256" in r for r in row["not_comparable_reasons"])
+    # VQA delta is marked unreliable (blocked) even though the classification
+    # itself may still read "ok" -- the deltas are kept, just flagged.
+    assert row["deltas"]["overall_score"]["blocked"] is True
+    assert row["deltas"]["overall_score"]["delta"] is None
+    # Conversion-side metrics (independent of the manifest ground truth
+    # mismatch scenario tested here) are unaffected.
+    assert row["deltas"]["convert_sec"]["delta"] == 0
+
+
+def test_compare_identical_manifest_entries_no_mismatch_flag(tmp_path):
+    dir_a = _bundle(tmp_path, "run_a", {"B1": _row()})
+    dir_b = _bundle(tmp_path, "run_b", {"B1": _row()})
+    same_manifest = {
+        "books": [{"id": "B1", "sha256": "aaa", "source_path": r"F:\books\same.pdf", "expected_class": "digital_native"}],
+    }
+    scan_bench._write_json(dir_a / "manifest.snapshot.json", same_manifest)
+    scan_bench._write_json(dir_b / "manifest.snapshot.json", same_manifest)
+
+    result = scan_bench.compare_runs(dir_a, dir_b)
+    assert "manifest_mismatch" not in result["rows"][0]["flags"]
+
+
+def test_compare_no_manifest_snapshot_on_either_side_degrades_gracefully(tmp_path):
+    """Absence of manifest.snapshot.json (older runs) is "nothing to
+    compare", not an error."""
+    dir_a = _bundle(tmp_path, "run_a", {"B1": _row()})
+    dir_b = _bundle(tmp_path, "run_b", {"B1": _row()})
+    result = scan_bench.compare_runs(dir_a, dir_b)
+    assert "manifest_mismatch" not in result["rows"][0]["flags"]
+
+
 def test_compare_md_renders_table(tmp_path):
     dir_a = _bundle(tmp_path, "run_a", {"B1": _row()})
     dir_b = _bundle(tmp_path, "run_b", {"B1": _row()})
@@ -2617,7 +3273,7 @@ def test_cmd_report_reads_run_dir_and_writes_report_md(tmp_path, monkeypatch, ca
     manifest = make_manifest([make_book(tmp_path, "B1")])
     scan_bench._write_json(run_dir / "manifest.snapshot.json", manifest)
 
-    args = argparse.Namespace(run_or_label="run_x")
+    args = argparse.Namespace(run_or_label="run_x", json=False)
     code = scan_bench.cmd_report(args)
     assert code == scan_bench.ExitCode.OK
     assert (run_dir / "report.md").is_file()
@@ -2625,9 +3281,114 @@ def test_cmd_report_reads_run_dir_and_writes_report_md(tmp_path, monkeypatch, ca
     assert "B1" in out
 
 
+def test_cmd_report_json_flag_emits_structured_payload(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(scan_bench, "runs_root_default", lambda: tmp_path / "runs")
+    monkeypatch.setattr(scan_bench, "baselines_root_default", lambda: tmp_path / "baselines")
+    (tmp_path / "runs").mkdir()
+    run_dir = _bundle(tmp_path / "runs", "run_x", {"B1": _row()}, meta={"label": "run_x"})
+
+    args = argparse.Namespace(run_or_label="run_x", json=True)
+    code = scan_bench.cmd_report(args)
+    assert code == scan_bench.ExitCode.OK
+    assert not (run_dir / "report.md").exists(), "--json must not also write report.md"
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_dir"] == str(run_dir)
+    assert payload["run_meta"]["label"] == "run_x"
+    assert "B1" in payload["rows"]
+
+
+def test_cmd_report_never_writes_into_a_baseline_dir(tmp_path, monkeypatch, capsys):
+    """A promoted baseline dir is read-only, PR-landed -- report must print
+    only, never write report.md into it (project-standards review)."""
+    monkeypatch.setattr(scan_bench, "runs_root_default", lambda: tmp_path / "runs")
+    monkeypatch.setattr(scan_bench, "baselines_root_default", lambda: tmp_path / "baselines")
+    (tmp_path / "runs").mkdir()
+    (tmp_path / "baselines").mkdir()
+    baseline_dir = _bundle(tmp_path / "baselines", "row0-convert", {"B1": _row()}, meta={"label": "row0-convert"})
+    manifest = make_manifest([make_book(tmp_path, "B1")])
+    scan_bench._write_json(baseline_dir / "manifest.snapshot.json", manifest)
+
+    args = argparse.Namespace(run_or_label="row0-convert", json=False)
+    code = scan_bench.cmd_report(args)
+    assert code == scan_bench.ExitCode.OK
+    assert not (baseline_dir / "report.md").exists()
+    out = capsys.readouterr().out
+    assert "B1" in out
+
+
 # ---------------------------------------------------------------------------
 # promote
 # ---------------------------------------------------------------------------
+
+def test_validate_promotion_refuses_bare_converted_row_with_no_vqa():
+    """Correctness review: an interrupted run (Stage 2 never ran) leaves a
+    row at bare 'converted' with vqa=None -- validate_promotion must refuse
+    it as non-terminal, not silently exclude it from every graded check."""
+    summary = {
+        "B1": {"status": "converted", "convert_status": "converted", "vqa": None, "vqa_trusted": None},
+    }
+    reasons = scan_bench.validate_promotion(summary, cloud_as_configured=False)
+    assert any("not terminal" in r for r in reasons)
+
+
+def test_validate_promotion_refuses_bare_converted_empty_row_with_no_vqa():
+    summary = {
+        "B1": {"status": "converted_empty", "convert_status": "converted_empty", "vqa": None, "vqa_trusted": None},
+    }
+    reasons = scan_bench.validate_promotion(summary, cloud_as_configured=False)
+    assert any("not terminal" in r for r in reasons)
+
+
+def test_validate_promotion_accepts_vqa_skipped_by_flag_as_terminal():
+    """A genuine --skip-vqa run rewrites bare converted -> vqa_skipped_by_flag
+    before the run ends -- this must remain promotable."""
+    summary = {
+        "B1": {"status": "vqa_skipped_by_flag", "convert_status": "converted", "vqa": None, "vqa_trusted": None},
+    }
+    reasons = scan_bench.validate_promotion(summary, cloud_as_configured=False)
+    assert reasons == []
+
+
+def test_validate_promotion_multi_row_provider_resolved_disagreement_refuses():
+    """Testing-review gap: a baseline mixing rows graded on different servers
+    must be refused -- the identical-provider_resolved-across-rows check."""
+    provider_a = {"n_ctx": 32768, "total_slots": 1, "model_served": "sb-vision", "model_path": "/a.gguf"}
+    provider_b = {"n_ctx": 8192, "total_slots": 1, "model_served": "sb-vision", "model_path": "/a.gguf"}
+    summary = {
+        "B1": {
+            "status": "evaluated",
+            "vqa": {"cost_zero_verified": True, "provider_resolved": provider_a,
+                    "overall_score": 90, "garble_findings": 0},
+            "vqa_trusted": True,
+        },
+        "A1": {
+            "status": "evaluated",
+            "vqa": {"cost_zero_verified": True, "provider_resolved": provider_b,
+                    "overall_score": 90, "garble_findings": 0},
+            "vqa_trusted": True,
+        },
+    }
+    reasons = scan_bench.validate_promotion(summary, cloud_as_configured=False)
+    assert any("provider_resolved" in r for r in reasons)
+
+
+def test_validate_promotion_cloud_as_configured_skips_cost_zero_check():
+    summary = {
+        "B1": {
+            "status": "evaluated",
+            "vqa": {"cost_zero_verified": False,
+                    "provider_resolved": {"n_ctx": 32768, "total_slots": 1, "model_served": "x", "model_path": None},
+                    "overall_score": 90, "garble_findings": 0},
+            "vqa_trusted": True,
+        },
+    }
+    reasons = scan_bench.validate_promotion(summary, cloud_as_configured=True)
+    assert reasons == []
+    # Not-as-configured, same summary: refused for cost_zero_verified.
+    reasons2 = scan_bench.validate_promotion(summary, cloud_as_configured=False)
+    assert any("cost_zero_verified" in r for r in reasons2)
+
 
 def _promotable_run(tmp_path, *, cost_zero=True, canary_score=90, garble=0, trusted=True):
     run_dir = tmp_path / "runs" / "promo1"
@@ -2717,8 +3478,82 @@ def test_promote_force_overwrites_existing_label(tmp_path):
     code = scan_bench.cmd_promote(args)
     assert code == scan_bench.ExitCode.OK
     assert (dest_dir / "run-meta.json").is_file()
+    # Adversarial review: --force must be a clean REPLACE, not a merge -- a
+    # stale file from a previous promotion of this label must be gone.
+    assert not (dest_dir / "stale.json").exists()
+    assert not (dest_dir.parent / ".promote-tmp-testlabel").exists()
+
+
+def test_promote_force_copy_failure_leaves_old_label_untouched(tmp_path, monkeypatch):
+    """Reliability review: a mid-copy failure must remove the staging dir and
+    leave a pre-existing (--force-eligible) label completely untouched --
+    never a partially-populated baseline."""
+    _promotable_run(tmp_path)
+    dest_dir = tmp_path / "dest" / "data" / "scan_bench" / "baselines" / "testlabel"
+    dest_dir.mkdir(parents=True)
+    (dest_dir / "run-meta.json").write_text('{"old": true}', encoding="utf-8")
+
+    real_copyfile = scan_bench.shutil.copyfile
+    calls = {"n": 0}
+
+    def _flaky_copyfile(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated disk full")
+        return real_copyfile(src, dst)
+
+    monkeypatch.setattr(scan_bench.shutil, "copyfile", _flaky_copyfile)
+
+    args = argparse.Namespace(run_id="promo1", label="testlabel", dest=str(tmp_path / "dest"), runs_root=str(tmp_path / "runs"), force=True)
+    code = scan_bench.cmd_promote(args)
+
+    assert code == scan_bench.ExitCode.ERROR
+    # Old label dir is untouched -- still has its original (stale) content.
+    assert dest_dir.is_dir()
+    assert json.loads((dest_dir / "run-meta.json").read_text(encoding="utf-8")) == {"old": True}
+    # No leftover staging directory.
+    assert not (dest_dir.parent / ".promote-tmp-testlabel").exists()
+
+
+def test_promote_refusal_emits_json(tmp_path, capsys):
+    _promotable_run(tmp_path, cost_zero=False)
+    args = argparse.Namespace(run_id="promo1", label="testlabel", dest=str(tmp_path / "dest"), runs_root=str(tmp_path / "runs"), force=False)
+    code = scan_bench.cmd_promote(args)
+    assert code == scan_bench.ExitCode.FAIL
+
+    out = capsys.readouterr().out
+    payload = json.loads(out.strip())
+    assert payload["error"] == "validation_failed"
+    assert isinstance(payload["reasons"], list) and payload["reasons"]
 
 
 def test_promote_missing_run_dir_errors(tmp_path):
     args = argparse.Namespace(run_id="doesnotexist", label="x", dest=str(tmp_path / "dest"), runs_root=str(tmp_path / "runs"), force=False)
+    assert scan_bench.cmd_promote(args) == scan_bench.ExitCode.ERROR
+
+
+def test_promote_by_run_label_resolves_source_run(tmp_path):
+    """promote's source selector accepts --run-label as an alternative to
+    --run-id (--label stays the destination baseline name)."""
+    _promotable_run(tmp_path)
+    # Rename the run dir so its name ends with "-row0" (mirrors a real
+    # generated run id) and is only findable via label resolution.
+    labeled_run_dir = tmp_path / "runs" / "20260901-100000-abc1234-row0"
+    (tmp_path / "runs" / "promo1").rename(labeled_run_dir)
+
+    args = argparse.Namespace(
+        run_id=None, run_label="row0", label="testlabel",
+        dest=str(tmp_path / "dest"), runs_root=str(tmp_path / "runs"), force=False,
+    )
+    code = scan_bench.cmd_promote(args)
+    assert code == scan_bench.ExitCode.OK
+    dest_dir = tmp_path / "dest" / "data" / "scan_bench" / "baselines" / "testlabel"
+    assert (dest_dir / "run-meta.json").is_file()
+
+
+def test_promote_no_run_id_or_run_label_errors(tmp_path):
+    args = argparse.Namespace(
+        run_id=None, run_label=None, label="x",
+        dest=str(tmp_path / "dest"), runs_root=str(tmp_path / "runs"), force=False,
+    )
     assert scan_bench.cmd_promote(args) == scan_bench.ExitCode.ERROR

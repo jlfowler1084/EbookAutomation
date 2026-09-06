@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 # Ensure tools/ is importable (mirrors tests/test_vqa_grader_calibration.py).
@@ -197,6 +198,45 @@ class TestCompareReportsErrors(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# compare_reports -- evaluated_degraded is evaluable (EB-392 review: adversarial
+# finding -- a transient n_ctx-probe hiccup must not cascade into "could not
+# reach the provider" for the whole harness run)
+# ---------------------------------------------------------------------------
+
+class TestEvaluatedDegradedIsEvaluable(unittest.TestCase):
+    def test_evaluated_degraded_report_passes_require_evaluable(self):
+        # Must not raise -- a real, scored report with pages, just graded
+        # under an unconfirmed context window.
+        dc._require_evaluable(_report([_page(1, 100)], status="evaluated_degraded"), "a")
+
+    def test_both_evaluated_degraded_compares_normally_and_is_deterministic(self):
+        a = _report([_page(1, 100)], overall=100, status="evaluated_degraded")
+        b = _report([_page(1, 100)], overall=100, status="evaluated_degraded")
+        v = dc.compare_reports(a, b)
+        self.assertTrue(v.deterministic)
+        self.assertTrue(v.degraded)
+
+    def test_one_side_evaluated_degraded_still_sets_degraded_flag(self):
+        a = _report([_page(1, 100)], overall=100, status="evaluated")
+        b = _report([_page(1, 100)], overall=100, status="evaluated_degraded")
+        v = dc.compare_reports(a, b)
+        self.assertTrue(v.deterministic)
+        self.assertTrue(v.degraded)
+
+    def test_fully_evaluated_reports_are_not_flagged_degraded(self):
+        a = _report([_page(1, 100)], overall=100, status="evaluated")
+        b = _report([_page(1, 100)], overall=100, status="evaluated")
+        v = dc.compare_reports(a, b)
+        self.assertFalse(v.degraded)
+
+    def test_still_evaluated_status_other_than_evaluated_or_degraded_raises(self):
+        a = _report([_page(1, 100)], status="api_failure")
+        b = _report([_page(1, 100)], status="evaluated_degraded")
+        with self.assertRaises(ValueError):
+            dc.compare_reports(a, b)
+
+
+# ---------------------------------------------------------------------------
 # run_determinism_check -- orchestration via injected runner
 # ---------------------------------------------------------------------------
 
@@ -325,6 +365,49 @@ class TestProviderDriftDetection(unittest.TestCase):
         self.assertIn("base_url", v.could_not_assess_reason)
         self.assertEqual(dc.verdict_to_exit_code(v), 2)
 
+    def test_model_path_true_mismatch_both_non_null_yields_could_not_assess_exit_2(self):
+        """The actual mismatch-detected branch (both sides non-null, differing)
+        -- previously untested; only the None-skip case was covered."""
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": "/models/a.gguf"}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": "/models/b.gguf"}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertTrue(v.could_not_assess)
+        self.assertIn("model_path", v.could_not_assess_reason)
+        self.assertEqual(dc.verdict_to_exit_code(v), 2)
+
+    def test_model_served_drift_both_non_null_yields_could_not_assess_exit_2(self):
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None, "model_served": "sb-vision"}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None, "model_served": "sb-vision-2"}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertTrue(v.could_not_assess)
+        self.assertIn("model_served", v.could_not_assess_reason)
+        self.assertEqual(dc.verdict_to_exit_code(v), 2)
+
+    def test_model_served_drift_ignored_when_either_run_is_null(self):
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None, "model_served": "sb-vision"}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://x.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None, "model_served": None}},
+        ]
+        v = dc.run_determinism_check(lambda i: reports[i], runs=2)
+        self.assertFalse(v.could_not_assess)
+        self.assertTrue(v.deterministic)
+
     def test_model_path_drift_ignored_when_either_run_is_null(self):
         """model_path is compared only when BOTH runs expose a non-null
         value -- a server without a reachable /props must not be flagged as
@@ -372,6 +455,56 @@ class TestProviderDriftDetection(unittest.TestCase):
         self.assertTrue(v.could_not_assess)
         self.assertIn("n_ctx", v.could_not_assess_reason)
         self.assertEqual(dc.verdict_to_exit_code(v), 2)
+
+
+# ---------------------------------------------------------------------------
+# main() -- post-verdict remediation text must match the actual failure mode
+# (cli-readiness review: exit 2 for could_not_assess/drift was reusing the
+# NON-DETERMINISTIC single-slot-quiesce advice, which fixes nothing for a
+# server/model identity change between the two internal runs)
+# ---------------------------------------------------------------------------
+
+class TestMainRemediationText(unittest.TestCase):
+    def test_could_not_assess_exit_prints_drift_reason_not_quiesce_advice(self):
+        reports = [
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://a.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+            {**_report([_page(1, 100)], overall=100),
+             "provider_resolved": {"base_url": "http://b.test/v1", "n_ctx": 32768,
+                                    "total_slots": 1, "model_path": None}},
+        ]
+
+        def fake_build_vqa_runner(*args, **kwargs):
+            return lambda i: reports[i]
+
+        with unittest.mock.patch.object(dc, "build_vqa_runner", fake_build_vqa_runner):
+            with self.assertLogs("vqa_determinism_check", level="WARNING") as cm:
+                code = dc.main(["--input", "fake.kfx", "--json"])
+
+        self.assertEqual(code, 2)
+        joined = "\n".join(cm.output)
+        self.assertIn("COULD NOT BE ASSESSED", joined)
+        self.assertIn("base_url", joined)
+        self.assertNotIn("Quiesce the node", joined)
+
+    def test_nondeterministic_exit_still_prints_quiesce_advice(self):
+        reports = [
+            _report([_page(1, 100)], overall=100),
+            _report([_page(1, 70)], overall=70),
+        ]
+
+        def fake_build_vqa_runner(*args, **kwargs):
+            return lambda i: reports[i]
+
+        with unittest.mock.patch.object(dc, "build_vqa_runner", fake_build_vqa_runner):
+            with self.assertLogs("vqa_determinism_check", level="WARNING") as cm:
+                code = dc.main(["--input", "fake.kfx", "--json"])
+
+        self.assertEqual(code, 1)
+        joined = "\n".join(cm.output)
+        self.assertIn("NON-DETERMINISTIC", joined)
+        self.assertIn("Quiesce the node", joined)
 
 
 if __name__ == "__main__":

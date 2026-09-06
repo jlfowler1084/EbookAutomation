@@ -1903,6 +1903,61 @@ def test_explicit_n_ctx_wins_over_probe_source_is_cli() -> None:
     assert len(probe_calls) == 1, "describe() must still run the probe for other metadata"
 
 
+def test_describe_warns_once_when_explicit_n_ctx_disagrees_with_probe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Adversarial review: an explicit --n-ctx that disagrees with the real
+    probed window silently defeated the adaptive context-budget safety net
+    (it always wins, with zero cross-validation). describe() must log ONE
+    WARNING naming both values."""
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return {
+            "n_ctx": 8192, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        }
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+        provider.describe(refresh=True)  # second call must NOT log a second warning
+
+    matches = [r for r in caplog.records if "disagrees with" in r.getMessage()]
+    assert len(matches) == 1
+    assert "32768" in matches[0].getMessage()
+    assert "8192" in matches[0].getMessage()
+
+
+def test_describe_no_warning_when_explicit_n_ctx_matches_probe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return {
+            "n_ctx": 32768, "n_ctx_source": "models", "n_ctx_train": None,
+            "model_served": "m", "models_listed": ["m"], "server_type": "llamacpp",
+            "total_slots": 1, "model_path": None, "build_info": None, "probe_ok": True,
+        }
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+
+    assert not any("disagrees with" in r.getMessage() for r in caplog.records)
+
+
+def test_describe_no_warning_when_probe_failed(caplog: pytest.LogCaptureFixture) -> None:
+    """A total probe failure (probe_ok False) must not be treated as a
+    disagreement -- there is no trustworthy probed value to compare against."""
+    def fake_probe(base_url: str, model: str | None, timeout: float = 5.0) -> dict:
+        return None
+
+    provider = LocalVisionProvider(base_url="http://x/v1", n_ctx=32768, probe=fake_probe)
+    with caplog.at_level("WARNING", logger="visual_qa.local_provider"):
+        provider.describe()
+
+    assert not any("disagrees with" in r.getMessage() for r in caplog.records)
+
+
 def test_max_batch_size_and_output_budget_use_explicit_n_ctx_too() -> None:
     """Explicit n_ctx flows through to the batch-size/output-budget math as well."""
     fresh = LocalVisionProvider(
