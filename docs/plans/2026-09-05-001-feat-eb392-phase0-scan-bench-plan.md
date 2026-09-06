@@ -537,7 +537,7 @@ completion, `urlopen` fake context manager on the branch).
 - A live one-page smoke against sb-vision at 8192 returns a scored page (partial coverage allowed)
   instead of `api_failure`.
 
-- [ ] **Unit 2: Shared target resolver, `provider_resolved` in reports and verdicts, stale defaults aligned**
+- [x] **Unit 2: Shared target resolver, `provider_resolved` in reports and verdicts, stale defaults aligned** — done 2026-09-06; QWEN.md on this branch has no VQA text to correct
 
 **Goal:** Every VQA report and determinism verdict proves which server, weights, and window graded
 it; one resolver replaces the duplicated factories; the determinism check detects a server change
