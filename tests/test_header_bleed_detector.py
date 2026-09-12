@@ -570,15 +570,46 @@ def test_cli_nonexistent_input_exits_3(tmp_path):
 
 
 def test_cli_empty_directory_exits_1(tmp_path):
-    """Empty directory (no matching HTML) must exit 1."""
+    """Empty directory (no matching HTML) must exit 1 and still write a report.
+
+    EB-398: pass --out under tmp_path. Without it the CLI writes its default
+    report relative to the CWD (the repo root under pytest), leaving an empty
+    data/batch_reports/header_bleed/<ts>.json in the repo on every run.
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    out = tmp_path / "report.json"
     r = subprocess.run(
         ["py", "-3.12", str(TOOLS_DIR / "check_header_bleed.py"),
-         "--input", str(tmp_path)],
+         "--input", str(empty), "--out", str(out)],
         capture_output=True, text=True,
     )
     assert r.returncode == 1, (
         f"Expected exit 1 for empty dir, got {r.returncode}"
     )
+    data = json.loads(out.read_text())
+    assert data["summary"]["total_books"] == 0
+    assert data["exit_code"] == 1
+
+
+def test_cli_default_out_is_relative_to_cwd(tmp_path):
+    """Without --out, the report lands under <cwd>/data/batch_reports/header_bleed/.
+
+    Pins the default location by running from tmp_path, so the behavior stays
+    covered without ever writing into the repo (EB-398).
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    r = subprocess.run(
+        ["py", "-3.12", str(TOOLS_DIR / "check_header_bleed.py"),
+         "--input", str(empty)],
+        capture_output=True, text=True, cwd=tmp_path,
+    )
+    assert r.returncode == 1, (
+        f"Expected exit 1 for empty dir, got {r.returncode}\nstderr: {r.stderr}"
+    )
+    reports = list((tmp_path / "data" / "batch_reports" / "header_bleed").glob("*.json"))
+    assert len(reports) == 1, f"expected exactly one default report under tmp cwd, got {reports}"
 
 
 def test_cli_json_exit_code_matches_process(tmp_path):
