@@ -34,6 +34,8 @@ import statistics
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from collections.abc import Callable
+from llm_providers.text_provider import request_text, text_llm_enabled
 
 load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
@@ -1395,7 +1397,7 @@ def extract_pdf_images(pdf_path, output_dir, log, min_width=100, min_height=100,
                                         best_caption = btxt.replace('\n', ' ').strip()
                                         best_dist = dist
                             if best_caption and best_caption.lower().startswith(_caption_prefixes):
-                                img_info['caption'] = best_caption
+                                img_info['caption'] = normalize_encoding(best_caption)[0]
                     except Exception as e:
                         log(f"  [warn] caption extraction failed: {e}")
                     # Clean up internal key
@@ -1895,7 +1897,22 @@ def normalize_encoding(text, log=None):
         'mojibake_fixed': 0,
         'control_chars_removed': 0,
         'replacement_chars_found': 0,
+        'adobe_glyphs_fixed': 0,
     }
+
+    # Adobe legacy expert-font glyphs (e.g. FournierExpertMT) survive PDF
+    # extraction as PUA characters but render as boxes after font substitution.
+    # Only these defined oldstyle-digit/small-cap ranges are mapped; other
+    # private-use characters may be mathematics or custom symbols.
+    def _fix_adobe_glyph(match):
+        codepoint = ord(match.group())
+        stats['adobe_glyphs_fixed'] += 1
+        stats['replacements_made'] += 1
+        if 0xF730 <= codepoint <= 0xF739:
+            return chr(ord('0') + codepoint - 0xF730)
+        return chr(ord('A') + codepoint - 0xF761)
+
+    text = re.sub(r'[\uf730-\uf739\uf761-\uf77a]', _fix_adobe_glyph, text)
 
     # ── Pattern 1: UTF-8 mojibake from Windows-1252 / Latin-1 ──────────
     # Loaded from substitution table (config/ocr_substitutions.json)
@@ -1988,7 +2005,8 @@ def normalize_encoding(text, log=None):
     if total > 0:
         log(f"  Encoding normalization: {total} fixes "
             f"({stats['mojibake_fixed']} mojibake, "
-            f"{stats['control_chars_removed']} control chars)")
+            f"{stats['control_chars_removed']} control chars, "
+            f"{stats['adobe_glyphs_fixed']} Adobe glyphs)")
 
     return text, stats
 
@@ -2189,134 +2207,17 @@ def ocr_text_to_para_dicts(ocr_text, log):
 
 def extract_text_vision(pdf_path, log, api_key=None, poppler_path=None,
                         dpi=200, batch_size=3, cost_limit=15.0):
-    """Extract text from PDF pages using Claude Vision API (Tier 3).
+    """Legacy vision entry point using configured OCR (local by default).
 
-    Renders every page as an image and sends to Claude for transcription.
-    Highest quality — handles multi-script, custom fonts, degraded scans.
-
-    Cost: ~$0.02-0.04 per page (Sonnet). Cached after first extraction.
-
-    Returns:
-        dict with text, pages_processed, total_pages, input_tokens,
-        output_tokens, cost_usd — or None on failure/abort.
+    api_key is retained for compatibility with the former Claude-only API;
+    paid Gemini uses GEMINI_API_KEY when explicitly selected as OCR provider.
     """
-    if not api_key:
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        raise RuntimeError(
-            "Claude Vision extraction requires ANTHROPIC_API_KEY. "
-            "Set as environment variable or pass --api-key.")
+    from local_vlm_ocr import extract_text_ocr as extract_text_vlm_ocr
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if script_dir not in sys.path:
-        sys.path.insert(0, script_dir)
-    from visual_qa import (render_pages_to_png, call_claude_vision,
-                           find_poppler_path, get_pdf_page_count)
-
-    total_pages = get_pdf_page_count(pdf_path)
-    if total_pages == 0:
-        log("  Vision: PDF has 0 pages")
-        return None
-
-    log(f"  Vision: PDF has {total_pages} pages")
-
-    # Cost estimate (Sonnet: $3/M input, $15/M output)
-    est_input_tokens = total_pages * 2000
-    est_output_tokens = total_pages * 800
-    est_cost = (est_input_tokens / 1_000_000) * 3.0 + (est_output_tokens / 1_000_000) * 15.0
-
-    log(f"  Vision: Estimated cost: ${est_cost:.2f} "
-        f"(~{total_pages * 2800:,} tokens, {total_pages} pages at {dpi} DPI)")
-
-    if est_cost > cost_limit:
-        log(f"  Vision: ABORTED — estimated cost ${est_cost:.2f} exceeds "
-            f"limit ${cost_limit:.2f}")
-        log(f"  Vision: Use --vision-cost-limit to increase")
-        return None
-
-    resolved_poppler = find_poppler_path(poppler_path)
-    model = _load_api_model("sonnet")
-
-    all_page_numbers = list(range(1, total_pages + 1))
-    all_text_parts = []
-    total_input = 0
-    total_output = 0
-    pages_processed = 0
-
-    import base64
-
-    for batch_start in range(0, len(all_page_numbers), batch_size):
-        batch_pages = all_page_numbers[batch_start:batch_start + batch_size]
-        batch_num = (batch_start // batch_size) + 1
-        total_batches = (len(all_page_numbers) + batch_size - 1) // batch_size
-
-        log(f"  Vision: Batch {batch_num}/{total_batches} — "
-            f"pages {batch_pages[0]}-{batch_pages[-1]}")
-
-        try:
-            page_images = render_pages_to_png(
-                pdf_path, batch_pages, dpi=dpi, poppler_path=resolved_poppler)
-        except Exception as e:
-            log(f"  Vision: Failed to render batch {batch_num}: {e}")
-            continue
-
-        if not page_images:
-            continue
-
-        content = []
-        for page_num, png_bytes in page_images:
-            b64_data = base64.b64encode(png_bytes).decode('utf-8')
-            content.append({"type": "text", "text": f"--- Page {page_num} ---"})
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64", "media_type": "image/png",
-                    "data": b64_data,
-                }
-            })
-        content.append({
-            "type": "text",
-            "text": f"Transcribe pages {batch_pages[0]} through {batch_pages[-1]} now."
-        })
-
-        payload = {
-            "model": model,
-            "max_tokens": 16384,
-            "system": _VISION_TRANSCRIPTION_PROMPT,
-            "messages": [{"role": "user", "content": content}]
-        }
-
-        try:
-            raw_text, in_tok, out_tok = call_claude_vision(payload, api_key)
-            total_input += in_tok
-            total_output += out_tok
-            pages_processed += len(batch_pages)
-            if raw_text:
-                all_text_parts.append(raw_text)
-            log(f"  Vision: Batch {batch_num} complete — "
-                f"{in_tok:,} in / {out_tok:,} out tokens")
-        except Exception as e:
-            log(f"  Vision: Batch {batch_num} API call failed: {e}")
-            continue
-
-    if not all_text_parts:
-        log("  Vision: No text extracted from any batch")
-        return None
-
-    full_text = '\n'.join(all_text_parts)
-    actual_cost = (total_input / 1_000_000) * 3.0 + (total_output / 1_000_000) * 15.0
-    word_count = len(full_text.split())
-    log(f"  Vision: Extraction complete — {pages_processed}/{total_pages} pages, "
-        f"{word_count:,} words, ${actual_cost:.4f}")
-
-    return {
-        'text': full_text,
-        'pages_processed': pages_processed,
-        'total_pages': total_pages,
-        'input_tokens': total_input,
-        'output_tokens': total_output,
-        'cost_usd': actual_cost,
-    }
+    return extract_text_vlm_ocr(
+        pdf_path, log, poppler_path=poppler_path, dpi=dpi,
+        batch_size=batch_size, cost_limit=cost_limit,
+    )
 
 
 def vision_text_to_para_dicts(vision_text, log):
@@ -2389,6 +2290,7 @@ def vision_text_to_para_dicts(vision_text, log):
         if page_match:
             flush_paragraph()
             current_page = int(page_match.group(1))
+            _emit_page_marker_if_needed()
             continue
 
         stripped = line.strip()
@@ -2486,6 +2388,41 @@ def vision_text_to_para_dicts(vision_text, log):
     log(f"  Vision->HTML bridge: {heading_count} headings detected "
         f"from {total_paras} paragraphs ({current_page} pages)")
     return para_dicts, body_size
+
+
+def _parse_ocr_pages(value: str) -> list[int]:
+    """Parse explicit one-based source PDF pages for targeted remediation."""
+    try:
+        pages = [int(part.strip()) for part in value.split(',')]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError('Use comma-separated source page numbers, e.g. 2,5,9') from exc
+    if not pages or any(page < 1 for page in pages):
+        raise argparse.ArgumentTypeError('OCR page numbers must be positive (one-based)')
+    return sorted(set(pages))
+
+
+def _replace_ocr_pages(para_dicts: list[dict], pages: dict,
+                       body_size: float, log) -> list[int]:
+    """Replace source pages using the formatter's paragraph schema and markers."""
+    applied = []
+    for page_number, text in pages.items():
+        page_number = int(page_number)
+        indices = [i for i, para in enumerate(para_dicts)
+                   if para.get('page_number') == page_number]
+        if not indices:
+            log(f'  OCR remediation: source page {page_number} has no paragraph anchor; skipped')
+            continue
+        replacements, ocr_body_size = vision_text_to_para_dicts(
+            f'<<PAGE:{page_number}>>\n{text}', log)
+        for para in replacements:
+            if not para.get('is_page_marker'):
+                para['font_size'] *= body_size / ocr_body_size
+        insert_at = indices[0]
+        for index in reversed(indices):
+            para_dicts.pop(index)
+        para_dicts[insert_at:insert_at] = replacements
+        applied.append(page_number)
+    return applied
 
 
 def extract_text(pdf_path, log, force_columns=False, compare_extractors_enabled=False):
@@ -6611,6 +6548,71 @@ def _is_short_allcaps_header(text):
     return all(c.isupper() for c in letters)
 
 
+def _mark_adobe_folio_headers(para_dicts: list[dict], log: Callable[[str], None]) -> int:
+    """Identify repeated encoded-smallcap margin titles with a stable folio offset.
+
+    Adobe expert-font headers can vary their letter spacing on every page.
+    Their encoded folios are not digits until normalization, so ordinary A2
+    frequency grouping cannot recognize them before cross-page rejoining.
+    """
+    groups = {}
+    allowed = re.compile(r"[\uf761-\uf77a\uf730-\uf739\d\s.,:;&'’\-‒–—]+")
+    for index, para in enumerate(para_dicts):
+        text = para.get('text', '').strip()
+        if (not para.get('_margin_zone') or para.get('is_page_marker')
+                or para.get('heading_level') or len(text) > 150
+                or len(re.findall(r'[\uf761-\uf77a]', text)) < 10
+                or not allowed.fullmatch(text)):
+            continue
+        normalized, _ = normalize_encoding(text)
+        candidates = []
+        # Notes headers contain both the current folio and a referenced page
+        # range. Evaluate each end; the stable physical-page offset identifies
+        # the folio instead of mistaking the last range number for it.
+        trailing = re.fullmatch(r'(.+?)\s+(\d{1,4})', normalized)
+        if trailing:
+            candidates.append((trailing.group(1), int(trailing.group(2)), None))
+        leading = re.fullmatch(r'(\d{1,4})\s+(.+)', normalized)
+        if leading:
+            candidates.append((leading.group(2), int(leading.group(1)), None))
+        if not candidates:
+            # Some books split the folio and title into adjacent margin
+            # paragraphs. Require the same physical source page.
+            for neighbor_index in (index - 1, index + 1):
+                if not 0 <= neighbor_index < len(para_dicts):
+                    continue
+                neighbor = para_dicts[neighbor_index]
+                if (not neighbor.get('_margin_zone')
+                        or neighbor.get('page_number') != para.get('page_number')):
+                    continue
+                number, _ = normalize_encoding(neighbor.get('text', '').strip())
+                if re.fullmatch(r'\d{1,4}', number):
+                    candidates.append((normalized, int(number), neighbor_index))
+                    break
+        if not para.get('page_number'):
+            continue
+        for title, folio, folio_index in candidates:
+            title_key = re.sub(r'\s+', '', title)
+            # Normalize only numeric ranges. Other fixed numbers remain part
+            # of the identity, so numbered content is not broadly grouped.
+            title_key = re.sub(r'\d+[‒–—-]\d+', '#-#', title_key)
+            offset = para['page_number'] - folio
+            groups.setdefault((title_key, offset), []).append((index, folio_index))
+
+    marked = 0
+    for occurrences in groups.values():
+        if len({para_dicts[index]['page_number'] for index, _ in occurrences}) < 5:
+            continue
+        for index, folio_index in occurrences:
+            for target in (index, folio_index):
+                if target is not None and not para_dicts[target].get('_is_a2_running_header'):
+                    para_dicts[target]['_is_a2_running_header'] = True
+                    marked += 1
+    if marked:
+        log(f"  Adobe folio filter: marked {marked} encoded running-header paragraphs before rejoin")
+    return marked
+
+
 def _mark_a2_running_headers(para_dicts, log):
     """Mark para_dicts entries that are A2 running headers.
 
@@ -6631,6 +6633,7 @@ def _mark_a2_running_headers(para_dicts, log):
     heuristic (word-then-open-paren pattern) guards against stripping code
     literals like window.mainloop() that appear on 6+ distinct pages.
     """
+    _mark_adobe_folio_headers(para_dicts, log)
     _TRAILING_NUM = re.compile(r'\s+\d{1,4}\s*$')
     _LEADING_NUM = re.compile(r'^\d{1,4}\s+')
     # EB-374: roman-numeral page numbers (front matter: viii, XXIV, …). Strict
@@ -10599,19 +10602,6 @@ def ai_detect_subheadings(paragraphs, log, api_key=None, bookmark_titles=None, h
         log("  AI Sub-headings: skipped (book has PDF bookmarks — using bookmark TOC structure)")
         return paragraphs, _empty_stats
 
-    import os as _os
-
-    key = api_key or _os.environ.get('ANTHROPIC_API_KEY', '')
-    _empty_stats = {}
-    if not key:
-        log("  AI Sub-headings: skipped (no API key)")
-        return paragraphs, _empty_stats
-    try:
-        import requests as _requests
-    except ImportError:
-        log("  AI Sub-headings: skipped (requests library not installed)")
-        return paragraphs, _empty_stats
-
     _h_indices = heading_indices or set()
     _bm_titles = set()
     if bookmark_titles:
@@ -10687,11 +10677,10 @@ def ai_detect_subheadings(paragraphs, log, api_key=None, bookmark_titles=None, h
         candidates = candidates[:max_candidates]
 
     _model = _load_api_model("haiku")
-    log(f"  AI Sub-headings: using model={_model}")
     log(f"  AI Sub-headings: {total_candidates} candidates detected"
         + (f" (processing top {len(candidates)})" if total_candidates > max_candidates else ""))
 
-    # --- Step 2: Send to Claude API for verification ---
+    # --- Step 2: Send to the configured text LLM for verification ---
     batch_size = 20
     confirmed_headings = []
 
@@ -10723,29 +10712,13 @@ Return a JSON object with:
   - "heading_text": the cleaned heading text (only if is_heading is true)"""
 
         try:
-            resp = _requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": key,
-                    "content-type": "application/json",
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": _model,
-                    "max_tokens": 1500,
-                    "temperature": 0,
-                    "system": (
-                        "You are analyzing paragraphs from a book to identify section "
+            content_text = request_text(
+                system_prompt="You are analyzing paragraphs from a book to identify section "
                         "sub-headings extracted as plain text. Return ONLY valid JSON, "
-                        "no markdown or explanation."
-                    ),
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=30,
+                        "no markdown or explanation.",
+                user_message=prompt,
+                max_tokens=1500, cloud_model=_model, api_key=api_key, log=log,
             )
-            resp.raise_for_status()
-            body = resp.json()
-            content_text = body['content'][0]['text'].strip()
             if content_text.startswith('```'):
                 content_text = content_text.split('\n', 1)[1] if '\n' in content_text else content_text[3:]
                 if content_text.endswith('```'):
@@ -10795,22 +10768,12 @@ def ai_rejoin_fragments(paragraphs, log, api_key=None, heading_indices=None):
     AI-powered paragraph rejoining for page-boundary truncation.
 
     Detects candidate fragment pairs (truncated paragraph + continuation),
-    sends to Claude API for verification, and joins confirmed pairs.
+    sends to the configured text LLM for verification, and joins confirmed pairs.
     Runs AFTER fix_ocr_artifacts() but BEFORE chapter heading detection.
     """
-    import os as _os
     import statistics
 
-    key = api_key or _os.environ.get('ANTHROPIC_API_KEY', '')
     _empty_stats = {}
-    if not key:
-        log("  AI Rejoin: skipped (no API key)")
-        return paragraphs, _empty_stats
-    try:
-        import requests as _requests
-    except ImportError:
-        log("  AI Rejoin: skipped (requests library not installed)")
-        return paragraphs, _empty_stats
 
     _h_indices = heading_indices or set()
 
@@ -10921,11 +10884,10 @@ def ai_rejoin_fragments(paragraphs, log, api_key=None, heading_indices=None):
         candidates = candidates[:max_candidates]
 
     _model = _load_api_model("haiku")
-    log(f"  AI Rejoin: using model={_model}")
     log(f"  AI Rejoin: {total_candidates} candidate pairs detected"
         + (f" (processing first {len(candidates)}, {remaining_beyond_cap} beyond cap)" if remaining_beyond_cap else ""))
 
-    # --- Step 2: Send candidates to Claude API for verification ---
+    # --- Step 2: Send candidates to the configured text LLM for verification ---
     batch_size = 15
     all_joins = []
 
@@ -10951,29 +10913,13 @@ Return a JSON object with:
 Only mark should_join as true when you are confident the paragraphs were split mid-sentence or mid-thought by a page break. Separate paragraphs that happen to have related content should NOT be joined."""
 
         try:
-            resp = _requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": key,
-                    "content-type": "application/json",
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": _model,
-                    "max_tokens": 1500,
-                    "temperature": 0,
-                    "system": (
-                        "You are a text extraction repair tool. Determine if paragraph "
+            content_text = request_text(
+                system_prompt="You are a text extraction repair tool. Determine if paragraph "
                         "pairs were split at page boundaries and should be rejoined. "
-                        "Return ONLY valid JSON, no markdown or explanation."
-                    ),
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=30,
+                        "Return ONLY valid JSON, no markdown or explanation.",
+                user_message=prompt,
+                max_tokens=1500, cloud_model=_model, api_key=api_key, log=log,
             )
-            resp.raise_for_status()
-            body = resp.json()
-            content_text = body['content'][0]['text'].strip()
             if content_text.startswith('```'):
                 content_text = content_text.split('\n', 1)[1] if '\n' in content_text else content_text[3:]
                 if content_text.endswith('```'):
@@ -11051,7 +10997,7 @@ def ai_quality_pass(paragraphs, log, api_key=None, apply_fixes=False):
     """
     AI Quality Pass — detection and optional fix application.
 
-    Samples paragraphs, sends to Claude API for quality analysis.
+    Samples paragraphs and uses the configured text LLM for quality analysis.
     Returns (paragraphs, quality_report_dict).
 
     When apply_fixes=False (default): detection only — scores and reports
@@ -11059,19 +11005,6 @@ def ai_quality_pass(paragraphs, log, api_key=None, apply_fixes=False):
     When apply_fixes=True: applies fixes with guardrails (length check,
     word-overlap check) to prevent content substitution.
     """
-    import os as _os
-
-    # Resolve API key
-    key = api_key or _os.environ.get('ANTHROPIC_API_KEY', '')
-    if not key:
-        log("  AI Quality Pass: skipped (no API key)")
-        return paragraphs, {}
-
-    try:
-        import requests as _requests
-    except ImportError:
-        log("  AI Quality Pass: skipped (requests library not installed)")
-        return paragraphs, {}
 
     # --- Sampling ---
     # Collect non-empty, non-heading paragraphs with original indices
@@ -11133,7 +11066,6 @@ def ai_quality_pass(paragraphs, log, api_key=None, apply_fixes=False):
             samples.append({'paragraph_index': para_idx, 'text': text[:500]})
 
     _model = _load_api_model("haiku")
-    log(f"  AI Quality Pass: using model={_model}")
     log(f"  AI Quality Pass: sampling {len(samples)} of {len(candidates)} paragraphs")
 
     # --- Rules-based quality gate ---
@@ -11213,31 +11145,17 @@ Only flag clear extraction artifacts in body text, not the author's original for
 
     # --- Send API request ---
     try:
-        resp = _requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": key,
-                "content-type": "application/json",
-                "anthropic-version": "2023-06-01",
-            },
-            json={
-                "model": _model,
-                "max_tokens": 2000,
-                "temperature": 0,
-                "system": system_prompt,
-                "messages": [{"role": "user", "content": user_prompt}],
-            },
-            timeout=30,
+        content_text = request_text(
+            system_prompt=system_prompt,
+            user_message=user_prompt,
+            max_tokens=2000, cloud_model=_model, api_key=api_key, log=log,
         )
-        resp.raise_for_status()
     except Exception as e:
         log(f"  AI Quality Pass: API request failed ({e}) — skipping")
         return paragraphs, {}
 
     # --- Parse response ---
     try:
-        body = resp.json()
-        content_text = body['content'][0]['text']
         # Strip markdown code fences if present
         content_text = content_text.strip()
         if content_text.startswith('```'):
@@ -11497,31 +11415,15 @@ Return a JSON object with:
 - "notes": array of strings with any observations"""
 
         try:
-            verify_resp = _requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": key,
-                    "content-type": "application/json",
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": _model,
-                    "max_tokens": 2000,
-                    "temperature": 0,
-                    "system": (
-                        "You are a PDF text extraction quality checker verifying "
+            vcontent = request_text(
+                system_prompt="You are a PDF text extraction quality checker verifying "
                         "that automated fixes were applied correctly. Return ONLY "
                         "valid JSON, no markdown formatting, code fences, or explanation. "
                         "Focus on body text only — ignore index entries, bibliographic "
-                        "citations, and footnote references."
-                    ),
-                    "messages": [{"role": "user", "content": verify_prompt}],
-                },
-                timeout=30,
+                        "citations, and footnote references.",
+                user_message=verify_prompt,
+                max_tokens=2000, cloud_model=_model, api_key=api_key, log=log,
             )
-            verify_resp.raise_for_status()
-            vbody = verify_resp.json()
-            vcontent = vbody['content'][0]['text'].strip()
             if vcontent.startswith('```'):
                 vcontent = vcontent.split('\n', 1)[1] if '\n' in vcontent else vcontent[3:]
                 if vcontent.endswith('```'):
@@ -12782,6 +12684,12 @@ def _fix_ligature_splits(para_dicts, log):
                 all_ok = True
                 trailing_remainder = ''
                 for k in range(j, j + span):
+                    # Punctuation ends a word boundary. It must not disappear
+                    # when combining extraction fragments ("Rite, es tablished"
+                    # otherwise becomes "Ritees tablished").
+                    if k < j + span - 1 and re.search(r'[.,;:!?][^A-Za-z]*$', words[k]):
+                        all_ok = False
+                        break
                     # Skip words containing HTML tags — merging tag fragments
                     # with text produces false positives (e.g. <em>+End→"emend")
                     # and destroys the tag structure, causing unclosed <em>/<strong>.
@@ -12908,7 +12816,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         _pending_corrections=None, export_corrections=False,
                         chunk_size=200, chunk_threshold=500,
                         use_pymupdf_tables=False,
-                        classifier_verdict=None):
+                        classifier_verdict=None, ocr_pages=None):
     """
     HTML-based Kindle extraction using pdfminer font metadata.
     Produces semantic HTML with heading levels, blockquotes, and attributions
@@ -12917,7 +12825,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
     If Tier 1 text quality is poor (score <= 70), auto-escalates to Tesseract 5
     OCR (Tier 2) and keeps whichever result scores higher.
 
-    If use_vision=True, skips Tier 1/2 entirely and uses Claude Vision (Tier 3).
+    If use_vision=True or use_gemini=True, transcribes with the configured OCR
+    provider (local by default). ocr_pages selects exact source pages to repair.
     """
     import time as _time_mod
     _extraction_start = _time_mod.time()
@@ -12930,6 +12839,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         extraction_method = 'column_aware'
     vision_cost = 0
     quality = None
+    _ocr_remediation = None
     _pdf_producer = None
     _pdf_creator = None
 
@@ -12954,8 +12864,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         bookmarks = extract_bookmarks(pdf_path, log)
         resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log)
 
-        log("\n-- STEP 1 (VISION): Claude Vision transcription -------")
-        log("  Tier 3 extraction — premium AI transcription")
+        log("\n-- STEP 1 (VISION): Configured vision transcription -------")
+        log("  Tier 3 extraction — configured OCR provider (local by default)")
 
         vision_result = extract_text_vision(
             pdf_path, log,
@@ -12970,7 +12880,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             vision_text, _ = normalize_encoding(vision_result['text'], log=log)
             para_dicts, body_size = vision_text_to_para_dicts(vision_text, log)
             tier_used = 3
-            extraction_method = 'claude_vision'
+            extraction_method = vision_result.get('extraction_method', 'local_vision')
             vision_cost = vision_result.get('cost_usd', 0)
 
             vision_text_flat = '\n'.join(d.get('text', '') for d in para_dicts)
@@ -12986,17 +12896,18 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 "falling back to standard extraction")
             use_vision = False
 
-    # ── EB-349: Classifier-driven auto-escalation to Gemini ────────
+    # ── EB-349: Classifier-driven auto-escalation to OCR ────────
     # If the classifier flagged this as needs_paid_tier='gemini' AND
-    # the opt-in config key is enabled AND GEMINI_API_KEY is set,
-    # auto-enable Gemini without requiring --use-gemini CLI flag.
+    # the legacy opt-in config key is enabled, auto-enable the configured
+    # OCR provider. Only an explicitly selected Gemini provider needs a key.
     # Gate: default=False (opt-in) so digital_native books are unaffected.
-    if (not use_gemini and not use_vision and classifier_verdict is not None):
+    if (not use_gemini and not use_vision and not ocr_pages and classifier_verdict is not None):
         _cv_flags = classifier_verdict.get('flags', {})
         _cv_needs_paid = _cv_flags.get('needs_paid_tier', False)
         _cv_rec_tier = _cv_flags.get('recommended_paid_tier', '')
         if _cv_needs_paid and _cv_rec_tier == 'gemini':
-            _gemini_key = os.environ.get('GEMINI_API_KEY', '')
+            from local_vlm_ocr import get_ocr_provider
+            _ocr_available = (get_ocr_provider() == 'local' or bool(os.environ.get('GEMINI_API_KEY')))
             # Load opt-in config key
             _auto_gemini_enabled = False
             try:
@@ -13009,15 +12920,15 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 ) if _cfg_path.exists() else False
             except Exception:
                 _auto_gemini_enabled = False
-            if _auto_gemini_enabled and _gemini_key:
+            if _auto_gemini_enabled and _ocr_available:
                 _book_label = getattr(pdf_path, 'name', str(pdf_path))
                 _cls_type = classifier_verdict.get('classification', 'unknown')
                 log(f'  [EB-349] Classifier verdict: {_cls_type} needs_paid_tier=gemini')
-                log(f'  [EB-349] auto_gemini_on_scan=true + GEMINI_API_KEY present')
-                log(f'  [EB-349] Auto-enabling Gemini extraction for: {_book_label}')
-                log(f'  [EB-349] Cost note: ~$0.50/book (Gemini Flash). Gated by cost_limit.')
+                log(f'  [EB-349] auto_gemini_on_scan=true; configured OCR provider available')
+                log(f'  [EB-349] Auto-enabling configured OCR extraction for: {_book_label}')
+                log(f'  [EB-349] Local OCR costs $0; explicitly selected Gemini is gated by cost_limit.')
                 use_gemini = True
-            elif _auto_gemini_enabled and not _gemini_key:
+            elif _auto_gemini_enabled and not _ocr_available:
                 _cls_type = classifier_verdict.get('classification', 'unknown')
                 log(f'  [EB-349] Classifier recommends Gemini ({_cls_type}) but GEMINI_API_KEY not set')
                 log(f'  [EB-349] Set GEMINI_API_KEY to enable classifier-driven escalation')
@@ -13026,20 +12937,20 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 log(f'  [EB-349] Classifier recommends Gemini ({_cls_type}) but auto_gemini_on_scan=false (opt-in disabled)')
                 log(f'  [EB-349] Set classifier_escalation.auto_gemini_on_scan=true in config/settings.json to enable')
 
-    # ── Gemini extraction (Tier 2.5) — explicit opt-in only ──────
+    # ── Configured OCR extraction (Tier 2.5) — explicit opt-in only ──────
     gemini_cost = 0
     if use_gemini and not use_vision:
         log("\n-- STEP 0: Checking for PDF bookmarks -----------------")
         bookmarks = extract_bookmarks(pdf_path, log)
         resolve_bookmarks_by_coordinates(pdf_path, bookmarks, log)
 
-        log("\n-- STEP 1 (GEMINI): Gemini Flash transcription ---------")
-        log("  Tier 2.5 extraction — Gemini Flash OCR")
+        log("\n-- STEP 1 (OCR): Configured OCR transcription ---------")
+        log("  Tier 2.5 extraction — configured OCR provider (local by default)")
 
         try:
-            from gemini_ocr import extract_text_gemini
+            from local_vlm_ocr import extract_text_ocr as extract_text_vlm_ocr
 
-            gemini_result = extract_text_gemini(
+            gemini_result = extract_text_vlm_ocr(
                 pdf_path, log,
                 poppler_path=poppler_path,
                 dpi=200,
@@ -13053,28 +12964,28 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 para_dicts, body_size = vision_text_to_para_dicts(
                     gemini_text, log)
                 tier_used = 2
-                extraction_method = 'gemini_flash'
+                extraction_method = gemini_result.get('extraction_method', 'local_vision')
                 gemini_cost = gemini_result.get('cost_usd', 0)
 
                 gemini_text_flat = '\n'.join(
                     d.get('text', '') for d in para_dicts)
                 try:
                     quality = score_text_layer_quality(gemini_text_flat, log=log)
-                    log(f"  Gemini text quality: {quality.get('score', 0)}/100")
+                    log(f"  OCR text quality: {quality.get('score', 0)}/100")
                 except Exception:
                     quality = {'score': 85, 'recommendation': 'accept',
                                'tier_suggestion': 1, 'details': {}}
-                log(f"  Gemini cost: ${gemini_cost:.4f}")
+                log(f"  OCR cost: ${gemini_cost:.4f}")
             else:
-                log("  Gemini extraction failed — falling back to standard extraction")
+                log("  OCR extraction failed — falling back to standard extraction")
                 use_gemini = False
 
         except RuntimeError as e:
-            log(f"  Gemini not available: {e}")
+            log(f"  OCR not available: {e}")
             log(f"  Falling back to standard extraction")
             use_gemini = False
         except Exception as e:
-            log(f"  Gemini error (non-blocking): {e}")
+            log(f"  OCR error (non-blocking): {e}")
             use_gemini = False
 
     _timing = {}  # FU-3: duration breakdown
@@ -13135,6 +13046,37 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 para_dicts = []
                 body_size = 12.0
 
+        # Repair explicitly selected source pages before cross-page joins can
+        # move their text into neighboring page records. Preserve failures in
+        # their original form and report exactly which pages were replaced.
+        if ocr_pages:
+            pages_to_fix = list(ocr_pages)
+            _ocr_remediation = {
+                'requested_pages': pages_to_fix, 'applied_pages': [],
+                'failed_pages': list(pages_to_fix), 'cost_usd': 0,
+            }
+            try:
+                from local_vlm_ocr import remediate_pages_ocr
+
+                _rem_result = remediate_pages_ocr(
+                    pdf_path, pages_to_fix, log, poppler_path=poppler_path,
+                    dpi=200, model=gemini_model,
+                )
+                if _rem_result and _rem_result.get('pages'):
+                    _applied_pages = _replace_ocr_pages(
+                        para_dicts, _rem_result['pages'], body_size, log)
+                    _ocr_remediation.update({
+                        'provider': _rem_result.get('provider'),
+                        'provider_resolved': _rem_result.get('provider_resolved'),
+                        'applied_pages': _applied_pages,
+                        'failed_pages': sorted(set(pages_to_fix) - set(_applied_pages)),
+                        'cost_usd': _rem_result.get('cost_usd', 0),
+                    })
+                    gemini_cost += _rem_result.get('cost_usd', 0)
+                    log(f"  Targeted OCR: repaired {len(_applied_pages)}/{len(pages_to_fix)} source pages before formatting")
+            except Exception as exc:
+                log(f"  Targeted OCR failed; preserving original page text: {exc}")
+
         # ── Text layer quality scoring ──────────────────────────────────
         all_text_for_scoring = ' '.join(
             p['text'] for p in para_dicts
@@ -13162,13 +13104,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             ) if _cfg_path.exists() else 0.15
         except Exception:
             _debris_threshold = 0.15
-        if _debris_density >= _debris_threshold and not use_gemini and not use_vision:
+        if (_debris_density >= _debris_threshold and not use_gemini
+                and not use_vision and not ocr_pages):
             _book_label = getattr(pdf_path, 'name', str(pdf_path))
             log(f"  [WARN] OCR debris density {_debris_density:.1%} on '{_book_label}'"
-                f" — escalating to Gemini OCR (threshold: {_debris_threshold:.0%})")
+                f" — escalating to configured vision OCR (threshold: {_debris_threshold:.0%})")
             try:
-                from gemini_ocr import extract_text_gemini
-                _esc_result = extract_text_gemini(
+                from local_vlm_ocr import extract_text_ocr as extract_text_vlm_ocr
+                _esc_result = extract_text_vlm_ocr(
                     pdf_path, log,
                     poppler_path=poppler_path,
                     dpi=200,
@@ -13180,15 +13123,15 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                     _esc_text, _ = normalize_encoding(_esc_result['text'], log=log)
                     para_dicts, body_size = vision_text_to_para_dicts(_esc_text, log)
                     tier_used = 2
-                    extraction_method = 'gemini_flash'
+                    extraction_method = _esc_result.get('extraction_method', 'local_vision')
                     gemini_cost = _esc_result.get('cost_usd', 0)
-                    log(f"  Gemini escalation succeeded — cost: ${gemini_cost:.4f}")
+                    log(f"  OCR escalation succeeded — cost: ${gemini_cost:.4f}")
                 else:
-                    log("  Gemini escalation returned no text — continuing with pdfminer output")
+                    log("  OCR escalation returned no text — continuing with pdfminer output")
             except RuntimeError as e:
-                log(f"  Gemini escalation not available: {e} — continuing with pdfminer output")
+                log(f"  OCR escalation not available: {e} — continuing with pdfminer output")
             except Exception as e:
-                log(f"  Gemini escalation error (non-blocking): {e}")
+                log(f"  OCR escalation error (non-blocking): {e}")
 
         log("\n-- STEP 1a: Fixing word merges in extraction output ----")
         _fix_word_merges_html(para_dicts, log)
@@ -13234,7 +13177,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         tier1_text = '\n'.join(d.get('text', '') for d in para_dicts)
         tier1_word_count = len(tier1_text.split()) if tier1_text else 0
 
-        if tier1_word_count < 200:
+        if tier1_word_count < 200 and not ocr_pages:
             log(f"\n-- STEP 1c3: PyMuPDF text fallback ---------------------")
             log(f"  Trigger: pdfminer produced only {tier1_word_count} words")
             try:
@@ -13275,7 +13218,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         file_size_mb = os.path.getsize(pdf_path) / (1024 * 1024)
         _escalation_info = None  # FU-2: capture escalation comparison
 
-        if tier1_word_count < 200:
+        if tier1_word_count < 200 and not ocr_pages:
             log(f"\n-- STEP 1d: Zero-text OCR escalation -------------------")
             log(f"  Trigger: {file_size_mb:.1f}MB PDF produced only {tier1_word_count} words")
             log(f"  Attempting Tesseract OCR on page images...")
@@ -13320,21 +13263,20 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             except Exception as e:
                 log(f"  OCR escalation error (non-blocking): {e}")
 
-        # ── EB-349: Zero-text + scan classifier → try Gemini ──────────
+        # ── EB-349: Zero-text + scan classifier → try vision OCR ──────
         # If word count is still too low AND the classifier flagged this as
-        # a scan, attempt Gemini OCR as a last resort (non-blocking).
+        # a scan, attempt the configured OCR provider as a last resort.
         _post_ocr_text = '\n'.join(d.get('text', '') for d in para_dicts)
         _post_ocr_wc = len(_post_ocr_text.split())
-        if (_post_ocr_wc < 200 and not use_gemini and not use_vision
+        if (_post_ocr_wc < 200 and not use_gemini and not use_vision and not ocr_pages
                 and classifier_verdict is not None):
             _cv_flags = classifier_verdict.get('flags', {})
             _cls_type = classifier_verdict.get('classification', '')
             if (_cv_flags.get('needs_paid_tier') and
-                    _cv_flags.get('recommended_paid_tier') == 'gemini' and
-                    os.environ.get('GEMINI_API_KEY', '')):
-                log(f"  [EB-349] Zero-text scan detected ({_cls_type}) — attempting Gemini fallback")
+                    _cv_flags.get('recommended_paid_tier') == 'gemini'):
+                log(f"  [EB-349] Zero-text scan detected ({_cls_type}) — attempting OCR fallback")
                 try:
-                    from gemini_ocr import extract_text_gemini as _etg
+                    from local_vlm_ocr import extract_text_ocr as _etg
                     _g_result = _etg(
                         pdf_path, log,
                         poppler_path=poppler_path,
@@ -13347,24 +13289,24 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         _g_text, _ = normalize_encoding(_g_result['text'], log=log)
                         _g_wc = len(_g_text.split())
                         if _g_wc > _post_ocr_wc:
-                            log(f"  [EB-349] Gemini fallback: {_g_wc} words (was {_post_ocr_wc}) — switching")
+                            log(f"  [EB-349] OCR fallback: {_g_wc} words (was {_post_ocr_wc}) — switching")
                             para_dicts, body_size = vision_text_to_para_dicts(_g_text, log)
                             tier_used = 2
-                            extraction_method = 'gemini_flash'
+                            extraction_method = _g_result.get('extraction_method', 'local_vision')
                             gemini_cost += _g_result.get('cost_usd', 0)
                             quality = score_text_layer_quality(_g_text, log=log)
                         else:
-                            log(f"  [EB-349] Gemini fallback: {_g_wc} words — not enough improvement")
+                            log(f"  [EB-349] OCR fallback: {_g_wc} words — not enough improvement")
                     else:
-                        log("  [EB-349] Gemini fallback returned no text")
+                        log("  [EB-349] OCR fallback returned no text")
                 except RuntimeError as _ge:
-                    log(f"  [EB-349] Gemini fallback not available: {_ge}")
+                    log(f"  [EB-349] OCR fallback not available: {_ge}")
                 except Exception as _ge:
-                    log(f"  [EB-349] Gemini fallback error (non-blocking): {_ge}")
+                    log(f"  [EB-349] OCR fallback error (non-blocking): {_ge}")
 
         # ── STEP 1d2: Multi-extractor comparison for borderline quality ──
         _extractor_comparison = None
-        if (tier_used == 1 and compare_extractors_enabled
+        if (tier_used == 1 and compare_extractors_enabled and not ocr_pages
                 and quality and 60 <= quality.get('score', 0) <= 80):
             _tier1_pre = quality.get('score', 0)
             log(f"\n-- STEP 1d2: Multi-extractor comparison ----------------")
@@ -13398,7 +13340,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         tier1_score = quality.get('score', 0) if quality else 0
         tier_suggestion = quality.get('tier_suggestion', 1) if quality else 1
 
-        if tier_used == 1 and tier1_score <= 70 and tier_suggestion >= 2:
+        if tier_used == 1 and tier1_score <= 70 and tier_suggestion >= 2 and not ocr_pages:
             log(f"\n-- STEP 1e: Auto-escalating to Tier 2 (Re-OCR) --------")
             log(f"  Reason: Tier 1 quality score {tier1_score} <= 70")
 
@@ -13454,7 +13396,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         # processing garbled text through heading classification etc.
         _cwr = (quality.get('details', {}).get('common_word_rate', {})
                 .get('hit_rate', 1.0) if quality else 1.0)
-        if (tier_used == 1
+        if (tier_used == 1 and not ocr_pages
                 and quality and quality.get('score', 100) < 60
                 and _cwr < 0.05):
             log(f"\n[FATAL] Text extraction produced garbled output "
@@ -13463,7 +13405,7 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
             log(f"  This PDF likely has custom font encoding that "
                 f"prevents text extraction.")
             log(f"  Resolution: install Tesseract OCR, or re-run "
-                f"with --use-gemini for paid OCR.")
+                f"with --use-local-ocr for local vision OCR.")
             sys.exit(78)  # EX_CONFIG — system not configured for this input
 
     _timing['extraction_s'] = round(_time_mod.time() - _t_extract, 1) if '_t_extract' in dir() else 0
@@ -13587,14 +13529,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
         except ImportError:
             log("  [WARN] pattern_db not available — cannot export corrections")
 
-    # ── Gemini page remediation (Mode B) — post-extraction ───────
-    if gemini_remediate and not use_gemini and not use_vision:
-        log("\n-- STEP 3: Gemini page remediation --------------------")
+    # ── OCR page remediation (Mode B) — post-extraction ──────────
+    if gemini_remediate and not ocr_pages and not use_gemini and not use_vision:
+        log("\n-- STEP 3: OCR page remediation -----------------------")
 
-        pages_to_fix = []
+        pages_to_fix = list(ocr_pages or [])
 
         # Check multi-sample quality variance for problem regions
-        if quality:
+        if quality and not ocr_pages:
             try:
                 _plain_for_var = re.sub(r'<[^>]+>', '', html)
                 _var_result = score_text_layer_quality(
@@ -13623,10 +13565,14 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 pass
 
         if pages_to_fix:
+            _ocr_remediation = {
+                'requested_pages': pages_to_fix, 'applied_pages': [],
+                'failed_pages': list(pages_to_fix), 'cost_usd': 0,
+            }
             try:
-                from gemini_ocr import remediate_pages_gemini
+                from local_vlm_ocr import remediate_pages_ocr
 
-                _rem_result = remediate_pages_gemini(
+                _rem_result = remediate_pages_ocr(
                     pdf_path, pages_to_fix, log,
                     poppler_path=poppler_path,
                     dpi=200,
@@ -13634,32 +13580,29 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                 )
 
                 if _rem_result and _rem_result.get('pages'):
-                    _rem_count = 0
-                    for page_num, new_text in _rem_result['pages'].items():
-                        page_num = int(page_num)
-                        old_indices = [j for j, p in enumerate(para_dicts)
-                                       if p.get('page') == page_num]
-                        if old_indices:
-                            insert_pos = old_indices[0]
-                            for idx in reversed(old_indices):
-                                para_dicts.pop(idx)
-                            para_dicts.insert(insert_pos, {
-                                'text': new_text, 'sz': body_size,
-                                'bold': False, 'italic': False,
-                                'page': page_num, 'tag': None,
-                            })
-                            _rem_count += 1
+                    _applied_pages = _replace_ocr_pages(
+                        para_dicts, _rem_result['pages'], body_size, log)
+                    _rem_count = len(_applied_pages)
+                    _ocr_remediation = {
+                        'provider': _rem_result.get('provider'),
+                        'provider_resolved': _rem_result.get('provider_resolved'),
+                        'requested_pages': pages_to_fix,
+                        'applied_pages': _applied_pages,
+                        'failed_pages': sorted(set(pages_to_fix) - set(_applied_pages)),
+                        'cost_usd': _rem_result.get('cost_usd', 0),
+                    }
 
                     if _rem_count > 0:
                         _rem_cost = _rem_result.get('cost_usd', 0)
                         gemini_cost += _rem_cost
-                        log(f"  Gemini remediated {_rem_count} pages, "
+                        _ocr_label = 'Gemini' if _rem_result.get('provider') == 'gemini' else 'Local OCR'
+                        log(f"  {_ocr_label} remediated {_rem_count} pages, "
                             f"cost: ${_rem_cost:.4f}")
 
                         # Re-format HTML with remediated content
                         html, heading_registry = format_paragraphs_as_html(
                             para_dicts, body_size, bookmarks, log, title=title,
-                            skip_footnotes=skip_footnotes)
+                            skip_footnotes=skip_footnotes, page_images=page_images)
                         html = re.sub(r'\s*</em>\s*<em>\s*', ' ', html)
                         html = re.sub(r'\s*</strong>\s*<strong>\s*', ' ', html)
                         html = re.sub(r'\s+(</em>)\s*', r'\1 ', html)
@@ -13680,9 +13623,9 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
                         log(f"  Remediated HTML written: {word_count:,} words")
 
             except RuntimeError as e:
-                log(f"  Gemini remediation not available: {e}")
+                log(f"  OCR remediation not available: {e}")
             except Exception as e:
-                log(f"  Gemini remediation error (non-blocking): {e}")
+                log(f"  OCR remediation error (non-blocking): {e}")
         else:
             log("  No pages identified for remediation — quality is uniform")
 
@@ -13734,6 +13677,8 @@ def process_kindle_html(pdf_path, output_path, log, api_key=None, force_columns=
 
     # Build result dict with extraction metadata for CLI JSON output
     _result = {"html_path": html_path}
+    if _ocr_remediation is not None:
+        _result['ocr_remediation'] = _ocr_remediation
     if '_escalation_info' in dir() and _escalation_info:
         try:
             _result["escalation_details"] = json.loads(_escalation_info)
@@ -13799,7 +13744,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
         # uses startswith('#') guard for any pre-existing markdown headings.
         _rejoin_stats = {}
         _subheading_stats = {}
-        if api_key:
+        if text_llm_enabled():
             log("\n-- STEP 2c: AI Paragraph Rejoin ----------------------")
             paragraphs, _rejoin_stats = ai_rejoin_fragments(paragraphs, log, api_key=api_key)
 
@@ -13848,7 +13793,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
                 log(f"  Inserted 'Front Matter' heading at paragraph {first_fm_idx}")
 
         # AI Quality Pass (detection only by default; fixes require apply_ai_fixes=True)
-        if api_key:
+        if text_llm_enabled():
             log("\n-- STEP 2e: AI Quality Pass --------------------------")
             h_indices = set(heading_dict.get('parts', []) + heading_dict.get('chapters', []))
             paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key, apply_fixes=apply_ai_fixes)
@@ -14068,7 +14013,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
     # AI Paragraph Rejoin (page-boundary fragment repair)
     _rejoin_stats = {}
     _subheading_stats = {}
-    if api_key:
+    if text_llm_enabled():
         log("\n-- STEP 2d: AI Paragraph Rejoin ----------------------")
         paragraphs, _rejoin_stats = ai_rejoin_fragments(paragraphs, log, api_key=api_key)
 
@@ -14078,7 +14023,7 @@ def process_kindle(input_path, output_path, log, chapter_hints_path=None, api_ke
 
     # AI Quality Pass (detection only by default; fixes require apply_ai_fixes=True)
     _quality_report = {}
-    if api_key:
+    if text_llm_enabled():
         log("\n-- STEP 2e: AI Quality Pass --------------------------")
         paragraphs, _quality_report = ai_quality_pass(paragraphs, log, api_key=api_key, apply_fixes=apply_ai_fixes)
         _quality_report.update(_rejoin_stats)
@@ -14543,8 +14488,8 @@ Examples:
     ap.add_argument("--quiet", action="store_true",
                     help="Suppress progress output (only errors)")
     ap.add_argument("--api-key", default=None,
-                    help="Anthropic API key for AI Quality Pass. "
-                         "Falls back to ANTHROPIC_API_KEY environment variable.")
+                    help="Key for the explicitly selected Claude text provider. "
+                         "Local text QA is the default and needs no API key.")
     ap.add_argument("--apply-ai-fixes", action="store_true",
                     help="Enable AI Quality Pass fix application. Without this flag, "
                          "the quality pass only detects and scores issues without "
@@ -14582,22 +14527,22 @@ Examples:
                          "Opt-in only — does not affect other books or the default pdfminer path.")
     ap.add_argument("--no-cache", action="store_true", default=False,
                     help="Skip extraction cache lookup, force fresh extraction")
+    ap.add_argument("--use-local-ocr", action="store_true",
+                    help="Transcribe the full book with local vision OCR ($0).")
     ap.add_argument("--use-gemini", action="store_true",
-                    help="Use Gemini Flash for full book transcription (Tier 2.5). "
-                         "More capable than Tesseract, 10-20x cheaper than Claude Vision. "
-                         "Cost: ~$0.50/book. Requires GEMINI_API_KEY.")
-    ap.add_argument("--gemini-remediate", action="store_true",
-                    help="Use Gemini Flash to remediate specific low-quality pages "
-                         "identified by quality variance. Only re-extracts flagged pages. "
-                         "Cost: ~$0.002/page. Requires GEMINI_API_KEY.")
+                    help="Legacy flag for full-book OCR using the configured provider "
+                         "(local by default; EBOOK_OCR_PROVIDER=gemini selects paid Gemini).")
+    ap.add_argument("--ocr-remediate", "--gemini-remediate", dest="gemini_remediate", action="store_true",
+                    help="Repair low-quality pages with the configured OCR provider (local by default).")
+    ap.add_argument("--ocr-pages", type=_parse_ocr_pages, default=None,
+                    help="Repair exact one-based source PDF pages, e.g. 2,5,9. "
+                         "Implies OCR remediation and bypasses the extraction cache.")
     ap.add_argument("--gemini-cost-limit", type=float, default=5.0,
                     help="Maximum allowed cost for Gemini extraction in USD (default: $5.00)")
     ap.add_argument("--gemini-model", default=None,
                     help="Gemini model to use (default: from settings.json or gemini-2.5-flash)")
     ap.add_argument("--use-vision", action="store_true",
-                    help="Use Claude Vision API for page-by-page transcription (Tier 3). "
-                         "Highest quality — handles multi-script, custom fonts, degraded scans. "
-                         "Cost: ~$0.02-0.04/page. Requires ANTHROPIC_API_KEY.")
+                    help="Legacy flag for full-book vision OCR using the configured provider (local by default).")
     ap.add_argument("--vision-cost-limit", type=float, default=15.0,
                     help="Maximum allowed cost for Vision extraction in USD (default: $15.00). "
                          "Aborts if estimated cost exceeds this limit.")
@@ -14648,6 +14593,15 @@ Examples:
                     help="Export current book corrections as a .corrections.json sidecar file")
 
     args = ap.parse_args()
+    if args.use_local_ocr:
+        os.environ['EBOOK_OCR_PROVIDER'] = 'local'
+        args.use_gemini = True
+    if args.ocr_pages and (args.use_gemini or args.use_vision):
+        ap.error('--ocr-pages targets individual pages; omit full-book OCR flags')
+    if args.ocr_pages and not (args.html_extraction and args.mode == 'kindle'):
+        ap.error('--ocr-pages requires --mode kindle --html-extraction')
+    if args.ocr_pages or args.gemini_remediate or args.use_gemini or args.use_vision:
+        args.no_cache = True
 
     # --dialogue-voices and --per-character-voices both imply --tts-enhance
     if args.dialogue_voices and not args.tts_enhance:
@@ -14881,12 +14835,15 @@ Examples:
                                     export_corrections=args.export_corrections,
                                     chunk_size=args.chunk_size,
                                     chunk_threshold=args.chunk_threshold,
-                                    use_pymupdf_tables=args.pymupdf_tables)
+                                    use_pymupdf_tables=args.pymupdf_tables,
+                                    ocr_pages=args.ocr_pages)
                 # Emit JSON result for PSM1 caller (FU-2: includes escalation_details)
                 if isinstance(_html_result, dict):
                     _cli_json = {"html_path": _html_result.get("html_path", html_output)}
                     if _html_result.get("escalation_details"):
                         _cli_json["escalation_details"] = _html_result["escalation_details"]
+                    if _html_result.get("ocr_remediation"):
+                        _cli_json["ocr_remediation"] = _html_result["ocr_remediation"]
                     _html_size = 0
                     _hp = _cli_json["html_path"]
                     if _hp and os.path.isfile(_hp):

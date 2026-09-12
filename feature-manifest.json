@@ -20,7 +20,7 @@
       "name": "Convert-ToKindle",
       "file": "module/EbookAutomation.psm1",
       "description": "PDF → clean text → KFX via Calibre",
-      "key_parameters": ["InputFile", "OutputDir", "UseHtmlExtraction", "ValidateQuality", "UseClaudeChapters", "ForceColumns", "UseOCR", "DirectConversion", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "ProduceEpub", "Profile", "ApplyAIFixes", "CompareExtractors", "SkipPreflight", "ValidateAlignment"]
+      "key_parameters": ["InputFile", "OutputDir", "UseHtmlExtraction", "ValidateQuality", "UseClaudeChapters", "ForceColumns", "UseOCR", "DirectConversion", "ValidateVisual", "NoCache", "UseVision", "UseGemini", "GeminiRemediate", "OcrPages", "ProduceEpub", "Profile", "ApplyAIFixes", "CompareExtractors", "SkipPreflight", "ValidateAlignment"]
     },
     {
       "name": "Send-ToKindle",
@@ -73,7 +73,7 @@
     {
       "name": "Get-ChapterStructure",
       "file": "module/EbookAutomation.psm1",
-      "description": "Claude-assisted chapter/part detection from book text",
+      "description": "Local-first chapter/part detection from book text",
       "key_parameters": ["TextContent", "InputFile"]
     },
     {
@@ -154,7 +154,7 @@
     {
       "script": "tools/extract_tts_text.py",
       "mode": "kindle",
-      "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes", "--no-images"],
+      "flags": ["--input", "--mode kindle", "--html-extraction", "--force-columns", "--chapter-hints", "--ocr", "--no-ocr", "--epub-html", "--no-cache", "--use-gemini", "--gemini-remediate", "--use-local-ocr", "--ocr-remediate", "--ocr-pages", "--use-vision", "--compare-extractors", "--ocr-table", "--skip-footnotes", "--apply-ai-fixes", "--no-images"],
       "description": "Kindle HTML extraction with font metadata"
     },
     {
@@ -237,6 +237,8 @@
     {"path": "tools/batch_qa.py", "type": "python_script", "min_lines": 1800},
     {"path": "tools/fix_engine.py", "type": "python_script", "min_lines": 705},
     {"path": "tools/visual_qa.py", "type": "python_script", "min_lines": 1100},
+    {"path": "tools/local_vlm_ocr.py", "type": "python_script", "min_lines": 200},
+    {"path": "tools/llm_providers/text_provider.py", "type": "python_script", "min_lines": 100},
     {"path": "tools/vqa_determinism_check.py", "type": "python_script", "min_lines": 300},
     {"path": "tools/test_pipeline.py", "type": "test_harness", "min_lines": 1320},
     {"path": "tools/check_header_bleed.py", "type": "python_script", "min_lines": 299},
@@ -252,7 +254,7 @@
 
   "config_schema_keys": {
     "file": "config/settings.json",
-    "required_top_level": ["paths", "tts", "kindle", "mp3", "scheduler", "notifications", "api_models", "visual_qa", "classify", "converge_loop", "kindle_delivery", "preflight", "extraction", "quality_gate", "voice_tags", "archive_originals", "log_level"]
+    "required_top_level": ["paths", "tts", "kindle", "mp3", "scheduler", "notifications", "api_models", "llm", "visual_qa", "classify", "converge_loop", "kindle_delivery", "preflight", "extraction", "quality_gate", "voice_tags", "archive_originals", "log_level"]
   },
 
   "test_infrastructure": {

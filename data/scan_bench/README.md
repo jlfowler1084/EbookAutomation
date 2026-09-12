@@ -7,6 +7,13 @@ fixes for it — treat this file as the contract, not as proof the tool already 
 
 ## What this is
 
+September 2026 local-stack check: the vision server now reports context 32,768 and one slot.
+The current grader still failed the clean-canary and strict repeatability checks, including
+unsupported split-word claims. Keep the trust gate enabled and corroborate exploratory findings
+against page renders. The manifest now pins one page per request; historical batch-8 scores
+cannot be compared with this regime. The Row 0 migration recipe below describes the original
+Phase 0 capture; cloud comparison now also requires explicit paid provider configuration.
+
 A fixed 13-book corpus (`manifest.json`) that mirrors the production PDF-to-KFX conversion
 path plus local-only VQA, so every later EB-391 phase is measured against the same books the
 same way. No extraction, heading, OCR, or Calibre logic is exercised differently than
@@ -26,7 +33,7 @@ timeout or output-dir control).
 | `created` | Date the manifest (or its sha256 values) was last captured. |
 | `provider.base_url` / `.model` | The resolved local VQA target (`sb-vision` alias). |
 | `provider.expected_min_n_ctx` / `.expected_total_slots` | Row-0 label gates: preflight fails a `row0*` VQA run below these. |
-| `vqa.dpi` / `.max_pages` / `.batch_size` / `.fallback_enabled` | Pinned VQA invocation flags — batch size 8 for continuity with every prior sweep and `data/vqa_baseline_post_274/`. |
+| `vqa.dpi` / `.max_pages` / `.batch_size` / `.fallback_enabled` | Pinned VQA invocation flags — batch size 1 isolates pages after the September 2026 poor-OCR sweep demonstrated cross-page contamination at size 8. Earlier batch-8 scores are not comparable. |
 | `cloud_policy` | `off` for cloud-off runs; the harness overrides this per-run via `--cloud-as-configured`. |
 | `timeouts.*` | Size-scaled defaults: `convert_base_s + size_mb * convert_per_mb_s` once size exceeds `convert_mb_threshold` MB, floored at `convert_scan_floor_s` for scan-classed books; `vqa_base_s + pages * vqa_per_page_s` for VQA. |
 

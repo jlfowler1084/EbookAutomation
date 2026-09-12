@@ -14,10 +14,10 @@ Primary use cases:
 
 | Area | What's in the repo |
 |---|---|
-| **Extraction** | Four-tier PDF text engine (pypdf → pdfminer.six → PyMuPDF column-aware → Tesseract/Gemini OCR), with pre-flight classification that picks the right tier per book |
-| **Heading & structure detection** | Font-metadata heading detection (pdfplumber), scholarly-footnote filtering, bookmark-to-paragraph alignment, optional Claude-assisted chapter boundary classification |
+| **Extraction** | PDF text extraction through pypdf, pdfminer.six, PyMuPDF and Tesseract, with local vision OCR for difficult pages |
+| **Heading & structure detection** | Font-metadata heading detection (pdfplumber), scholarly-footnote filtering, bookmark-to-paragraph alignment, optional local Flash chapter classification |
 | **Output formats** | Voice-tagged Balabolka TXT, Kindle HTML (Calibre-ready), KFX/AZW3 via Calibre, per-chapter MP3 via balcon + FFmpeg |
-| **Visual QA** | VLM-based post-conversion scoring (Qwen3-VL via OpenRouter → Claude Sonnet fallback on known-ambiguous pages) with JSON reports and HTML dashboards |
+| **Visual QA** | Local Qwen3-VL post-conversion scoring with JSON reports and HTML dashboards; paid providers require explicit selection |
 | **Learning loop** | SQLite pattern database tracks fix patterns, extraction cache hits, and score trends; converge loop iterates extract → score → fix until quality plateaus |
 | **Regression discipline** | 6-book baseline test suite (`test_pipeline.py`) + 75-test voice-tag regression suite (`test_voice_tags.py`) + machine-readable feature manifest verified on each run |
 | **Integrations** | Anthropic Claude (Haiku / Sonnet), Google Gemini 2.5 Flash, OpenRouter (cloud VLMs), local vLLM, Gmail SMTP (email-to-Kindle), Calibre, Balabolka, FFmpeg, Tesseract, Poppler |
@@ -25,7 +25,7 @@ Primary use cases:
 
 ## What this project demonstrates
 
-- **Multi-provider AI routing** with graceful degradation — each tier has a cheaper fallback, and the system prefers the cheapest tier that clears a quality gate.
+- **Local AI routing** for text, vision QA and OCR, with paid providers available through explicit configuration.
 - **Production-style regression testing** against real artifacts — every pipeline change runs against a fixed 6-book corpus, with a feature manifest that catches deleted exports before they ship.
 - **Persistent learning** via a SQLite pattern database that tracks which fixes work, which books are in which extraction tier, and when to invalidate an extraction cache entry.
 - **Cross-language orchestration** — PowerShell 5.1+ drives the user-facing pipeline; Python 3.12 does the heavy lifting for text/vision work; both share a single `config/settings.json`.
@@ -45,10 +45,10 @@ preflight_analysis.py                    ← classify source (digital / scan / O
   ▼
 extract_tts_text.py                      ← tiered extraction:
   │                                        pypdf → pdfminer.six → PyMuPDF → OCR
-  │                                        (Tesseract → Gemini Flash)
+  │                                        (Tesseract / local vision)
   ▼
 heading / structure classification       ← font metadata + heuristics +
-                                           optional Claude chapter-boundary pass
+                                           optional local Flash chapter pass
   │
   ├──▶  balabolka-txt/   (voice-tagged TXT)  ──▶  balcon.exe  ──▶  audiobooks/*.mp3
   │
@@ -56,8 +56,8 @@ heading / structure classification       ← font metadata + heuristics +
                                                                       │
                                                                       ▼
                                                           visual_qa.py  ← VLM scoring
-                                                             │             (Qwen3-VL
-                                                             │              → Claude)
+                                                             │             (local
+                                                             │              Qwen3-VL)
                                                              ▼
                                                      pattern_db.py         ← learned
                                                      (SQLite cache          fix patterns,
@@ -91,7 +91,8 @@ EbookAutomation/
 │   ├── extract_tts_text.py     # Core extraction engine (GUI + CLI)
 │   ├── preflight_analysis.py   # Source classification + strategy recipe
 │   ├── classify_source.py      # Digital / scan / OCR detection
-│   ├── gemini_ocr.py           # Tier 2.5 OCR via Gemini Flash
+│   ├── local_vlm_ocr.py        # Local OCR; explicit Gemini selection supported
+│   ├── gemini_ocr.py           # Optional paid Gemini OCR backend
 │   ├── visual_qa.py            # VLM-based conversion scoring
 │   ├── batch_qa.py             # Multi-book diagnostic pipeline
 │   ├── pattern_db.py           # SQLite learning store
@@ -166,7 +167,24 @@ Invoke-BatchQA -FolderPath "test-corpus" -IncludeVQA
 py -3.12 tools\visual_qa.py --input "output\kindle\book.kfx"
 ```
 
-Produces a JSON report scoring heading hierarchy, TOC accuracy, footnote rendering, page breaks, and image placement. Uses the local Qwen3-VL endpoint (R9700, free) by default; for pages with known-ambiguous fingerprints it falls back to Claude Sonnet. To use the paid OpenRouter endpoint instead (e.g. on the off-LAN VM), pass `--provider cloud --cloud-host openrouter`.
+Produces a JSON report scoring heading hierarchy, TOC accuracy, footnote rendering, page breaks, and image placement. Uses the dedicated local Qwen3-VL endpoint (`sb-vision`) by default, with paid fallback disabled. `--full` evaluates 20 sampled pages at 150 DPI, including on large books; it does not inspect every page. Use `--max-pages` to increase coverage.
+
+Text analysis uses Flash through `sb-chat` at `http://localhost:8000/v1`; vision QA and OCR use `sb-vision` at `http://192.168.1.33:8080/v1`. The URL/model settings are separate so the text gateway cannot accidentally receive page images. `.env` overrides `config/settings.json`, so check both when changing servers.
+
+Local QA grades one page per request by default. Tests on poor OCR found that multi-page requests could repeat one page's defect on clean pages and exhaust the output budget. Scores from different batch sizes are not comparable; re-run the determinism gate after changing the batch size or server.
+
+The September 2026 check still found unsupported formatting claims and score variation with the 32K, single-slot vision server. Treat current scores as diagnostic, corroborate defects against page renders, and keep the scan-bench trust gate enabled. Repeatability alone does not establish that a finding is accurate.
+
+```powershell
+# Full local visual QA, with endpoint/model/context provenance in the report.
+py -3.12 tools\visual_qa.py --input "output\kindle\book.kfx" --full
+# Local OCR of selected SOURCE PDF pages, preserving the rest of the book.
+py -3.12 tools\extract_tts_text.py --input "book.pdf" --mode kindle --html-extraction --ocr-pages 1,4,6 --output-dir output\repair
+# The same targeted OCR through the complete Kindle conversion path.
+Convert-ToKindle -InputFile "book.pdf" -OcrPages 1,4,6 -NoCache -ProduceEpub
+```
+
+Paid services require explicit selection: `EBOOK_TEXT_PROVIDER=claude`, `EBOOK_OCR_PROVIDER=gemini`, or VQA `--provider cloud` / `--provider claude`. Claude VQA fallback additionally requires `--fallback-enabled true` (or the corresponding config setting). API key presence alone never selects a paid provider, and local failures do not trigger paid fallback.
 
 ---
 
@@ -210,7 +228,7 @@ GEMINI_API_KEY       # Gemini 2.5 Flash — Tier 2.5 OCR
 EBOOK_SMTP_PASSWORD  # Email-to-Kindle delivery
 ```
 
-All AI integrations degrade gracefully: extraction works without any API keys (local tiers only), and Visual QA / OCR fallback silently skip when keys are absent.
+Local text, OCR, and visual QA work without cloud API keys. Reports record the local model, server context window, and zero API cost; unavailable local services surface errors or retain the original extraction.
 
 ---
 

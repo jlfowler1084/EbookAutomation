@@ -77,6 +77,54 @@ def provider() -> LocalVisionProvider:
     return LocalVisionProvider(base_url="http://localhost:8000/v1", probe=_stub_probe_32768)
 
 
+def test_local_call_bounds_sdk_timeout_without_nested_retries(provider):
+    payload = provider.build_detection_request([(62, PNG_FIXTURE)], RUBRIC_FIXTURE, MODEL_FIXTURE)
+    content = json.dumps({"pages": [{"page_number": 62, "page_type": "body", "issues": []}]})
+    client = MagicMock()
+    client.chat.completions.create.return_value = _make_fake_completion(content)
+    with patch("openai.OpenAI", return_value=client) as constructor:
+        assert provider.call(payload).raw_text == content
+    constructor.assert_called_once_with(
+        base_url="http://localhost:8000/v1", api_key="not-needed",
+        timeout=120.0, max_retries=0,
+    )
+
+
+@pytest.mark.parametrize("builder_name", ["build_request", "build_detection_request"])
+def test_grading_groups_repeated_glyph_defects_and_bounds_schema(provider, builder_name):
+    payload = getattr(provider, builder_name)([(62, PNG_FIXTURE)], RUBRIC_FIXTURE, MODEL_FIXTURE)
+    schema = payload["response_format"]["json_schema"]["schema"]
+    issues = schema["properties"]["pages"]["items"]["properties"]["issues"]
+    assert issues["maxItems"] == 8
+    assert issues["items"]["properties"]["description"]["maxLength"] == 512
+    assert issues["items"]["properties"]["suggestion"]["maxLength"] == 256
+    instruction = payload["messages"][1]["content"][-1]["text"]
+    assert "Consolidate repeated instances" in instruction
+    assert "maxima, not targets" in instruction
+    assert "repeated missing-glyph boxes" not in instruction
+    assert "critical" in issues["items"]["properties"]["severity"]["enum"]
+    # This schema-only fix preserves adaptive budget/provenance semantics.
+    assert payload["max_tokens"] == provider.output_budget_for(1)
+
+
+@pytest.mark.parametrize("issue_count,description,suggestion", [
+    (9, "Repeated missing glyphs.", "Repair the text."),
+    (1, "x" * 513, "Repair the text."),
+    (1, "Repeated missing glyphs.", "x" * 257),
+])
+def test_grading_rejects_server_ignoring_issue_bounds(provider, issue_count, description, suggestion):
+    payload = provider.build_detection_request([(62, PNG_FIXTURE)], RUBRIC_FIXTURE, MODEL_FIXTURE)
+    issue = {"category": "text_integrity", "severity": "critical",
+             "description": description, "suggestion": suggestion}
+    content = json.dumps({"pages": [{"page_number": 62, "page_type": "body",
+                                    "issues": [issue] * issue_count}]})
+    client = MagicMock()
+    client.chat.completions.create.return_value = _make_fake_completion(content)
+    with patch("openai.OpenAI", return_value=client):
+        with pytest.raises(ValueError, match="report rejected"):
+            provider.call(payload)
+
+
 # ---------------------------------------------------------------------------
 # Payload shape
 # ---------------------------------------------------------------------------

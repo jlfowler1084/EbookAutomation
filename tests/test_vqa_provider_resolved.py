@@ -418,8 +418,11 @@ def test_main_exits_3_when_base_url_unresolvable(monkeypatch, capsys):
     assert "local_base_url" in err or "LOCAL_LLM_BASE_URL" in err
 
 
-def test_main_stdout_summary_carries_base_url_and_model_served(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("sample_pages,expected_pass", [([1], True), ([1, 2], False)])
+def test_main_stdout_summary_carries_base_url_and_model_served(monkeypatch, tmp_path, capsys,
+                                                               sample_pages, expected_pass):
     _patch_pipeline_internals(monkeypatch, tmp_path)
+    monkeypatch.setattr(vqa, "select_sample_pages", lambda *args: sample_pages)
     kfx_input = tmp_path / "book.kfx"
     kfx_input.touch()
 
@@ -445,13 +448,21 @@ def test_main_stdout_summary_carries_base_url_and_model_served(monkeypatch, tmp_
     monkeypatch.setattr(sys, "argv", [
         "visual_qa.py", "--input", str(kfx_input), "--provider", "local",
         "--output-dir", str(tmp_path),
+        "--max-pages", str(len(sample_pages)),
     ])
 
     with patch("openai.OpenAI", return_value=mock_client):
         with pytest.raises(SystemExit) as excinfo:
             vqa.main()
 
-    assert excinfo.value.code == 0
+    assert excinfo.value.code == (0 if expected_pass else 1)
     out = json.loads(capsys.readouterr().out)
     assert out["base_url"] == "http://config.test/v1"
     assert out["model_served"] == "sb-vision"
+    assert out["overall_pass"] is expected_pass
+    assert out["overall_score"] == 100  # deterministic scoring: no detected issues
+    assert out["pages_requested"] == len(sample_pages)
+    assert out["pages_sampled"] == out["pages_evaluated"] == 1
+    assert out["evaluation_status"] == "evaluated"
+    assert out["coverage_status"] == ("complete" if expected_pass else "partial")
+    assert out["coverage_reason"] == (None if expected_pass else "page_render_failure")

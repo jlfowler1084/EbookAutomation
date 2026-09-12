@@ -146,7 +146,7 @@ class TestFootnoteHTMLRendering(unittest.TestCase):
                            is_footnote=True, y0_min=50, y0_max=60),
         ]
         log_msgs = []
-        html = format_paragraphs_as_html(paras, 12.0, [], lambda m: log_msgs.append(m))
+        html, _ = format_paragraphs_as_html(paras, 12.0, [], lambda m: log_msgs.append(m))
         self.assertIn('<div class="footnotes">', html)
         self.assertIn('<hr class="footnote-separator">', html)
         self.assertIn('1. A footnote reference.', html)
@@ -161,7 +161,7 @@ class TestFootnoteHTMLRendering(unittest.TestCase):
                            is_footnote=True, y0_min=50, y0_max=60),
         ]
         log_msgs = []
-        html = format_paragraphs_as_html(paras, 12.0, [], lambda m: log_msgs.append(m),
+        html, _ = format_paragraphs_as_html(paras, 12.0, [], lambda m: log_msgs.append(m),
                                          skip_footnotes=True)
         self.assertNotIn('footnote', html.lower().replace('footnote-separator', '').replace('footnotes', ''))
         self.assertNotIn('A footnote reference', html)

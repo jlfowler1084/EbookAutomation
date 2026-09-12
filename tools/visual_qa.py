@@ -156,6 +156,14 @@ def find_calibre(explicit_path=None):
     return shutil.which("ebook-convert")
 
 
+def _parse_bool(value: str) -> bool:
+    """Require an explicit boolean for the paid fallback switch."""
+    normalized = value.lower()
+    if normalized in ("true", "false"):
+        return normalized == "true"
+    raise argparse.ArgumentTypeError("expected 'true' or 'false'")
+
+
 def load_settings_json():
     """Try to load project settings.json for default paths."""
     script_dir = Path(__file__).resolve().parent
@@ -933,6 +941,10 @@ def build_report(book_path, qa_data, total_pages, pages_sampled, dpi, model,
     # default settings) must never read as "complete".
     if coverage_reason:
         coverage_status = "partial"
+    # Scores from surviving pages remain useful as provisional evidence, but
+    # a failed/omitted page must not turn into a passing book evaluation.
+    if coverage_status != "complete" and overall_pass is not None:
+        overall_pass = False
 
     report = {
         "book": os.path.basename(book_path),
@@ -1004,7 +1016,7 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
                   batch_size=8,
                   user_supplied_dpi=False,
                   user_supplied_max_pages=False,
-                  fallback_enabled=True,
+                  fallback_enabled=False,
                   fallback_claude_model="claude-sonnet-4-6",
                   fallback_corpus_path="tools/visual_qa_fallback_fingerprints.json",
                   fallback_empty_issues_score_threshold=80,
@@ -1148,6 +1160,8 @@ def run_visual_qa(input_path, provider, calibre_path, poppler_path,
 
     if not page_images:
         raise RuntimeError("No pages were rendered successfully")
+    if len(page_images) < len(sample_pages):
+        coverage_reason = coverage_reason or "page_render_failure"
 
     logger.info("Rendered %d pages at %d DPI", len(page_images), dpi)
 
@@ -1622,10 +1636,11 @@ def main():
     vqa_settings = settings.get("visual_qa", {})
     default_dpi = vqa_settings.get("dpi", 100)
     default_max_pages = vqa_settings.get("max_pages", 8)
-    default_batch_size = vqa_settings.get("batch_size", 8)
+    # Isolate pages: multi-image batches can copy a real defect to clean pages.
+    default_batch_size = vqa_settings.get("batch_size", 1)
     default_threshold = vqa_settings.get("pass_threshold", 70)
-    # Provider: from settings.json visual_qa.provider, falling back to "claude"
-    default_provider = vqa_settings.get("provider", "claude")
+    # Missing configuration must never select a paid provider implicitly.
+    default_provider = vqa_settings.get("provider", "local")
     # EB-392 Unit 2: local base_url/model defaults are no longer hardcoded here
     # -- resolve_local_vqa_target() (cli > env > config, no literal fallback)
     # resolves them in the provider-factory section below, once args.model is
@@ -1641,7 +1656,7 @@ def main():
     default_cloud_model = vqa_settings.get("cloud_model", "qwen/qwen3-vl-30b-a3b-instruct")
     # SCRUM-281: fallback fingerprint routing config
     fallback_cfg = vqa_settings.get("fallback", {})
-    default_fallback_enabled = fallback_cfg.get("enabled", True)
+    default_fallback_enabled = fallback_cfg.get("enabled", False)
     default_fallback_claude_model = fallback_cfg.get("claude_model", "claude-sonnet-4-6")
     default_fallback_threshold = fallback_cfg.get("empty_issues_score_threshold", 80)
     default_fallback_corpus = fallback_cfg.get("corpus_path", r"tools\visual_qa_fallback_fingerprints.json")
@@ -1729,7 +1744,7 @@ def main():
         help=f"Minimum score to pass (default: {default_threshold})"
     )
     parser.add_argument(
-        "--fallback-enabled", type=lambda x: x.lower() != "false",
+        "--fallback-enabled", type=_parse_bool,
         default=default_fallback_enabled,
         help=f"Enable hybrid fallback routing to Claude for fingerprinted pages "
              f"(default: {default_fallback_enabled})"
@@ -1777,6 +1792,10 @@ def main():
             args.dpi = 150
         if not user_supplied_max_pages:
             args.max_pages = 20
+        # --full is an explicit coverage request, including for long books.
+        # Preserve it through the large-file policy just like literal flags.
+        user_supplied_dpi = True
+        user_supplied_max_pages = True
 
     # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
@@ -1887,6 +1906,11 @@ def main():
             "overall_score": report["overall_score"],
             "overall_pass": report["overall_pass"],
             "pages_sampled": report["pages_sampled"],
+            "pages_requested": report.get("pages_requested", report["pages_sampled"]),
+            "pages_evaluated": report.get("pages_evaluated"),
+            "coverage_status": report.get("coverage_status"),
+            "coverage_reason": report.get("coverage_reason"),
+            "evaluation_status": report.get("evaluation_status"),
             "pages_total": report["pages_total"],
             "summary": report["summary"],
             "estimated_cost_usd": _tu.get("total_estimated_cost_usd", _tu.get("estimated_cost_usd", 0)),

@@ -669,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="Render DPI (default: 150 — EB-361 canary)")
     parser.add_argument("--max-pages", type=int, default=50,
                         help="Pages to sample (default: 50 — EB-361 canary)")
-    parser.add_argument("--batch-size", type=int, default=8,
+    parser.add_argument("--batch-size", type=int, default=1,
                         help="Pages per provider batch (default: 8)")
     parser.add_argument(
         "--n-ctx", type=int, default=vqa.default_n_ctx_from_env(),

@@ -314,7 +314,7 @@ function Convert-ToTTS {
     .PARAMETER UseClaudeChapters
         When set, runs a two-pass extraction:
           Pass 1 -- normal regex-based chapter detection (fast)
-          Pass 2 -- if Claude API key is available, sends the extracted text to
+          Pass 2 -- sends extracted text to the configured text LLM through
                    Get-ChapterStructure for AI-assisted chapter detection, writes
                    a hints JSON, and re-runs the Python extractor with --chapter-hints.
         This catches chapters that the regex missed (e.g. headings that were
@@ -499,10 +499,6 @@ function Convert-ToTTS {
 
         # Pass 2: Claude-assisted chapter detection (optional)
         if ($UseClaudeChapters -and (Test-Path $outputTxt)) {
-            if (-not $env:ANTHROPIC_API_KEY) {
-                Write-EbookLog 'TTS: -UseClaudeChapters requested but $env:ANTHROPIC_API_KEY is not set -- skipping' -Level WARN
-            }
-            else {
                 $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
 
                 # Check if bookmarks already handled chapters in Pass 1
@@ -516,7 +512,7 @@ function Convert-ToTTS {
                 }
 
                 if (-not $bookmarksUsed) {
-                    Write-EbookLog 'TTS: pass 2 -- sending text to Claude for chapter detection...'
+                    Write-EbookLog 'TTS: pass 2 -- sending text to the configured LLM for chapter detection...'
 
                     # Extract raw text from first 30 pages of original PDF (includes TOC)
                     $rawTextFile = Join-Path $script:TempDir ('raw_toc_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
@@ -607,7 +603,6 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
 
                 $sw2.Stop()
                 Write-EbookLog "TTS: chapter enhancement took $([math]::Round($sw2.Elapsed.TotalSeconds, 1))s total"
-            }
         }
 
         return $true
@@ -661,11 +656,10 @@ function Convert-ToKindle {
         the Legacy switch (ValidateQuality).
     .PARAMETER UseClaudeChapters
         Two-pass chapter detection: runs extraction normally, then sends the
-        first 30 pages to Claude API to detect the full chapter structure,
+        first 30 pages to the configured text LLM to detect the full chapter structure,
         writes a hints JSON, and re-runs extraction with --chapter-hints for
         accurate TOC. Works with all extraction paths (HTML, Legacy,
-        Column-aware). Requires ANTHROPIC_API_KEY environment variable.
-        Cost: ~$0.05 per book (single API call).
+        Column-aware). Uses the local text gateway by default, without an API key.
     .PARAMETER ChapterHintsFile
         Path to a pre-built chapter-hints JSON file. When provided, skips
         the Claude API call and goes straight to pass 2 re-extraction with
@@ -690,7 +684,8 @@ function Convert-ToKindle {
         Converts an EPUB directly via Calibre (no text extraction needed).
     .NOTES
         Requires Calibre installed. KFX output requires the KFX Output plugin.
-        AI features (Claude chapters, quality pass) require ANTHROPIC_API_KEY.
+        Text AI features use llm.text (local by default). The explicitly selected
+        Claude provider requires ANTHROPIC_API_KEY.
     #>
     [CmdletBinding(DefaultParameterSetName = 'Legacy')]
     param(
@@ -720,17 +715,21 @@ function Convert-ToKindle {
         [Parameter(HelpMessage = 'Skip cache lookup and force a fresh conversion even if this book has been successfully converted before.')]
         [switch]$NoCache,
 
-        [Parameter(HelpMessage = 'Use Claude Vision API for premium Tier 3 extraction. Cost: ~$0.02-0.04/page.')]
+        [Parameter(HelpMessage = 'Transcribe with the configured OCR provider (local by default).')]
         [switch]$UseVision,
 
         [Parameter(HelpMessage = 'Maximum allowed cost for Vision extraction in USD (default: $15.00).')]
         [double]$VisionCostLimit = 15.0,
 
-        [Parameter(HelpMessage = 'Use Gemini Flash for full book transcription (Tier 2.5). Cost: ~$0.50/book. Requires GEMINI_API_KEY.')]
+        [Parameter(HelpMessage = 'Transcribe with the configured OCR provider (local by default; legacy flag name).')]
         [switch]$UseGemini,
 
-        [Parameter(HelpMessage = 'Use Gemini Flash to remediate low-quality pages only. Cost: ~$0.002/page. Requires GEMINI_API_KEY.')]
+        [Parameter(HelpMessage = 'Remediate low-quality pages with the configured OCR provider (local by default).')]
         [switch]$GeminiRemediate,
+
+        [Parameter(HelpMessage = 'Exact one-based source PDF pages to remediate with configured OCR; bypasses caches.')]
+        [ValidateRange(1, 2147483647)]
+        [int[]]$OcrPages,
 
         [Parameter(HelpMessage = 'Maximum cost for Gemini extraction in USD (default: $5.00).')]
         [double]$GeminiCostLimit = 5.0,
@@ -776,11 +775,23 @@ function Convert-ToKindle {
     $vqaResult        = $null
     $textQualityScore = $null
     $dbVqaReportPath  = $null
+    $ocrRemediation   = $null
 
     # Helper: build failure result object
     $failResult = @{
         Success = $false; OutputPath = $null; QualityScore = 0
         QualityStatus = 'FAILED'; CategoryScores = $null; VqaReportPath = $null
+    }
+    if ($OcrPages -and ($UseGemini -or $UseVision -or $UseOCR -or $DirectConversion)) {
+        Write-EbookLog 'Kindle: -OcrPages requires HTML extraction and cannot be combined with whole-book OCR or direct conversion' -Level ERROR
+        return $failResult
+    }
+    if ($OcrPages -or $UseGemini -or $UseVision -or $GeminiRemediate) {
+        $NoCache = $true
+        if ((Get-EbookOCRProvider) -eq 'gemini' -and -not $env:GEMINI_API_KEY) {
+            Write-EbookLog 'Kindle: explicitly selected Gemini OCR requires GEMINI_API_KEY' -Level ERROR
+            return $failResult
+        }
     }
 
     # Resolve glob patterns in InputFile (e.g. "Burge*.pdf" -> actual path)
@@ -804,6 +815,10 @@ function Convert-ToKindle {
 
     $calibre = Resolve-ProjectPath $cfg.paths.calibre
     $ext     = [System.IO.Path]::GetExtension($InputFile).TrimStart('.').ToLower()
+    if ($OcrPages -and $ext -ne 'pdf') {
+        Write-EbookLog 'Kindle: -OcrPages requires a PDF input' -Level ERROR
+        return $failResult
+    }
 
     # Auto-enable HTML extraction for PDFs — the pdfminer HTML path preserves
     # headings, images, footnotes, and links that the legacy TXT path loses.
@@ -1032,8 +1047,9 @@ print(json.dumps(output))
 
             try {
                 $env:PYTHONIOENCODING = 'utf-8'
-                $pyErrFile  = Join-Path $script:TempDir 'kindle_py_err.txt'
-                $pyOutFile  = Join-Path $script:TempDir 'kindle_py_out.txt'
+                $pyLogId = [System.Guid]::NewGuid().ToString('N')
+                $pyErrFile  = Join-Path $script:TempDir "kindle_py_err_$pyLogId.txt"
+                $pyOutFile  = Join-Path $script:TempDir "kindle_py_out_$pyLogId.txt"
                 $pySw       = [System.Diagnostics.Stopwatch]::StartNew()
 
                 # Build argument list
@@ -1067,14 +1083,8 @@ print(json.dumps(output))
                         }
                     }
                 }
-                # Add AI Quality Pass API key (detection runs by default when key is available)
-                # Skip AI quality pass for text-only profile (less content = less risk)
-                if ($Profile -ne 'text-only' -and ($ValidateQuality -or $env:ANTHROPIC_API_KEY)) {
-                    $qualityKey = $env:ANTHROPIC_API_KEY
-                    if ($qualityKey) {
-                        $pyArgs += " --api-key `"$qualityKey`""
-                    }
-                }
+                # Text QA uses llm.text (local by default). Credentials, when
+                # explicitly needed, are inherited through the environment.
                 # Only apply AI fixes when explicitly requested (fixes can alter content)
                 if ($ApplyAIFixes) {
                     $pyArgs += " --apply-ai-fixes"
@@ -1091,27 +1101,19 @@ print(json.dumps(output))
                 }
                 if ($UseVision) {
                     $pyArgs += " --use-vision --vision-cost-limit $VisionCostLimit"
-                    Write-EbookLog "Kindle: Vision extraction (Tier 3) ENABLED — cost limit `$$VisionCostLimit" -Level WARN
-                    if (-not $env:ANTHROPIC_API_KEY) {
-                        Write-EbookLog "Kindle: ANTHROPIC_API_KEY not set — Vision extraction requires API key" -Level ERROR
-                        return $failResult
-                    }
+                    Write-EbookLog "Kindle: OCR transcription ENABLED — provider=$(Get-EbookOCRProvider)"
                 }
                 if ($UseGemini) {
                     $pyArgs += " --use-gemini --gemini-cost-limit $GeminiCostLimit"
-                    Write-EbookLog "Kindle: Gemini Flash extraction (Tier 2.5) ENABLED — cost limit `$$GeminiCostLimit" -Level INFO
-                    if (-not $env:GEMINI_API_KEY) {
-                        Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
-                        return $failResult
-                    }
+                    Write-EbookLog "Kindle: OCR transcription ENABLED — provider=$(Get-EbookOCRProvider)"
                 }
                 if ($GeminiRemediate) {
                     $pyArgs += " --gemini-remediate"
-                    Write-EbookLog "Kindle: Gemini page remediation ENABLED" -Level INFO
-                    if (-not $env:GEMINI_API_KEY) {
-                        Write-EbookLog "Kindle: GEMINI_API_KEY not set — Gemini requires API key" -Level ERROR
-                        return $failResult
-                    }
+                    Write-EbookLog "Kindle: OCR page remediation ENABLED — provider=$(Get-EbookOCRProvider)"
+                }
+                if ($OcrPages) {
+                    $pyArgs += " --ocr-pages $($OcrPages -join ',')"
+                    Write-EbookLog "Kindle: targeted OCR source pages: $($OcrPages -join ',')"
                 }
                 if ($OCRTable -and (Test-Path $OCRTable)) {
                     $pyArgs += " --ocr-table `"$OCRTable`""
@@ -1134,6 +1136,7 @@ print(json.dumps(output))
                 $pyProc.WaitForExit()   # ensures ExitCode is populated (PS 5.1 quirk)
 
                 if ($pyProc.ExitCode -eq 0 -or $null -eq $pyProc.ExitCode) {
+                    $ocrRemediation = Get-OcrRemediationFromLog -LogPath $pyOutFile
                     # Find the output file in the temp folder (HTML or TXT)
                     $tempOutput = Get-ChildItem -Path $tempDir -Include '*.html','*.txt' -File -Recurse | Select-Object -First 1
                     if ($tempOutput) {
@@ -1191,11 +1194,8 @@ print(json.dumps(output))
                     $hintsJson = $ChapterHintsFile
                     Write-EbookLog "Kindle: using pre-built chapter hints: $ChapterHintsFile"
                 }
-                elseif (-not $env:ANTHROPIC_API_KEY) {
-                    Write-EbookLog 'Kindle: -UseClaudeChapters requested but $env:ANTHROPIC_API_KEY is not set -- skipping' -Level WARN
-                }
                 else {
-                    Write-EbookLog 'Kindle: pass 2 -- sending text to Claude for chapter detection...'
+                    Write-EbookLog 'Kindle: pass 2 -- sending text to the configured LLM for chapter detection...'
 
                     # Extract raw text from first 30 pages of original PDF (includes TOC)
                     $rawTextFile = Join-Path $script:TempDir ('raw_toc_kindle_{0}.txt' -f [System.IO.Path]::GetRandomFileName())
@@ -1228,53 +1228,10 @@ with open(r'$rawTextFile', 'w', encoding='utf-8') as f:
                         # Per-heading insertion for HTML output
                         if ($convertInput -like '*.html') {
                             $htmlContent = Get-Content $convertInput -Raw -Encoding UTF8
-                            $insertedCount = 0
-                            $skippedCount  = 0
-
-                            foreach ($ch in $chapters) {
-                                $title = $ch.title.Trim()
-                                $level = $ch.level
-                                $tag   = switch ($level) {
-                                    1 { 'h1' }
-                                    2 { 'h2' }
-                                    3 { 'h3' }
-                                    default { 'h2' }
-                                }
-
-                                $escapedTitle = [regex]::Escape($title)
-                                if ($htmlContent -match "<h[123][^>]*>\s*$escapedTitle\s*</h[123]>") {
-                                    $skippedCount++
-                                    continue
-                                }
-
-                                $pattern = "(<(?:p|div)[^>]*>)\s*$escapedTitle\s*(</(?:p|div)>)"
-                                $rx = [regex]::new($pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-                                if ($rx.IsMatch($htmlContent)) {
-                                    $htmlContent = $rx.Replace($htmlContent, "<$tag>$title</$tag>", 1)
-                                    $insertedCount++
-                                    continue
-                                }
-
-                                $words = $title -split '\s+'
-                                if ($words.Count -ge 5) {
-                                    $fuzzyPrefix = [regex]::Escape(($words[0..4]) -join ' ')
-                                    $fuzzyPattern = "(<(?:p|div)[^>]*>)\s*($fuzzyPrefix[^<]*)\s*(</(?:p|div)>)"
-                                    $rxFuzzy = [regex]::new($fuzzyPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-                                    if ($rxFuzzy.IsMatch($htmlContent)) {
-                                        $htmlContent = $rxFuzzy.Replace($htmlContent, "<$tag>$title</$tag>", 1)
-                                        $insertedCount++
-                                        continue
-                                    }
-                                }
-
-                                Write-EbookLog "Kindle: heading not found in HTML: `"$title`"" -Level WARN
-                            }
-
-                            if ($insertedCount -gt 0) {
+                            $headingUpdate = Update-HtmlChapterHeadings -HtmlContent $htmlContent -Chapters $chapters
+                            $htmlContent = $headingUpdate.HtmlContent
+                            if ($headingUpdate.Inserted -gt 0 -or $headingUpdate.Promoted -gt 0) {
                                 Set-Content $convertInput -Value $htmlContent -Encoding UTF8
-                                Write-EbookLog "Kindle: inserted $insertedCount heading(s), skipped $skippedCount already present" -Level SUCCESS
-                            } else {
-                                Write-EbookLog "Kindle: all $($chapters.Count) headings already present in HTML"
                             }
                         }
                         else {
@@ -2118,6 +2075,15 @@ else:
         $stepTimings['CalibreConversion'] = $elapsed
         $sizeMB = [math]::Round((Get-Item $outFile).Length / 1MB, 1)
         Write-EbookLog "Kindle: done -> $outFile ($sizeMB MB, ${elapsed}s)" -Level SUCCESS
+        if ($null -ne $ocrRemediation) {
+            try {
+                $ocrRemediation | ConvertTo-Json -Depth 12 |
+                    Set-Content -LiteralPath ($outFile + '.ocr.json') -Encoding UTF8 -ErrorAction Stop
+                Write-EbookLog "Kindle: OCR provenance saved to $outFile.ocr.json"
+            } catch {
+                Write-EbookLog "Kindle: unable to save OCR provenance -- $_" -Level WARN
+            }
+        }
 
         # Check for AI Quality Report (saved alongside the kindle.txt by the Python script)
         if ($tempDir) {
@@ -2239,6 +2205,11 @@ else:
                              elseif ($qualityScore -ge $reviewThreshold) { 'NEEDS_REVIEW' }
                              elseif ($qualityScore -gt 0)                { 'POOR' }
                              else                                         { 'UNKNOWN' }
+            if ($vqaResult -and ($vqaResult.coverage_status -eq 'partial' -or
+                    ($vqaResult.evaluation_status -and $vqaResult.evaluation_status -notin @('evaluated', 'evaluated_degraded')))) {
+                # A high score from the surviving pages cannot clear incomplete QA.
+                $qualityStatus = 'NEEDS_REVIEW'
+            }
 
             # Escape single quotes for Python string literals
             $dbOutLeaf = ($outFile | Split-Path -Leaf) -replace "'", "''"
@@ -2430,6 +2401,7 @@ print(json.dumps(result))
             QualityStatus  = $qualityStatus
             CategoryScores = $categoryScores
             VqaReportPath  = if ($dbVqaReportPath) { $dbVqaReportPath } else { $null }
+            OcrRemediation = $ocrRemediation
         }
     }
     catch {
@@ -5132,6 +5104,177 @@ function Invoke-KokoroTTS {
 
 #region -- Claude API integration --------------------------------------------
 
+function Update-HtmlChapterHeadings {
+    <# Apply confirmed chapter levels without replacing existing heading content. #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$HtmlContent,
+        [Parameter(Mandatory)] [object[]]$Chapters
+    )
+    $inserted = 0
+    $promoted = 0
+    $existing = 0
+    $missing = 0
+    $headingRx = [regex]::new('<(?<tag>h[123])\b(?<attrs>[^>]*)>(?<body>.*?)</\k<tag>\s*>', 'IgnoreCase, Singleline')
+    foreach ($chapter in $Chapters) {
+        $title = [regex]::Replace([System.Net.WebUtility]::HtmlDecode([string]$chapter.title), '\s+', ' ').Trim()
+        if (-not $title) { continue }
+        $tag = switch ($chapter.level) { 1 { 'h1' } 2 { 'h2' } 3 { 'h3' } default { 'h2' } }
+        $matchedHeading = $null
+        foreach ($candidate in $headingRx.Matches($HtmlContent)) {
+            $visible = [System.Net.WebUtility]::HtmlDecode([regex]::Replace($candidate.Groups['body'].Value, '<[^>]+>', ''))
+            $visible = [regex]::Replace($visible, '\s+', ' ').Trim()
+            if ($visible -eq $title) { $matchedHeading = $candidate; break }
+        }
+        if ($null -ne $matchedHeading) {
+            if ($matchedHeading.Groups['tag'].Value -eq 'h3' -and $tag -in @('h1', 'h2')) {
+                $replacement = '<' + $tag + $matchedHeading.Groups['attrs'].Value + '>' + $matchedHeading.Groups['body'].Value + '</' + $tag + '>'
+                $HtmlContent = $HtmlContent.Substring(0, $matchedHeading.Index) + $replacement + $HtmlContent.Substring($matchedHeading.Index + $matchedHeading.Length)
+                $promoted++
+            } else {
+                $existing++
+            }
+            continue
+        }
+
+        # Keep the existing paragraph insertion rules, allowing line wrapping.
+        $words = $title -split '\s+'
+        $escapedTitle = ($words | ForEach-Object { [regex]::Escape($_) }) -join '\s+'
+        $rx = [regex]::new("(<(?:p|div)[^>]*>)\s*$escapedTitle\s*(</(?:p|div)>)", 'IgnoreCase')
+        if ($rx.IsMatch($HtmlContent)) {
+            $replacement = '<' + $tag + '>' + [System.Net.WebUtility]::HtmlEncode($title) + '</' + $tag + '>'
+            $HtmlContent = $rx.Replace($HtmlContent, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $replacement }, 1)
+            $inserted++
+            continue
+        }
+        if ($words.Count -ge 5) {
+            $fuzzyPrefix = ($words[0..4] | ForEach-Object { [regex]::Escape($_) }) -join '\s+'
+            $rxFuzzy = [regex]::new("(<(?:p|div)[^>]*>)\s*($fuzzyPrefix[^<]*)\s*(</(?:p|div)>)", 'IgnoreCase')
+            if ($rxFuzzy.IsMatch($HtmlContent)) {
+                $replacement = '<' + $tag + '>' + [System.Net.WebUtility]::HtmlEncode($title) + '</' + $tag + '>'
+                $HtmlContent = $rxFuzzy.Replace($HtmlContent, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $replacement }, 1)
+                $inserted++
+                continue
+            }
+        }
+        $missing++
+        Write-EbookLog "Kindle: heading not found in HTML: `"$title`"" -Level WARN
+    }
+    $level = if ($missing -gt 0) { 'WARN' } elseif ($inserted + $promoted -gt 0) { 'SUCCESS' } else { 'INFO' }
+    Write-EbookLog "Kindle: chapter headings: $inserted inserted, $promoted promoted, $existing already present, $missing not found" -Level $level
+    return @{ HtmlContent = $HtmlContent; Inserted = $inserted; Promoted = $promoted; Existing = $existing; Missing = $missing }
+}
+
+function Get-OcrRemediationFromLog {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string]$LogPath)
+    if (-not (Test-Path -LiteralPath $LogPath)) { return $null }
+    try {
+        $jsonLine = Get-Content -LiteralPath $LogPath -Tail 50 -Encoding UTF8 -ErrorAction Stop |
+            Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+        if (-not $jsonLine) { return $null }
+        $payload = $jsonLine | ConvertFrom-Json -ErrorAction Stop
+        $remediation = $payload.ocr_remediation
+        if ($null -eq $remediation) { return $null }
+        $applied = @($remediation.applied_pages) -join ','
+        $failed = @($remediation.failed_pages) -join ','
+        $provider = if ($remediation.provider) { $remediation.provider } else { 'unavailable' }
+        $level = if ($failed) { 'WARN' } else { 'INFO' }
+        Write-EbookLog ("Kindle: OCR remediation provider={0} applied=[{1}] failed=[{2}] cost=`${3:F4}" -f
+            $provider, $applied, $failed, [double]$remediation.cost_usd) -Level $level
+        return $remediation
+    } catch {
+        Write-EbookLog "Kindle: could not read OCR remediation provenance -- $_" -Level WARN
+        return $null
+    }
+}
+
+function Get-EbookOCRProvider {
+    [CmdletBinding()]
+    param()
+    $cfg = Get-EbookConfig
+    $provider = if ($env:EBOOK_OCR_PROVIDER) { $env:EBOOK_OCR_PROVIDER }
+                elseif ($cfg.llm.ocr.provider) { $cfg.llm.ocr.provider } else { 'local' }
+    $provider = $provider.Trim().ToLowerInvariant()
+    if ($provider -notin @('local', 'gemini')) { throw "Unsupported OCR provider: $provider" }
+    return $provider
+}
+
+function Send-ToTextLLM {
+    <#
+    .SYNOPSIS
+        Analyze text with the local gateway, or an explicitly selected cloud provider.
+    .DESCRIPTION
+        Uses llm.text configuration. EBOOK_TEXT_PROVIDER overrides local/claude;
+        LOCAL_LLM_TEXT_BASE_URL and LOCAL_LLM_TEXT_MODEL override the local target.
+        A local failure returns null and never retries through a paid provider.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$SystemPrompt,
+        [Parameter(Mandatory)] [string]$UserMessage,
+        [int]$MaxTokens = 4096
+    )
+
+    try {
+        $cfg = Get-EbookConfig
+        $textCfg = $cfg.llm.text
+        if ($textCfg -and $textCfg.enabled -eq $false) { return $null }
+        $provider = if ($env:EBOOK_TEXT_PROVIDER) { $env:EBOOK_TEXT_PROVIDER }
+                    elseif ($textCfg.provider) { $textCfg.provider } else { 'local' }
+        if ($provider -eq 'claude') {
+            if ($textCfg.claude_model) {
+                return Send-ToClaudeAPI -SystemPrompt $SystemPrompt -UserMessage $UserMessage -MaxTokens $MaxTokens -Model $textCfg.claude_model
+            }
+            return Send-ToClaudeAPI -SystemPrompt $SystemPrompt -UserMessage $UserMessage -MaxTokens $MaxTokens
+        }
+        if ($provider -ne 'local') { throw "Unsupported text LLM provider: $provider" }
+        $baseUrl = if ($env:LOCAL_LLM_TEXT_BASE_URL) { $env:LOCAL_LLM_TEXT_BASE_URL }
+                   elseif ($textCfg.base_url) { $textCfg.base_url } else { 'http://localhost:8000/v1' }
+        $model = if ($env:LOCAL_LLM_TEXT_MODEL) { $env:LOCAL_LLM_TEXT_MODEL }
+                 elseif ($textCfg.model) { $textCfg.model } else { 'sb-chat' }
+        $timeout = if ($textCfg.timeout_seconds) { [int]$textCfg.timeout_seconds } else { 120 }
+        $body = @{
+            model = $model
+            max_tokens = $MaxTokens
+            temperature = 0
+            chat_template_kwargs = @{ enable_thinking = $false }
+            messages = @(
+                @{ role = 'system'; content = $SystemPrompt }
+                @{ role = 'user'; content = $UserMessage }
+            )
+        } | ConvertTo-Json -Depth 6
+        Write-EbookLog "Text LLM: provider=local model=$model base_url=$baseUrl"
+        $probeKey = "$baseUrl|$model"
+        if (-not $script:TextLLMProbes) { $script:TextLLMProbes = @{} }
+        if (-not $script:TextLLMProbes.ContainsKey($probeKey)) {
+            $script:TextLLMProbes[$probeKey] = $true
+            try {
+                $models = Invoke-RestMethod -Uri ($baseUrl.TrimEnd('/') + '/models') -TimeoutSec 5 -MaximumRedirection 0 -ErrorAction Stop
+                $served = $models.data | Where-Object { $_.id -eq $model } | Select-Object -First 1
+                if (-not $served) { throw "Requested model is absent from /models" }
+                $backend = if ($served.backend_model) { $served.backend_model } else { $served.id }
+                Write-EbookLog "Text LLM backend: model=$backend n_ctx=$($served.meta.n_ctx) quantization=$($served.meta.ftype)"
+            } catch {
+                Write-EbookLog "Text LLM backend probe unavailable: $_" -Level WARN
+            }
+        }
+        $response = Invoke-RestMethod -Uri ($baseUrl.TrimEnd('/') + '/chat/completions') `
+            -Method POST -ContentType 'application/json; charset=utf-8' `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) `
+            -TimeoutSec $timeout -MaximumRedirection 0 -ErrorAction Stop
+        if ($response.choices[0].finish_reason -eq 'length') {
+            throw 'Local text response was truncated; analysis was not applied'
+        }
+        $content = $response.choices[0].message.content
+        if (-not $content) { throw 'Local text provider returned no content' }
+        return $content
+    } catch {
+        Write-EbookLog "Text LLM: request failed -- $_" -Level ERROR
+        return $null
+    }
+}
+
 function Send-ToClaudeAPI {
     <#
     .SYNOPSIS
@@ -5228,10 +5371,10 @@ function Send-ToClaudeAPI {
 function Get-ChapterStructure {
     <#
     .SYNOPSIS
-        Use Claude to identify chapter/part titles with font-based pre-analysis.
+        Use the configured text LLM to identify chapter/part titles with font-based pre-analysis.
     .DESCRIPTION
         Runs font-based heading detection on the source file, then sends three-zone
-        text samples + font candidates to Claude for chapter confirmation.
+        text samples + font candidates to the text LLM for chapter confirmation.
     .PARAMETER TextContent
         The full extracted text of a book.
     .PARAMETER InputFile
@@ -5246,7 +5389,8 @@ function Get-ChapterStructure {
         PS> Get-ChapterStructure -TextContent $text
         Runs chapter detection without font analysis (text-only mode).
     .NOTES
-        Requires ANTHROPIC_API_KEY environment variable. Incurs ~$0.05 per call.
+        Uses the local text gateway by default. Select llm.text.provider=claude
+        explicitly to use the paid Claude provider.
     #>
     [CmdletBinding()]
     param(
@@ -5284,7 +5428,7 @@ function Get-ChapterStructure {
                         }
                         $fontCandidatesSection = $lines -join "`n"
                     } else {
-                        Write-EbookLog "Chapter detection: font analysis found 0 candidates -- Claude will search text only"
+                        Write-EbookLog "Chapter detection: font analysis found 0 candidates -- LLM will search text only"
                     }
                 }
             } catch {
@@ -5299,7 +5443,7 @@ function Get-ChapterStructure {
 
     if ($totalWords -lt 9000) {
         $sample = $TextContent
-        Write-EbookLog "Chapter detection: short book ($totalWords words) -- sending full text to Claude"
+        Write-EbookLog "Chapter detection: short book ($totalWords words) -- sending full text to configured LLM"
     } else {
         $sampleParts = [System.Collections.Generic.List[string]]::new()
 
@@ -5323,7 +5467,7 @@ function Get-ChapterStructure {
         $sampleParts.Add("=== BACK MATTER (last 2000 words) ===`n$zone3")
 
         $sample = $sampleParts -join "`n`n"
-        Write-EbookLog "Chapter detection: three-zone sampling ($totalWords words total) -- sending ~9000 words to Claude"
+        Write-EbookLog "Chapter detection: three-zone sampling ($totalWords words total) -- sending ~9000 words to configured LLM"
     }
 
     # -- Step 3: Build Claude prompt (load from agent file)
@@ -5346,8 +5490,8 @@ level 1 = Part/Book/Volume, level 2 = Chapter, level 3 = Sub-section.
     }
     $userContent += "TEXT SAMPLES:`n`n$sample"
 
-    Write-EbookLog "Chapter detection: sending to Claude API..."
-    $raw = Send-ToClaudeAPI -SystemPrompt $systemPrompt -UserMessage $userContent
+    Write-EbookLog "Chapter detection: sending to configured text LLM..."
+    $raw = Send-ToTextLLM -SystemPrompt $systemPrompt -UserMessage $userContent
 
     if ($null -eq $raw) {
         Write-EbookLog 'Chapter detection: API call failed -- returning null' -Level ERROR
@@ -5758,7 +5902,10 @@ function Test-ConversionQuality {
 
         if ($summary) {
             $scoreMsg = "Visual QA: $($summary.overall_score)/100"
-            if ($summary.overall_pass) {
+            if ($summary.coverage_status -eq 'partial') {
+                $scoreMsg += " (INCOMPLETE: $($summary.pages_evaluated)/$($summary.pages_requested) pages evaluated)"
+                Write-EbookLog $scoreMsg -Level WARN
+            } elseif ($summary.overall_pass) {
                 $scoreMsg += " (PASS)"
                 Write-EbookLog $scoreMsg
             } else {
@@ -6273,15 +6420,14 @@ function Invoke-ConvergeLoop {
             $convertParams['VqaReportPath'] = $lastVqaReportPath
         }
 
-        # Auto-enable Claude chapter detection for PDFs (~$0.05, dramatically improves TOC)
-        # Enabled by default when API key is available, reinforced by database recommendation
-        if ($ext -eq 'pdf' -and ($env:ANTHROPIC_API_KEY -or $autoClaudeChapters)) {
+        # Chapter analysis uses the configured text LLM (local by default).
+        if ($ext -eq 'pdf') {
             if ($cachedChapterHints -and (Test-Path $cachedChapterHints)) {
                 # Reuse cached hints from iteration 1 — skip Claude API call
                 $convertParams['ChapterHintsFile'] = $cachedChapterHints
                 Write-EbookLog "  Using cached chapter hints from iteration 1"
-            } elseif ($env:ANTHROPIC_API_KEY) {
-                # First iteration — let Claude detect chapters
+            } else {
+                # First iteration — let the configured text LLM detect chapters
                 $convertParams['UseClaudeChapters'] = $true
             }
         }
@@ -6306,7 +6452,7 @@ function Invoke-ConvergeLoop {
         # EB-349: Auto-enable if classifier recommends Gemini, config key is set,
         # and GEMINI_API_KEY is present. This replaces the hard skip with a
         # conditional auto-enable + cost-estimate log.
-        if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini -and -not $AllowPaidExtraction) {
+        if ($convertParams.ContainsKey('UseGemini') -and $convertParams['UseGemini'] -and -not $UseGemini -and -not $AllowPaidExtraction -and (Get-EbookOCRProvider) -ne 'local') {
             if ($classification -and $classification.flags.needs_paid_tier -and
                 $classification.flags.recommended_paid_tier -eq 'gemini') {
                 # EB-349: Check opt-in config key + key availability
@@ -6350,7 +6496,7 @@ function Invoke-ConvergeLoop {
         }
 
         # Guard: skip Vision strategy unless explicitly requested or batch-approved
-        if ($convertParams.ContainsKey('UseVision') -and $convertParams['UseVision'] -and -not $UseVision -and -not $AllowPaidExtraction) {
+        if ($convertParams.ContainsKey('UseVision') -and $convertParams['UseVision'] -and -not $UseVision -and -not $AllowPaidExtraction -and (Get-EbookOCRProvider) -ne 'local') {
             if ($classification -and $classification.flags.needs_paid_tier -and
                 $classification.flags.recommended_paid_tier -eq 'vision') {
                 Write-EbookLog "  ════════════════════════════════════════════" -Level WARN
