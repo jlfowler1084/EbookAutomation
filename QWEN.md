@@ -102,6 +102,34 @@ If you touch TTS-emitting code in either project, add the test case here **first
 - **`python -m pip install`**, not bare `pip`
 - Follows the `python-core` and `python-architecture` conventions from `~/.claude/skills/`
 
+## BookFinder — ebook search & download tool
+
+A search/download layer that sits **upstream** of the pipeline. Searches Library Genesis first (stable, structured), falls back to Anna's Archive (meta-indexer, catches LibGen-missing books), and downloads with format preference (EPUB → PDF) and automatic resume/retry.
+
+**Design doc**: `docs/book-finder.md` — contains all API endpoints, HTML table structures, field names, download link patterns, SQLite schema, and configuration. **Always read this doc first** before building BookFinder code.
+
+**Workflow**: search → download into the library's `_Inbox\BookFinder` staging area (EB-380 moved the default output root there) → the EB-380 auto-filer proposes shelving → `Invoke-EbookPipeline`.
+
+**Python** (implemented):
+- `tools/book_finder.py` — search logic (LibGen + Anna's Archive HTML parsing). Library: `search_books()`. CLI: `python tools/book_finder.py search "Atomic Habits" --author "James Clear"` (also `--sources`, `--top`, `--format`, `--file`, `--json`).
+- `tools/book_downloader.py` — download queue with resume/retry and SQLite queue state. Library: `DownloadManager(output_root=...)`, then `manager.run(books=results)`.
+
+**PowerShell** (wrappers in `module/EbookAutomation.psm1`):
+```powershell
+Invoke-EbookBookSearch -Title "Atomic Habits" -Author "James Clear"
+Invoke-EbookBookSearch -Titles @("Book One", "Book Two") -Format epub
+Invoke-EbookBookDownload -Ids "12345,67890" -DryRun
+Invoke-EbookBookDownloadFromList -FilePath ".\book-list.txt" -Format epub
+```
+These three functions are missing from `FunctionsToExport` in `module/EbookAutomation.psd1`, so they are unavailable after `Import-Module` until EB-399 lands.
+
+**Gotchas**:
+- Both LibGen and AA are slow/unreliable from automated requests — always add delays between requests, and the downloader must handle timeouts gracefully
+- LibGen results are often duplicated across editions/mirrors — deduplicate by MD5 hash
+- Anna's Archive has no stable API — scraping HTML tables only; expect schema changes over time
+- LibGen can be slow or block requests — the web_fetch tool may timeout (as observed)
+- Never add a book that the user doesn't have rights to access
+
 ## Useful Qwen Code tasks
 
 - Refactoring Python extraction engine phases (pdfminer fallback logic, column detection, OCR cleanup regex)
@@ -112,6 +140,7 @@ If you touch TTS-emitting code in either project, add the test case here **first
 - Writing Pester tests for the PowerShell module surface
 - Improving Balabolka SSML output and voice selection logic
 - Updating the post-edit hook and regression runners
+- Extending BookFinder search/download (see above)
 
 ## Gotchas
 
