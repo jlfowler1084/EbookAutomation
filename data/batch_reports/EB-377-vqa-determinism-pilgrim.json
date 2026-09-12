@@ -1,0 +1,15 @@
+{
+  "deterministic": true,
+  "tolerance": 0,
+  "pages_compared": 19,
+  "n_score_diffs": 0,
+  "max_abs_delta": 0,
+  "overall_score_a": 77,
+  "overall_score_b": 77,
+  "overall_abs_delta": 0,
+  "n_issue_drift_pages": 0,
+  "missing_pages": [],
+  "page_deltas": [],
+  "note": "bit-deterministic across the compared runs",
+  "exit_code": 0
+}

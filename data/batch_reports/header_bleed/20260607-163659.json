@@ -1,0 +1,30 @@
+{
+  "schema": "header_bleed_report/v1",
+  "generated_utc": "2026-06-07T16:36:59.642235+00:00",
+  "git_head_sha": "0848c9e",
+  "params": {
+    "min_distinct_pages": 5,
+    "min_density": 0.1,
+    "len_min": 6,
+    "len_max": 40
+  },
+  "summary": {
+    "total_books": 1,
+    "flagged": 0,
+    "clean": 1,
+    "errors": 0
+  },
+  "exit_code": 0,
+  "books": [
+    {
+      "html_path": "output\\kindle\\.intermediates\\On First Principles - Origen - G. W. Butterworth ed._kindle.html",
+      "status": "clean",
+      "weld_total": 0,
+      "total_pages": 290,
+      "findings": [],
+      "standalone_repeats": [],
+      "heading_repeats": [],
+      "error": null
+    }
+  ]
+}

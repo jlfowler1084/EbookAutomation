@@ -1,0 +1,863 @@
+{
+  "ticket": "EB-377",
+  "books": [
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Origen_ G. W. Butterworth (ed.) - On First Principles (2013, Christian Classics) - libgen.li.pdf",
+      "sha256": "8e5a2d5ab888dfed51af22dd8d520743419b743a8d5716388d951f9f8c49b956",
+      "staged": "processing\\batch-2026-06-07\\Origen_ G. W. Butterworth (ed.) - On First Principles (2013, Christian Classics) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\On First Principles - Origen - G. W. Butterworth ed..kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\On First Principles - Origen - G. W. Butterworth ed._kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\On First Principles - Origen - G. W. Butterworth ed._visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\On First Principles - Origen - G. W. Butterworth ed..json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Pilgrim People - Anita Libman Lebeson (1950).pdf",
+      "sha256": "e9ca1375f760b62f3a375b17301873464396c1bdc0fa8068221beefb561e0c35",
+      "staged": "processing\\batch-2026-06-07\\Pilgrim People - Anita Libman Lebeson (1950).pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Anita Libman Lebeson - Pilgrim People.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Anita Libman Lebeson - Pilgrim People_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Anita Libman Lebeson - Pilgrim People_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Anita Libman Lebeson - Pilgrim People.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Cooper, Andrew Scott - The Oil Kings_ How the U (2011, Simon & Schuster) - libgen.li.pdf",
+      "sha256": "e3a6b0eff26b641c1da1afc6cfa6357e7a5440ea307a56d5d1b983241a37ec0b",
+      "staged": "processing\\batch-2026-06-07\\Cooper, Andrew Scott - The Oil Kings_ How the U (2011, Simon & Schuster) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Oil Kings - Cooper, Andrew Scott.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Oil Kings - Cooper, Andrew Scott_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Oil Kings - Cooper, Andrew Scott_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Oil Kings - Cooper, Andrew Scott.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+      "sha256": "e5c6615c064ee036699da46959b2229a684fa17b792d2eb5151e5d5b5af70dbf",
+      "staged": "processing\\batch-2026-06-07\\Nathan P. Jones - Mexico's Illicit Drug Networks and the State Reaction (2016, Georgetown University Press) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Mexico\u2019s Illicit Drug Networks and the State Reaction - Jones, Nathan P..kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Mexico\u2019s Illicit Drug Networks and the State Reaction - Jones, Nathan P._kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Mexico\u2019s Illicit Drug Networks and the State Reaction - Jones, Nathan P._visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Mexico\u2019s Illicit Drug Networks and the State Reaction - Jones, Nathan P..json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+      "sha256": "5fdbc3b8e23990c77ed8e5c731b592815fa3c0aeb714626d17363710960a9e46",
+      "staged": "processing\\batch-2026-06-07\\The Return of the Gods{Jonathan Cahn}(2022, Charisma Media){114011094} libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Return of the Gods - Jonathan Cahn.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Return of the Gods - Jonathan Cahn_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Return of the Gods - Jonathan Cahn_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Return of the Gods - Jonathan Cahn.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf",
+      "sha256": "40ae13f7472e27ca39a8abcdf23c7a4a11b67a9b3cc6cd044cffa2a0364fc8cc",
+      "staged": "processing\\batch-2026-06-07\\(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Python in easy steps, 2nd Edition - Mike McGrath.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Python in easy steps, 2nd Edition - Mike McGrath_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Python in easy steps, 2nd Edition - Mike McGrath_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Python in easy steps, 2nd Edition - Mike McGrath.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.pdf",
+      "sha256": "8145fb1a55a3b8fbb20a405d2767f9568b64804f846af59b7a3f8f1af2d71091",
+      "staged": "processing\\batch-2026-06-07\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Atomic Habits Tiny Changes, Remarkable Results An Easy & Proven Way to Build Good Habits & Break Bad Ones - James Clear.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Oswald Spengler - Decline of the West 1 & 2 (2016, Random Shack) - libgen.li.pdf",
+      "sha256": "ebef9274988afcf440b52d408873862776ecef7fd8edc19a84043c1b0edb5d11",
+      "staged": "processing\\batch-2026-06-07\\Oswald Spengler - Decline of the West 1 & 2 (2016, Random Shack) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Decline of the West Volumes 1 and 2 - Oswald Spengler.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Decline of the West Volumes 1 and 2 - Oswald Spengler_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Decline of the West Volumes 1 and 2 - Oswald Spengler_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Decline of the West Volumes 1 and 2 - Oswald Spengler.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\C. E. Rolt - Dionysius the Areopagite, On the Divine Names and the Mystical Theology (1992) - libgen.li.pdf",
+      "sha256": "819cdadae079dacd5b0ef8b71a7abad64b44e61c9882850a3fcd6b411c28aa87",
+      "staged": "processing\\batch-2026-06-07\\C. E. Rolt - Dionysius the Areopagite, On the Divine Names and the Mystical Theology (1992) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Dionysius the Areopagite On the Divine Names and the Mystical Theology. - C.E. Rolt.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Dionysius the Areopagite On the Divine Names and the Mystical Theology. - C.E. Rolt_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Dionysius the Areopagite On the Divine Names and the Mystical Theology. - C.E. Rolt_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Dionysius the Areopagite On the Divine Names and the Mystical Theology. - C.E. Rolt.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\Reading Genesis After Darwin -- Barton, Stephen C_ & David Wilkinson -- Oxford University Press USA, Oxford, 2009 -- IRL Press at Oxford University -- 9780195383355 -- d9527abd3a58183720fb59f2ee766b6a -- Anna\u2019s Archive_20260317-115726.pdf",
+      "sha256": "3cc342abbe2bd5bf780e132406ae9a5167a26a1d98e7795a31dba825e247a00a",
+      "staged": "processing\\batch-2026-06-07\\Reading Genesis After Darwin -- Barton, Stephen C_ & David Wilkinson -- Oxford University Press USA, Oxford, 2009 -- IRL Press at Oxford University -- 9780195383355 -- d9527abd3a58183720fb59f2ee766b6a -- Anna\u2019s Archive_20260317-115726.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Reading Genesis After Darwin - Barton, Stephen C. & David Wilkinson.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Reading Genesis After Darwin - Barton, Stephen C. & David Wilkinson_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Reading Genesis After Darwin - Barton, Stephen C. & David Wilkinson_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Reading Genesis After Darwin - Barton, Stephen C. & David Wilkinson.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\Projects\\EbookAutomation\\archive\\John Glubb - The Fate of Empires and Search for Survival (1976) - libgen.li.pdf",
+      "sha256": "29669116215243c55a8812ff2a63ea0494af6bc0f8fc5bea129416d6037fa78f",
+      "staged": "processing\\batch-2026-06-07\\John Glubb - The Fate of Empires and Search for Survival (1976) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Fate of Empires and Search of Survival - Sir John Glubb.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Fate of Empires and Search of Survival - Sir John Glubb_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Fate of Empires and Search of Survival - Sir John Glubb_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Fate of Empires and Search of Survival - Sir John Glubb.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\vSphere 7.0 Configuration_Maximums.pdf",
+      "sha256": "6d0e69fa14dc661cca2d63835adb14a7b5c2c50ecada5916d497605af2cccfea",
+      "staged": "processing\\batch-2026-06-07\\vSphere 7.0 Configuration_Maximums.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\vSphere 7.0 Configuration_Maximums.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\vSphere 7.0 Configuration_Maximums_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\vSphere 7.0 Configuration_Maximums_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\vSphere 7.0 Configuration_Maximums.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Step01_Powerlessness_Guided_Workbook-1.pdf",
+      "sha256": "71ce92eee1ad3dd9790b6435f101d6bb6c7c090e912e2af2a900498581839619",
+      "staged": "processing\\batch-2026-06-07\\Step01_Powerlessness_Guided_Workbook-1.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Step01_Powerlessness_Guided_Workbook-1 - Un-named.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Step01_Powerlessness_Guided_Workbook-1 - Un-named_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Step01_Powerlessness_Guided_Workbook-1 - Un-named_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Step01_Powerlessness_Guided_Workbook-1 - Un-named.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\The formation of a persecuting society _ authority and -- R_I_ (ROBERT IAN) MOORE -- 2ND ED_, OXFORD, Unknown, 2007 -- Wiley-Blackwell (an imprint of -- 9780470773987 -- 0df23bbbef7628da1e6fe4b12dce91bb -- Anna\u2019s Archive.pdf",
+      "sha256": "cd17b93da23ca582a9aef935dde8eda0588b7b8f39061189fe645ce7202b2f98",
+      "staged": "processing\\batch-2026-06-07\\The formation of a persecuting society _ authority and -- R_I_ (ROBERT IAN) MOORE -- 2ND ED_, OXFORD, Unknown, 2007 -- Wiley-Blackwell (an imprint of -- 9780470773987 -- 0df23bbbef7628da1e6fe4b12dce91bb -- Anna\u2019s Archive.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Formation of a Persecuting Society Authority and Deviance in Western Europe 950-1250 - R. I. Moore.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Formation of a Persecuting Society Authority and Deviance in Western Europe 950-1250 - R. I. Moore_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Formation of a Persecuting Society Authority and Deviance in Western Europe 950-1250 - R. I. Moore_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Formation of a Persecuting Society Authority and Deviance in Western Europe 950-1250 - R. I. Moore.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\10 How-To, Hobbies & Practical\\Recovery & 12-Step\\Unknown\\Unknown - Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026.pdf",
+      "sha256": "ab93bf8de79b03fb3883416ae70069639fdf772318965938de07c1b27fdec3d8",
+      "staged": "processing\\batch-2026-06-07\\Unknown - Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026 - Unknown.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026 - Unknown_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026 - Unknown_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Twelve Steps and Twelve Traditions Trade Edition - Inc Alcoholics Anonymous World Services - 1, 2002 - Alcoholics Anonymous World Services; - 9780916856014 -\u2026 - Unknown.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Joseph J. Ellis - His Excellency_ George Washington (2004, Vintage) - libgen.li.pdf",
+      "sha256": "c6e2de5ce6bab8f89487ad1deb3485f7a4377c62e8f5d54c67b18d619ab7d21e",
+      "staged": "processing\\batch-2026-06-07\\Joseph J. Ellis - His Excellency_ George Washington (2004, Vintage) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\His Excellency - George Washington - Joseph J. Ellis.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\His Excellency - George Washington - Joseph J. Ellis_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\His Excellency - George Washington - Joseph J. Ellis_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\His Excellency - George Washington - Joseph J. Ellis.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Mexican Phoenix _ Our Lady of Guadalupe _ image and -- David Anthony Brading -- New Ed edition, January 27, 2003 -- Cambridge, UK ; New York, NY_ -- 9780521531603 -- 6acd7ad97ddc86eb25f4ca11a9be4067 -- Anna\u2019s Archive.pdf",
+      "sha256": "3cc49ed5f1baa4ecb896257a1dea92535b2d1fb492ff43786118b4a898e5e517",
+      "staged": "processing\\batch-2026-06-07\\Mexican Phoenix _ Our Lady of Guadalupe _ image and -- David Anthony Brading -- New Ed edition, January 27, 2003 -- Cambridge, UK ; New York, NY_ -- 9780521531603 -- 6acd7ad97ddc86eb25f4ca11a9be4067 -- Anna\u2019s Archive.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Mexican Phoenix Our Lady of Guadalupe image and tradition across five centuries - Brading, D. A.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Mexican Phoenix Our Lady of Guadalupe image and tradition across five centuries - Brading, D. A_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Mexican Phoenix Our Lady of Guadalupe image and tradition across five centuries - Brading, D. A_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Mexican Phoenix Our Lady of Guadalupe image and tradition across five centuries - Brading, D. A.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Annette Yoshiko Reed - Fallen Angels and the History of Judaism and Christianity_ The Reception of Enochic Literature (2005, Cambridge University Press) - libgen.li.pdf",
+      "sha256": "14efb01b831a7ab636899c973c20de66706338b9eb9b6e990c9a9d96d0551371",
+      "staged": "processing\\batch-2026-06-07\\Annette Yoshiko Reed - Fallen Angels and the History of Judaism and Christianity_ The Reception of Enochic Literature (2005, Cambridge University Press) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Fallen Angels and the History of Judaism and Christianity The Reception of Enochic Literature - Annette Yoshiko Reed.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Fallen Angels and the History of Judaism and Christianity The Reception of Enochic Literature - Annette Yoshiko Reed_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Fallen Angels and the History of Judaism and Christianity The Reception of Enochic Literature - Annette Yoshiko Reed_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Fallen Angels and the History of Judaism and Christianity The Reception of Enochic Literature - Annette Yoshiko Reed.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Drug Cartels\\Michael Kenney - From Pablo to Osama_ Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation (2007, Pennsylvania State Univ Pr) - libgen.li.pdf",
+      "sha256": "e03f26a9daba3c496d06669155fa6f897f15d7f0bc32df507b6b908af0f0536f",
+      "staged": "processing\\batch-2026-06-07\\Michael Kenney - From Pablo to Osama_ Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation (2007, Pennsylvania State Univ Pr) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\From Pablo to Osama Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation - Michael Kenney.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\From Pablo to Osama Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation - Michael Kenney_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\From Pablo to Osama Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation - Michael Kenney_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\From Pablo to Osama Trafficking and Terrorist Networks, Government Bureaucracies, and Competitive Adaptation - Michael Kenney.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\01 History\\World Wars (WWI, WWII, Weimar)\\someAuthor\\someAuthor - someTitle.pdf",
+      "sha256": "38067340af774dbf7964ab8e010cd31c45cccce962caad3f140043aca0708397",
+      "staged": "processing\\batch-2026-06-07\\someAuthor - someTitle.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\someTitle - someAuthor.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\someTitle - someAuthor_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\someTitle - someAuthor_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\someTitle - someAuthor.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\_eb87_verify\\Coulter, Fred R. - Occult Holidays Or God's Holy Days - Which - Hour of the Time (2012) - libgen.li.pdf",
+      "sha256": "62a1bd34b859d033fbd02d434a5640848611b98412c0e35c226bc70323a45331",
+      "staged": "processing\\batch-2026-06-07\\Coulter, Fred R. - Occult Holidays Or God's Holy Days - Which - Hour of the Time (2012) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Occult Holidays Or God's Holy Days - Which - Fred R. Coulter.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Occult Holidays Or God's Holy Days - Which - Fred R. Coulter_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Occult Holidays Or God's Holy Days - Which - Fred R. Coulter_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Occult Holidays Or God's Holy Days - Which - Fred R. Coulter.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\PDFs\\divini-redemptoris.pdf",
+      "sha256": "cbe50a4085a2859d78444e0c8b19ef640df886bb1f2b7fe51c285338ef94c23d",
+      "staged": "processing\\batch-2026-06-07\\divini-redemptoris.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\divini-redemptoris.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\divini-redemptoris_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\divini-redemptoris_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\divini-redemptoris.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Noise Sensitivity\\Gao weifu.pdf",
+      "sha256": "aeb50a28d0f72359c0daa6e3acd0e3e4b18d111e1c93d7941ef74db436a7f72b",
+      "staged": "processing\\batch-2026-06-07\\Gao weifu.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Gao weifu - Tyler.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Gao weifu - Tyler_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Gao weifu - Tyler_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Gao weifu - Tyler.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\03 Religion & Bible Study\\Theology & Doctrine\\Unknown\\Unknown - Astrobiology and Christian Doctrine_ Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026.pdf",
+      "sha256": "39f03b929a3f648c78b255e53fddf4c4ac202a103829f14c298c42db301636fc",
+      "staged": "processing\\batch-2026-06-07\\Unknown - Astrobiology and Christian Doctrine_ Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Astrobiology and Christian Doctrine - Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026 - Unknown.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Astrobiology and Christian Doctrine - Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026 - Unknown_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Astrobiology and Christian Doctrine - Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026 - Unknown_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Astrobiology and Christian Doctrine - Exploring the - Andrew Davison - Current Issues in Theology, 2023 - Cambridge University Press - 9781009303156 - 209798da4554\u2026 - Unknown.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\09 Technology, Science & Reference\\AI & Prompt Engineering\\Hinton, Alex Krizhevsky, Ilya Sutskever, Geoffrey E\\Hinton, Alex Krizhevsky, Ilya Sutskever, Geoffrey E - ImageNet Classification with Deep Convolutional Neural Networ\u2026.pdf",
+      "sha256": "90137160c57217953d5f61857e64ca58e85f06e1b13b4f475c918b1b582b9771",
+      "staged": "processing\\batch-2026-06-07\\Hinton, Alex Krizhevsky, Ilya Sutskever, Geoffrey E - ImageNet Classification with Deep Convolutional Neural Networ\u2026.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\ImageNet Classification with Deep Convolutional Neural Networks - Alex Krizhevsky, Ilya Sutskever, Geoffrey E. Hinton.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\ImageNet Classification with Deep Convolutional Neural Networks - Alex Krizhevsky, Ilya Sutskever, Geoffrey E. Hinton_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\ImageNet Classification with Deep Convolutional Neural Networks - Alex Krizhevsky, Ilya Sutskever, Geoffrey E. Hinton_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\ImageNet Classification with Deep Convolutional Neural Networks - Alex Krizhevsky, Ilya Sutskever, Geoffrey E. Hinton.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Book of Enoch\\Joseph B. Lumpkin - The Books of Enoch_ A Complete Volume Containing 1 Enoch (The Ethiopic Book of Enoch), 2 Enoch (The Slavonic Secrets of Enoch), (2009, Fifth Estate) - libgen.li.pdf",
+      "sha256": "0b165b854b4b7300eb9d6e89650503b6d72f1f12437c985f218c061ee3ce8391",
+      "staged": "processing\\batch-2026-06-07\\Joseph B. Lumpkin - The Books of Enoch_ A Complete Volume Containing 1 Enoch (The Ethiopic Book of Enoch), 2 Enoch (The Slavonic Secrets of Enoch), (2009, Fifth Estate) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Books of Enoch A Complete Volume Containing 1 Enoch The Ethiopic Book of Enoch, 2 Enoch The Slavonic Secrets of Enoch, 3 Enoch The Hebrew Book of Enoch - Joseph B. Lumpkin.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Books of Enoch A Complete Volume Containing 1 Enoch The Ethiopic Book of Enoch, 2 Enoch The Slavonic Secrets of Enoch, 3 Enoch The Hebrew Book of Enoch - Joseph B. Lumpkin_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Books of Enoch A Complete Volume Containing 1 Enoch The Ethiopic Book of Enoch, 2 Enoch The Slavonic Secrets of Enoch, 3 Enoch The Hebrew Book of Enoch - Joseph B. Lumpkin_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Books of Enoch A Complete Volume Containing 1 Enoch The Ethiopic Book of Enoch, 2 Enoch The Slavonic Secrets of Enoch, 3 Enoch The Hebrew Book of Enoch - Joseph B. Lumpkin.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Biographies\\Woodrow Wilson\\[Presidents of the U.S.A.] Carol Brunelli - Woodrow Wilson (2011, The Child's World) - libgen.li.pdf",
+      "sha256": "8f6fd7072243ac1b898e764ba4a26efb4b64d23819a564a9cfcd01d3a344ae3a",
+      "staged": "processing\\batch-2026-06-07\\[Presidents of the U.S.A.] Carol Brunelli - Woodrow Wilson (2011, The Child's World) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Woodrow Wilson - Carol Brunelli.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Woodrow Wilson - Carol Brunelli_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Woodrow Wilson - Carol Brunelli_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Woodrow Wilson - Carol Brunelli.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\06 Fiction & Literature\\Poetry & Drama\\Hinman, Charlton\\Hinman, Charlton - First Folio of Shakespeare Facsi (2024) [sha a5436317].pdf",
+      "sha256": "a5436317534cb52219c92b7ce3c11998e3b985de9686330f155b42ac3e875157",
+      "staged": "processing\\batch-2026-06-07\\Hinman, Charlton - First Folio of Shakespeare Facsi (2024) [sha a5436317].pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\First Folio of Shakespeare Facsi - Charlton Hinman.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\First Folio of Shakespeare Facsi - Charlton Hinman_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\First Folio of Shakespeare Facsi - Charlton Hinman_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\First Folio of Shakespeare Facsi - Charlton Hinman.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Ken Johnson\\The Ancient Dead Sea Scroll Calendar_ AND THE PROPHECIES IT -- United States, United States of America -- Independently Published -- 9798617849655 -- 987b109ebac1a2c0e41687772a6baa3b -- Anna\u2019s Archive.pdf",
+      "sha256": "2d1a903c3a4c14ca7a62f513a0f3fbc337a228f925614fca282325a1785a1d80",
+      "staged": "processing\\batch-2026-06-07\\The Ancient Dead Sea Scroll Calendar_ AND THE PROPHECIES IT -- United States, United States of America -- Independently Published -- 9798617849655 -- 987b109ebac1a2c0e41687772a6baa3b -- Anna\u2019s Archive.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Ancient Dead Sea Scroll Calendar AND THE PROPHECIES IT REVEALS - United States, United States of America.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Ancient Dead Sea Scroll Calendar AND THE PROPHECIES IT REVEALS - United States, United States of America_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Ancient Dead Sea Scroll Calendar AND THE PROPHECIES IT REVEALS - United States, United States of America_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Ancient Dead Sea Scroll Calendar AND THE PROPHECIES IT REVEALS - United States, United States of America.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\PDFs\\Seven Treatises - RIchard Rogers.pdf",
+      "sha256": "1502eebd6668ca00cc000183e30a481e7a0a8aee1f3f826a137b90dd7120f5f5",
+      "staged": "processing\\batch-2026-06-07\\Seven Treatises - RIchard Rogers.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\RIchard Rogers - Seven Treatises.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\RIchard Rogers - Seven Treatises_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\RIchard Rogers - Seven Treatises_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\RIchard Rogers - Seven Treatises.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\07 Conspiracy, Esoterica & Fringe\\Esoteric, Occult, Kabbalah & Theosophy\\Unknown\\Unknown - Aleister Crowley - Book Of The Law.pdf",
+      "sha256": "7f4a7c7073ebc953c1a7b620b667424b69ca8029f925c8349eabfcb1af588b4f",
+      "staged": "processing\\batch-2026-06-07\\Unknown - Aleister Crowley - Book Of The Law.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Aleister Crowley - Book Of The Law - Unknown.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Aleister Crowley - Book Of The Law - Unknown_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Aleister Crowley - Book Of The Law - Unknown_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Aleister Crowley - Book Of The Law - Unknown.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Bible Mysteries\\Schwabplan-TheLowdownOnLoans-0616-2271.pdf",
+      "sha256": "a1c9dd0d499b085b738d6477f76e0edfb2cb6b3f5dd1c00696c0be1bf148c254",
+      "staged": "processing\\batch-2026-06-07\\Schwabplan-TheLowdownOnLoans-0616-2271.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Schwabplan-TheLowdownOnLoans-0616-2271.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Schwabplan-TheLowdownOnLoans-0616-2271_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Schwabplan-TheLowdownOnLoans-0616-2271_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Schwabplan-TheLowdownOnLoans-0616-2271.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\03 Religion & Bible Study\\Bible Study & Commentary\\W.E., Nickelsburg, George\\W.E., Nickelsburg, George - 1 Enoch - A New Translation; Based on the Hermeneia Commentary.pdf",
+      "sha256": "f89a09cebb62880ae441729c78707937f79bb411f687c33ec088e11869a29c0f",
+      "staged": "processing\\batch-2026-06-07\\W.E., Nickelsburg, George - 1 Enoch - A New Translation; Based on the Hermeneia Commentary.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\1 Enoch A New Translation; Based on the Hermeneia Commentary - Nickelsburg, George W.E..kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\1 Enoch A New Translation; Based on the Hermeneia Commentary - Nickelsburg, George W.E._kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\1 Enoch A New Translation; Based on the Hermeneia Commentary - Nickelsburg, George W.E._visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\1 Enoch A New Translation; Based on the Hermeneia Commentary - Nickelsburg, George W.E..json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\01 History\\United States & Americas\\Unknown\\Unknown - Arthur Versluis - The Esoteric Origins of the American Renaissance (2001, Oxford University Press, USA) - libgen.li.pdf",
+      "sha256": "049311d56d586733836377fb46aaf87a906d8da1c7c7f1aec9ce8573ab498335",
+      "staged": "processing\\batch-2026-06-07\\Unknown - Arthur Versluis - The Esoteric Origins of the American Renaissance (2001, Oxford University Press, USA) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Arthur Versluis - The Esoteric Origins of the American Renaissance - Unknown.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Arthur Versluis - The Esoteric Origins of the American Renaissance - Unknown_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Arthur Versluis - The Esoteric Origins of the American Renaissance - Unknown_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Arthur Versluis - The Esoteric Origins of the American Renaissance - Unknown.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Biographies\\Woodrow Wilson\\Manipulating the Masses_ Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 -- a0b8ce7db343b45d6971e29aec97bb22 -- Anna\u2019s Archive.pdf",
+      "sha256": "4866f7907e0e8d31970a24136c2252d50863e12b7fa664ce5b199958b34fe975",
+      "staged": "processing\\batch-2026-06-07\\Manipulating the Masses_ Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 -- a0b8ce7db343b45d6971e29aec97bb22 -- Anna\u2019s Archive.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Manipulating the Masses - Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 - John Maxwell Hamilton.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Manipulating the Masses - Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 - John Maxwell Hamilton_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Manipulating the Masses - Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 - John Maxwell Hamilton_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Manipulating the Masses - Woodrow Wilson and the Birth of -- John Maxwell Hamilton -- 2020 -- LSU Press -- 9780807170779 - John Maxwell Hamilton.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\08 Biography & Memoir\\Religious & Philosophical Figures\\Pegis, Anton C\\Pegis, Anton C - Basic Writings of Saint Thomas Aquinas (2022) [sha 84f0976f].pdf",
+      "sha256": "84f0976f4b64a6f41d352d047a47181de262d797a33f3cd5ea222025086a7b7b",
+      "staged": "processing\\batch-2026-06-07\\Pegis, Anton C - Basic Writings of Saint Thomas Aquinas (2022) [sha 84f0976f].pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Basic Writings of Saint Thomas Aquinas - Anton C. Pegis.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Basic Writings of Saint Thomas Aquinas - Anton C. Pegis_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Basic Writings of Saint Thomas Aquinas - Anton C. Pegis_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Basic Writings of Saint Thomas Aquinas - Anton C. Pegis.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Arnold G. Fruchtenbaum - Israelology_ The Missing Link in Systematic Theology (1994, Ariel Ministries) - libgen.li.pdf",
+      "sha256": "ab05d17639b7a9d44045ccc19b578d5a371d264170d10654e60f1fc433675d9b",
+      "staged": "processing\\batch-2026-06-07\\Arnold G. Fruchtenbaum - Israelology_ The Missing Link in Systematic Theology (1994, Ariel Ministries) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Israelology - The Missing Link in Systematic Theology - Edsel.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Israelology - The Missing Link in Systematic Theology - Edsel_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Israelology - The Missing Link in Systematic Theology - Edsel_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Israelology - The Missing Link in Systematic Theology - Edsel.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Free Masonry\\Manly P. Hall - The Secret Destiny of America (2000) - libgen.li.pdf",
+      "sha256": "acf61b3e1de8b529d1f55751e60687965f0106315d955e03dc86fb662348cf90",
+      "staged": "processing\\batch-2026-06-07\\Manly P. Hall - The Secret Destiny of America (2000) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Secret Destiny of America - Manly P. Hall.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Secret Destiny of America - Manly P. Hall_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Secret Destiny of America - Manly P. Hall_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Secret Destiny of America - Manly P. Hall.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Double_Columned\\gfs-sosp2003.pdf",
+      "sha256": "108ced8f084131ae6241b2c43c0b8f8bee01a8427c2527cbc204c87f1fdfce33",
+      "staged": "processing\\batch-2026-06-07\\gfs-sosp2003.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\paper.dvi.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\paper.dvi_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\paper.dvi_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\paper.dvi.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Biographies\\Woodrow Wilson\\Thomas J. Knock - To End All Wars, New Edition_ Woodrow Wilson And The Quest For A New World Order (2019, Princeton University Press) - libgen.li.pdf",
+      "sha256": "bca383086865f74551f487793369bf2d7624c8361d9531d59c13f6f878bde434",
+      "staged": "processing\\batch-2026-06-07\\Thomas J. Knock - To End All Wars, New Edition_ Woodrow Wilson And The Quest For A New World Order (2019, Princeton University Press) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\To End All Wars, New Edition - Thomas J. Knock.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\To End All Wars, New Edition - Thomas J. Knock_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\To End All Wars, New Edition - Thomas J. Knock_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\To End All Wars, New Edition - Thomas J. Knock.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Double_Columned\\BERT_Pre_Training.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "staged": "processing\\batch-2026-06-07\\BERT_Pre_Training.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\BERT_Pre_Training.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\BERT_Pre_Training_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\BERT_Pre_Training_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\BERT_Pre_Training.json",
+      "weld_total": 13,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\01 History\\Modern & 20th-Century General\\Unknown\\Unknown - Black, Matthew_ Goodman, Martin_ Millar, Fergus_ Sch\u00fcrer, Emil_ Verm\u00e8s, G\u00e9za_ Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ_ Volume 3.ii\u2026.pdf",
+      "sha256": "eac794f34ffedfe2e9ba371bb9e51484965944d260941c38ec42301fe6d611a7",
+      "staged": "processing\\batch-2026-06-07\\Unknown - Black, Matthew_ Goodman, Martin_ Millar, Fergus_ Sch\u00fcrer, Emil_ Verm\u00e8s, G\u00e9za_ Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ_ Volume 3.ii\u2026.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Black, Matthew - Goodman, Martin - Millar, Fergus - Sch\u00fcrer, Emil - Verm\u00e8s, G\u00e9za - Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ - Volume 3.ii\u2026 - Unknown.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Black, Matthew - Goodman, Martin - Millar, Fergus - Sch\u00fcrer, Emil - Verm\u00e8s, G\u00e9za - Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ - Volume 3.ii\u2026 - Unknown_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Black, Matthew - Goodman, Martin - Millar, Fergus - Sch\u00fcrer, Emil - Verm\u00e8s, G\u00e9za - Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ - Volume 3.ii\u2026 - Unknown_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Black, Matthew - Goodman, Martin - Millar, Fergus - Sch\u00fcrer, Emil - Verm\u00e8s, G\u00e9za - Vermes, Pamela - The History of the Jewish People in the Age of Jesus Christ - Volume 3.ii\u2026 - Unknown.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Noise Sensitivity\\73245-Sarker_31July24.pdf",
+      "sha256": "0498fc5d22c194ef9bd1e1df920f71cb79573e0cd014858cf237434d5673bf4d",
+      "staged": "processing\\batch-2026-06-07\\73245-Sarker_31July24.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\73245-Sarker_31July24 - Misbah.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\73245-Sarker_31July24 - Misbah_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\73245-Sarker_31July24 - Misbah_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\73245-Sarker_31July24 - Misbah.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Biographies\\Woodrow Wilson\\Arthur Link Volumes\\Arthur S. Link - Woodrow Wilson Volume II_ The New Freedom (1956) - libgen.li.pdf",
+      "sha256": "a4ba4967bc570b99c2545a41fba5f6744bbcb1355111fe39d8e87e6cc57852cb",
+      "staged": "processing\\batch-2026-06-07\\Arthur S. Link - Woodrow Wilson Volume II_ The New Freedom (1956) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\Wilson - Arthur Stanley Link.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\Wilson - Arthur Stanley Link_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\Wilson - Arthur Stanley Link_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\Wilson - Arthur Stanley Link.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Hershel Shanks, Ben Witherington III - The Brother of Jesus_ The Dramatic Story & Meaning of the First Archaeological Link to Jesus & His Family (2004) - libgen.li.pdf",
+      "sha256": "da28a27e5f5d1785138d5a2801c156f15726b429f97faca0aca3b821c807a7c3",
+      "staged": "processing\\batch-2026-06-07\\Hershel Shanks, Ben Witherington III - The Brother of Jesus_ The Dramatic Story & Meaning of the First Archaeological Link to Jesus & His Family (2004) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Brother of Jesus - Hershel Shanks & Ben Witherington III.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Brother of Jesus - Hershel Shanks & Ben Witherington III_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Brother of Jesus - Hershel Shanks & Ben Witherington III_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Brother of Jesus - Hershel Shanks & Ben Witherington III.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Writing_Childrens_Books\\[How To Write For Children Series - How To Write For Children Series] How To Self-Publish A Children&_039_s Book_ Everything You Need To Know to Write, Illustrate, Publish,...{Yvonne Jones}(2018){114297399} libgen.li.pdf",
+      "sha256": "15b12b56680f960dc8d99a6f23a8f35d2e1169674f126753753a1fd709cceb38",
+      "staged": "processing\\batch-2026-06-07\\[How To Write For Children Series - How To Write For Children Series] How To Self-Publish A Children&_039_s Book_ Everything You Need To Know to Write, Illustrate, Publish,...{Yvonne Jones}(2018){114297399} libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\How To Self-Publish A Children's Book Everything You Need To Know to Write, Illustrate, Publish, And Market Your Paperback And Ebook How To Write For Children Series - Yvonne Jones.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\How To Self-Publish A Children's Book Everything You Need To Know to Write, Illustrate, Publish, And Market Your Paperback And Ebook How To Write For Children Series - Yvonne Jones_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\How To Self-Publish A Children's Book Everything You Need To Know to Write, Illustrate, Publish, And Market Your Paperback And Ebook How To Write For Children Series - Yvonne Jones_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\How To Self-Publish A Children's Book Everything You Need To Know to Write, Illustrate, Publish, And Market Your Paperback And Ebook How To Write For Children Series - Yvonne Jones.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Writing_Childrens_Books\\The Writer's Guide to Crafting Stories for Children (Write -- Lamb, Nancy -- 1st ed_, Cincinnati, OH, Ohio, 2001 -- Cincinnati, OH _ Writer's Digest -- isbn13 9781582970523 -- b003032953da513b0cfca78013b2c540 -- Anna\u2019s Arch.pdf",
+      "sha256": "47977e6974a3502ccb3cc7eb3c705cd3b99cb0fd9608992e4fb9cef405f0ca3a",
+      "staged": "processing\\batch-2026-06-07\\The Writer's Guide to Crafting Stories for Children (Write -- Lamb, Nancy -- 1st ed_, Cincinnati, OH, Ohio, 2001 -- Cincinnati, OH _ Writer's Digest -- isbn13 9781582970523 -- b003032953da513b0cfca78013b2c540 -- Anna\u2019s Arch.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The writers guide to crafting stories for children - Lamb, Nancy.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The writers guide to crafting stories for children - Lamb, Nancy_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The writers guide to crafting stories for children - Lamb, Nancy_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The writers guide to crafting stories for children - Lamb, Nancy.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Hobbies\\Robert Wearing - The Essential Woodworker_ Skills, Tools, And Methods (2010, Lost Art Press) - libgen.li.pdf",
+      "sha256": "5da97d7fdb12a9ccc8e09670c1cfe4942d50c08f23c675ca13eef1417007d2e6",
+      "staged": "processing\\batch-2026-06-07\\Robert Wearing - The Essential Woodworker_ Skills, Tools, And Methods (2010, Lost Art Press) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\document1 - Dads Computer.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\document1 - Dads Computer_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\document1 - Dads Computer_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\document1 - Dads Computer.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Bible Study\\Bible Mysteries\\F3thinker ! - The Genesis 6 Conspiracy_ How Secret Societies and the Descendants of Giants Plan to Enslave Humankind (2014) - libgen.li.pdf",
+      "sha256": "acb7f54c158857122fa696f83d2999c3189bb089ea6ea366efecc0dede0e47d7",
+      "staged": "processing\\batch-2026-06-07\\F3thinker ! - The Genesis 6 Conspiracy_ How Secret Societies and the Descendants of Giants Plan to Enslave Humankind (2014) - libgen.li.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Genesis 6 Conspiracy How Secret Societies and the Descendants of Giants Plan to Enslave Humankind - Gary Wayne.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\The Genesis 6 Conspiracy How Secret Societies and the Descendants of Giants Plan to Enslave Humankind - Gary Wayne_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\The Genesis 6 Conspiracy How Secret Societies and the Descendants of Giants Plan to Enslave Humankind - Gary Wayne_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\The Genesis 6 Conspiracy How Secret Societies and the Descendants of Giants Plan to Enslave Humankind - Gary Wayne.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    },
+    {
+      "source": "F:\\books\\_Needs_Review\\Double_Columned\\mapreduce-osdi04.pdf",
+      "sha256": "ae84cc48ff0005c5a79e095039e54e91dce5c116f65746e1593e819d21830ce9",
+      "staged": "processing\\batch-2026-06-07\\mapreduce-osdi04.pdf",
+      "kfx": "F:\\Projects\\EbookAutomation\\output\\kindle\\mapreduce-osdi04.kfx",
+      "intermediate_html": "F:\\Projects\\EbookAutomation\\output\\kindle\\.intermediates\\mapreduce-osdi04_kindle.html",
+      "vqa_report": "F:\\Projects\\EbookAutomation\\output\\kindle\\mapreduce-osdi04_visual_qa_report.json",
+      "header_report": "data\\batch_reports\\header_bleed\\mapreduce-osdi04.json",
+      "weld_total": 0,
+      "coverage": {
+        "staged": true,
+        "kfx": true,
+        "intermediate_html": true,
+        "vqa_report": true
+      },
+      "status": "complete"
+    }
+  ],
+  "summary": {
+    "total": 50,
+    "complete": 50,
+    "coverage_gap": 0,
+    "kfx_failed": 0,
+    "weld_books": 1,
+    "weld_total_sum": 13
+  }
+}

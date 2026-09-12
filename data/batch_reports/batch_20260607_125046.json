@@ -1,0 +1,608 @@
+{
+  "run_id": "batch_20260607_125046",
+  "generated_at": "2026-06-07T16:55:15.114311+00:00",
+  "summary": {
+    "books_total": 2,
+    "books_passed": 2,
+    "books_warned": 0,
+    "books_failed": 0,
+    "books_errored": 0,
+    "books_skipped": 0,
+    "total_duration_seconds": 268.6,
+    "total_api_cost_usd": 0,
+    "flags": {
+      "quick": false,
+      "vqa": true,
+      "limit": null,
+      "format_filter": null,
+      "parallel": 2,
+      "folder_path": "F:\\Projects\\EbookAutomation\\processing\\smoke-2026-06-07"
+    }
+  },
+  "failure_clusters": [
+    {
+      "pattern_id": "FOOTNOTES_UNLINKED",
+      "severity": "medium",
+      "label": "Footnotes not linked",
+      "description": "Superscript footnote numbers present but none converted to hyperlinks",
+      "recommendation": "Check footnote detection regex; may need publisher-specific pattern",
+      "book_count": 1,
+      "books": [
+        "(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf"
+      ],
+      "source_types": {
+        "unknown": 1
+      },
+      "formats": {
+        "pdf": 1
+      }
+    }
+  ],
+  "observations": [],
+  "books": [
+    {
+      "filename": "(In easy steps) Mike McGrath - Python in easy steps-In Easy Steps Limited (2018).pdf",
+      "file_size_bytes": 8536819,
+      "format": "pdf",
+      "batch_run_id": "batch_20260607_125046",
+      "timestamp": "2026-06-07T16:50:46.512204+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 16.7,
+        "html_produced": true,
+        "html_size_bytes": 330963,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 3.2 images/page"
+        ],
+        "chunked": false,
+        "chunk_count": 1,
+        "completeness": {
+          "total_pages": 297,
+          "pages_with_text": 297,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 93,
+        "h1_count": 0,
+        "h2_count": 93,
+        "h3_count": 105,
+        "heading_labels": [
+          "Contents",
+          "Preface",
+          "1 Getting started",
+          "Introducing Python",
+          "Installing Python on Windows",
+          "Installing Python on Linux",
+          "Meeting the interpreter",
+          "Writing your first program",
+          "Employing variables",
+          "Obtaining user input",
+          "Correcting errors",
+          "Summary",
+          "2 Performing operations",
+          "Doing arithmetic",
+          "Assigning values",
+          "Comparing values",
+          "Assessing logic",
+          "Examining conditions",
+          "Setting precedence",
+          "Casting data types",
+          "Manipulating bits",
+          "3 Making statements",
+          "Writing lists",
+          "Manipulating lists",
+          "Restricting lists",
+          "Associating list elements",
+          "Branching with if",
+          "Looping while true",
+          "Looping over items",
+          "Breaking out of loops",
+          "4 Defining functions",
+          "Understanding scope",
+          "Supplying arguments",
+          "Returning values",
+          "Using callbacks",
+          "Adding placeholders",
+          "Producing generators",
+          "Handling exceptions",
+          "Debugging assertions",
+          "5 Importing modules",
+          "Storing functions",
+          "Owning function names",
+          "Interrogating the system",
+          "Performing mathematics",
+          "Calculating decimals",
+          "Telling the time",
+          "Running a timer",
+          "Matching patterns",
+          "6 Managing strings",
+          "Manipulating strings",
+          "Formatting strings",
+          "Modifying strings",
+          "Converting strings",
+          "Accessing files",
+          "Reading and writing files",
+          "Updating file strings",
+          "Pickling data",
+          "7 Programming objects",
+          "Encapsulating data",
+          "Creating instance objects",
+          "Addressing class attributes",
+          "Examining built-in attributes",
+          "Collecting garbage",
+          "Inheriting features",
+          "Overriding base methods",
+          "Harnessing polymorphism",
+          "8 Processing requests",
+          "Sending responses",
+          "Handling values",
+          "Submitting forms",
+          "Providing text areas",
+          "Checking boxes",
+          "Choosing radio buttons",
+          "Selecting options",
+          "Uploading files",
+          "9 Building interfaces",
+          "Launching a window",
+          "Responding to buttons",
+          "Displaying messages",
+          "Gathering entries",
+          "Listing options",
+          "Polling radio buttons",
+          "Adding images",
+          "10 Developing applications",
+          "Generating random numbers",
+          "Planning the program",
+          "Designing the interface",
+          "Assigning static properties",
+          "Initializing dynamic properties",
+          "Adding runtime functionality",
+          "Testing the program",
+          "Installing a freezing tool",
+          "Freezing the program"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 41326,
+        "page_count": 0,
+        "total_pages": 297,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 106,
+        "bookmark_max_depth": 2
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 10,
+        "italic_tags": 97,
+        "bold_tags": 1353,
+        "footnotes_linked": 0,
+        "footnotes_unlinked": 51,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 92.4,
+          "std_dev": 2.9,
+          "segment_scores": [
+            96,
+            90,
+            90,
+            96,
+            90
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.25,
+          "worst_score": 90,
+          "best_score": 96
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.496,
+            "words_sampled": 500,
+            "hits": 248
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 5.23,
+            "stddev": 2.66,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0,
+            "cid_glyph_tokens": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 55
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 100
+              },
+              {
+                "position": 0.25,
+                "score": 100
+              },
+              {
+                "position": 0.5,
+                "score": 100
+              },
+              {
+                "position": 0.75,
+                "score": 100
+              },
+              {
+                "position": 0.9,
+                "score": 100
+              }
+            ],
+            "variance": 0,
+            "min_score": 100,
+            "max_score": 100,
+            "problem_regions": []
+          }
+        },
+        "variance": 0,
+        "min_region": 100,
+        "max_region": 100,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": true,
+        "success": true,
+        "kfx_size_bytes": 8318416,
+        "duration_seconds": 51.2,
+        "output_path": "F:\\Projects\\EbookAutomation\\output\\kindle\\Python in easy steps, 2nd Edition - Mike McGrath.kfx"
+      },
+      "visual_qa": {
+        "attempted": true,
+        "score": 83,
+        "pass_threshold": 70,
+        "passed": true,
+        "category_scores": {
+          "cover_images": 95,
+          "text_integrity": 93,
+          "paragraph_flow": 94,
+          "toc_navigation": 95,
+          "page_layout": 95,
+          "heading_formatting": 90
+        },
+        "api_cost_usd": 0,
+        "duration_seconds": 104.9
+      },
+      "metadata": {
+        "pdf_producer": "calibre 3.26.1 [https://calibre-ebook.com]",
+        "pdf_creator": "calibre 3.26.1 [https://calibre-ebook.com]",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 8.1,
+        "image_density": {
+          "total_images": 32,
+          "pages_sampled": 10,
+          "images_per_page": 3.2,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 3,
+        "names": [
+          "AAAAAA+LiberationSerif",
+          "AAAAAB+LiberationSerif-Bold",
+          "AAAAAC+LiberationSerif-BoldItalic"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 98.7,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 1.2,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [
+        {
+          "category": "footnotes_unlinked",
+          "severity": "medium",
+          "description": "Superscript footnote numbers present but none converted to hyperlinks"
+        }
+      ],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 16.7,
+        "analysis": 0.5,
+        "calibre": 51.2,
+        "vqa": 104.9
+      }
+    },
+    {
+      "filename": "Pilgrim People - Anita Libman Lebeson (1950).pdf",
+      "file_size_bytes": 27726272,
+      "format": "pdf",
+      "batch_run_id": "batch_20260607_125046",
+      "timestamp": "2026-06-07T16:50:46.512204+00:00",
+      "source_classification": {
+        "source_type": "unknown",
+        "confidence": 0,
+        "strategy_selected": "html_extraction",
+        "strategy_source": "default",
+        "is_multicolumn": false,
+        "column_confidence": 0.0,
+        "num_columns": 1
+      },
+      "routing": {
+        "needs_paid_tier": false,
+        "recommended_paid_tier": null
+      },
+      "extraction": {
+        "success": true,
+        "extraction_path": "html_extraction",
+        "duration_seconds": 108.1,
+        "html_produced": true,
+        "html_size_bytes": 1628207,
+        "errors": [],
+        "warnings": [
+          "Image density suggests scan: 2.0 images/page"
+        ],
+        "chunked": true,
+        "chunk_count": 4,
+        "completeness": {
+          "total_pages": 662,
+          "pages_with_text": 662,
+          "completeness_pct": 100.0
+        }
+      },
+      "structure": {
+        "chapter_count": 19,
+        "h1_count": 2,
+        "h2_count": 17,
+        "h3_count": 40,
+        "heading_labels": [
+          "Front Matter",
+          "CONSTITUTION",
+          "PREFACE",
+          "CHAPTER I",
+          "CHAPTER II",
+          "CHAPTER III",
+          "CHAPTER IV",
+          "CHAPTER V",
+          "CHAPTER VI",
+          "CHAPTER Y I I",
+          "CHAPTER VIII",
+          "CHAPTER I X",
+          "CHAPTER X",
+          "CHAPTER XI",
+          "CHAPTER XII",
+          "CHAPTER XIII",
+          "CHAPTER X I V",
+          "CHAPTER XV",
+          "CHAPTER XVI"
+        ],
+        "headings_look_like_backmatter": false,
+        "word_count": 257578,
+        "page_count": 0,
+        "total_pages": 662,
+        "has_toc": false,
+        "toc_entries": 0,
+        "bookmark_count": 0,
+        "bookmark_max_depth": 0
+      },
+      "text_quality": {
+        "ligature_splits": 0,
+        "double_spaces": 0,
+        "encoding_errors": 0,
+        "standalone_page_numbers": 0,
+        "blockquotes_detected": 0,
+        "italic_tags": 0,
+        "bold_tags": 13,
+        "footnotes_linked": 4,
+        "footnotes_unlinked": 9,
+        "text_layer_score": 100,
+        "tier_suggestion": 1,
+        "recommendation": "accept",
+        "quality_variance": {
+          "mean": 100.0,
+          "std_dev": 0.0,
+          "segment_scores": [
+            100,
+            100,
+            100,
+            100,
+            100
+          ],
+          "positions": [
+            0.1,
+            0.25,
+            0.5,
+            0.75,
+            0.9
+          ],
+          "high_variance": false,
+          "worst_position": 0.1,
+          "worst_score": 100,
+          "best_score": 100
+        },
+        "score_details": {
+          "unicode_printable": {
+            "score": 100,
+            "ratio": 1.0,
+            "non_printable_count": 0
+          },
+          "common_word_rate": {
+            "score": 100,
+            "hit_rate": 0.618,
+            "words_sampled": 500,
+            "hits": 309
+          },
+          "word_length_distribution": {
+            "score": 100,
+            "avg_length": 4.76,
+            "stddev": 2.36,
+            "words_measured": 500
+          },
+          "encoding_artifacts": {
+            "score": 100,
+            "total_artifacts": 0,
+            "per_1000_chars": 0.0,
+            "fffd_count": 0,
+            "latin1_debris": 0,
+            "win1252_control": 0,
+            "non_ascii_sequences": 0,
+            "cid_glyph_tokens": 0
+          },
+          "repeated_lines": {
+            "score": 100,
+            "ratio": 0.0,
+            "total_lines": 13
+          },
+          "multi_sample": {
+            "samples": [
+              {
+                "position": 0.1,
+                "score": 97
+              },
+              {
+                "position": 0.25,
+                "score": 97
+              },
+              {
+                "position": 0.5,
+                "score": 97
+              },
+              {
+                "position": 0.75,
+                "score": 97
+              },
+              {
+                "position": 0.9,
+                "score": 96
+              }
+            ],
+            "variance": 1,
+            "min_score": 96,
+            "max_score": 97,
+            "problem_regions": []
+          }
+        },
+        "variance": 1,
+        "min_region": 96,
+        "max_region": 97,
+        "possible_column_merge": false
+      },
+      "kindle_conversion": {
+        "attempted": true,
+        "success": true,
+        "kfx_size_bytes": 2423826,
+        "duration_seconds": 139.0,
+        "output_path": "F:\\Projects\\EbookAutomation\\output\\kindle\\Anita Libman Lebeson - Pilgrim People.kfx"
+      },
+      "visual_qa": {
+        "attempted": true,
+        "score": 83,
+        "pass_threshold": 70,
+        "passed": true,
+        "category_scores": {
+          "cover_images": 75,
+          "text_integrity": 95
+        },
+        "api_cost_usd": 0,
+        "duration_seconds": 21.0
+      },
+      "metadata": {
+        "pdf_producer": "Recoded by LuraDocument PDF v2.68",
+        "pdf_creator": "Internet Archive",
+        "is_encrypted": false,
+        "encryption_type": null,
+        "file_size_mb": 26.4,
+        "image_density": {
+          "total_images": 20,
+          "pages_sampled": 10,
+          "images_per_page": 2.0,
+          "likely_scan": true
+        }
+      },
+      "fonts": {
+        "total_unique": 1,
+        "names": [
+          "Times-Roman"
+        ],
+        "has_risky_fonts": false,
+        "risky_fonts": []
+      },
+      "scripts": {
+        "latin": 100.0
+      },
+      "encoding": {
+        "ascii_pct": 99.6,
+        "latin_ext_pct": 0.0,
+        "high_unicode_pct": 0.4,
+        "control_chars": 0,
+        "replacement_chars": 0
+      },
+      "issues": [],
+      "overall_status": "PASS",
+      "status_reason": "All checks passed",
+      "encoding_normalization": {
+        "fixes": 0,
+        "mojibake": 0,
+        "control_chars": 0
+      },
+      "duration_breakdown": {
+        "extraction": 108.1,
+        "analysis": 0.5,
+        "calibre": 139.0,
+        "vqa": 21.0
+      }
+    }
+  ]
+}

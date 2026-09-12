@@ -1,0 +1,549 @@
+{
+  "book": "Anita Libman Lebeson - Pilgrim People.kfx",
+  "timestamp": "2026-06-07T16:45:38.955831+00:00",
+  "model": "Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf",
+  "pages_sampled": 20,
+  "pages_requested": 20,
+  "pages_evaluated": 19,
+  "coverage_status": "partial",
+  "coverage_reason": null,
+  "truncation_events": [],
+  "pages_total": 667,
+  "dpi": 150,
+  "requested_dpi": 150,
+  "effective_dpi": 150,
+  "evaluation_status": "evaluated",
+  "overall_score": 77,
+  "overall_pass": true,
+  "pass_threshold": 70,
+  "category_scores": {
+    "cover_images": 75,
+    "text_integrity": 91,
+    "paragraph_flow": 93,
+    "page_layout": 94,
+    "heading_formatting": 95
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "page_type": "cover",
+      "score": 48,
+      "pass": false,
+      "issues": [
+        {
+          "category": "cover_images",
+          "severity": "critical",
+          "description": "Cover image is almost entirely obscured by a dark red overlay with scattered white speckles, making it unreadable and visually distorted.",
+          "suggestion": "Investigate rendering pipeline for color corruption or image processing error; verify source file integrity."
+        }
+      ]
+    },
+    {
+      "page_number": 2,
+      "page_type": "front_matter",
+      "score": 75,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Presence of non-standard characters '<^vC~' at the end of a sentence, likely a formatting artifact from the source document.",
+          "suggestion": "Verify and clean up any non-printable or legacy formatting characters in the source text."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Text 'Pilgrim People, p. 366 <^vC~' appears to be a citation or metadata marker that is not properly formatted and may be a rendering artifact.",
+          "suggestion": "Ensure metadata and citations are properly formatted and do not interfere with body text."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The 'LIST OF ILLUSTRATIONS' section contains a long, unbroken line of text that is difficult to read and lacks proper paragraph breaks.",
+          "suggestion": "Break long lines into readable paragraphs and ensure consistent spacing."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "The page has uneven spacing between sections, with large gaps between the copyright notice and the 'CONTENTS' heading, and between 'CONTENTS' and 'LIST OF ILLUSTRATIONS'.",
+          "suggestion": "Adjust vertical spacing to create a more balanced and visually consistent layout."
+        }
+      ]
+    },
+    {
+      "page_number": 3,
+      "page_type": "front_matter",
+      "score": 13,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Text is heavily garbled and fragmented, with multiple names and phrases merged into a single line without spacing or punctuation, making it difficult to parse individual entries.",
+          "suggestion": "Review the source PDF for text extraction errors; consider reprocessing with improved OCR settings or manual correction of the text block."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "major",
+          "description": "Text is rendered as a single, unbroken block with no paragraph breaks, indentation, or spacing, disrupting natural reading flow.",
+          "suggestion": "Ensure proper paragraph separation and indentation during conversion; verify that the source document's structure is preserved."
+        },
+        {
+          "category": "page_layout",
+          "severity": "moderate",
+          "description": "Text is tightly packed and lacks adequate margins, resulting in a cramped appearance that reduces readability.",
+          "suggestion": "Adjust page margins and spacing to improve visual balance and readability."
+        }
+      ]
+    },
+    {
+      "page_number": 4,
+      "page_type": "front_matter",
+      "score": 100,
+      "pass": true,
+      "issues": []
+    },
+    {
+      "page_number": 9,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor text corruption: '—Job «<■' appears as a garbled footnote marker instead of a clean quote attribution.",
+          "suggestion": "Verify the source PDF's footnote formatting; reprocess with corrected metadata or OCR settings."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent paragraph spacing: some paragraphs have standard spacing, while others have excessive gaps, disrupting reading flow.",
+          "suggestion": "Standardize paragraph spacing and indentation across the document."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "Text is slightly too wide, approaching the right margin, reducing readability and creating a cramped appearance.",
+          "suggestion": "Adjust page margins or text width to improve balance and readability."
+        }
+      ]
+    },
+    {
+      "page_number": 23,
+      "page_type": "chapter_start",
+      "score": 95,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing irregularity in the quote: '<<*'",
+          "suggestion": "Ensure proper spacing and punctuation in quoted text; verify source formatting consistency"
+        }
+      ]
+    },
+    {
+      "page_number": 44,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Split word 'occupa^tions' with a caret symbol indicating a line break or encoding artifact.",
+          "suggestion": "Check text extraction and line-breaking logic to ensure proper hyphenation or word wrapping."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent paragraph spacing after the first block quote, with a slightly larger gap before the second paragraph.",
+          "suggestion": "Standardize paragraph spacing to maintain consistent reading flow."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Heading 'The End of the Settlements' is not visually distinct from the body text due to lack of bolding or size variation.",
+          "suggestion": "Apply consistent heading formatting (e.g., bold, larger font) to differentiate from body text."
+        }
+      ]
+    },
+    {
+      "page_number": 56,
+      "page_type": "chapter_start",
+      "score": 33,
+      "pass": false,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "major",
+          "description": "Text contains significant encoding artifacts and garbled characters, including 'ye', 'Exc´', 'Bar1...', 'Mats', 'yed...', 'errand', and '(cid:NN)'-like fragments, indicating severe OCR or encoding corruption.",
+          "suggestion": "Reprocess the source with corrected encoding or re-OCR the page to fix character corruption."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Text is tightly packed with inconsistent spacing and line breaks, including mid-sentence breaks and merged paragraphs, reducing readability.",
+          "suggestion": "Adjust paragraph spacing and ensure consistent line breaks to improve reading flow."
+        },
+        {
+          "category": "page_layout",
+          "severity": "moderate",
+          "description": "Text is too wide, extending close to the margins, resulting in a cramped appearance and reduced readability.",
+          "suggestion": "Adjust margins or text width to create more balanced whitespace and improve layout."
+        }
+      ]
+    },
+    {
+      "page_number": 66,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in the quote: 'Goe to the Wilde Cust <<' shows extra characters and formatting artifacts.",
+          "suggestion": "Review the source text for quote formatting and ensure proper rendering of special characters."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph break after the quote is slightly awkward, with a small gap before the next paragraph begins.",
+          "suggestion": "Adjust paragraph spacing to ensure consistent flow and readability."
+        }
+      ]
+    },
+    {
+      "page_number": 83,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Footnote text at bottom of page is partially cut off and continues onto the next page, with '1 74' appearing as a fragment.",
+          "suggestion": "Ensure footnote text is fully contained within the page or properly wrapped to avoid truncation."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph break after the quote from Solomon Abrabanel is missing; the text continues directly into the next paragraph without a clear separation.",
+          "suggestion": "Add a proper paragraph break or indentation after the quote to improve readability."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "The footer text at the bottom of the page is very small and may be difficult to read, especially on smaller screens.",
+          "suggestion": "Increase font size of footer text or adjust spacing to improve legibility."
+        }
+      ]
+    },
+    {
+      "page_number": 130,
+      "page_type": "chapter_start",
+      "score": 65,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Text is split across lines with inconsistent spacing, and some words are hyphenated at line breaks (e.g., 'accommodate my family during the time the president occupied mine...') which disrupts reading flow.",
+          "suggestion": "Ensure consistent paragraph formatting and avoid mid-word hyphenation where possible."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "moderate",
+          "description": "Paragraphs are not clearly separated; some paragraphs merge into one without proper breaks, especially in the section discussing colonial laws.",
+          "suggestion": "Add clear paragraph breaks and ensure consistent indentation."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter heading 'CHAPTER Y I I' is not clearly distinguished from the title below it, which is formatted as a subheading.",
+          "suggestion": "Increase spacing between chapter heading and title, or adjust font size to enhance hierarchy."
+        }
+      ]
+    },
+    {
+      "page_number": 172,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in the text: '1 161 162' appears at the end of a paragraph, likely a footnote or reference marker that is not properly formatted.",
+          "suggestion": "Ensure footnote markers are consistently formatted and do not disrupt paragraph flow."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph containing the quote from the Address of the Master, Wardens and Brethren is not visually distinguished from the surrounding text, reducing readability.",
+          "suggestion": "Apply block quote formatting or indentation to distinguish quoted material from body text."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "The text is slightly too wide, with minimal margins on the left and right, making the page feel cramped.",
+          "suggestion": "Adjust margins to provide more balanced whitespace and improve readability."
+        }
+      ]
+    },
+    {
+      "page_number": 199,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor spacing inconsistency in the quote: 'Wert not thou he from whom my spirit caught Its proudest aspiration to high thought?' — the spacing between 'Its' and 'proudest' appears irregular.",
+          "suggestion": "Review text rendering engine for consistent spacing in quoted passages."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Slight inconsistency in paragraph indentation; some paragraphs begin with a small indent while others start flush left.",
+          "suggestion": "Standardize paragraph indentation across the document."
+        },
+        {
+          "category": "page_layout",
+          "severity": "minor",
+          "description": "Text block is slightly too wide, causing tight margins on the right side of the page.",
+          "suggestion": "Adjust text width or margins to improve readability and balance."
+        }
+      ]
+    },
+    {
+      "page_number": 244,
+      "page_type": "chapter_start",
+      "score": 80,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Text 'Als Pilgrim wag’ ich....' contains a non-standard apostrophe and spacing issue, likely due to encoding or OCR artifact.",
+          "suggestion": "Verify source encoding and reprocess if necessary to ensure correct character rendering."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Text 'Zion1' appears with a trailing '1' that is likely a formatting or OCR error, not part of the original text.",
+          "suggestion": "Check source file for correct text and re-extract if needed."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "The symbol '<<■' appears after the quote attribution, likely a formatting or encoding artifact from the source.",
+          "suggestion": "Remove or correct the artifact if it does not belong in the final text."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph break after '...from Das Licht von Zion1 <<■' is inconsistent with the surrounding text flow, possibly due to formatting error.",
+          "suggestion": "Ensure consistent paragraph formatting and spacing throughout the chapter."
+        }
+      ]
+    },
+    {
+      "page_number": 267,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor formatting inconsistency in the quote block: the opening and closing delimiters (->> and <<-) are not aligned with the text block and appear slightly misaligned.",
+          "suggestion": "Ensure quote delimiters are properly aligned with the text block and maintain consistent spacing."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph break after the quote is slightly inconsistent in spacing, with a small gap before the next paragraph.",
+          "suggestion": "Standardize paragraph spacing to ensure consistent flow and readability."
+        }
+      ]
+    },
+    {
+      "page_number": 323,
+      "page_type": "chapter_start",
+      "score": 65,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Split word 'He~brew' with a soft hyphen, indicating a line break issue in the text flow.",
+          "suggestion": "Adjust text wrapping or hyphenation rules to prevent split words at line boundaries."
+        },
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Split word 'at~tempt' with a soft hyphen, indicating a line break issue in the text flow.",
+          "suggestion": "Adjust text wrapping or hyphenation rules to prevent split words at line boundaries."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent paragraph spacing between the first paragraph and the subsequent block of text.",
+          "suggestion": "Standardize paragraph spacing to ensure consistent visual flow."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph containing the quote about 'The fortunes of the pilgrim people' is not visually distinguished from the surrounding text.",
+          "suggestion": "Apply block quote formatting (e.g., indentation, italics) to distinguish quoted material."
+        }
+      ]
+    },
+    {
+      "page_number": 363,
+      "page_type": "chapter_start",
+      "score": 65,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "moderate",
+          "description": "Split words: 'o'er' instead of 'over', '334 335' instead of '334, 335', and 'over- workforced' instead of 'overworked'. These are OCR artifacts from PDF extraction.",
+          "suggestion": "Run OCR correction or text post-processing to fix common split-word and spacing issues."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent paragraph spacing: the quote from Emma Lazarus is followed by a single line break before the next paragraph, while other paragraphs have standard spacing.",
+          "suggestion": "Standardize paragraph spacing to ensure consistent reading flow."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "The chapter title 'CHAPTER XIII' is centered and bold, but the section title 'The “Songs of a Semite”' is left-aligned and not visually distinct from body text.",
+          "suggestion": "Apply consistent heading formatting to make section titles stand out."
+        }
+      ]
+    },
+    {
+      "page_number": 406,
+      "page_type": "chapter_start",
+      "score": 85,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor formatting inconsistency in quotation marks: opening quotes are `«` and `«>>>` while closing quotes are `<<` and `<<`. This may indicate inconsistent character encoding or typographic rendering.",
+          "suggestion": "Ensure consistent use of smart quotes or standard ASCII quotes in the rendering pipeline."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "Inconsistent paragraph indentation: the first paragraph after the chapter title is not indented, while subsequent paragraphs are. This disrupts visual flow.",
+          "suggestion": "Apply consistent paragraph indentation across all body text paragraphs."
+        },
+        {
+          "category": "heading_formatting",
+          "severity": "minor",
+          "description": "Chapter title 'CHAPTER X I V' uses spaced Roman numerals, which may reduce readability and visual consistency compared to standard formatting.",
+          "suggestion": "Render Roman numerals without spaces for better typographic consistency."
+        }
+      ]
+    },
+    {
+      "page_number": 437,
+      "page_type": "chapter_start",
+      "score": 90,
+      "pass": true,
+      "issues": [
+        {
+          "category": "text_integrity",
+          "severity": "minor",
+          "description": "Minor formatting inconsistency in the quote block: the closing quotation mark is followed by a non-standard character sequence '<<-' which appears to be a formatting artifact.",
+          "suggestion": "Ensure quote formatting is consistent and remove any non-standard characters or artifacts from the text."
+        },
+        {
+          "category": "paragraph_flow",
+          "severity": "minor",
+          "description": "The paragraph break after the quote is slightly inconsistent in spacing, with a small gap before the next paragraph.",
+          "suggestion": "Standardize paragraph spacing to ensure consistent flow and readability."
+        }
+      ]
+    }
+  ],
+  "summary": "Evaluated 19 pages across 3 batch(es). Average page score: 77/100.",
+  "top_issues": [
+    {
+      "category": "cover_images",
+      "severity": "critical",
+      "description": "Cover image is almost entirely obscured by a dark red overlay with scattered white speckles, making it unreadable and visually distorted.",
+      "suggestion": "Investigate rendering pipeline for color corruption or image processing error; verify source file integrity."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "Text is heavily garbled and fragmented, with multiple names and phrases merged into a single line without spacing or punctuation, making it difficult to parse individual entries.",
+      "suggestion": "Review the source PDF for text extraction errors; consider reprocessing with improved OCR settings or manual correction of the text block."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "major",
+      "description": "Text is rendered as a single, unbroken block with no paragraph breaks, indentation, or spacing, disrupting natural reading flow.",
+      "suggestion": "Ensure proper paragraph separation and indentation during conversion; verify that the source document's structure is preserved."
+    },
+    {
+      "category": "page_layout",
+      "severity": "moderate",
+      "description": "Text is tightly packed and lacks adequate margins, resulting in a cramped appearance that reduces readability.",
+      "suggestion": "Adjust page margins and spacing to improve visual balance and readability."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "major",
+      "description": "Text contains significant encoding artifacts and garbled characters, including 'ye', 'Exc´', 'Bar1...', 'Mats', 'yed...', 'errand', and '(cid:NN)'-like fragments, indicating severe OCR or encoding corruption.",
+      "suggestion": "Reprocess the source with corrected encoding or re-OCR the page to fix character corruption."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Text is tightly packed with inconsistent spacing and line breaks, including mid-sentence breaks and merged paragraphs, reducing readability.",
+      "suggestion": "Adjust paragraph spacing and ensure consistent line breaks to improve reading flow."
+    },
+    {
+      "category": "page_layout",
+      "severity": "moderate",
+      "description": "Text is too wide, extending close to the margins, resulting in a cramped appearance and reduced readability.",
+      "suggestion": "Adjust margins or text width to create more balanced whitespace and improve layout."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Text is split across lines with inconsistent spacing, and some words are hyphenated at line breaks (e.g., 'accommodate my family during the time the president occupied mine...') which disrupts reading flow.",
+      "suggestion": "Ensure consistent paragraph formatting and avoid mid-word hyphenation where possible."
+    },
+    {
+      "category": "paragraph_flow",
+      "severity": "moderate",
+      "description": "Paragraphs are not clearly separated; some paragraphs merge into one without proper breaks, especially in the section discussing colonial laws.",
+      "suggestion": "Add clear paragraph breaks and ensure consistent indentation."
+    },
+    {
+      "category": "text_integrity",
+      "severity": "moderate",
+      "description": "Split word 'He~brew' with a soft hyphen, indicating a line break issue in the text flow.",
+      "suggestion": "Adjust text wrapping or hyphenation rules to prevent split words at line boundaries."
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 162670,
+    "output_tokens": 5205,
+    "estimated_cost_usd": 0.0,
+    "total_estimated_cost_usd": 0.0
+  },
+  "capture_pipeline": "kfx-calibre"
+}

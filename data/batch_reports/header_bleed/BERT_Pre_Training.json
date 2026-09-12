@@ -1,0 +1,49 @@
+{
+  "stem": "BERT_Pre_Training",
+  "weld_total": 13,
+  "findings": [
+    {
+      "normalized": "ai gpt",
+      "occurrences": 13,
+      "distinct_pages": 8,
+      "density": 0.5,
+      "glue_positions": [
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "mid-paragraph",
+        "glued-end",
+        "mid-paragraph",
+        "mid-paragraph",
+        "glued-end",
+        "mid-paragraph"
+      ],
+      "samples": [
+        {
+          "page": 1,
+          "context": "proach, such as the Generative Pre-trained Transformer (OpenAI GPT) (Radford etal., 2018), introduces minimal task-speci\ufb01c par"
+        },
+        {
+          "page": 2,
+          "context": "ed from scratch. At least partly due to this advantage, OpenAI GPT (Radford etal., 2018) achieved previously state-of-the-art "
+        },
+        {
+          "page": 3,
+          "context": "0M). BERTBASE was chosen to have the same model size as OpenAI GPT for comparison purposes. Critically, however, the BERT Tran"
+        },
+        {
+          "page": 6,
+          "context": "over the prior state of the art. Note that BERTBASE and OpenAI GPT are nearly identical in terms of model architecture apart f"
+        },
+        {
+          "page": 7,
+          "context": "ESIM+GloVe 51.9 52.7 ESIM+ELMo 59.1 59.2 OpenAI GPT - 78.0"
+        }
+      ]
+    }
+  ]
+}
