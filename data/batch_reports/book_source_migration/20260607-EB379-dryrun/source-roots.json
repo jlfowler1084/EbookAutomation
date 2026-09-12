@@ -1,0 +1,58 @@
+[
+  {
+    "name": "current-downloads",
+    "path": "C:\\Users\\Joe\\Downloads",
+    "kind": "downloads",
+    "policy": "move",
+    "exists": true,
+    "blocked_reason": ""
+  },
+  {
+    "name": "current-calibre-default",
+    "path": "C:\\Users\\Joe\\Calibre Library",
+    "kind": "calibre",
+    "policy": "copy",
+    "exists": true,
+    "blocked_reason": ""
+  },
+  {
+    "name": "current-calibre-configured",
+    "path": "F:\\Library\\Calibre",
+    "kind": "calibre",
+    "policy": "copy",
+    "exists": false,
+    "blocked_reason": ""
+  },
+  {
+    "name": "old-desktop-downloads-users-share",
+    "path": "\\\\DESKTOP-488UQB2\\Users\\Joe\\Downloads",
+    "kind": "downloads",
+    "policy": "move",
+    "exists": false,
+    "blocked_reason": ""
+  },
+  {
+    "name": "old-desktop-calibre-users-share",
+    "path": "\\\\DESKTOP-488UQB2\\Users\\Joe\\Calibre Library",
+    "kind": "calibre",
+    "policy": "copy",
+    "exists": false,
+    "blocked_reason": ""
+  },
+  {
+    "name": "old-desktop-downloads-admin-share",
+    "path": "\\\\DESKTOP-488UQB2\\C$\\Users\\Joe\\Downloads",
+    "kind": "downloads",
+    "policy": "move",
+    "exists": false,
+    "blocked_reason": ""
+  },
+  {
+    "name": "old-desktop-calibre-admin-share",
+    "path": "\\\\DESKTOP-488UQB2\\C$\\Users\\Joe\\Calibre Library",
+    "kind": "calibre",
+    "policy": "copy",
+    "exists": false,
+    "blocked_reason": ""
+  }
+]
