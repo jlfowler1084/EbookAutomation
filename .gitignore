@@ -124,3 +124,9 @@ web_service/frontend/.baselines/**
 !web_service/frontend/.baselines/eb233-pre/MANIFEST.md
 !web_service/frontend/.baselines/eb233-post/
 !web_service/frontend/.baselines/eb233-post/MANIFEST.md
+
+# Local Qwen Code settings (per-machine permissions; matches ClaudeInfra)
+.qwen/
+
+# EB-380 guarded inbox sweep: default run dir is rewritten on every sweep (live queue, not a report)
+data/batch_reports/book_inbox_sweep/
