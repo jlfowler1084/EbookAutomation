@@ -234,9 +234,9 @@ silent 32768 default, and flags the report `coverage_reason: probe_failed_conser
 `evaluation_status: evaluated_degraded` so callers that never read `provider_resolved` still see the
 degraded regime.
 
-**Determinism (EB-361, EB-392):** the local VLM grader is non-deterministic under multi-slot serving
-(batch-dependent numerics — scores can flip across runs). Serve single-slot (vLLM `--max-num-seqs 1`) for
-trustworthy score deltas; validate with `tools/vqa_determinism_check.py --provider local --runs 2
+**Determinism (EB-361, EB-392):** the local VLM grader can vary even under single-slot serving.
+The September 2026 32K, single-slot check also found unsupported formatting claims. Serve single-slot
+and validate with `tools/vqa_determinism_check.py --provider local --runs 2
 --tolerance 0` before treating VQA scores as findings (Calibration-Sessions discipline). The check also
 compares each run's resolved `provider_resolved` (a fresh provider is constructed per run, so the probe
 genuinely re-executes each time) and reports `could_not_assess` (exit 2) naming the field if `base_url`,
@@ -245,14 +245,20 @@ server change between the two runs is a reason scores can't be compared, not a d
 report with `evaluation_status: evaluated_degraded` (real pages/scores, but the local provider's n_ctx
 probe failed for that run) is evaluable for determinism, not rejected — the verdict carries a `degraded`
 flag instead.
+Repeatability does not establish accuracy: manually corroborate findings against page renders before
+changing book content. Current local scores are diagnostic; the scan-bench trust gate remains enabled.
 
 **`-ValidateVisual` (`EbookAutomation.psm1`):** still passes no provider/fallback flags to
 `visual_qa.py` — it runs whatever `--provider`/`--fallback-enabled` `config/settings.json` currently
 defaults to. It does not pin the resolver's inputs itself.
 
 **Claude fallback:** pages with known-fallback fingerprints are re-evaluated by Claude (`ANTHROPIC_API_KEY`)
-when `visual_qa.fallback.enabled` is true (default). For free/local-only runs pass `--fallback-enabled false`
-to `visual_qa.py` (the EB-377 batch policy — keeps runs $0).
+when `visual_qa.fallback.enabled` is explicitly true. It defaults to **false**, including when
+the fallback config block is missing. API keys alone do not enable cloud requests.
+`--full` preserves the requested 20-page/150-DPI sample on large books; it is not every-page QA.
+Text analysis defaults to `llm.text.provider: local` (`sb-chat`, localhost:8000), independently of
+the vision target. OCR defaults to `llm.ocr.provider: local` (`sb-vision`). Explicit paid overrides
+are `EBOOK_TEXT_PROVIDER=claude`, `EBOOK_OCR_PROVIDER=gemini`, and VQA `--provider` / `--fallback-enabled true`.
 See `.env.example` for the full list of required env vars. Config: `config/settings.json` `visual_qa` block.
 Baselines in `data/vqa_baseline_post_274/` are standardized to KFX→Calibre source (SCRUM-282).
 `capture_pipeline` field in VQA baselines records the code branch that ran (`kfx-calibre` or `pdf-direct`); distinct from `source_format` in extraction-pipeline sidecars, which is extension-derived.

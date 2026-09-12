@@ -75,11 +75,22 @@
     "sonnet_latest": "claude-sonnet-4-6",
     "gemini_flash": "gemini-2.5-flash"
   },
+  "llm": {
+    "text": {
+      "provider": "local",
+      "base_url": "http://localhost:8000/v1",
+      "model": "sb-chat",
+      "timeout_seconds": 120
+    },
+    "ocr": {
+      "provider": "local"
+    }
+  },
   "visual_qa": {
     "enabled": false,
     "dpi": 100,
     "max_pages": 8,
-    "batch_size": 8,
+    "batch_size": 1,
     "pass_threshold": 70,
     "rubric_path": "tools\\visual_qa_rubric.md",
     "provider": "local",
@@ -88,7 +99,7 @@
     "local_model": "sb-vision",
     "local_base_url": "http://192.168.1.33:8080/v1",
     "fallback": {
-      "enabled": true,
+      "enabled": false,
       "claude_model": "claude-sonnet-4-6",
       "empty_issues_score_threshold": 80,
       "corpus_path": "tools\\visual_qa_fallback_fingerprints.json",

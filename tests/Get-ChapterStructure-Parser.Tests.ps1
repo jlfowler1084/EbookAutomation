@@ -4,7 +4,7 @@
     Pester 5 tests for the tolerant JSON parser introduced in SCRUM-313.
 .DESCRIPTION
     All parser behavior is tested through the public Get-ChapterStructure
-    function with Send-ToClaudeAPI mocked to avoid real network requests.
+    function with Send-ToTextLLM mocked to avoid real network requests.
 
     Validates three failure modes observed in production:
     A) Conversational prose preamble before the JSON array (Sub-failure A)
@@ -15,7 +15,7 @@
     Also verifies that on a completely unparseable response the function
     falls back gracefully (returns $null so the caller uses PDF bookmarks).
 .NOTES
-    Uses InModuleScope EbookAutomation so that Mock Send-ToClaudeAPI
+    Uses InModuleScope EbookAutomation so that Mock Send-ToTextLLM
     intercepts the internal call inside Get-ChapterStructure.
 
     The module import is placed at the TOP LEVEL of the file (before Describe)
@@ -49,7 +49,7 @@ Describe 'Get-ChapterStructure parser tolerance (SCRUM-313)' {
         Context 'Sub-failure A: conversational preamble before JSON array' {
 
             It 'extracts the array and ignores leading prose' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return @'
 Looking at the font-detected candidates and text samples, I need to analyze this carefully.
 
@@ -63,7 +63,7 @@ Looking at the font-detected candidates and text samples, I need to analyze this
             }
 
             It 'handles multi-sentence preamble with book title mention (Secret Doctrine case)' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return @'
 Looking at this input carefully, I can see this is H.P. Blavatsky''s *The Secret Doctrine*. Let me analyze the heading candidates.
 
@@ -78,7 +78,7 @@ Looking at this input carefully, I can see this is H.P. Blavatsky''s *The Secret
             }
 
             It 'handles preamble ending with colon (Prophets of Israel case)' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return @'
 Analyzing the font candidates and text samples carefully:
 
@@ -92,7 +92,7 @@ Analyzing the font candidates and text samples carefully:
             }
 
             It 'handles TDNT-style preamble with bold markdown' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return @'
 This is Volume VIII of the **Theological Dictionary of the New Testament**. Based on the font candidates, here are the chapters:
 
@@ -112,7 +112,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
         Context 'Sub-failure B: single JSON object instead of array' {
 
             It 'wraps bare single object as a one-element result' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return '{"title": "Preface", "level": 2, "is_back_matter": false, "page_estimate": 9, "confidence": 0.92, "notes": "Clearly labeled front matter"}'
                 }
                 $result = Get-ChapterStructure -TextContent 'Sample text'
@@ -122,7 +122,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
             }
 
             It 'wraps fenced single object as a one-element result' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     # Backtick-escaped here so PowerShell heredoc does not break on fences
                     return "``````json`n{`"title`": `"Preface`", `"level`": 2, `"is_back_matter`": false, `"page_estimate`": 9, `"confidence`": 0.92, `"notes`": `"`"}`n``````"
                 }
@@ -139,7 +139,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
         Context 'Markdown fenced block stripping' {
 
             It 'extracts array from ```json fence' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return "``````json`n[{`"title`": `"Chapter 1`", `"level`": 2, `"is_back_matter`": false, `"page_estimate`": 1, `"confidence`": 0.9, `"notes`": `"`"}]`n``````"
                 }
                 $result = Get-ChapterStructure -TextContent 'Sample text'
@@ -155,7 +155,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
         Context 'Happy path: clean JSON array (regression guard)' {
 
             It 'passes through a clean array with no modification' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return '[{"title": "Chapter 1", "level": 2, "is_back_matter": false, "page_estimate": 1, "confidence": 0.95, "notes": ""},{"title": "Chapter 2", "level": 2, "is_back_matter": false, "page_estimate": 20, "confidence": 0.95, "notes": ""}]'
                 }
                 $result = Get-ChapterStructure -TextContent 'Sample text'
@@ -166,7 +166,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
             }
 
             It 'handles multi-line clean array' {
-                Mock Send-ToClaudeAPI {
+                Mock Send-ToTextLLM {
                     return @'
 [
   {"title": "Prologue", "level": 2, "is_back_matter": false, "page_estimate": 1, "confidence": 0.95, "notes": ""},
@@ -187,7 +187,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
         Context 'Fallback: API returns null' {
 
             It 'returns null when the API call itself fails (bookmark fallback path)' {
-                Mock Send-ToClaudeAPI { return $null }
+                Mock Send-ToTextLLM { return $null }
                 $result = Get-ChapterStructure -TextContent 'Sample text'
                 $result | Should -BeNullOrEmpty
             }
@@ -196,7 +196,7 @@ This is Volume VIII of the **Theological Dictionary of the New Testament**. Base
         Context 'Fallback: completely unparseable response' {
 
             It 'returns null and does not throw on garbage response' {
-                Mock Send-ToClaudeAPI { return 'This response contains no JSON at all.' }
+                Mock Send-ToTextLLM { return 'This response contains no JSON at all.' }
                 { Get-ChapterStructure -TextContent 'Sample text' } | Should -Not -Throw
                 $result = Get-ChapterStructure -TextContent 'Sample text'
                 $result | Should -BeNullOrEmpty

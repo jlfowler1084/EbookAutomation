@@ -116,14 +116,15 @@ class TestBuildReportEvaluationStatus(unittest.TestCase):
         self.assertEqual(report["overall_score"], 85)
 
     def test_evaluated_overall_pass_reflects_threshold(self):
-        """overall_pass should be True/False (not None) when status=evaluated."""
+        """A complete evaluated sample passes when its score clears the threshold."""
         qa_data = {
             "evaluation_status": "evaluated",
             "overall_score": 85,
             "overall_pass": True,
-            "pages": [],
+            "pages": [{"page_number": page, "score": 85, "issues": []}
+                      for page in range(1, 9)],
             "category_scores": {},
-            "summary": "Evaluated 1 page.",
+            "summary": "Evaluated 8 pages.",
             "top_issues": [],
         }
         report = self._minimal_report(qa_data)

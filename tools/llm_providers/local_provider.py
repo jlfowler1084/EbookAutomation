@@ -89,6 +89,11 @@ ABSOLUTE_MIN_OUTPUT_BUDGET: int = 1024
 # is treated as unreachable.
 PROBE_TIMEOUT_SECONDS: float = 5.0
 
+# Keep the SDK from nesting its default two retries and ten-minute read
+# timeout inside our four-attempt loop. A stalled local page now fails after
+# at most about eight minutes of request waits plus 15 seconds of backoff.
+LOCAL_REQUEST_TIMEOUT_SECONDS: float = 120.0
+
 # PER_IMAGE_TOKEN_ESTIMATE: approximate input-token cost of one PNG page image
 # at the default 150 DPI rendering resolution.  Measured at ~2198 tokens/image
 # in the EB-350 sweep.  Rounded to 2200 for a small headroom buffer.
@@ -109,6 +114,21 @@ CONTEXT_SAFETY_MARGIN: int = 1024
 # sufficient for a single-page grading report with multiple issues and ensures
 # the model always has a meaningful generation budget even on small n_ctx nodes.
 MIN_OUTPUT_BUDGET: int = 8192
+
+# A damaged page can contain hundreds of occurrences of the same bad glyph.
+# Report the distinct defect once so detection does not enumerate every box
+# until its output budget is exhausted. These bounds apply to local grading
+# only; OCR transcription still preserves every word.
+MAX_ISSUES_PER_PAGE: int = 8
+MAX_ISSUE_DESCRIPTION_CHARS: int = 512
+MAX_ISSUE_SUGGESTION_CHARS: int = 256
+_ISSUE_GROUPING_INSTRUCTION = (
+    "Report only defects directly visible on this page; return issues: [] when none are visible. "
+    "Consolidate repeated instances of the same observed defect into one issue. "
+    "The limits of 8 issues, 512 characters per description and 256 per suggestion "
+    "are maxima, not targets. Quotes must come from this image; examples in the "
+    "rubric are instructions and must never be copied into findings as evidence. "
+)
 
 
 def _build_page_extraction_schema(page_count: int) -> dict:
@@ -154,8 +174,8 @@ def _build_page_extraction_schema(page_count: int) -> dict:
                 "type": "string",
                 "enum": ["critical", "major", "moderate", "minor"],
             },
-            "description": {"type": "string"},
-            "suggestion": {"type": "string"},
+            "description": {"type": "string", "maxLength": MAX_ISSUE_DESCRIPTION_CHARS},
+            "suggestion": {"type": "string", "maxLength": MAX_ISSUE_SUGGESTION_CHARS},
         },
     }
 
@@ -185,12 +205,12 @@ def _build_page_extraction_schema(page_count: int) -> dict:
                 "type": "string",
                 "enum": ["critical", "major", "moderate", "minor"],
             },
-            "description": {"type": "string"},
+            "description": {"type": "string", "maxLength": MAX_ISSUE_DESCRIPTION_CHARS},
             "affected_pages": {
                 "type": "array",
                 "items": {"type": "integer"},
             },
-            "suggestion": {"type": "string"},
+            "suggestion": {"type": "string", "maxLength": MAX_ISSUE_SUGGESTION_CHARS},
         },
     }
 
@@ -216,6 +236,7 @@ def _build_page_extraction_schema(page_count: int) -> dict:
             "pass": {"type": "boolean"},
             "issues": {
                 "type": "array",
+                "maxItems": MAX_ISSUES_PER_PAGE,
                 "items": per_issue_schema,
             },
         },
@@ -267,9 +288,10 @@ def _build_page_extraction_schema(page_count: int) -> dict:
             "overall_score": {"type": "integer", "minimum": 0, "maximum": 100},
             "overall_pass": {"type": "boolean"},
             "category_scores": category_scores_schema,
-            "summary": {"type": "string"},
+            "summary": {"type": "string", "maxLength": MAX_ISSUE_DESCRIPTION_CHARS},
             "top_issues": {
                 "type": "array",
+                "maxItems": MAX_ISSUES_PER_PAGE,
                 "items": top_issue_schema,
             },
         },
@@ -296,8 +318,8 @@ def _build_detection_schema(page_count: int) -> dict:
                 ],
             },
             "severity": {"type": "string", "enum": ["critical", "major", "moderate", "minor"]},
-            "description": {"type": "string"},
-            "suggestion": {"type": "string"},
+            "description": {"type": "string", "maxLength": MAX_ISSUE_DESCRIPTION_CHARS},
+            "suggestion": {"type": "string", "maxLength": MAX_ISSUE_SUGGESTION_CHARS},
         },
     }
     per_page_schema = {
@@ -310,7 +332,7 @@ def _build_detection_schema(page_count: int) -> dict:
                 "type": "string",
                 "enum": ["cover", "toc", "front_matter", "chapter_start", "body", "back_matter"],
             },
-            "issues": {"type": "array", "items": per_issue_schema},
+            "issues": {"type": "array", "maxItems": MAX_ISSUES_PER_PAGE, "items": per_issue_schema},
         },
     }
     return {
@@ -889,7 +911,8 @@ class LocalVisionProvider:
                 "CRITICAL: The `page_number` value for each entry MUST be the integer "
                 "in the `--- Page N ---` label above each image, NOT the image's "
                 "position in the batch. For example, if the labels are [1, 2, 3, 70], "
-                "your `page_number` values must be [1, 2, 3, 70], not [1, 2, 3, 4]."
+                "your `page_number` values must be [1, 2, 3, 70], not [1, 2, 3, 4]. "
+                + _ISSUE_GROUPING_INSTRUCTION
             ),
         })
 
@@ -961,13 +984,14 @@ class LocalVisionProvider:
         user_content.append({
             "type": "text",
             "text": (
-                "Examine each page above against the rubric. For each page, list every "
-                "visual quality issue you can see — do NOT assign a score yet. "
+                "Examine each page above against the rubric. Identify distinct "
+                "visual quality defects — do NOT assign a score yet. "
                 "Return ONLY valid JSON with a 'pages' array where each entry contains: "
                 "page_number (the integer from the --- Page N --- label above each image, "
                 "NOT its position), page_type, and issues (array with category, severity, "
                 "description, suggestion). If a page has no issues, set issues to []. "
-                "CRITICAL: page_number must be the label value, not the image's position."
+                "CRITICAL: page_number must be the label value, not the image's position. "
+                + _ISSUE_GROUPING_INSTRUCTION
             ),
         })
 
@@ -1126,6 +1150,8 @@ class LocalVisionProvider:
         client = openai.OpenAI(
             base_url=self._base_url,
             api_key="not-needed",
+            timeout=LOCAL_REQUEST_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
         image_count = sum(
@@ -1289,6 +1315,26 @@ class LocalVisionProvider:
                     expected_labels=input_labels,
                     actual_page_numbers=actual_page_numbers,
                 )
+
+        # Some OpenAI-compatible servers accept response_format but do not
+        # enforce every schema bound. Reject violations; never discard excess
+        # findings and then let a shortened report receive a passing score.
+        schema_name = payload.get("response_format", {}).get("json_schema", {}).get("name")
+        if parsed is not None and schema_name in {"vqa_detection_report", "page_extraction_report"}:
+            for page in parsed.get("pages", []):
+                issues = page.get("issues", [])
+                if len(issues) > MAX_ISSUES_PER_PAGE:
+                    raise ValueError(
+                        f"Local VQA page {page.get('page_number')} exceeded the "
+                        f"{MAX_ISSUES_PER_PAGE} distinct-issue limit; report rejected"
+                    )
+                for issue in issues:
+                    for field, limit in (("description", MAX_ISSUE_DESCRIPTION_CHARS),
+                                         ("suggestion", MAX_ISSUE_SUGGESTION_CHARS)):
+                        if len(issue.get(field, "")) > limit:
+                            raise ValueError(
+                                f"Local VQA {field} exceeded {limit} characters; report rejected"
+                            )
 
         return VisionResponse(
             raw_text=raw_text,

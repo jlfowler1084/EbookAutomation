@@ -314,6 +314,21 @@ def _run_vqa(tmp_path: Path, provider: MagicMock, page_images_fixture: list,
 
 class TestRunVisualQAHybridRouting:
 
+    def test_default_never_calls_paid_fallback_with_key_present(self, tmp_path):
+        """A fingerprint and an API key do not authorize a paid request."""
+        pages = [_make_page(1, score=95), _make_page(2, score=95)]
+        provider = _make_mock_cloud_provider(json.dumps({"pages": pages}))
+        provider.name = "local"
+        provider.estimate_cost.return_value = 0.0
+        with patch("visual_qa.run_claude_fallback") as fallback:
+            report = _run_vqa(
+                tmp_path, provider, [(1, PNG_FIXTURE), (2, PNG_FIXTURE)],
+                extra_env={"ANTHROPIC_API_KEY": "sk-fake"},
+            )
+        fallback.assert_not_called()
+        assert report["pages_sampled"] == 2
+        assert report["token_usage"]["estimated_cost_usd"] == 0.0
+
     # --- Characterization: Claude-primary no-op (R4 regression guard) ---
 
     def test_r4_claude_primary_no_fallback(self, tmp_path: Path) -> None:
@@ -631,11 +646,29 @@ class TestConfigRoundTrip:
         )
 
     def test_legacy_config_no_fallback_block(self, tmp_path):
-        """Settings without a fallback block uses hardcoded defaults (graceful degradation)."""
+        """Missing fallback config must keep paid fallback off."""
         settings_override = {"visual_qa": {"fallback": {}}}
         captured = self._run_main_capture_kwargs(tmp_path, settings_override=settings_override)
-        assert captured.get("fallback_enabled") is True
+        assert captured.get("fallback_enabled") is False
+
+    def test_full_mode_preserves_coverage_on_large_books(self, tmp_path):
+        captured = self._run_main_capture_kwargs(tmp_path, extra_argv=["--full"])
+        assert captured["dpi"] == 150
+        assert captured["max_pages"] == 20
+        assert visual_qa._apply_large_file_dpi_reduction(
+            kfx_size_bytes=40 * 1024 * 1024, total_pages=1100,
+            dpi=captured["dpi"], max_pages=captured["max_pages"],
+            user_supplied_dpi=captured["user_supplied_dpi"],
+            user_supplied_max_pages=captured["user_supplied_max_pages"],
+        ) == (150, 20)
         assert captured.get("fallback_claude_model") == "claude-sonnet-4-6"
+
+    @pytest.mark.parametrize("value", ["flase", "0", "yes", ""])
+    def test_invalid_fallback_flag_cannot_enable_paid_calls(self, tmp_path, value):
+        captured = self._run_main_capture_kwargs(
+            tmp_path, extra_argv=["--fallback-enabled", value],
+        )
+        assert captured == {}
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +962,15 @@ class TestVQACoverageLoss:
         report = self._run(tmp_path, provider)
 
         assert report["coverage_status"] == "partial"
+
+    def test_incomplete_high_score_cannot_pass_book(self, tmp_path: Path) -> None:
+        """Surviving clean pages cannot mask failed evaluation of other pages."""
+        provider = self._make_cloud_provider_batch1_ok_batch2_truncated()
+        report = self._run(tmp_path, provider)
+
+        assert report["overall_score"] >= report["pass_threshold"]
+        assert report["pages_evaluated"] < report["pages_sampled"]
+        assert report["overall_pass"] is False
 
     def test_truncated_batch_pages_evaluated_reflects_actual_count(self, tmp_path: Path) -> None:
         """pages_evaluated counts only pages that returned results; pages_sampled is unchanged."""
